@@ -101,15 +101,34 @@ The product should feel trustworthy, fast, simple, and technically capable—not
 
 Use the selected **Concept 3 — Universal Transfer** as the brand direction.
 
-## Logo concept
+## Logo concept — Claude must create the final logo
 
-The emblem is a modern rounded transfer symbol:
-- opposing arrows communicate two-way movement;
-- interlocking blue/green forms communicate connection and sharing;
-- a subtle orbit/device motif may be used in the full brand lockup;
-- the icon must remain recognizable at small app-icon and favicon sizes.
+**Important:** No approved/generated logo image has been committed to this repository. The previously discussed Concept 3 is only a direction, not a supplied asset. Do not assume an image file exists and do not search external sites for a logo to reuse.
 
-Do not redraw the logo inconsistently in every screen. Create a reusable brand asset component and a proper asset directory. If the actual approved logo image is available in the repository, use it. If not, create a clean original SVG approximation based on this brief and label it as a working vector, not an official supplied source file.
+Claude must create a fresh, original Share Anywhere logo as part of the design phase. You may explore several distinct concepts internally, compare them against the product positioning, then select and refine the strongest direction. The final result must be original, coherent, legible, and suitable for commercial product use; do not imitate a known brand or copy an existing logo.
+
+The preferred creative direction is informed by the user's selected Concept 3 — Universal Transfer:
+- a clear two-way transfer / exchange idea;
+- a modern rounded symbol that can suggest connection across devices and the web;
+- blue and green as the primary brand colors;
+- simple enough to remain recognizable at small app-icon and favicon sizes;
+- avoid making the mark overly literal or cluttered with tiny device illustrations.
+
+This is creative guidance, not a requirement to reproduce the previous generated image. Claude may improve or reinterpret it and should make the final design decision deliberately.
+
+Required brand deliverables:
+- primary logo lockup (symbol + Share Anywhere wordmark);
+- standalone symbol;
+- Android launcher icon in required adaptive icon layers/sizes;
+- Web favicon/app icon assets;
+- light-background and dark-background variants;
+- monochrome variants;
+- SVG source for vector assets and raster exports at appropriate sizes;
+- a short brand usage guide with color values, clear space, minimum size, and incorrect-use examples.
+
+Create assets in a documented location such as `web/public/brand/` and Android resource directories as appropriate. Use the same source design across Web and Android. Add a preview page or brand-assets documentation so the owner can review the result.
+
+Do not use generated raster art as the only source for a logo that must scale cleanly. Prefer a clean, editable SVG/vector construction. If image generation is used for exploration, redraw/refine the selected concept into clean vector assets before integrating it.
 
 ## Brand palette
 

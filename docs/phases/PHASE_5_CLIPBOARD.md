@@ -2,7 +2,7 @@
 
 Read: PRD §5.9, §7, §11 (clipboard), §13 (Clipboard); `docs/TESTING_AND_CI.md` §3.
 
-Android clipboard UI is built in Phase 6 on top of this protocol; the crypto and protocol are finalized here so Android implements against a frozen contract.
+Android (Phase 6) and iOS (Phase 7) clipboard UIs are built on top of this protocol; the crypto and protocol are finalized here so both implement against a frozen contract. Publish test vectors to `shared/protocol/schemas/clipboard-vectors.json`.
 
 ## Scope
 - Migrations: `clipboard_events`, `clipboard_device_cursors`, `clipboard_settings`, `clipboard_keys` (wrapped ACK per device, recovery-wrapped copy, key_version).
@@ -13,7 +13,7 @@ Android clipboard UI is built in Phase 6 on top of this protocol; the crypto and
 - `docs/CLIPBOARD_PROTOCOL.md` complete.
 
 ## Out of scope
-Images/files, Android UI (Phase 6), IME.
+Images/files, Android UI (Phase 6), iOS UI (Phase 7), IME.
 
 ## Tests to add
 - Backend: 50 parallel inserts → cursor reads never skip/duplicate; idempotent duplicate `event_id` returns the original; payload > 256 KB rejected; retention sweeper; revoked device cannot read new events; a DB dump contains no plaintext marker string inserted by the test.

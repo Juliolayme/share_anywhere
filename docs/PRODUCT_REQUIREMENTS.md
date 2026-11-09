@@ -15,7 +15,7 @@ Core value:
 - One sender to one receiver, or one sender to up to **five** simultaneous receivers.
 - Prefer direct P2P; fall back to TURN relay; optional Cloud Distribution only with explicit consent.
 - Resume interrupted transfers without retransmitting verified blocks.
-- Clipboard Sync between Android and Share Anywhere Web with a hybrid, permission-aware approach.
+- Clipboard Sync between Android, iOS, and Share Anywhere Web with a hybrid, permission-aware approach.
 
 The product should feel trustworthy, fast, simple, and technically capable, not like a developer dashboard.
 
@@ -25,8 +25,8 @@ Decisions marked **(v2)** were open in the first brief and are now fixed.
 
 | Topic | Decision |
 |---|---|
-| Platforms in scope | Android (native Kotlin) + Web (PC browsers and mobile browsers) |
-| iOS **(v2)** | No native app. iOS users use the Web app in Safari. Web receive flow and clipboard manual sync must work on iOS Safari within its limits (see §6.8). Native iOS is backlog, not scope. |
+| Platforms in scope **(v3)** | Android (native Kotlin) + iOS (native Swift/SwiftUI) + Web (PC browsers and mobile browsers) |
+| iOS **(v3)** | Native SwiftUI app, iOS 16+, built in Phase 7 against the protocol frozen in Phases 3 and 5. The Web receive flow and clipboard manual sync must still work on iOS Safari (see §6.8) for people without the app. |
 | PC experience | Browser only; no desktop agent |
 | Backend | Go modular monolith, PostgreSQL, WebSocket; no microservices or Kubernetes |
 | P2P transport | WebRTC DataChannel |
@@ -43,14 +43,18 @@ Decisions marked **(v2)** were open in the first brief and are now fixed.
 | Clipboard PC | Share Anywhere Web only |
 | Clipboard Web strategy | Both: best-effort automatic capture when permitted + always-available manual Sync |
 | Clipboard Android | Foreground capture + manual sync action; no background clipboard reading |
+| Clipboard iOS **(v3)** | Foreground capture on `UIPasteboard.changeCount` change while active; manual sync via `UIPasteControl` (no system paste prompt) with a plain button fallback that accepts the iOS 16+ paste banner; no background reading; `detectPatterns` used to skip likely secrets without reading content first |
 | Clipboard payload | Text only, ≤ 256 KB, history cap 100, retention 7 days |
 | Clipboard encryption | E2E, AES-256-GCM, server never sees plaintext |
 | Clipboard key bootstrap **(v2)** | Account clipboard key generated on the first device. New devices receive the key through **QR pairing** from an existing device (ephemeral X25519 exchange). A **12-word recovery phrase** is shown once at key creation and can unwrap the key. Server stores only wrapped keys and public metadata. |
 | Clipboard remote write | User taps Copy; never overwrite the system clipboard automatically |
 | Android SDK **(v2)** | minSdk 26, targetSdk 35 |
+| iOS long transfers **(v3)** | iOS suspends apps roughly 30 s after backgrounding; WebRTC and sockets do not survive. Transfers run only while the app is foreground or in the short `beginBackgroundTask` window; the engine checkpoints the bitmap, shows a local notification "Return to Share Anywhere to continue", and resumes on foreground. `BGProcessingTask` is used only for deferrable clipboard sync and cleanup, never for transfers. Do not use audio/VoIP/location background modes as workarounds (App Review rejection). Cloud Distribution (Phase 8) is the recommended path for very large iOS transfers and the UI should say so. |
 | Android long transfers **(v2)** | Foreground service type `dataSync`. Android 15 caps `dataSync` at roughly 6 hours per 24 hours; the transfer engine must checkpoint, stop cleanly at the limit, notify the user, and resume on next launch. Evaluate `JobScheduler` user-initiated data transfer jobs (API 34+) as the preferred path in Phase 6. |
 | Browser support **(v2)** | See §6.8 matrix. Full large-file receive on Chromium; capability-limited on Firefox and Safari. |
-| Styling **(v2)** | Tailwind CSS only on Web; Material 3 + Compose on Android |
+| iOS storage and files **(v3)** | Received files are written with streaming `FileHandle` into the app's Documents directory exposed through the Files app (`UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`); users may also pick a destination folder with `UIDocumentPickerViewController` (security-scoped bookmarks persisted for resume). Sending uses `UIDocumentPickerViewController` with `asCopy: false` and security-scoped access. |
+| Universal Links **(v3)** | `/join/:token` opens the iOS app when installed via `apple-app-site-association` served by Caddy; Android App Links via `assetlinks.json`. Verified only on real devices; CI marks as untested. |
+| Styling **(v2)** | Tailwind CSS only on Web; Material 3 + Compose on Android; SwiftUI with a shared token file (`shared/design/tokens.json` → generated Swift, Kotlin, CSS) on iOS |
 | Deployment | Docker Compose, Caddy reverse proxy |
 
 ## 3. Brand identity
@@ -65,7 +69,7 @@ Creative guidance:
 - not literal, not cluttered with device illustrations;
 - original; do not imitate a known brand.
 
-Deliverables: primary lockup (symbol + wordmark), standalone symbol, Android adaptive icon layers, Web favicon/app icons, light/dark variants, monochrome variants, SVG sources plus raster exports, and a short brand usage guide (`docs/DESIGN_SYSTEM.md` §Brand). Assets live in `web/public/brand/` and Android `res/` and share one vector source. Add a brand preview page at `/brand` in the Web app (dev builds only).
+Deliverables: primary lockup (symbol + wordmark), standalone symbol, Android adaptive icon layers, iOS `AppIcon.appiconset` (1024 px source, light/dark/tinted variants for iOS 18), Web favicon/app icons, light/dark variants, monochrome variants, SVG sources plus raster exports, and a short brand usage guide (`docs/DESIGN_SYSTEM.md` §Brand). Assets live in `web/public/brand/`, Android `res/`, and `ios/ShareAnywhere/Assets.xcassets`, and share one vector source. Add a brand preview page at `/brand` in the Web app (dev builds only).
 
 Palette tokens:
 - Primary blue `#0878E8`, primary green `#16C75A`, navy `#102A56`, white `#FFFFFF`
@@ -83,6 +87,8 @@ Design-system deliverables before screens: tokens (color, type, spacing, radii, 
 **Web** main navigation: Transfer, Clipboard, History, Devices, Settings. Account menu: profile, security, sign out. Desktop: sidebar + content. Small screens: compact nav + stacked panels. Public routes: `/join/:token`, `/join` (code entry), `/signin`, `/signup`, `/reset`.
 
 **Android** bottom navigation: Transfer, Clipboard, History, Devices, Settings. System back behavior, permission education, foreground service only for active transfers, lifecycle-safe state.
+
+**iOS** `TabView`: Transfer, Clipboard, History, Devices, Settings. `NavigationStack` per tab, system gestures, permission education for camera (QR) and notifications, scene-phase-aware state so a transfer pauses cleanly when the app leaves the foreground.
 
 ## 5. Screen inventory
 
@@ -114,11 +120,11 @@ Rules: approval mandatory; six-digit code is lookup only; links/QR carry capabil
 1. Scan QR (Android) / 2. Enter code / 3. Open share link (Web join page).
 4. Preview sender identity and file list.
 5. Request access. 6. Waiting for approval. 7. Approved / rejected / expired.
-8. Choose destination (Android SAF / browser save target per §6.8 capability).
+8. Choose destination (Android SAF / iOS Files destination or app Documents / browser save target per §6.8 capability).
 9. Receiving progress. 10. Pause/resume/retry. 11. Verification. 12. Completed / failed / partial.
 13. Open/share/locate file where the platform allows.
 
-Web join: if the Android app is installed and App Links are verified, open it; otherwise show the Web Join Page. Detect and explain browser capability limits **before** starting the transfer. Never promise background downloads in mobile browsers.
+Web join: if the Android or iOS app is installed and App Links / Universal Links are verified, open it; otherwise show the Web Join Page. Detect and explain browser capability limits **before** starting the transfer. Never promise background downloads in mobile browsers.
 
 ### 5.5 Multi-receiver dashboard
 Session ID and status; sender device; each participant and approval state; each file; one transfer card per file–recipient pair; per-recipient progress, speed, ETA, route, retry, error; aggregate progress; pause/resume/remove per receiver; stop all / close session. A slow or disconnected receiver never blocks others.
@@ -139,6 +145,7 @@ Account/security; theme system/light/dark; language EN/VI; notifications; transf
 ### 5.9 Clipboard screens
 **Web:** history; manual Sync action; browser permission/capability status; automatic capture toggle; item detail; Copy; search/filter; clear history confirmation; privacy settings; empty/offline/error.
 **Android:** history; foreground capture status; Sync action; notification action entry; item detail and Copy; search/filter; retention; sensitive-item-skipped state; empty/offline/error.
+**iOS:** same as Android, with `UIPasteControl` as the primary Sync control, a "paste banner" explanation for the fallback button, and a Home Screen quick action / widget deep link that opens the app for a user-driven sync.
 Clipboard UX must always state whether capture is automatic, best-effort, or manual.
 
 ## 6. File transfer
@@ -160,7 +167,7 @@ Candidate order: Direct P2P → TURN UDP → TURN TCP/TLS 443 → Cloud (if enab
 - Block size 4 MiB (configurable, benchmarked). Transport frame 64 KiB initially; `bufferedAmountLowThreshold` backpressure; validate real DataChannel message limits per browser pair.
 - Bounded buffers and per-peer flow control; per-receiver ACK and retry state.
 - SHA-256 per block and whole file. Receiver ACKs a block only after write + verify.
-- Receiver persists a completed-block bitmap (IndexedDB on Web, Room/file on Android).
+- Receiver persists a completed-block bitmap (IndexedDB on Web, Room/file on Android, SwiftData/SQLite or a sidecar file next to the partial download on iOS).
 - Resume exchanges the missing-block bitmap, not a last-chunk number; handle out-of-order blocks and holes.
 - After route migration: reconnect, authenticate the transfer with its capability, exchange bitmap, send missing blocks.
 - Conservative initial concurrency; benchmark on 2 GB-RAM Android devices; do not hard-code by RAM tier.
@@ -202,6 +209,9 @@ Use `navigator.clipboard.readText()` / `writeText()`; `read()` only for a later 
 ### 7.3 Android constraints
 `ClipboardManager` with lifecycle-aware `OnPrimaryClipChangedListener` registered only while an Activity is resumed; unregister on stop; respect sensitive clip flags (`EXTRA_IS_SENSITIVE`); WorkManager for deferrable network sync only; notification action opens an Activity for user-driven sync. Android 10+ restricts background clipboard access; state this in UI.
 
+### 7.3b iOS constraints
+`UIPasteboard.general` is readable only while the app is foreground; iOS 16+ shows a system paste banner on programmatic reads not triggered by `UIPasteControl`. Observe `UIPasteboard.changedNotification` and `changeCount` while the scene is active; never poll in background. Use `detectPatterns(for:)` / `detectedPatterns` to classify (URL, number, probable secret shape) before reading content. Honor Universal Clipboard content the same as local content. There is no background clipboard access; state this in UI.
+
 ### 7.4 Protocol and data model
 Each capture is an immutable event: `event_id (UUID), user_id, origin_device_id, event_type (TEXT), mime_type, ciphertext, nonce, key_version, payload_size, created_at, expires_at, seq`.
 
@@ -215,6 +225,7 @@ WS: `CLIPBOARD_EVENT_CREATED, CLIPBOARD_EVENT_DELETED, CLIPBOARD_HISTORY_CLEARED
 - Per item: AES-256-GCM, random 96-bit nonce, AAD = `event_id || key_version`.
 - Web: WebCrypto non-extractable `CryptoKey` persisted in IndexedDB; document eviction risk.
 - Android: ACK wrapped by an Android Keystore AES key.
+- iOS: ACK wrapped by a Secure Enclave `P256.KeyAgreement` derived key via CryptoKit, stored in the Keychain with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`; excluded from iCloud Keychain and backups.
 - New device pairing: new device shows a QR with an ephemeral X25519 public key and a device-pairing token; the existing signed-in device scans it, derives a shared secret (HKDF), wraps the ACK, and uploads the wrapped blob to the server for one-time pickup. Fallback: the user types the 12-word recovery phrase, which unwraps a server-stored recovery-wrapped copy of the ACK (Argon2id on the phrase).
 - Revoking a device bumps `key_version`: a new ACK is generated by the revoking device, wrapped for every remaining device, and old events stay readable with the old version.
 - Never put plaintext keys in localStorage, source, analytics, or logs. If all devices and the phrase are lost, old history is unrecoverable; say so in UI.
@@ -247,12 +258,13 @@ REST surface (final contract in `shared/protocol/openapi.yaml`):
 **Clipboard:** Sync button, capture status with capability explanation, item timeline with device and time, truncated preview, Copy, search/filter, clear history, privacy hints.
 **History / Devices / Settings:** usable, coherent screens.
 **Android:** all equivalent screens in Compose with state hoisting; long-running work out of composables.
+**iOS:** all equivalent screens in SwiftUI with `@Observable` view models, engine work on structured-concurrency tasks off the main actor, Human Interface Guidelines patterns while keeping the Share Anywhere identity.
 
 Microcopy: "Send files", "Receive files", "Waiting for approval", "Connected directly", "Using relay", "Cloud transfer requires your approval", "Sync Clipboard", "Automatic capture is available when your browser permits it", "Open Share Anywhere to sync clipboard", "Your clipboard content is encrypted before sync". Never "Always syncing".
 
 ## 10. Accessibility and localization
 
-Keyboard navigation; screen reader labels and landmarks; focus management in dialogs; no color-only status; touch targets ≥ 48 dp; system font scaling; reduced motion; English and Vietnamese catalogs (`web/src/i18n/{en,vi}.json`, Android `values/`, `values-vi/`); no concatenated fragments; tested breakpoints; QR and code usable on small viewports.
+Keyboard navigation; screen reader labels and landmarks (VoiceOver labels and traits on iOS); focus management in dialogs; no color-only status; touch targets ≥ 48 dp / 44 pt; system font scaling and Dynamic Type; reduced motion; English and Vietnamese catalogs (`web/src/i18n/{en,vi}.json`, Android `values/`, `values-vi/`, iOS `Localizable.xcstrings`); no concatenated fragments; tested breakpoints; QR and code usable on small viewports.
 
 ## 11. Security requirements
 
@@ -267,6 +279,6 @@ No file content or clipboard plaintext in telemetry. Metrics: session create/joi
 Mapped to CI jobs in `docs/TESTING_AND_CI.md`.
 
 **Pairing:** valid QR join; valid code join; expired link; invalid code; rate-limit lockout; approval; rejection; sender closes; sixth receiver rejected atomically under concurrency.
-**Transfer:** Web→Web; Android→Web; Web→Android; multiple files; empty/unsupported file; read permission revoked; storage full; sender disconnect; receiver disconnect; pause/resume; out-of-order blocks; missing-block bitmap; checksum mismatch; reconnect and route migration; slow receiver does not stall others; five concurrent receivers; forced TURN relay.
-**Clipboard:** Web manual capture; Web auto best-effort; permission denied; insecure/unsupported context; in-page copy event only; no false universal-observation claim; Android foreground capture; Android background restriction; Android manual action; sensitive skipped; duplicate event idempotency; remote item shown; explicit Copy writes; no auto-overwrite; offline queue and reconnect; expiry and deletion; ciphertext undecryptable without client key; new-device pairing; recovery phrase; revoke and rotate.
-**UX:** all states; keyboard; screen reader labels; responsive (desktop, Pixel 7, iPhone 14 profiles); dark/light; EN/VI.
+**Transfer:** Web→Web; Android→Web; Web→Android; iOS→Web; Web→iOS; Android↔iOS (nightly); multiple files; empty/unsupported file; read permission revoked; storage full; sender disconnect; receiver disconnect; pause/resume; out-of-order blocks; missing-block bitmap; checksum mismatch; reconnect and route migration; slow receiver does not stall others; five concurrent receivers; forced TURN relay.
+**Clipboard:** Web manual capture; Web auto best-effort; permission denied; insecure/unsupported context; in-page copy event only; no false universal-observation claim; Android foreground capture; Android background restriction; Android manual action; iOS foreground capture; iOS background non-capture; iOS `UIPasteControl` sync without banner; iOS fallback button path; sensitive skipped; duplicate event idempotency; remote item shown; explicit Copy writes; no auto-overwrite; offline queue and reconnect; expiry and deletion; ciphertext undecryptable without client key; new-device pairing; recovery phrase; revoke and rotate.
+**UX:** all states; keyboard; screen reader labels (TalkBack, VoiceOver); responsive (desktop, Pixel 7, iPhone 14 browser profiles; iPhone SE and iPhone 15 Pro Max simulators); Dynamic Type; dark/light; EN/VI.

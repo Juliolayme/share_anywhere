@@ -2,7 +2,7 @@
 
 Read: PRD §6.1–§6.5, §6.8, §11 (transfer), §13 (Transfer); `docs/TESTING_AND_CI.md` §3, §6.
 
-Why Web first: two browser contexts on one CI runner give a fully verifiable P2P path. Android follows in Phase 6 and reuses this protocol.
+Why Web first: two browser contexts on one CI runner give a fully verifiable P2P path. Android (Phase 6) and iOS (Phase 7) reuse this protocol and its test vectors in `shared/protocol/schemas/transfer-vectors.json`, which this phase must publish.
 
 ## Scope
 - Transfer engine in `web/src/features/transfer/engine/`: block scheduler (4 MiB blocks, 64 KiB frames), per-peer flow control via `bufferedAmountLowThreshold`, SHA-256 per block and whole file (WebCrypto, streamed), ACK after write+verify, completed-block bitmap persisted in IndexedDB keyed by transfer capability, resume by bitmap exchange, out-of-order handling.

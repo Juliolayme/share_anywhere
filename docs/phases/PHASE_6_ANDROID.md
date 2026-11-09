@@ -2,7 +2,7 @@
 
 Read: PRD §2 (Android SDK, long transfers), §4, §5 (all), §6.4, §7.3, §7.5; `docs/TESTING_AND_CI.md` §1, §2, §5; `docs/TRANSFER_PROTOCOL.md`; `docs/CLIPBOARD_PROTOCOL.md`.
 
-This phase is only verifiable with the Android emulator workflow. If the Android SDK is not available locally, still write the code, make `./gradlew` work in CI, and let `android-emulator` be the verification. Do not mark anything tested until that workflow is green.
+Depends on Phase 5 only. May run in parallel with Phase 7 (iOS) on a separate branch. This phase is only verifiable with the Android emulator workflow. If the Android SDK is not available locally, still write the code, make `./gradlew` work in CI, and let `android-emulator` be the verification. Do not mark anything tested until that workflow is green.
 
 ## Scope
 - Gradle project: Kotlin 2.x, Compose BOM, Hilt, Room, Retrofit/OkHttp or Ktor (ADR), WorkManager, CameraX + ML Kit barcode or ZXing for QR, version catalog + lockfiles, minSdk 26, targetSdk 35, `assembleDebug` reproducible; no release signing in repo.
@@ -15,10 +15,10 @@ This phase is only verifiable with the Android emulator workflow. If the Android
 - Material 3 theme from the design tokens, EN/VI `values`, dynamic font scaling, 48 dp targets, TalkBack labels.
 
 ## Out of scope
-Route strategy beyond direct P2P with the default ICE servers (TURN credentials are fetched but forcing/fallback logic arrives in Phase 7), Cloud, IME.
+Route strategy beyond direct P2P with the default ICE servers (TURN credentials are fetched but forcing/fallback logic arrives in Phase 8), Cloud, IME.
 
 ## Tests to add
-- JVM unit: engine scheduler/bitmap/hasher, frame codec interop vectors shared with Web (`shared/protocol/schemas/transfer-vectors.json`), clipboard crypto vectors shared with Web.
+- JVM unit: engine scheduler/bitmap/hasher, frame codec interop vectors shared with Web and iOS (`shared/protocol/schemas/transfer-vectors.json`), clipboard crypto vectors shared with Web and iOS.
 - Instrumentation (API 34 in `ci.yml`): sign in against backend at `10.0.2.2`; create session and read code; join via code; SAF create-document flow via UiAutomator; clipboard foreground capture and background non-capture; notification action opens Activity; Compose screenshot tests for each screen in light/dark and `fontScale 1.3`.
 - Nightly `android-web-interop`: emulator sender → Playwright receiver and reverse, 64 MB fixture, hash match; `android-matrix` on API 29/34/35; FGS time-budget simulation on API 35; `clipboard-cross-client`.
 

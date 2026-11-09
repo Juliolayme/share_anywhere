@@ -4,7 +4,7 @@
 >
 > **Product:** Share Anywhere — cross-platform peer-to-peer file sharing and clipboard synchronization.
 > **Repository:** https://github.com/Juliolayme/share_anywhere
-> **Platforms in scope:** Android app (native Kotlin) + Web app (React + TypeScript) for PC and mobile browsers, including Safari on iOS. No native iOS app and no desktop agent.
+> **Platforms in scope:** Android app (native Kotlin) + iOS app (native Swift/SwiftUI) + Web app (React + TypeScript) for PC and mobile browsers. No desktop agent.
 > **Working language:** English in source and docs; UI shipped in English and Vietnamese.
 
 ---
@@ -29,7 +29,7 @@ Claude then reads the referenced sections of `docs/PRODUCT_REQUIREMENTS.md` and 
 | `docs/PRODUCT_REQUIREMENTS.md` | What to build: decisions, brand, IA, screens, transfer and clipboard behavior, domain model, API, security, acceptance matrix | Only via an ADR |
 | `docs/TESTING_AND_CI.md` | GitHub Actions workflows, platform emulation (Playwright desktop + Pixel 7 + iPhone 14 WebKit profiles, Android emulator with KVM), test conventions, fixtures | Grows with phases |
 | `docs/phases/README.md` | Phase order and exit gates | Rarely |
-| `docs/phases/PHASE_0…8_*.md` | Scope, deliverables, tests, CI changes, exit gate for each phase | One file per phase |
+| `docs/phases/PHASE_0…9_*.md` | Scope, deliverables, tests, CI changes, exit gate for each phase | One file per phase |
 | `docs/phases/reports/` | Honest per-phase reports written by Claude | Every phase |
 | `docs/ADR/` | Architecture decisions, created from Phase 0 onward | As decided |
 
@@ -44,10 +44,11 @@ Claude then reads the referenced sections of `docs/PRODUCT_REQUIREMENTS.md` and 
 | 4 | Multi-receiver, reconnect, resume hardening | Web, nightly five-receiver run |
 | 5 | Clipboard Sync v1 (protocol, crypto, Web client) | Web, granted and denied permission paths |
 | 6 | Android app | Android emulator API 34 (29 and 35 nightly), Android ↔ Web interop |
-| 7 | Route strategy, TURN fallback, optional Cloud | Forced relay on Web and emulator, MinIO |
-| 8 | Hardening and release readiness | All |
+| 7 | iOS app | iOS Simulator on macOS runner (iPhone 15, latest runtime; iOS 16 runtime nightly), iOS ↔ Web interop |
+| 8 | Route strategy, TURN fallback, optional Cloud | Forced relay on Web, Android emulator and iOS Simulator, MinIO |
+| 9 | Hardening and release readiness | All |
 
-The reasoning for this order: a cloud CI environment can run Go, Node, five emulated browsers, and an Android emulator, but not a real phone. Building the protocol and the Web client first makes every later Android claim testable against a known-good peer.
+The reasoning for this order: a cloud CI environment can run Go, Node, five emulated browsers, an Android emulator (Linux runner) and an iOS Simulator (macOS runner), but not a real phone. Building the protocol and the Web client first makes every later Android and iOS claim testable against a known-good peer. Phases 6 and 7 both depend only on Phase 5 and may run in parallel in separate sessions on separate branches.
 
 ## What changed from v1 and why
 
@@ -64,16 +65,17 @@ The reasoning for this order: a cloud CI environment can run Go, Node, five emul
 | PostgreSQL sequence ordering caveat raised without a solution | PRD §7.4: per-user advisory lock assigns `seq` so cursors are safe |
 | TURN credential handling vague | PRD §6.7: coturn `use-auth-secret` HMAC credentials, TTL ≤ 1 h, approved participants only |
 | No CI definition; testing described as a wish list | `docs/TESTING_AND_CI.md`: `ci.yml`, `nightly.yml`, reusable Android emulator workflow, path filters, required checks per phase, fixtures, reporting |
-| No iOS coverage statement | Web app verified on WebKit with an iPhone 14 profile; native iOS explicitly out of scope and listed as backlog |
+| No iOS coverage statement | Native iOS app added as Phase 7 (SwiftUI, iOS 16+, verified on iOS Simulator in CI); Web app additionally verified on WebKit with an iPhone 14 profile for users without the app |
 | `backend/tests/` tree against Go conventions | Tests live beside code; integration tests tagged |
 | Final report asked for macOS instructions | Reports use Docker Compose instructions |
 
 ## Backlog outside current scope
 
-- Native iOS app (would reuse `shared/protocol` and the clipboard crypto vectors).
 - Image and file clipboard payloads.
 - P2P cascade / receiver seeding.
-- Optional IME on Android.
+- Optional IME on Android; custom keyboard extension on iOS.
+- iOS Share Extension (send files from other apps) and Android share-sheet target: add after Phase 9.
+- App Store / Play Store release pipelines (TestFlight, Play internal track): CI builds unsigned artifacts only.
 - Observability dashboards beyond the Prometheus endpoint.
 
 ## First action in any session

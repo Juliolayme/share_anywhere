@@ -1,36 +1,37 @@
-# Phase 1 — Backend core, auth, devices, Web shell
+# Phase 1 — Backend core, anonymous device identity, guest-first Web shell
 
-Read: PRD §2 (auth, guest), §4, §5.1, §5.7, §8, §11; `docs/TESTING_AND_CI.md` §3, §4.
+Read: `CLAUDE.md` §7, §8b; PRD §2 (guest-first, device identity, history, abuse controls), §4, §5.1, §5.6, §5.7, §5.8, §8.1, §8.4, §8.5, §11.2; `docs/TESTING_AND_CI.md` §3, §4.
+
+No accounts in this phase. Everything built here must work for a user who never signs in, because that is the default user.
 
 ## Scope
-- Accounts and auth: sign up, sign in, sign out, password reset via mail adapter (dev sink: console + mailpit container).
-- Device registry: register, rename, revoke, list, current-device marker.
-- Session cookie auth for Web with CSRF; bearer device token for Android (used by Android later; tested now via API tests).
-- Rate limiting middleware for auth endpoints.
-- SQL migrations and migration tooling decision (ADR 0007).
-- OpenAPI contract in `shared/protocol/openapi.yaml` with generated TS client (`openapi-typescript`) and Go server types (`oapi-codegen`).
-- Web shell: all five navigation routes with real layout, account menu, theme switcher (system/light/dark), language switcher EN/VI, responsive sidebar/topbar, auth pages, devices page fully functional, settings page with theme/language/account sections functional, others as honest empty states ("coming in later phase" is not allowed as copy; use a real empty state for the feature).
-- WebSocket hub skeleton: authenticated connect, `Origin` check, heartbeat, `DEVICE_CONNECTED/DISCONNECTED` events visible on Devices page.
+- `backend/internal/platform`: config validation, PostgreSQL pool, migrations (tool chosen in ADR 0007), HTTP server, structured logging with redaction (tokens, IPs hashed per PRD §12), access-level middleware driven by the OpenAPI `x-sa-access` extension, rate-limiter middleware (in-memory token buckets keyed by IP /64 and device, injectable clock), trusted-proxy handling for `X-Forwarded-For`, WebSocket hub with one-time tickets, `Origin` check, heartbeat.
+- `backend/internal/devices`: anonymous device bootstrap, proof-of-work challenge above the IP soft limit, Ed25519-signed access tokens (EdDSA only, `kid` rotation from config), refresh secret rotation with reuse detection, `GET|PATCH /v1/devices/current`, `POST /v1/devices/current/reset`, inactive-device purge job. ADR 0008 records the token format and lifetimes.
+- Migration `0001_devices`.
+- OpenAPI in `shared/protocol/openapi.yaml` with `x-sa-access` on every operation, generated TS client (`openapi-typescript`), Go server types (`oapi-codegen`).
+- Web shell, guest-first:
+  - First visit: `/welcome` with one primary action **Get started** → Transfer home. Anonymous identity is created in the background; failure shows an inline retry on Transfer home without blocking navigation.
+  - Navigation: Transfer, History, Devices, Settings. The Clipboard tab is hidden behind the `clipboard` flag (`CLAUDE.md` §8b).
+  - Transfer home with Send and Receive actions. Session creation and joining arrive in Phase 2, so in this phase Send opens the real file picker and review screen and Receive opens the real code-entry screen with validation; the Create session and Join buttons stay hidden behind a `sharing` flag until Phase 2 turns it on.
+  - History backed by a real IndexedDB store (`web/src/features/history/store`) with an empty state and a "Stored on this device only" banner (without the Sign in action while `accounts` is off).
+  - Devices shows the "This device" card with rename and reset identity.
+  - Settings shows the "Guest" identity header (no Sign in button while `accounts` is off), device name, theme system/light/dark, language EN/VI, local history retention and Clear history, privacy, about.
+  - Access token in memory; refresh via the `sa_device` cookie and `X-SA-Refresh` header; silent refresh before expiry; 429 handling with `Retry-After` messaging.
+- `docs/ARCHITECTURE.md` first version (request flow, identity and token flow diagram, rate-limit placement); `docs/SECURITY_MODEL.md` first version with the anonymous-use rows of PRD §11.2 that apply to this phase; `docs/API.md` generated from OpenAPI with the access-level column.
 
 ## Out of scope
-Share sessions, transfers, clipboard events, Android code.
-
-## Deliverables
-- `backend/internal/{auth,devices,platform}` with handlers, services, repositories, migrations `0001_users`, `0002_auth_sessions`, `0003_devices`.
-- `web/src/features/{auth,devices,settings}`, `web/src/app/` router and shell, `web/src/i18n/{en,vi}.json`.
-- `docs/API.md` generated from OpenAPI; `docs/ARCHITECTURE.md` first version with request flow and auth diagrams.
-- `shared/protocol/websocket-events.json` v1 with the two device events and a JSON Schema.
+Accounts, sign-in screens, share sessions, transfers, clipboard, Android, iOS.
 
 ## Tests to add
-- Backend: Argon2id hashing params test; sign-up/sign-in/sign-out integration; CSRF rejection; rate limit lockout; device revoke invalidates its token; authorization table tests (foreign user → 404).
-- Web: Vitest for auth forms validation and i18n catalogs having identical key sets; Testing Library for theme switcher.
-- Playwright (all 5 projects): sign up → land on Transfer home → register device name → see it in Devices → rename → sign out → sign in. Mobile projects additionally assert the compact navigation and that touch targets are ≥ 44 px (computed box).
+- Backend: token signing and verification (wrong `alg`, wrong `kid`, expired, tampered claims all rejected); refresh rotation; reuse of an old refresh secret revokes the device; device creation rate limit returns 429 with `Retry-After`; proof-of-work required above the soft limit and verified; `X-Forwarded-For` ignored from untrusted peers; WebSocket rejects missing/reused/expired tickets and wrong `Origin`; route table test asserting every registered route matches its `x-sa-access` level; purge job removes devices inactive past 30 days.
+- Web unit: token refresh scheduler, IndexedDB history store (add, list, delete, clear, retention sweep), i18n catalogs have identical keys, feature flag gating hides the Clipboard tab and Sign in buttons.
+- Playwright (all 5 projects), all as guest: first visit shows Welcome → Get started → Transfer home with no sign-in screen anywhere; reload keeps the same device ID; rename device in Devices and see it in Settings; Settings shows "Guest"; theme and language switches persist; reset identity yields a new device ID; simulated 429 shows the wait message. Mobile projects additionally assert compact navigation and touch targets ≥ 44 px.
 
 ## CI changes
-`e2e-web` job added with the five-project matrix and `docker-compose.ci.yml`. `protocol` job validates OpenAPI and checks generated clients are current.
+`e2e-web` job added with the five-project matrix and `docker-compose.ci.yml`. `protocol` job validates OpenAPI, checks every operation has `x-sa-access`, and checks generated clients are current.
 
 ## Exit gate
-All `ci.yml` jobs green; Playwright suite green on all five projects; backend coverage ≥ 70 % for `auth` and `devices`; `docs/API.md` matches `openapi.yaml`.
+All `ci.yml` jobs green; the guest Playwright suite green on all five projects; backend coverage ≥ 70 % for `devices` and the platform middleware; `docs/API.md` matches `openapi.yaml`; no account code or sign-in UI exists yet.
 
 ## Report
-Per `CLAUDE.md` §9, listing per browser project which flows ran.
+Per `CLAUDE.md` §9, listing per browser project which guest flows ran.

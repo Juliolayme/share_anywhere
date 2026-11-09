@@ -3,7 +3,7 @@
 Read: PRD §10, §11, §12, §13; `docs/TESTING_AND_CI.md`.
 
 ## Scope
-- Security review against `docs/SECURITY_MODEL.md`: IDOR sweep, token lifetimes, WS origin, CSP report-only → enforce, dependency and image scanning results triaged, secrets scanning history check.
+- Security review against `docs/SECURITY_MODEL.md`, including every anonymous-use abuse case in PRD §11.2: IDOR sweep, access-level sweep (guest token against every `account`/`account+device` route), rate-limit soak test with a Go load generator (CGNAT-like shared IP with many devices, Sybil device creation, code enumeration), token lifetimes, WS origin, CSP report-only → enforce, dependency and image scanning results triaged, secrets scanning history check.
 - Accessibility pass: axe-core in Playwright for every route and project, keyboard-only walkthrough spec, TalkBack review on emulator with Accessibility Scanner; VoiceOver audit on simulator with the Accessibility Inspector and an XCUITest `performAccessibilityAudit()` pass per screen.
 - Responsive and browser pass: visual snapshots for all five projects, light/dark, EN/VI.
 - Android lifecycle pass: process death during transfer restores from bitmap; permission revoked mid-transfer; storage full.
@@ -19,6 +19,7 @@ New features.
 ## Tests to add
 - Playwright a11y job (axe) across projects, failing on serious/critical.
 - Chaos specs listed above under `e2e-web` nightly.
+- Abuse soak job (nightly): asserts limits hold and legitimate guest flows from distinct IPs still succeed during the soak.
 - Android instrumentation: process-death restore.
 - iOS XCUITest: terminate-while-suspended restore; `performAccessibilityAudit()` on every screen.
 

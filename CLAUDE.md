@@ -14,7 +14,7 @@ Never execute more than the phase you were given. Finishing a phase early is goo
 
 ## 1. Product in one paragraph
 
-Share Anywhere is a cross-platform peer-to-peer file sharing and clipboard synchronization product. Platforms in scope: **Android (native Kotlin)**, **iOS (native Swift/SwiftUI)**, and **Web (React + TypeScript) for PC and mobile browsers**. The backend is a **Go modular monolith** with **PostgreSQL**, **WebSocket** signaling, **WebRTC DataChannel** transport, and **coturn** for TURN relay. A Share Session has one sender and up to **five** receivers, each approved explicitly by the sender. Clipboard Sync is text-only in v1 and end-to-end encrypted. There is **no desktop agent** in scope; PC users are served by the Web app. Mobile browsers remain supported as the join path for people without the apps installed.
+Share Anywhere is a cross-platform peer-to-peer file sharing and clipboard synchronization product. Platforms in scope: **Android (native Kotlin)**, **iOS (native Swift/SwiftUI)**, and **Web (React + TypeScript) for PC and mobile browsers**. The backend is a **Go modular monolith** with **PostgreSQL**, **WebSocket** signaling, **WebRTC DataChannel** transport, and **coturn** for TURN relay. A Share Session has one sender and up to **five** receivers, each approved explicitly by the sender. **File sharing is guest-first:** sending and receiving never require an account; every installation gets an anonymous, server-signed device identity. **Only Clipboard Sync, the account-wide Devices list, cloud-synced history, and Cloud Distribution as a sender require signing in.** Clipboard Sync is text-only in v1 and end-to-end encrypted. There is **no desktop agent** in scope; PC users are served by the Web app. Mobile browsers remain supported as the join path for people without the apps installed.
 
 ## 2. Your role
 
@@ -82,9 +82,9 @@ share_anywhere/
 ├── backend/
 │   ├── cmd/server/
 │   ├── internal/
-│   │   ├── platform/      # config, db, http server, middleware, logging, ws hub
-│   │   ├── auth/          # accounts, sessions, password hashing, rate limits
-│   │   ├── devices/       # device registry, trust, revocation
+│   │   ├── platform/      # config, db, http server, middleware (access levels, rate limiting), logging, ws hub + tickets
+│   │   ├── devices/       # anonymous device identity, signed access tokens, refresh rotation, device registry, revocation
+│   │   ├── auth/          # accounts, account sessions layered on device identity, password hashing, account keys (wrapped ADK), history sync
 │   │   ├── sharing/       # share sessions, participants, shared files, capability tokens
 │   │   ├── transfers/     # per-recipient transfer records and state machine
 │   │   ├── signaling/     # WebRTC signaling messages over WS
@@ -103,14 +103,19 @@ Eight backend packages is the ceiling for MVP. Route selection, ETA, and fallbac
 
 ## 7. Security non-negotiables
 
-- Server authorizes every resource access. Never trust client-supplied `user_id` or `device_id`.
+- **File sharing never requires an account.** Do not add sign-in gates, account checks, or "create an account to continue" prompts to any Transfer flow, onboarding, History, or Settings. Account-only features are exactly: Clipboard Sync, the account-wide Devices list, cloud history sync, and Cloud Distribution as a sender (PRD §2). Changing this needs an ADR.
+- Every client request carries a server-signed **device access token** (JWT, EdDSA/Ed25519 only, 15-minute TTL). Guests have one too; an account session only adds the `acct` claim. Refresh secrets rotate on every use with reuse detection (PRD §8.1).
+- Every route declares an access level (`public`, `device`, `participant`, `account`, `account+device`) in OpenAPI `x-sa-access`, and a test asserts the backend enforces it (PRD §8.5).
+- Rate limits keyed by IP **and** device protect device creation, session creation, code lookup, join requests, TURN credentials, and WebSockets (PRD §8.4). Never remove a limit to make a test pass; inject a test clock or test config instead.
+- Server authorizes every resource access. Never trust client-supplied `user_id` or `device_id`; identities come only from the verified token.
 - Six-digit code is a lookup key, never an authorization secret. Share links and QR payloads carry a high-entropy, short-lived, revocable capability token.
-- Receivers get no file metadata beyond the join preview and no transfer access before sender approval.
+- Receivers, guest or signed in, get no file metadata beyond the join preview and no transfer access before sender approval. Both sides see the same verification words.
 - Max five receivers is enforced atomically in the database (row lock or constraint), never by client count.
-- WebSocket upgrade checks `Origin` and authenticates before joining any room.
-- Cookie auth on Web uses `HttpOnly`, `Secure`, `SameSite=Lax` plus CSRF token on state-changing requests. Android uses bearer device tokens.
+- WebSocket upgrade requires a one-time ticket (`POST /v1/ws/ticket`, 30 s) and checks `Origin` before joining any room.
+- API calls use the bearer access token on all clients. The Web keeps the refresh secret only in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to the refresh endpoint and requires a custom header on refresh; access tokens live in memory, never in localStorage. Android keeps the refresh secret in Keystore-backed storage, iOS in the Keychain (`ThisDeviceOnly`).
 - Clipboard content is encrypted client-side (AES-256-GCM, unique nonce, versioned keys). The server stores ciphertext and never logs payloads.
-- TURN credentials are HMAC time-limited (coturn `use-auth-secret`), TTL ≤ 1 hour, issued only to approved participants.
+- TURN credentials are HMAC time-limited (coturn `use-auth-secret`), TTL 30 min for guest devices and 60 min for account devices, issued only to the sender and approved receivers of an active session.
+- Cloud Distribution uploads require a signed-in sender; guest receivers may download from sessions they were approved into.
 - Parameterized SQL only. Validate all inputs. CSP and safe headers on Web.
 - Logs redact tokens, emails, and personal data.
 
@@ -118,13 +123,17 @@ Eight backend packages is the ceiling for MVP. Route selection, ETA, and fallbac
 
 Every PR must pass `.github/workflows/ci.yml`. Path filters decide which jobs run. Required checks: `backend`, `web`, `e2e-web`, `protocol`, `security`. `android` and `android-emulator` become required once Phase 6 lands; `ios` and `ios-simulator` once Phase 7 lands. Details in `docs/TESTING_AND_CI.md`. Never skip, disable, or quarantine a test to get green; fix it or revert.
 
+## 8b. Feature flags for unbuilt account features
+
+Accounts arrive in Phase 5A and Clipboard Sync in Phase 5B. Until then, build-time flags `accounts` and `clipboard` are off: the Clipboard tab is hidden, Settings shows "Guest" without a Sign in button, and Devices shows only "This device". Never ship a Sign in button or Clipboard screen that does nothing; turn the flag on in the phase that makes it work.
+
 ## 9. Phase exit report format
 
 End every phase with a report in `docs/phases/reports/PHASE_N_REPORT.md` containing:
 
 1. What was implemented.
 2. Which screens/routes are usable, by platform.
-3. Which end-to-end workflows were executed and on what (browser project, Android emulator API level, iOS Simulator device and runtime).
+3. Which end-to-end workflows were executed, as guest or signed in, and on what (browser project, Android emulator API level, iOS Simulator device and runtime).
 4. Commands run and their results, including CI run links.
 5. Required environment variables and external services.
 6. Known limitations and untested platform behaviors.

@@ -178,6 +178,7 @@ func newApp(cfg config.Config, store devices.Store, clk clock.Clock, log *slog.L
 	hub := ws.NewHub(ws.Config{AllowedOrigins: cfg.AllowedOrigins, Clock: clk, IPs: ips, Log: log})
 	h, router := httpserver.New(httpserver.Options{
 		Logger: log, Version: version, Checks: checks, Verifier: deviceSvc,
+		ClientIP: ips.FromRequest, LogKey: cfg.ServerSecret,
 		Modules: []func(*access.Router){
 			devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure).Register,
 			hub.Register,

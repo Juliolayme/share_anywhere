@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -122,9 +123,36 @@ func TestResponseControllerReachesUnderlyingWriter(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		flushErr = http.NewResponseController(w).Flush()
 	})
-	wrapped := recoverer(discard(), securityHeaders(requestLogger(discard(), inner)))
+	wrapped := recoverer(discard(), securityHeaders(requestLogger(discard(), nil, nil, inner)))
 	wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if flushErr != nil {
 		t.Fatalf("Flush through middleware failed: %v", flushErr)
+	}
+}
+
+func TestIPHashTruncatesAndKeys(t *testing.T) {
+	k := []byte("k")
+	a, b := IPHash(netip.MustParseAddr("203.0.113.7"), k), IPHash(netip.MustParseAddr("203.0.113.200"), k)
+	if a == "" || a != b {
+		t.Fatalf("same /24 must hash equally: %q %q", a, b)
+	}
+	if a == IPHash(netip.MustParseAddr("203.0.114.7"), k) || a == IPHash(netip.MustParseAddr("203.0.113.7"), []byte("other")) {
+		t.Fatal("different /24 or key must differ")
+	}
+	if IPHash(netip.MustParseAddr("2001:db8:1:2::1"), k) != IPHash(netip.MustParseAddr("2001:db8:1:ffff::9"), k) {
+		t.Fatal("same IPv6 /48 must hash equally")
+	}
+	if IPHash(netip.Addr{}, k) != "" {
+		t.Fatal("invalid address")
+	}
+}
+
+func TestRequestLogHasIPHashNotAddress(t *testing.T) {
+	var buf bytes.Buffer
+	h := NewHandler(Options{Logger: logging.New(&buf, "debug"), LogKey: []byte("k"),
+		ClientIP: func(*http.Request) netip.Addr { return netip.MustParseAddr("198.51.100.23") }})
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if !strings.Contains(buf.String(), "ip_hash") || strings.Contains(buf.String(), "198.51.100") {
+		t.Fatalf("log line: %s", buf.String())
 	}
 }

@@ -3,10 +3,14 @@ package httpserver
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"runtime/debug"
 	"time"
 
@@ -30,6 +34,10 @@ type Options struct {
 	Verifier access.Verifier
 	// Modules register their routes, each with an access level (docs/API.md §1).
 	Modules []func(*access.Router)
+	// ClientIP resolves the caller's address (trusted-proxy aware). With LogKey set, request logs carry
+	// a keyed hash of the address prefix instead of the address (docs/SECURITY_MODEL.md §8).
+	ClientIP func(*http.Request) netip.Addr
+	LogKey   []byte
 }
 
 type denyAll struct{}
@@ -84,7 +92,7 @@ func New(opts Options) (http.Handler, *access.Router) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "message": "No such endpoint."})
 	})
-	return recoverer(opts.Logger, securityHeaders(requestLogger(opts.Logger, mux))), router
+	return recoverer(opts.Logger, securityHeaders(requestLogger(opts.Logger, opts.ClientIP, opts.LogKey, mux))), router
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -129,7 +137,7 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // requestLogger logs method, path (never the query string, which may carry tokens), status, and duration.
-func requestLogger(log *slog.Logger, next http.Handler) http.Handler {
+func requestLogger(log *slog.Logger, clientIP func(*http.Request) netip.Addr, key []byte, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -138,9 +146,12 @@ func requestLogger(log *slog.Logger, next http.Handler) http.Handler {
 		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 			level = slog.LevelDebug
 		}
-		log.Log(r.Context(), level, "http request",
-			"method", r.Method, "path", r.URL.Path, "status_code", rec.status,
-			"duration_ms", time.Since(start).Milliseconds())
+		attrs := []any{"method", r.Method, "path", r.URL.Path, "status_code", rec.status,
+			"duration_ms", time.Since(start).Milliseconds()}
+		if clientIP != nil && len(key) > 0 {
+			attrs = append(attrs, "ip_hash", IPHash(clientIP(r), key))
+		}
+		log.Log(r.Context(), level, "http request", attrs...)
 	})
 }
 
@@ -164,4 +175,23 @@ func recoverer(log *slog.Logger, next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(rec, r)
 	})
+}
+
+// IPHash is a keyed hash of the address truncated to /24 (IPv4) or /48 (IPv6), so logs can group abuse
+// by network without storing addresses (docs/SECURITY_MODEL.md §8).
+func IPHash(a netip.Addr, key []byte) string {
+	if !a.IsValid() {
+		return ""
+	}
+	bits := 48
+	if a.Unmap().Is4() {
+		a, bits = a.Unmap(), 24
+	}
+	p, err := a.Prefix(bits)
+	if err != nil {
+		return ""
+	}
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte("log-ip:" + p.String()))
+	return hex.EncodeToString(m.Sum(nil)[:8])
 }

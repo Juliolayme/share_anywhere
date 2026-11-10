@@ -28,6 +28,11 @@
     outline: var(--sa-border-focus) solid var(--sa-focus);
     outline-offset: var(--sa-border-focusOffset);
   }
+  h1,
+  h2,
+  h3 {
+    font-weight: 700;
+  }
   a {
     color: var(--sa-send);
   }

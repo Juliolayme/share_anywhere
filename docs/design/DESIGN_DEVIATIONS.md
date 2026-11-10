@@ -43,6 +43,7 @@ These refine the PRD without contradicting it, so the design wins and the owner 
 | C2 | `fg-3` is 4.3:1 on white | Used only for large or non-essential text; the token check enforces 3:1 for it and 4.5:1 for every other text token |
 | C3 | The Brand page says "below 16 px drop the dots" but also shows a dotless favicon at exactly 16 px, while its browser-tab mock draws the dotted logo at 16 px | One rule: at 16 px and below use the dotless variant (16 px ICO entry, SVG favicon, `Logo` at size ≤ 16); dots from 17 px up |
 | C4 | `send` text on `send-soft` is 4.4:1 (the Design System ghost hover state) | Text on `send-soft` uses `send-ink`; documented in `docs/DESIGN_SYSTEM.md` §7 |
+| C5 | Web header language and theme buttons are 40 px tall | 44 px (the `touch-target` token), so every control meets the 44 px touch-target rule the Phase 1 mobile tests assert |
 
 ## D. Open questions from the handoff and their answers
 
@@ -81,3 +82,18 @@ These are required by the PRD or `CLAUDE.md` but have no design specimen. Each u
 | E10 | Clipboard sign-in prompt and the pill's platform hints | PRD §5.9, `docs/ARCHITECTURE.md` §7.3 | Account-required intro; text next to the keep-open banner | `product.sign_in_clipboard`, `hint_android_screen_off`, `hint_ios_lock` |
 | E11 | Account-flow and lifecycle strings the design lacks: after-sign-in choices, add-device prompt for Clipboard, history-sync banner, sender's background join notification, iOS guest Cloud prompt, Cloud "cost unknown", parameterized connection-log lines, loading labels, capacity, email validation | PRD §2, §5.6, §5.9, §6.6, `docs/SECURITY_MODEL.md` §3.1, `docs/DESIGN_SYSTEM.md` §6b | AC-4 trust layout, account-required intro, History banner, local notification, Cloud option, connection-log drawer, Button, Capacity, Input | `product.add_device`, `copy_history`, `add_device_clipboard`, `turn_on_history_sync`, `peer_joined_receiving`, `ios_cloud_signin`, `cost_unknown`, `log_*`, `creating`, `joining`, `capacity`, `capacity_full`, `email_invalid` |
 | E12 | Guest / Signed in peer badge text, Web connection-log lines the Web prototype has only in English (retry requested, Cloud approved, Cloud budget reached), the live "Sending to n receivers" label, and the Web clipboard fallback hint | PRD §5.3, §5.9, §9 | IdentityBadge, connection-log drawer, live-activity row | `product.badge_guest`, `badge_signed_in`, `log_retry_requested`, `log_cloud_approved`, `log_cloud_budget`, `live_sending_to`, `clipboard_click_sync` |
+
+## F. Design elements held back by phase or because they would show fake data
+
+The design shows the finished product with sample data. These elements are left out until the phase that makes them real, so no screen carries a dead button or invented values (`CLAUDE.md` §3, §8b).
+
+| # | Design element | Status in the code | Returns in |
+|---|---|---|---|
+| F1 | Welcome: sign-in and create-account links, the Clipboard Sync feature row, and `web_vv.k36` ("You can sign in later…") | Hidden while the `accounts` flag is off; the card shows `product.no_account` instead | Phase 5A |
+| F2 | Sidebar and header Sign in buttons, rail sign-in icon, Devices "Sync your device list" card, Home "Sign in to see your other devices" | Hidden while `accounts` is off; the sidebar keeps the Guest panel without its button | Phase 5A |
+| F3 | Home "Connection — Network is good · Direct P2P" card | Not built: Phase 1 has no network probe, so the values would be invented | Phase 3/4 (route probe) |
+| F4 | Send screen "Use sample files (demo)" and the receive screen's demo-code hint (`common.cx_hint`) | Not built (prototype-only aids) | — |
+| F5 | Create share session button, Require approval switch on the send review, Join/Continue action and "Open link" join | Behind the `sharing` flag; the pickers and validation work, and an info banner (`product.sharing_soon`, `product.joining_soon`) says joining is not in this version | Phase 2 |
+| F6 | Settings sections Transfer, Notifications, Data, Clipboard; Account menu (profile, security, sign out) | Not shown until the feature each one controls exists | Phases 2, 3, 5A, 5B |
+| F7 | Settings "Licenses" link | Not shown until a licenses page exists | Phase 9 |
+| F8 | History rows open a detail view | Rows are not interactive until transfers write history | Phase 3 |

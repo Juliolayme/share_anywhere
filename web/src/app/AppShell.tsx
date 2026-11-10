@@ -1,0 +1,224 @@
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import {
+  ArrowLeftRight,
+  Clipboard,
+  History,
+  Languages,
+  Moon,
+  MonitorSmartphone,
+  Settings,
+  Sun,
+  User,
+  type LucideIcon,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Logo } from '../components/Logo';
+import { useI18n } from '../i18n/i18n';
+import { flags } from '../config/flags';
+import { useIdentity } from '../lib/identity/identity';
+import { useOnline } from '../lib/online';
+import { getThemePreference, setThemePreference } from '../lib/theme';
+
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  match: (path: string) => boolean;
+}
+
+const TRANSFER_PATHS = ['/', '/send', '/receive'];
+
+export function useNavItems(): NavItem[] {
+  const { t } = useI18n();
+  const items: NavItem[] = [
+    {
+      to: '/',
+      label: t('web.nav_home'),
+      icon: ArrowLeftRight,
+      match: (p) => TRANSFER_PATHS.some((x) => p === x || (x !== '/' && p.startsWith(x))),
+    },
+    { to: '/clipboard', label: t('web.nav_clipboard'), icon: Clipboard, match: (p) => p.startsWith('/clipboard') },
+    { to: '/history', label: t('web.nav_history'), icon: History, match: (p) => p.startsWith('/history') },
+    { to: '/devices', label: t('web.nav_devices'), icon: MonitorSmartphone, match: (p) => p.startsWith('/devices') },
+    { to: '/settings', label: t('web.nav_settings'), icon: Settings, match: (p) => p.startsWith('/settings') },
+  ];
+  // The Clipboard tab exists only once Clipboard Sync works (CLAUDE.md §8b).
+  return items.filter((i) => i.to !== '/clipboard' || flags.clipboard);
+}
+
+function isDark(): boolean {
+  const pref = getThemePreference();
+  if (pref !== 'system') return pref === 'dark';
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+export function HeaderControls() {
+  const { t, locale, setLocale } = useI18n();
+  const [dark, setDark] = useState(isDark);
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => setLocale(locale === 'en' ? 'vi' : 'en')}
+        aria-label={t('web_vv.k51')}
+        className="inline-flex h-[44px] min-w-touch items-center gap-[6px] rounded-md px-[10px] text-caption font-semibold text-fg-2 hover:bg-surface-2"
+      >
+        <Languages aria-hidden size={18} />
+        {locale === 'en' ? 'EN' : 'VI'}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setThemePreference(dark ? 'light' : 'dark');
+          setDark(!dark);
+        }}
+        aria-label={t('common.s_theme')}
+        aria-pressed={dark}
+        className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-md text-fg-2 hover:bg-surface-2"
+      >
+        {dark ? <Sun aria-hidden size={18} /> : <Moon aria-hidden size={18} />}
+      </button>
+    </div>
+  );
+}
+
+function StatusPill() {
+  const { t } = useI18n();
+  const online = useOnline();
+  const { status } = useIdentity();
+  const [dot, text] = !online
+    ? ['bg-warning', t('common.off_h')]
+    : status.kind === 'ready'
+      ? ['bg-receive', t('product.online_ready')]
+      : status.kind === 'loading'
+        ? ['bg-fg-3', t('product.identity_loading')]
+        : ['bg-danger', t('product.identity_failed')];
+  return (
+    <span role="status" className="hidden items-center gap-2 text-caption text-fg-2 rail:inline-flex">
+      <span aria-hidden className={`h-2 w-2 rounded-full ${dot}`} />
+      {text}
+    </span>
+  );
+}
+
+const navClass = (active: boolean) =>
+  active ? 'bg-send-soft text-send-ink font-bold' : 'text-fg-2 font-semibold hover:bg-surface-2';
+
+export function AppShell() {
+  const { t } = useI18n();
+  const items = useNavItems();
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    document.getElementById('main')?.focus({ preventScroll: true });
+  }, [pathname]);
+
+  return (
+    <div className="flex min-h-screen">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2"
+      >
+        {t('product.skip_to_content')}
+      </a>
+      {/* Sidebar from 1100 px */}
+      <aside className="sticky top-0 hidden h-screen w-[256px] flex-none flex-col gap-6 border-r border-border bg-surface px-[14px] py-6 sidebar:flex">
+        <div className="px-[10px] py-1">
+          <Logo size={30} lockup />
+        </div>
+        <nav aria-label="Main" className="flex flex-col gap-[2px]">
+          {items.map((n) => {
+            const active = n.match(pathname);
+            return (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                aria-current={active ? 'page' : undefined}
+                className={`flex h-[44px] items-center gap-3 rounded-md px-3 text-[14px] no-underline ${navClass(active)}`}
+              >
+                <n.icon aria-hidden size={19} />
+                <span className="flex-1">{n.label}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
+        <div className="flex-1" />
+        <div className="flex items-center gap-[10px] rounded-lg border border-border bg-bg p-[14px]">
+          <span
+            aria-hidden
+            className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-surface-2 text-fg-2"
+          >
+            <User size={18} />
+          </span>
+          <div>
+            <b className="text-[14px]">{t('web.guest')}</b>
+            <div className="text-[12px] leading-4 text-fg-2">{t('product.sidebar_guest_p')}</div>
+          </div>
+        </div>
+      </aside>
+      {/* Icon rail from 760 to 1099 px */}
+      <aside className="sticky top-0 hidden h-screen w-[80px] flex-none flex-col items-center gap-[18px] border-r border-border bg-surface px-2 py-[18px] rail:flex sidebar:hidden">
+        <Logo size={32} />
+        <nav aria-label="Main" className="flex w-full flex-col gap-[6px]">
+          {items.map((n) => {
+            const active = n.match(pathname);
+            return (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                aria-current={active ? 'page' : undefined}
+                className={`flex min-h-[56px] flex-col items-center gap-1 rounded-[12px] px-[2px] py-[10px] text-[11px] no-underline ${navClass(active)}`}
+              >
+                <n.icon aria-hidden size={20} />
+                {n.label}
+              </NavLink>
+            );
+          })}
+        </nav>
+      </aside>
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-10 flex h-[60px] flex-none items-center gap-3 border-b border-border bg-bg px-[clamp(16px,3vw,40px)]">
+          <span className="rail:hidden">
+            <Logo size={28} lockup />
+          </span>
+          <StatusPill />
+          <span className="flex-1" />
+          <HeaderControls />
+        </header>
+        <main
+          id="main"
+          tabIndex={-1}
+          className="mx-auto box-border flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-[clamp(16px,3vw,40px)] pb-[96px] pt-[clamp(16px,3vw,36px)] outline-none rail:pb-12"
+        >
+          <Outlet />
+        </main>
+      </div>
+      {/* Bottom bar below 760 px */}
+      <nav
+        aria-label="Main"
+        className="fixed inset-x-0 bottom-0 z-[15] grid h-[72px] border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] rail:hidden"
+        style={{ gridTemplateColumns: `repeat(${items.length}, 1fr)` }}
+      >
+        {items.map((n) => {
+          const active = n.match(pathname);
+          return (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              aria-current={active ? 'page' : undefined}
+              className={`flex flex-col items-center justify-center gap-1 text-[11px] no-underline ${active ? 'font-bold text-send-ink' : 'font-semibold text-fg-2'}`}
+            >
+              <span
+                aria-hidden
+                className={`flex h-[30px] w-[52px] items-center justify-center rounded-[15px] ${active ? 'bg-send-soft' : ''}`}
+              >
+                <n.icon size={19} />
+              </span>
+              {n.label}
+            </NavLink>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}

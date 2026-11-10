@@ -1,20 +1,27 @@
 # Serves the built single-page app inside the web container (behind the edge proxy).
+# Listens on an unprivileged port so the container runs as a non-root user.
 {
 	auto_https off
 	admin off
+	persist_config off
 }
 
-:80 {
+:8080 {
 	root * /srv
 	encode zstd gzip
 	header {
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 		X-Frame-Options "DENY"
-		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		Cross-Origin-Opener-Policy "same-origin"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), clipboard-read=(self), clipboard-write=(self), screen-wake-lock=(self)"
+		# React applies styles through the CSSOM, which style-src does not restrict, so no 'unsafe-inline' is needed.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	}
 	@assets path /assets/*
 	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@html not path /assets/*
+	header @html Cache-Control "no-cache"
 	try_files {path} /index.html
 	file_server
 }

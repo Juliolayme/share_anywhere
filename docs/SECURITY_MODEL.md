@@ -93,7 +93,8 @@ Implemented in Phase 1 (device identity) and Phase 5A (accounts). Flow diagrams 
 - **Web refresh transport:** cookie `sa_device` with `HttpOnly; Secure; SameSite=Strict; Path=/v1/devices/token`, plus a required `X-SA-Refresh: 1` header that cross-site pages cannot send without a CORS preflight the server refuses. Access tokens live in memory only, never in `localStorage` or `sessionStorage`.
 - **Native refresh storage:** Android Keystore-backed encrypted storage; iOS Keychain with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, excluded from iCloud Keychain and backups.
 - **Lifetimes:** anonymous refresh secret expires after 30 days without use; account-added device after 90 days without use; inactive anonymous devices are purged after 30 days.
-- **Anonymous bootstrap:** rate-limited per IP; a proof-of-work challenge is required beyond the soft limit. A third-party CAPTCHA is available only through an optional adapter, off by default.
+- **Anonymous bootstrap:** rate-limited per IP; a proof-of-work challenge is required beyond the soft limit. A third-party CAPTCHA is available only through an optional adapter, off by default. **As built (Phase 1):** the challenge is an HMAC-signed token bound to the caller's address key, valid 5 minutes and accepted once; the client must find a solution so SHA-256(`token:solution`) has `SA_POW_DIFFICULTY` leading zero bits (default 16). The CAPTCHA adapter is not built (backlog).
+- **Verification (Phase 1):** the server accepts only `alg: EdDSA` with a configured `kid`, issuer `share-anywhere`, `typ: device`, and a present `exp`; then it checks the device is active (cached 30 seconds per instance). Tests cover HS256 confusion with the public key, `alg: none`, unknown and removed `kid`, another key, wrong issuer and type, missing `exp`, tampered claims, and expiry (`backend/internal/devices/tokens_test.go`). Format and rotation: `docs/ADR/0008-device-token-format.md`.
 - **Account session:** layered on the device identity. Sign-in keeps the device ID, so active transfers continue. A signed-in device that is not added to the account gets an account session of at most 24 hours. Sign-out removes the device from the account, revokes the account session, wipes local ADK material, and issues a brand-new anonymous identity.
 - **WebSocket:** one-time ticket from `POST /v1/ws/ticket`, valid 30 seconds; `Origin` checked on upgrade.
 - **Passwords:** Argon2id with parameters recorded in an ADR; no email verification in v1.
@@ -102,12 +103,12 @@ Implemented in Phase 1 (device identity) and Phase 5A (accounts). Flow diagrams 
 
 Implemented in Phase 1 (framework, device creation), Phase 2 (sessions, codes, joins, TURN, WebSocket), Phase 5A (accounts), Phase 5B (clipboard). Defaults; every value is configuration documented in `.env.example`.
 
-Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X-Forwarded-For` only when the request arrives from the trusted Caddy proxy. Responses are `429 rate_limited` with `Retry-After`; clients show the wait time. The MVP keeps buckets in process memory on a single backend instance; going multi-instance requires a shared store and an ADR.
+Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X-Forwarded-For` only when the request arrives from the trusted Caddy proxy (**as built:** `SA_TRUSTED_PROXIES` lists the trusted peers; the resolver walks `X-Forwarded-For` from the right and stops at the first untrusted address, `backend/internal/platform/clientip`). Automated test stacks may raise every limit with `SA_RATE_LIMIT_MULTIPLIER`, which the backend accepts only with `SA_ENV=test`; it never switches a limit off. Responses are `429 rate_limited` with `Retry-After`; clients show the wait time. The MVP keeps buckets in process memory on a single backend instance; going multi-instance requires a shared store and an ADR.
 
 | Action | Keys and limits |
 |---|---|
-| Anonymous device creation | IP: 10 / hour, burst 3; proof-of-work beyond 3 / hour |
-| Token refresh | Device: 60 / hour |
+| Anonymous device creation | Address (IPv4, or IPv6 /64): proof-of-work required beyond 3 / hour (soft limit); `429` beyond 10 / hour (hard limit, attempts that got `428` count). Reset device identity shares the hard limit. Proof-of-work challenges: 30 / min per address. **Built in Phase 1** |
+| Token refresh | Device: 60 / hour. **Built in Phase 1** |
 | Session creation | Device: 10 / hour; IP: 30 / hour |
 | Concurrent open sessions | Guest device: 2; signed-in device: 5 |
 | Code lookup | IP: 10 / min; device: 5 / min |
@@ -116,7 +117,7 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 | Link / QR resolution | IP: 30 / min; device: 10 / min |
 | Joins | Device: 10 / min; per session at most 10 pending requests when approval is on |
 | TURN credentials | Guest device: 20 / hour; account device: 60 / hour |
-| WebSocket | IP: 20 concurrent; device: 3 concurrent; 50 messages / s per socket |
+| WebSocket | IP: 20 concurrent; device: 3 concurrent; 50 messages / s per socket; tickets: 30 / min per device. **Built in Phase 1** |
 | Sign-in | IP + email: 5 / 15 min; IP: 30 / hour |
 | Sign-up | IP: 5 / hour |
 | Password reset request | Email: 3 / hour; IP: 10 / hour |
@@ -168,7 +169,7 @@ Implemented in Phase 2.
 
 - No file content, clipboard plaintext, or history plaintext in logs, metrics, or analytics.
 - Tokens, refresh secrets, capabilities, codes, emails, and security words are redacted from logs.
-- IP addresses are used for rate limiting in memory only; logs keep a keyed hash of the IP truncated to /24 (IPv4) or /48 (IPv6) for 7 days.
+- IP addresses are used for rate limiting in memory only; logs keep a keyed hash of the IP truncated to /24 (IPv4) or /48 (IPv6) for 7 days. **As built (Phase 1):** request logs carry `ip_hash` (HMAC-SHA-256 with `SA_SERVER_SECRET`, first 8 bytes) and never the address or the query string; the log redactor also drops token, secret, cookie, authorization, and security-word fields. Log retention is set by the deployment (Phase 9).
 - Metrics are aggregates, never per person. No third-party analytics without an ADR.
 
 ## 9. Controls checklist

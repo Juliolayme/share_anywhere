@@ -59,9 +59,13 @@ sequenceDiagram
   Note over App,API: If bootstrap fails, Transfer home still opens with an inline retry
 ```
 
+**As built (Phase 1, Web):** the app first tries `POST /v1/devices/token` with the `sa_device` cookie; a `401` means no identity yet, so it calls `POST /v1/devices/anonymous` with `transport: "cookie"`. A `428 pow_required` response carries a challenge that the client solves with Web Crypto SHA-256 and resends. Welcome is shown once per browser profile (a UI preference, not identity state). Identity status (loading, offline, rate limited with the `Retry-After` countdown, failed) is shown inline on Transfer home and Devices; navigation never waits for it (`web/src/lib/identity/identity.tsx`).
+
 ### 3.2 Refresh
 
 The client refreshes shortly before expiry with `POST /v1/devices/token`. The server rotates the secret; presenting an old secret revokes the device. Web sends the cookie plus `X-SA-Refresh: 1`.
+
+**As built (Phase 1, Web):** `DeviceClient` (`web/src/lib/api/device-client.ts`) keeps the access token in memory, schedules a refresh 60 seconds before `expires_in` runs out, shares one in-flight refresh between callers, and refreshes then retries once when a request gets `401`. Refreshes run under the Web Locks API (`navigator.locks`, lock `sa-device-refresh`) so two tabs never present the same cookie at once, which would look like reuse and revoke the device. `POST /v1/devices/current/reset` revokes the device and returns a new identity with a new cookie. The server keeps an active-device check cached for 30 seconds per instance (`docs/ADR/0008-device-token-format.md`).
 
 ### 3.3 Sign in (optional, Phase 5A)
 
@@ -70,6 +74,8 @@ The client refreshes shortly before expiry with `POST /v1/devices/token`. The se
 ### 3.4 WebSocket
 
 `POST /v1/ws/ticket` → connect `/v1/ws?ticket=…` → server checks `Origin`, consumes the ticket, binds the socket to the device and account.
+
+**As built (Phase 1):** `backend/internal/platform/ws`. The `Origin` check runs before the ticket is consumed and requires an exact match with `SA_ALLOWED_ORIGINS`; a missing `Origin` is accepted for native apps, which still need a ticket. Tickets are 24 random bytes, single use, 30 seconds. The first message is `WELCOME` with `server_time` (`shared/protocol/websocket-events.json`); the server pings every 25 seconds and closes with 1008 above 50 messages per second. Phase 1 defines no client-to-server messages; signaling arrives in Phase 2. The Web client does not open a socket until Phase 2 needs one.
 
 ## 4. Share session and join flows
 
@@ -170,7 +176,8 @@ Implemented across Phases 1, 2, 5A, 5B, 8. Lifetimes and purge rules in `docs/SE
 
 Core (guest and account):
 
-- `devices(id, kind anonymous|account, user_id NULL, display_name, platform, refresh_secret_hash, refresh_generation, created_at, last_seen_at, expires_at, revoked_at)` with `CHECK ((kind = 'account') = (user_id IS NOT NULL))`.
+- `devices(id, kind anonymous|account, user_id NULL, display_name, platform, refresh_generation, created_at, last_seen_at, expires_at, revoked_at)` with `CHECK ((kind = 'account') = (user_id IS NOT NULL))`. **Built in Phase 1** (`backend/migrations/0001_devices.sql`); `user_id` stays NULL until Phase 5A.
+- `device_refresh_secrets(secret_hash PK, device_id → devices ON DELETE CASCADE, generation, created_at, used_at)`: every issued refresh secret as a SHA-256 hash. A used secret keeps its row so reuse is detected; reuse revokes the device and deletes its rows. **Built in Phase 1.** Rotation locks the secret and the device rows (`SELECT … FOR UPDATE`) so two concurrent refreshes cannot both win.
 - `share_sessions(id, owner_device_id NOT NULL, owner_user_id NULL, status, require_approval DEFAULT false, join_window_state OPEN|EXPIRED|ENDED_FULL|ENDED_BY_SENDER, join_window_opened_at, join_window_ends_at, code_hmac NULL, created_at, expires_at, ended_at, purge_after)`. `owner_user_id` is set only when the sender was signed in at creation and is used for Cloud and per-account limits, never required.
 - `session_participants(id, session_id, device_id NOT NULL, user_id NULL, role sender|receiver, status, security_words, joined_via code|link, joined_at, decided_at)` with `UNIQUE (session_id, device_id)`.
 - `session_blocks(session_id, device_id, ip_prefix)`.

@@ -221,6 +221,53 @@ jobs:
           go generate ./internal/platform/api/
           git diff --exit-code -- internal/platform/api/
 
+  e2e-web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: chromium-desktop, browser: chromium }
+          - { project: firefox-desktop, browser: firefox }
+          - { project: webkit-desktop, browser: webkit }
+          - { project: android-chrome, browser: chromium }
+          - { project: ios-safari, browser: webkit }
+    name: e2e-web (${{ matrix.project }})
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack (postgres, backend, web, coturn, caddy)
+        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install ${{ matrix.browser }}
+        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps ${{ matrix.browser }}
+      - name: Guest Playwright suite
+        env:
+          E2E_BASE_URL: http://localhost:8080
+        run: pnpm --filter @share-anywhere/web exec playwright test --project=${{ matrix.project }} --trace retain-on-failure
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.project }}
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   compose:
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.web == 'true'

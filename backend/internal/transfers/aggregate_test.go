@@ -8,9 +8,11 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/sharing"
 )
 
-// Session aggregate end to end through the services (docs/ARCHITECTURE.md §4.5). The rule itself is
-// enumerated in sharing/aggregate_test.go; these tests check that every path that ends a transfer or a
-// receiver applies it, under the session row lock, and announces it once.
+// Session end and result end to end through the services (docs/ARCHITECTURE.md §4.5). Nothing ends a live
+// session automatically except its idle or maximum lifetime, and the end status then records the delivery
+// result. The rule itself is enumerated in sharing/aggregate_test.go; these tests check that window expiry,
+// Stop accepting, departures and final reports leave the session live, and that a lifetime end records the
+// result under the session row lock.
 
 func (n *notes) sessionStatuses(id string) (out []string) {
 	n.mu.Lock()
@@ -18,6 +20,17 @@ func (n *notes) sessionStatuses(id string) (out []string) {
 	for _, e := range n.ev[id] {
 		if v, ok := e.(sharing.SessionUpdated); ok {
 			out = append(out, v.Status)
+		}
+	}
+	return out
+}
+
+func (n *notes) ended(id string) (out []sharing.SessionEnded) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, e := range n.ev[id] {
+		if v, ok := e.(sharing.SessionEnded); ok {
+			out = append(out, v)
 		}
 	}
 	return out
@@ -66,6 +79,23 @@ func (e *env) finish(rx sharing.Caller, tr Transfer, ok bool) {
 	}
 }
 
+// start moves a transfer to TRANSFERRING without finishing it.
+func (e *env) start(rx sharing.Caller, tr Transfer) {
+	e.t.Helper()
+	for _, r := range []Report{{Status: Connecting}, {Status: Transferring, VerifiedBytes: tr.Size / 2}} {
+		if _, err := e.svc.Report(ctx, rx.DeviceID, tr.ID, r); err != nil {
+			e.t.Fatalf("%+v: %v", r, err)
+		}
+	}
+}
+
+func (e *env) finishAll(rx sharing.Caller, sessionID string) {
+	e.t.Helper()
+	for _, tr := range e.transfers(rx, sessionID).Transfers {
+		e.finish(rx, tr, true)
+	}
+}
+
 func (e *env) stopAccepting(sender sharing.Caller, sessionID string) {
 	e.t.Helper()
 	no := false
@@ -74,95 +104,36 @@ func (e *env) stopAccepting(sender sharing.Caller, sessionID string) {
 	}
 }
 
-func TestSessionCompletesWhenEveryTransferCompletes(t *testing.T) {
-	e := newEnv(t, 1000)
-	sender, rx := e.device("Minh"), e.device("Lan")
-	s := e.session(sender, false)
-	e.join(rx, s.Code)
-	e.stopAccepting(sender, s.ID)
-	l := e.transfers(rx, s.ID)
-
-	e.finish(rx, byFile(l, 1000), true)
-	if got := e.status(s.ID); got != sharing.StatusActive {
-		t.Fatalf("one file left: %s", got)
+func (e *env) tick() sharing.TickResult {
+	e.t.Helper()
+	res, err := e.share.Tick(ctx)
+	if err != nil {
+		e.t.Fatal(err)
 	}
-	e.finish(rx, byFile(l, 10), true)
-	if got := e.status(s.ID); got != sharing.StatusCompleted {
-		t.Fatalf("every file verified: %s", got)
-	}
-	for _, dev := range []string{sender.DeviceID, rx.DeviceID} {
-		if st := e.note.sessionStatuses(dev); count(st, sharing.StatusCompleted) != 1 {
-			t.Fatalf("SESSION_UPDATED COMPLETED once to each side, got %v", st)
-		}
-	}
-	for _, dev := range []string{sender.DeviceID, rx.DeviceID} {
-		v, err := e.share.View(ctx, dev, s.ID)
-		if err != nil || v.Status != sharing.StatusCompleted {
-			t.Fatalf("view: %s %v", v.Status, err)
-		}
-	}
-	// The transfer records stay readable for the result screens; the session has ended (purge scheduled,
-	// counted, no new activity, open-session slot freed).
-	if got := e.transfers(rx, s.ID); len(got.Transfers) != 2 || got.Transfers[0].Status != Completed {
-		t.Fatalf("transfers after completion: %+v", got)
-	}
-	var purge *time.Time
-	_ = e.pool.QueryRow(ctx, `SELECT purge_after FROM share_sessions WHERE id = $1::uuid`, s.ID).Scan(&purge)
-	if purge == nil || !purge.Equal(e.clk.Now().Add(sharing.PurgeAfterEnd)) {
-		t.Fatalf("purge_after: %v", purge)
-	}
-	if _, err := e.svc.Report(ctx, rx.DeviceID, byFile(l, 10).ID, Report{Status: Completed, VerifiedBytes: 10}); err != nil {
-		t.Fatalf("repeating the final report stays idempotent: %v", err)
-	}
-	if !contains(scrape(e.reg), "sa_sessions_completed_total 1") {
-		t.Fatalf("metrics:\n%s", scrape(e.reg))
-	}
-	if _, err := e.share.Create(ctx, sender, sharing.CreateInput{Files: []sharing.FileInput{{Name: "a", Size: 1}}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.share.Create(ctx, sender, sharing.CreateInput{Files: []sharing.FileInput{{Name: "b", Size: 1}}}); err != nil {
-		t.Fatalf("a completed session no longer counts toward the open-session cap: %v", err)
-	}
+	return res
 }
 
-// While the join window is open another receiver may still arrive, so the session stays ACTIVE; the
-// maintenance job settles it once the window expires.
-func TestOpenWindowKeepsSessionActiveUntilItEnds(t *testing.T) {
-	e := newEnv(t, 1000)
-	sender, first, late := e.device("Minh"), e.device("Lan"), e.device("Huy")
-	s := e.session(sender, false)
-	e.join(first, s.Code)
-	for _, tr := range e.transfers(first, s.ID).Transfers {
-		e.finish(first, tr, true)
+// idleEnd disconnects everyone and runs the maintenance job past the idle lifetime.
+func (e *env) idleEnd() sharing.TickResult {
+	e.t.Helper()
+	e.note.mu.Lock()
+	e.note.offline = true
+	e.note.mu.Unlock()
+	e.clk.Advance(sharing.IdleTimeout + time.Minute)
+	return e.tick()
+}
+
+// wantLive asserts the session is still ACTIVE and no SESSION_UPDATED announced an end status.
+func (e *env) wantLive(sessionID string, devices ...string) {
+	e.t.Helper()
+	if got := e.status(sessionID); got != sharing.StatusActive {
+		e.t.Fatalf("session ended by itself: %s", got)
 	}
-	if got := e.status(s.ID); got != sharing.StatusActive {
-		t.Fatalf("window open: %s", got)
-	}
-	e.clk.Advance(5 * time.Minute)
-	if res, err := e.share.Tick(ctx); err != nil || res.SessionsCompleted != 0 || e.status(s.ID) != sharing.StatusActive {
-		t.Fatalf("tick while the window is open: %+v %v %s", res, err, e.status(s.ID))
-	}
-	e.join(late, s.Code) // the reason the session stayed open
-	l := e.transfers(late, s.ID)
-	e.finish(late, byFile(l, 1000), true)
-	e.finish(late, byFile(l, 10), false)
-	e.clk.Advance(5 * time.Minute)
-	res, err := e.share.Tick(ctx)
-	if err != nil || res.WindowsExpired != 1 || res.SessionsPartial != 1 || res.SessionsCompleted != 0 {
-		t.Fatalf("tick after the window: %+v %v", res, err)
-	}
-	if got := e.status(s.ID); got != sharing.StatusPartiallyCompleted {
-		t.Fatalf("one file failed for one receiver: %s", got)
-	}
-	if st := e.note.sessionStatuses(sender.DeviceID); count(st, sharing.StatusPartiallyCompleted) != 1 {
-		t.Fatalf("sender updates: %v", st)
-	}
-	if res, _ := e.share.Tick(ctx); res.SessionsPartial != 0 {
-		t.Fatalf("settled sessions are not revisited: %+v", res)
-	}
-	wantCode(t, mustJoin(e, e.device("Too late"), s.Code), "session_expired")
-	if !contains(scrape(e.reg), "sa_sessions_partially_completed_total 1") {
-		t.Fatalf("metrics:\n%s", scrape(e.reg))
+	for _, dev := range devices {
+		st := e.note.sessionStatuses(dev)
+		if count(st, sharing.StatusCompleted)+count(st, sharing.StatusPartiallyCompleted) != 0 {
+			e.t.Fatalf("SESSION_UPDATED announced an end status: %v", st)
+		}
 	}
 }
 
@@ -175,178 +146,292 @@ func mustJoin(e *env, c sharing.Caller, code string) error {
 	return err
 }
 
-// A transfer that ends without completing (failed by the receiver, cancelled by the sender) makes the result
-// partial once everything else is done.
-func TestPartialCompletionAcrossReceivers(t *testing.T) {
+// Regression for the Phase 4 QA P0: a receiver gets every file, the 10-minute window expires, and the session
+// must stay live so the sender can Create new code and admit a late receiver (PRD §3, SECURITY_MODEL §3).
+func TestWindowExpiryAfterDeliveryKeepsSessionLive(t *testing.T) {
 	e := newEnv(t, 1000)
-	sender, a, b := e.device("Minh"), e.device("Lan"), e.device("Huy")
+	sender, first, late := e.device("Minh"), e.device("Lan"), e.device("Huy")
 	s := e.session(sender, false)
-	e.join(a, s.Code)
-	e.join(b, s.Code)
+	e.join(first, s.Code)
+	e.finishAll(first, s.ID)
+	e.wantLive(s.ID, sender.DeviceID, first.DeviceID)
+
+	e.clk.Advance(sharing.JoinWindow + time.Minute)
+	res := e.tick()
+	if res.WindowsExpired != 1 || res.SessionsExpired+res.SessionsCompleted+res.SessionsPartial != 0 {
+		t.Fatalf("tick after the window: %+v", res)
+	}
+	e.wantLive(s.ID, sender.DeviceID, first.DeviceID)
+	wantCode(t, mustJoin(e, late, s.Code), "join_window_expired")
+
+	v, err := e.share.Renew(ctx, sender, s.ID)
+	if err != nil {
+		t.Fatalf("Create new code after the window ended: %v", err)
+	}
+	if v.Status != sharing.StatusActive || v.JoinWindow.State != sharing.WindowOpen || v.Code == s.Code {
+		t.Fatalf("renewed view: %s %s", v.Status, v.JoinWindow.State)
+	}
+	e.join(late, v.Code)
+	e.finishAll(late, s.ID)
+	if got := e.transfers(late, s.ID); byFile(got, 1000).Status != Completed || byFile(got, 10).Status != Completed {
+		t.Fatalf("late receiver: %+v", got.Transfers)
+	}
+	e.clk.Advance(sharing.JoinWindow + time.Minute)
+	e.tick()
+	e.wantLive(s.ID, sender.DeviceID, first.DeviceID, late.DeviceID)
+}
+
+// Stop accepting after every transfer completed ends the window, never the session.
+func TestStopAcceptingAfterDeliveryKeepsSessionLive(t *testing.T) {
+	e := newEnv(t, 1000)
+	sender, rx := e.device("Minh"), e.device("Lan")
+	s := e.session(sender, false)
+	e.join(rx, s.Code)
+	e.finishAll(rx, s.ID)
 	e.stopAccepting(sender, s.ID)
-	for _, tr := range e.transfers(a, s.ID).Transfers {
-		e.finish(a, tr, true)
+	e.clk.Advance(time.Minute)
+	e.tick()
+	e.wantLive(s.ID, sender.DeviceID, rx.DeviceID)
+	if v, err := e.share.View(ctx, sender.DeviceID, s.ID); err != nil || v.JoinWindow.State != sharing.WindowEndedBySender {
+		t.Fatalf("view: %+v %v", v.JoinWindow, err)
 	}
-	lb := e.transfers(b, s.ID)
-	e.finish(b, byFile(lb, 10), true)
-	if got := e.status(s.ID); got != sharing.StatusActive {
-		t.Fatalf("b still has a file: %s", got)
-	}
-	if _, err := e.svc.Report(ctx, b.DeviceID, byFile(lb, 1000).ID, Report{Status: Connecting}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.svc.Action(ctx, sender.DeviceID, byFile(lb, 1000).ID, "cancel", ""); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.status(s.ID); got != sharing.StatusPartiallyCompleted {
-		t.Fatalf("sender cancelled b's last file: %s", got)
+	if _, err := e.share.Renew(ctx, sender, s.ID); err != nil {
+		t.Fatalf("Create new code after Stop accepting: %v", err)
 	}
 }
 
-// Remove, Block and Leave settle the session in the same transaction that cancels the departing receiver's
-// transfers. Removed and blocked receivers do not count; one that left early does.
-func TestDepartingReceiversSettleTheSession(t *testing.T) {
-	cases := []struct {
-		name string
-		act  func(e *env, sender, b sharing.Caller, participantID string) error
-		want string
-	}{
-		{"remove", func(e *env, sender, _ sharing.Caller, pid string) error {
-			_, err := e.share.Decide(ctx, sender, pid, "remove")
-			return err
-		}, sharing.StatusCompleted},
-		{"block", func(e *env, sender, _ sharing.Caller, pid string) error {
-			_, err := e.share.Decide(ctx, sender, pid, "block")
-			return err
-		}, sharing.StatusCompleted},
-		{"leave", func(e *env, _, b sharing.Caller, pid string) error {
-			_, err := e.share.Leave(ctx, b, pid)
-			return err
-		}, sharing.StatusPartiallyCompleted},
+// The idle lifetime ends a fully delivered session as COMPLETED.
+func TestIdleEndRecordsCompleted(t *testing.T) {
+	e := newEnv(t, 1000)
+	sender, rx := e.device("Minh"), e.device("Lan")
+	s := e.session(sender, false)
+	e.join(rx, s.Code)
+	e.finishAll(rx, s.ID)
+	e.wantLive(s.ID, sender.DeviceID, rx.DeviceID)
+
+	res := e.idleEnd()
+	if res.SessionsExpired != 1 || res.SessionsCompleted != 1 || res.SessionsPartial != 0 {
+		t.Fatalf("idle tick: %+v", res)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	if got := e.status(s.ID); got != sharing.StatusCompleted {
+		t.Fatalf("status: %s", got)
+	}
+	for _, dev := range []string{sender.DeviceID, rx.DeviceID} {
+		v, err := e.share.View(ctx, dev, s.ID)
+		if err != nil || v.Status != sharing.StatusCompleted {
+			t.Fatalf("view: %s %v", v.Status, err)
+		}
+		if ev := e.note.ended(dev); len(ev) != 1 || ev[0].Type != "SESSION_EXPIRED" || ev[0].Reason != "idle" {
+			t.Fatalf("lifetime end notice: %+v", ev)
+		}
+	}
+	// The transfer records stay readable for the result screens; the session has ended (purge scheduled,
+	// counted, open-session slot freed).
+	if got := e.transfers(rx, s.ID); len(got.Transfers) != 2 || got.Transfers[0].Status != Completed {
+		t.Fatalf("transfers after the end: %+v", got)
+	}
+	var purge *time.Time
+	_ = e.pool.QueryRow(ctx, `SELECT purge_after FROM share_sessions WHERE id = $1::uuid`, s.ID).Scan(&purge)
+	if purge == nil || !purge.Equal(e.clk.Now().Add(sharing.PurgeAfterEnd)) {
+		t.Fatalf("purge_after: %v", purge)
+	}
+	m := scrape(e.reg)
+	if !contains(m, "sa_sessions_completed_total 1") || !contains(m, "sa_sessions_partially_completed_total 0") {
+		t.Fatalf("metrics:\n%s", m)
+	}
+	if _, err := e.share.Create(ctx, sender, sharing.CreateInput{Files: []sharing.FileInput{{Name: "a", Size: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.share.Create(ctx, sender, sharing.CreateInput{Files: []sharing.FileInput{{Name: "b", Size: 1}}}); err != nil {
+		t.Fatalf("an ended session no longer counts toward the open-session cap: %v", err)
+	}
+	if res := e.tick(); res.SessionsExpired != 0 {
+		t.Fatalf("ended sessions are not revisited: %+v", res)
+	}
+}
+
+// One failed file, or a receiver that left before finishing, makes the idle end PARTIALLY_COMPLETED.
+func TestIdleEndRecordsPartial(t *testing.T) {
+	t.Run("one failed file", func(t *testing.T) {
+		e := newEnv(t, 1000)
+		sender, rx := e.device("Minh"), e.device("Lan")
+		s := e.session(sender, false)
+		e.join(rx, s.Code)
+		l := e.transfers(rx, s.ID)
+		e.finish(rx, byFile(l, 1000), true)
+		e.finish(rx, byFile(l, 10), false)
+		e.wantLive(s.ID, sender.DeviceID)
+		if res := e.idleEnd(); res.SessionsPartial != 1 || res.SessionsCompleted != 0 || res.SessionsExpired != 1 {
+			t.Fatalf("idle tick: %+v", res)
+		}
+		if got := e.status(s.ID); got != sharing.StatusPartiallyCompleted {
+			t.Fatalf("status: %s", got)
+		}
+		if !contains(scrape(e.reg), "sa_sessions_partially_completed_total 1") {
+			t.Fatalf("metrics:\n%s", scrape(e.reg))
+		}
+	})
+	t.Run("receiver left before finishing", func(t *testing.T) {
+		e := newEnv(t, 1000)
+		sender, a, b := e.device("Minh"), e.device("Lan"), e.device("Huy")
+		s := e.session(sender, false)
+		e.join(a, s.Code)
+		jb := e.join(b, s.Code)
+		e.finishAll(a, s.ID)
+		e.start(b, byFile(e.transfers(b, s.ID), 1000))
+		if _, err := e.share.Leave(ctx, b, jb.Participant.ID); err != nil {
+			t.Fatal(err)
+		}
+		e.wantLive(s.ID, sender.DeviceID, a.DeviceID)
+		if res := e.idleEnd(); res.SessionsPartial != 1 {
+			t.Fatalf("idle tick: %+v", res)
+		}
+		if got := e.status(s.ID); got != sharing.StatusPartiallyCompleted {
+			t.Fatalf("status: %s", got)
+		}
+	})
+}
+
+// Removed and blocked receivers do not count toward the result, and removing them never ends the session.
+func TestIdleEndExcludesRemovedAndBlocked(t *testing.T) {
+	for _, action := range []string{"remove", "block"} {
+		t.Run(action, func(t *testing.T) {
 			e := newEnv(t, 1000)
 			sender, a, b := e.device("Minh"), e.device("Lan"), e.device("Huy")
 			s := e.session(sender, false)
 			e.join(a, s.Code)
 			jb := e.join(b, s.Code)
+			e.finishAll(a, s.ID)
+			e.start(b, byFile(e.transfers(b, s.ID), 1000))
+			if _, err := e.share.Decide(ctx, sender, jb.Participant.ID, action); err != nil {
+				t.Fatal(err)
+			}
 			e.stopAccepting(sender, s.ID)
-			for _, tr := range e.transfers(a, s.ID).Transfers {
-				e.finish(a, tr, true)
+			e.wantLive(s.ID, sender.DeviceID, a.DeviceID)
+			if res := e.idleEnd(); res.SessionsCompleted != 1 {
+				t.Fatalf("idle tick: %+v", res)
 			}
-			if _, err := e.svc.Report(ctx, b.DeviceID, byFile(e.transfers(b, s.ID), 1000).ID, Report{Status: Connecting}); err != nil {
-				t.Fatal(err)
-			}
-			if got := e.status(s.ID); got != sharing.StatusActive {
-				t.Fatalf("b mid-transfer: %s", got)
-			}
-			if err := c.act(e, sender, b, jb.Participant.ID); err != nil {
-				t.Fatal(err)
-			}
-			if got := e.status(s.ID); got != c.want {
-				t.Fatalf("got %s, want %s", got, c.want)
-			}
-			if st := e.note.sessionStatuses(a.DeviceID); count(st, c.want) != 1 {
-				t.Fatalf("remaining receiver updates: %v", st)
+			if got := e.status(s.ID); got != sharing.StatusCompleted {
+				t.Fatalf("status: %s", got)
 			}
 		})
 	}
 }
 
-// A receiver waiting for approval holds the session open; rejecting it lets the session complete.
-func TestRequestedReceiverHoldsSessionOpen(t *testing.T) {
-	e := newEnv(t, 1000)
-	sender, a, b := e.device("Minh"), e.device("Lan"), e.device("Huy")
-	s := e.session(sender, true)
-	ja := e.join(a, s.Code)
-	if _, err := e.share.Decide(ctx, sender, ja.Participant.ID, "approve"); err != nil {
-		t.Fatal(err)
-	}
-	jb := e.join(b, s.Code)
-	if jb.Participant.Status != sharing.PRequested {
-		t.Fatalf("b: %s", jb.Participant.Status)
-	}
-	e.stopAccepting(sender, s.ID)
-	for _, tr := range e.transfers(a, s.ID).Transfers {
-		e.finish(a, tr, true)
-	}
-	e.clk.Advance(time.Minute)
-	if _, err := e.share.Tick(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.status(s.ID); got != sharing.StatusActive {
-		t.Fatalf("pending request: %s", got)
-	}
-	if _, err := e.share.Decide(ctx, sender, jb.Participant.ID, "reject"); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.status(s.ID); got != sharing.StatusCompleted {
-		t.Fatalf("after reject: %s", got)
-	}
-}
-
-// A session that delivered nothing never ends by itself: the sender can create a new code or close it.
-func TestNothingDeliveredStaysActive(t *testing.T) {
+// A session that delivered nothing ends EXPIRED. Removing every receiver keeps it live, and Create new code
+// still works first.
+func TestIdleEndNothingDeliveredExpires(t *testing.T) {
 	e := newEnv(t, 1000)
 	sender, a, b := e.device("Minh"), e.device("Lan"), e.device("Huy")
 	s := e.session(sender, false)
 	ja := e.join(a, s.Code)
-	e.stopAccepting(sender, s.ID)
 	for _, tr := range e.transfers(a, s.ID).Transfers {
 		e.finish(a, tr, false)
 	}
-	e.clk.Advance(time.Minute)
-	if res, err := e.share.Tick(ctx); err != nil || res.SessionsCompleted+res.SessionsPartial != 0 {
-		t.Fatalf("tick: %+v %v", res, err)
-	}
-	if got := e.status(s.ID); got != sharing.StatusActive {
-		t.Fatalf("all failed: %s", got)
-	}
-	// Removing everyone leaves it ACTIVE as well; Create new code admits someone else, who completes.
 	if _, err := e.share.Decide(ctx, sender, ja.Participant.ID, "remove"); err != nil {
 		t.Fatal(err)
 	}
+	e.clk.Advance(sharing.JoinWindow + time.Minute)
+	e.tick()
+	e.wantLive(s.ID, sender.DeviceID)
 	v, err := e.share.Renew(ctx, sender, s.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.join(b, v.Code)
-	e.stopAccepting(sender, s.ID)
-	for _, tr := range e.transfers(b, s.ID).Transfers {
-		e.finish(b, tr, true)
+	jb := e.join(b, v.Code)
+	if _, err := e.share.Decide(ctx, sender, jb.Participant.ID, "block"); err != nil {
+		t.Fatal(err)
 	}
-	if got := e.status(s.ID); got != sharing.StatusCompleted {
-		t.Fatalf("after the new receiver: %s", got)
+	res := e.idleEnd()
+	if res.SessionsExpired != 1 || res.SessionsCompleted+res.SessionsPartial != 0 {
+		t.Fatalf("idle tick: %+v", res)
+	}
+	if got := e.status(s.ID); got != sharing.StatusExpired {
+		t.Fatalf("status: %s", got)
+	}
+	if ev := e.note.ended(sender.DeviceID); len(ev) != 1 || ev[0].Type != "SESSION_EXPIRED" {
+		t.Fatalf("notice: %+v", ev)
+	}
+	m := scrape(e.reg)
+	if !contains(m, "sa_sessions_completed_total 0") || !contains(m, "sa_sessions_partially_completed_total 0") {
+		t.Fatalf("metrics:\n%s", m)
 	}
 }
 
-// Close yields CLOSED whatever the transfers say, and the aggregate never reopens or changes an ended session.
+// The maximum lifetime ends a session mid-transfer even while everyone is connected: one receiver done and one
+// still transferring is PARTIALLY_COMPLETED, and the unfinished transfer is CANCELLED in the same tick.
+func TestMaxLifetimeMidTransferRecordsPartial(t *testing.T) {
+	e := newEnv(t, 1000)
+	sender, a, b := e.device("Minh"), e.device("Lan"), e.device("Huy")
+	s := e.session(sender, false)
+	e.join(a, s.Code)
+	e.join(b, s.Code)
+	e.finishAll(a, s.ID)
+	lb := e.transfers(b, s.ID)
+	e.finish(b, byFile(lb, 10), true)
+	e.start(b, byFile(lb, 1000))
+	var expires time.Time
+	if err := e.pool.QueryRow(ctx, `SELECT expires_at FROM share_sessions WHERE id = $1::uuid`, s.ID).Scan(&expires); err != nil {
+		t.Fatal(err)
+	}
+	e.clk.Advance(expires.Sub(e.clk.Now()) + time.Minute)
+	res := e.tick()
+	if res.SessionsExpired != 1 || res.SessionsPartial != 1 {
+		t.Fatalf("tick: %+v", res)
+	}
+	if got := e.status(s.ID); got != sharing.StatusPartiallyCompleted {
+		t.Fatalf("status: %s", got)
+	}
+	if got := e.transfers(b, s.ID); byFile(got, 1000).Status != Cancelled || byFile(got, 10).Status != Completed {
+		t.Fatalf("b's transfers: %+v", got.Transfers)
+	}
+	for _, dev := range []string{sender.DeviceID, a.DeviceID, b.DeviceID} {
+		if ev := e.note.ended(dev); len(ev) != 1 || ev[0].Reason != "max_lifetime" {
+			t.Fatalf("notice: %+v", ev)
+		}
+	}
+	if _, err := e.svc.Report(ctx, b.DeviceID, byFile(lb, 1000).ID, Report{Status: Transferring, VerifiedBytes: 900}); err == nil {
+		t.Fatal("a report after the end must be refused")
+	}
+}
+
+// Close yields CLOSED whatever was delivered, and the maintenance job never changes an ended session.
 func TestCloseYieldsClosed(t *testing.T) {
 	e := newEnv(t, 1000)
 	sender, a := e.device("Minh"), e.device("Lan")
 	s := e.session(sender, false)
 	e.join(a, s.Code)
-	e.stopAccepting(sender, s.ID)
 	e.finish(a, byFile(e.transfers(a, s.ID), 1000), true)
 	if err := e.share.Close(ctx, sender, s.ID); err != nil {
 		t.Fatal(err)
 	}
-	e.clk.Advance(time.Minute)
-	if _, err := e.share.Tick(ctx); err != nil {
-		t.Fatal(err)
-	}
+	e.idleEnd()
 	if got := e.status(s.ID); got != sharing.StatusClosed {
 		t.Fatalf("closed: %s", got)
 	}
 	if got := e.transfers(a, s.ID); byFile(got, 10).Status != Cancelled || byFile(got, 1000).Status != Completed {
 		t.Fatalf("close cancels only unfinished transfers: %+v", got.Transfers)
 	}
+	e2 := newEnv(t, 1000)
+	sender2, b := e2.device("Minh"), e2.device("Lan")
+	s2 := e2.session(sender2, false)
+	e2.join(b, s2.Code)
+	e2.finishAll(b, s2.ID)
+	if err := e2.share.Close(ctx, sender2, s2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := e2.status(s2.ID); got != sharing.StatusClosed {
+		t.Fatalf("fully delivered then closed: %s", got)
+	}
+	if res := e2.idleEnd(); res.SessionsExpired+res.SessionsCompleted != 0 {
+		t.Fatalf("tick revisited a closed session: %+v", res)
+	}
 }
 
-// Five receivers finishing their last file at the same moment: exactly one transaction settles the session
-// and it is announced once (the session row is locked before the transfer row on every path).
-func TestConcurrentFinalTransfersSettleOnce(t *testing.T) {
+// Five receivers sending their final reports while the maximum lifetime ends the session: the session row
+// lock orders every report before or after the end, so the recorded status always matches the stored
+// transfers and nothing is left unfinished.
+func TestLifetimeEndRacesFinalReports(t *testing.T) {
 	e := newEnv(t, 1000)
 	sender := e.device("Minh")
 	s := e.session(sender, false)
@@ -361,45 +446,54 @@ func TestConcurrentFinalTransfersSettleOnce(t *testing.T) {
 		l := e.transfers(c, s.ID)
 		e.finish(c, byFile(l, 10), true)
 		tr := byFile(l, 1000)
-		for _, r := range []Report{{Status: Connecting}, {Status: Transferring, VerifiedBytes: 999}} {
-			if _, err := e.svc.Report(ctx, c.DeviceID, tr.ID, r); err != nil {
-				t.Fatal(err)
-			}
-		}
+		e.start(c, tr)
 		last[i] = tr
 	}
-	if got := e.status(s.ID); got != sharing.StatusActive {
-		t.Fatalf("before: %s", got) // the fifth join ended the window (full), so only transfers hold it
+	var expires time.Time
+	if err := e.pool.QueryRow(ctx, `SELECT expires_at FROM share_sessions WHERE id = $1::uuid`, s.ID).Scan(&expires); err != nil {
+		t.Fatal(err)
 	}
+	e.clk.Advance(expires.Sub(e.clk.Now()) + time.Minute)
 	var wg sync.WaitGroup
-	errs := make([]error, len(rxs))
 	for i, c := range rxs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, errs[i] = e.svc.Report(ctx, c.DeviceID, last[i].ID, Report{Status: Completed, VerifiedBytes: 1000})
+			_, _ = e.svc.Report(ctx, c.DeviceID, last[i].ID, Report{Status: Completed, VerifiedBytes: 1000})
 		}()
 	}
+	var res sharing.TickResult
+	var tickErr error
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		res, tickErr = e.share.Tick(ctx)
+	}()
 	wg.Wait()
-	for i, err := range errs {
-		if err != nil {
-			t.Fatalf("receiver %d: %v", i, err)
+	if tickErr != nil || res.SessionsExpired != 1 {
+		t.Fatalf("tick: %+v %v", res, tickErr)
+	}
+	var stored []string
+	for _, c := range rxs {
+		for _, tr := range e.transfers(c, s.ID).Transfers {
+			if !Terminal(tr.Status) {
+				t.Fatalf("unfinished transfer after the end: %+v", tr)
+			}
+			stored = append(stored, tr.Status)
 		}
 	}
-	if got := e.status(s.ID); got != sharing.StatusCompleted {
-		t.Fatalf("after: %s", got)
+	want := sharing.EndStatus([]sharing.ReceiverState{{Status: sharing.PJoined, Transfers: stored}})
+	if got := e.status(s.ID); got != want {
+		t.Fatalf("recorded %s, stored transfers say %s (%v)", got, want, stored)
 	}
-	if st := e.note.sessionStatuses(sender.DeviceID); count(st, sharing.StatusCompleted) != 1 {
-		t.Fatalf("announced %d times: %v", count(st, sharing.StatusCompleted), st)
-	}
-	if !contains(scrape(e.reg), "sa_sessions_completed_total 1") {
-		t.Fatalf("metrics:\n%s", scrape(e.reg))
+	if st := e.note.sessionStatuses(sender.DeviceID); count(st, sharing.StatusCompleted)+count(st, sharing.StatusPartiallyCompleted) != 0 {
+		t.Fatalf("SESSION_UPDATED announced an end status: %v", st)
 	}
 }
 
 // The maintenance job cancels transfers left unfinished by an ended session or a departed receiver (records
-// an interrupted or older code path could leave), settles what that finishes, and purges ended sessions with
-// their transfers 7 days after they end (docs/SECURITY_MODEL.md §6).
+// an interrupted or older code path could leave) without ending the live session, and purges ended sessions
+// with their transfers 7 days after they end (docs/SECURITY_MODEL.md §6).
 func TestTickCancelsOrphansAndPurges(t *testing.T) {
 	e := newEnv(t, 1000)
 	sender, a, b := e.device("Minh"), e.device("Lan"), e.device("Huy")
@@ -407,9 +501,7 @@ func TestTickCancelsOrphansAndPurges(t *testing.T) {
 	e.join(a, s.Code)
 	jb := e.join(b, s.Code)
 	e.stopAccepting(sender, s.ID)
-	for _, tr := range e.transfers(a, s.ID).Transfers {
-		e.finish(a, tr, true)
-	}
+	e.finishAll(a, s.ID)
 	// b "left" without its transfers being cancelled.
 	if _, err := e.pool.Exec(ctx, `UPDATE session_participants SET status = 'LEFT' WHERE id = $1::uuid`, jb.Participant.ID); err != nil {
 		t.Fatal(err)
@@ -422,11 +514,8 @@ func TestTickCancelsOrphansAndPurges(t *testing.T) {
 		s2.ID, e.clk.Now(), e.clk.Now().Add(sharing.PurgeAfterEnd)); err != nil {
 		t.Fatal(err)
 	}
-	res, err := e.share.Tick(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.OrphansCancelled != 4 || res.SessionsPartial != 1 {
+	res := e.tick()
+	if res.OrphansCancelled != 4 || res.SessionsExpired+res.SessionsCompleted+res.SessionsPartial != 0 {
 		t.Fatalf("tick: %+v", res)
 	}
 	var open int
@@ -434,19 +523,19 @@ func TestTickCancelsOrphansAndPurges(t *testing.T) {
 	if open != 0 {
 		t.Fatalf("%d unfinished transfers remain", open)
 	}
-	if got := e.status(s.ID); got != sharing.StatusPartiallyCompleted {
-		t.Fatalf("b left early: %s", got)
-	}
+	e.wantLive(s.ID, sender.DeviceID, a.DeviceID)
 	if !contains(scrape(e.reg), "sa_orphan_transfers_cancelled_total 4") {
 		t.Fatalf("metrics:\n%s", scrape(e.reg))
 	}
-	if res, _ := e.share.Tick(ctx); res.OrphansCancelled != 0 {
+	if res := e.tick(); res.OrphansCancelled != 0 {
 		t.Fatalf("second tick: %+v", res)
 	}
+	if err := e.share.Close(ctx, sender, s.ID); err != nil {
+		t.Fatal(err)
+	}
 	e.clk.Advance(sharing.PurgeAfterEnd + time.Minute)
-	res, err = e.share.Tick(ctx)
-	if err != nil || res.Purged != 2 {
-		t.Fatalf("purge: %+v %v", res, err)
+	if res := e.tick(); res.Purged != 2 {
+		t.Fatalf("purge: %+v", res)
 	}
 	var n int
 	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM transfers`).Scan(&n)

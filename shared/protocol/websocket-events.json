@@ -305,7 +305,7 @@
           "format": "uuid"
         },
         "status": {
-          "description": "Session status. COMPLETED and PARTIALLY_COMPLETED are derived from transfers (docs/ARCHITECTURE.md §4.5) and end the session.",
+          "description": "Session status, the same values as SessionView.status. A live session is WAITING or ACTIVE; window expiry, Stop accepting, departures and final transfer reports never end it. COMPLETED, PARTIALLY_COMPLETED and EXPIRED are recorded only when the idle or maximum lifetime ends the session (announced with SESSION_EXPIRED, docs/ARCHITECTURE.md §4.5) and CLOSED when the sender closes it; SESSION_UPDATED carries one of them only if a later participant action (such as Block or Leave) touches the already-ended session.",
           "enum": [
             "WAITING",
             "ACTIVE",
@@ -382,7 +382,7 @@
     "SessionExpired": {
       "x-sa-phase": 2,
       "x-sa-direction": "server-to-client",
-      "description": "Idle or maximum lifetime reached (reason idle or max_lifetime). To all live participants.",
+      "description": "Idle or maximum lifetime reached (reason idle or max_lifetime). To all live participants. The session then records COMPLETED, PARTIALLY_COMPLETED or EXPIRED from its deliveries (docs/ARCHITECTURE.md §4.5), visible in SessionView.status.",
       "type": "object",
       "required": ["type", "session_id"],
       "properties": {

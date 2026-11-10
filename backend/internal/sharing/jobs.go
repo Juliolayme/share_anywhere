@@ -9,15 +9,19 @@ import (
 
 // TickResult summarizes one maintenance pass (for logs and tests).
 type TickResult struct {
+	// SessionsExpired counts every session an idle or maximum lifetime ended, whatever status it recorded;
+	// SessionsCompleted and SessionsPartial count the subset that recorded COMPLETED or PARTIALLY_COMPLETED
+	// (docs/ARCHITECTURE.md §4.5).
 	WindowsExpired, SessionsExpired, Purged int
+	SessionsCompleted, SessionsPartial      int
 	// OrphansCancelled counts unfinished transfers cancelled because their session had ended or their receiver
-	// was no longer JOINED; SessionsCompleted and SessionsPartial count sessions the aggregate rule ended.
-	OrphansCancelled, SessionsCompleted, SessionsPartial int
+	// was no longer JOINED.
+	OrphansCancelled int
 }
 
-// Tick expires join windows, cancels orphan transfers, ends finished sessions (docs/ARCHITECTURE.md §4.5),
-// ends idle and over-age sessions, purges old records, and announces protected mode turning off. It is safe
-// to run concurrently with requests.
+// Tick expires join windows, ends idle and over-age sessions (recording the delivery result,
+// docs/ARCHITECTURE.md §4.5), cancels orphan transfers, purges old records, and announces protected mode
+// turning off. Expiring a join window never ends a session. It is safe to run concurrently with requests.
 func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 	now := s.now()
 	var res TickResult
@@ -37,15 +41,8 @@ func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 		s.emitSessionUpdated(ctx, id)
 	}
 
-	// 1b. Orphan transfers, then sessions whose transfers are all finished now that their window has ended.
-	if err := s.cancelOrphans(ctx, now, &res); err != nil {
-		return res, err
-	}
-	if err := s.settleDue(ctx, now, &res); err != nil {
-		return res, err
-	}
-
-	// 2. Live sessions: refresh activity while any participant is connected; expire idle or over-age ones.
+	// 2. Live sessions: refresh activity while any participant is connected; end idle or over-age ones. This is
+	// the only automatic end of a live session; the end status records what was delivered (EndStatus).
 	rows, err = s.cfg.Pool.Query(ctx, `SELECT s.id::text, s.last_activity_at, s.expires_at, p.device_id::text
 		FROM share_sessions s JOIN session_participants p ON p.session_id = s.id
 		WHERE s.status IN ('WAITING','ACTIVE') AND (p.role = 'sender' OR p.status IN ('JOINED','REQUESTED'))`)
@@ -97,18 +94,42 @@ func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 		if reason == "" {
 			continue
 		}
+		status := ""
 		err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 			r, err := lockSession(ctx, tx, id)
 			if err != nil || !r.live() {
 				return err
 			}
-			return s.end(ctx, tx, id, StatusExpired, now)
+			// Under the session row lock, so every committed transfer report is seen and none lands after.
+			rs, err := receiverStates(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			status = EndStatus(rs)
+			return s.end(ctx, tx, id, status, now)
 		})
 		if err != nil {
 			return res, err
 		}
+		if status == "" {
+			continue // ended by another path meanwhile
+		}
 		res.SessionsExpired++
+		switch status {
+		case StatusCompleted:
+			res.SessionsCompleted++
+			s.m.sessionsCompleted.Inc()
+		case StatusPartiallyCompleted:
+			res.SessionsPartial++
+			s.m.sessionsPartial.Inc()
+		}
 		s.notifyDevices(l.devices, SessionEnded{Type: "SESSION_EXPIRED", SessionID: id, Reason: reason})
+	}
+
+	// 2b. Orphan transfers. end already cancels the unfinished transfers of a session a lifetime just ended;
+	// running after step 2 still means anything left behind for it is repaired in the same tick.
+	if err := s.cancelOrphans(ctx, now, &res); err != nil {
+		return res, err
 	}
 
 	// 3. Purge ended sessions after 7 days (cascades to participants, files, tokens, transfers, events).
@@ -162,8 +183,6 @@ func (s *Service) cancelOrphans(ctx context.Context, now time.Time, res *TickRes
 	}
 	for _, id := range ids {
 		var n int64
-		var settled string
-		ended := false
 		err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 			if _, err := lockSession(ctx, tx, id); err != nil {
 				return err
@@ -175,29 +194,15 @@ func (s *Service) cancelOrphans(ctx context.Context, now time.Time, res *TickRes
 				return err
 			}
 			n = tag.RowsAffected()
-			// Cancelling a departed receiver's transfers can leave the session's remaining receivers all done.
-			settled, ended, err = s.settle(ctx, tx, id, now)
-			return err
+			return nil
 		})
 		if err != nil {
 			return err
 		}
 		res.OrphansCancelled += int(n)
 		s.m.orphansCancelled.Add(n)
-		if ended {
-			res.countSettled(settled)
-			s.Settled(ctx, id, settled)
-		}
 	}
 	return nil
-}
-
-func (r *TickResult) countSettled(status string) {
-	if status == StatusCompleted {
-		r.SessionsCompleted++
-	} else {
-		r.SessionsPartial++
-	}
 }
 
 // SetProtected forces protected mode on or off (nil returns to automatic) and announces the state. Used only
@@ -233,7 +238,7 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 		case <-t.C:
 			if res, err := s.Tick(ctx); err != nil {
 				s.cfg.Log.Error("sharing maintenance failed", "error", err.Error())
-			} else if res.SessionsExpired+res.Purged+res.OrphansCancelled+res.SessionsCompleted+res.SessionsPartial > 0 {
+			} else if res.SessionsExpired+res.Purged+res.OrphansCancelled > 0 {
 				s.cfg.Log.Info("sharing maintenance", "windows_expired", res.WindowsExpired, "sessions_expired", res.SessionsExpired,
 					"sessions_completed", res.SessionsCompleted, "sessions_partially_completed", res.SessionsPartial,
 					"orphan_transfers_cancelled", res.OrphansCancelled, "purged", res.Purged)

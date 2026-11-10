@@ -15,15 +15,11 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/sharing"
 )
 
-// Sessions answers membership questions and keeps the session aggregate (implemented by sharing.Service).
+// Sessions answers membership questions (implemented by sharing.Service).
 type Sessions interface {
 	Member(ctx context.Context, deviceID, sessionID string) (sharing.Member, error)
 	MemberTx(ctx context.Context, tx pgx.Tx, deviceID, sessionID string) (sharing.Member, error)
 	Peers(ctx context.Context, sessionID string) ([]sharing.Peer, error)
-	// Settle applies the session aggregate rule (docs/ARCHITECTURE.md §4.5) inside tx after a transfer ended;
-	// Settled announces a session it ended, after commit.
-	Settle(ctx context.Context, tx pgx.Tx, sessionID string) (string, bool, error)
-	Settled(ctx context.Context, sessionID, status string)
 }
 
 // Notifier delivers WebSocket events (implemented by the ws hub).
@@ -246,13 +242,14 @@ func (s *Service) Action(ctx context.Context, deviceID, transferID, action, capa
 	})
 }
 
-// move applies change under a row lock, validates the transition, stores it, settles the session aggregate
-// when the transfer ended, notifies both sides and counts.
+// move applies change under a row lock, validates the transition, stores it, notifies both sides and counts.
+// A transfer report never ends the session (docs/ARCHITECTURE.md §4.5).
 //
-// Lock order: the session row first, then the transfer row. Sender controls, Leave and session end lock the
-// session and then update transfers, so taking the transfer first here could deadlock with them; holding the
-// session row also serializes the final transfers of different receivers, so exactly one of them settles the
-// session.
+// Lock order: the session row first, then the transfer row. Sender controls (Decide), Leave, Close and the
+// lifetime end in Tick lock the session and then update transfers, so taking the transfer first here could
+// deadlock with them. Holding the session row also serializes a report with those paths: a report either
+// commits before Remove/Block/Leave cancels the transfer or before a lifetime end reads the delivery result,
+// or it runs after them and sees the receiver or session no longer live.
 func (s *Service) move(ctx context.Context, deviceID, transferID string, change func(Transfer, sharing.Member) (Transfer, error)) (Transfer, error) {
 	if !sharing.ValidID(transferID) {
 		return Transfer{}, errNotFound
@@ -305,12 +302,6 @@ func (s *Service) move(ctx context.Context, deviceID, transferID string, change 
 	if _, err := tx.Exec(ctx, `UPDATE share_sessions SET last_activity_at = $2 WHERE id = $1::uuid`, upd.SessionID, upd.UpdatedAt); err != nil {
 		return Transfer{}, err
 	}
-	settled, ended := "", false
-	if upd.Status != cur.Status && Terminal(upd.Status) {
-		if settled, ended, err = s.cfg.Sessions.Settle(ctx, tx, upd.SessionID); err != nil {
-			return Transfer{}, err
-		}
-	}
 	if err := tx.Commit(ctx); err != nil {
 		return Transfer{}, err
 	}
@@ -318,9 +309,6 @@ func (s *Service) move(ctx context.Context, deviceID, transferID string, change 
 		s.count(upd)
 	}
 	s.notify(ctx, upd)
-	if ended {
-		s.cfg.Sessions.Settled(ctx, upd.SessionID, settled) // after TRANSFER_UPDATED, so clients see the last transfer first
-	}
 	return upd, nil
 }
 

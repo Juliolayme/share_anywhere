@@ -31,8 +31,9 @@ import (
 var ctx = context.Background()
 
 type notes struct {
-	mu sync.Mutex
-	ev map[string][]any
+	mu      sync.Mutex
+	ev      map[string][]any
+	offline bool // every device disconnected (drives the idle lifetime in Tick)
 }
 
 func (n *notes) SendToDevice(id string, v any) bool {
@@ -41,8 +42,12 @@ func (n *notes) SendToDevice(id string, v any) bool {
 	n.ev[id] = append(n.ev[id], v)
 	return true
 }
-func (n *notes) Broadcast(any)         {}
-func (n *notes) Connected(string) bool { return true }
+func (n *notes) Broadcast(any) {}
+func (n *notes) Connected(string) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return !n.offline
+}
 func (n *notes) updates(id string) (out []Transfer) {
 	n.mu.Lock()
 	defer n.mu.Unlock()

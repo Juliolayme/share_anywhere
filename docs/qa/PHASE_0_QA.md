@@ -77,6 +77,18 @@ No P0. Two P1 and five P2 findings; all checks and CI run 42779955558 green.
 | `CLAUDE.md` wording edits need user sign-off | P2 | Reported to the user in the Phase 0 summary |
 | UX map row drift | P2 | Fixed with P1-1 |
 
-## Round 4
+## Round 4 — commit 259582c — FAIL
+
+No P0. Three P1 and several P2 findings; all checks and CI run 42781828564 green. The independent TRP check confirmed 25 of 25 conversions per app.
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| iOS background notification wording differed (PRD §2, Phase 7 vs ARCHITECTURE §7.3) | P1 | PRD and Phase 7 reference `ios.susp_h` ("Transfer paused — reopen the app to resume") |
+| Native `L(en, vi)` connection-log strings not extracted | P1 | Extracted as text into `android_log` / `ios_log` (13 each); parameterized `product.log_*` keys for lines with sample values; test added |
+| PRD strings without keys (after-sign-in choices, add device, history sync, background join notification, iOS guest Cloud prompt, cost unknown) | P1 | `product` keys added; docs reference keys; PRD §9 table extended; deviations A1 and E11 |
+| Garbled HI-1 cell; B rows out of order; report commit table; pill tap quote; DESIGN_SYSTEM example strings; TRP count guard; positional-key meaning test; placeholder rule; QA agent "status row" | P2 | Fixed |
+| `CLAUDE.md` wording edits need the user's sign-off; CI Node 20 action warnings | P2 | Reported to the user; Node 20 actions tracked for Phase 9 |
+
+## Round 5
 
 Pending.

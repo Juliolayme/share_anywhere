@@ -68,14 +68,14 @@ flowchart LR
 
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
-| HI-1 | History list | `/history` | Local entries only; banner "Stored only on this device" (`common.local`), and once accounts exist a Sign in action to sync history with Sign in; search and filters | Sync off: banner "Turn on history sync". Sync on: merged local and synced entries with origin device | Search / Open entry |
+| HI-1 | History list | `/history` | Local entries only; banner "Stored only on this device" (`common.local`); once accounts exist, a Sign in action to sync history | Sync off: banner `product.turn_on_history_sync`. Sync on: merged local and synced entries with origin device | Search / Open entry |
 | HI-2 | History detail | `/history/:entryId` | Direction, peer, files, transferred bytes vs size, result | Same, plus origin device | Delete entry |
 
 ## 7. Devices
 
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
-| DV-1 | Devices | `/devices` | "This device" card (name, platform, anonymous since) with Rename and Reset device identity; account-required intro with Sign in / Create account | Device added: account device list, current device marked, Rename, Revoke, Pair a new device. Not added: read-only list + "Add this device to your account" | Rename / Sign in / Pair |
+| DV-1 | Devices | `/devices` | "This device" card (name, platform, anonymous since) with Rename and Reset device identity; account-required intro with Sign in / Create account | Device added: account device list, current device marked, Rename, Revoke, Pair a new device. Not added: read-only list + `product.add_device` | Rename / Sign in / Pair |
 | DV-2 | Revoke confirmation | dialog | — | Explains loss of clipboard and history access and key rotation | Revoke |
 
 ## 8. Settings
@@ -93,7 +93,7 @@ Entry points: header chip and ST-1 Sign in, Clipboard intro (CB-1), Devices intr
 | AC-1 | Sign in | `/signin` | Guest taps a CTA | Sign in |
 | AC-2 | Create account | `/signup` | Guest taps Create account | Create account |
 | AC-3 | Reset password | `/reset` | From AC-1 | Send link / Set password |
-| AC-4 | After sign-in choices | `/signin/choices` | After AC-1 or AC-2 | "Add this device to your account" (on), "Copy this device's transfer history" (off) → Continue |
+| AC-4 | After sign-in choices | `/signin/choices` | After AC-1 or AC-2 | `product.add_device` (on), `product.copy_history` (off) → Continue |
 | AC-5 | Account Data Key setup | `/account/key/setup` | First device of a new account | Save recovery phrase → Continue |
 | AC-6 | Pair this device | `/account/key/pair` | Added device without the ADK | Scan QR / paste pairing code, or Use recovery phrase |
 | AC-7 | Sign out | dialog | From ST-1 | Keep local history / Clear local history → Sign out |

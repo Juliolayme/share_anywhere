@@ -6,7 +6,7 @@ Where the Claude Design handoff (`design/claude-design/`, imported in commit 089
 
 | # | Design | PRD decision | What the code does | Revisit |
 |---|---|---|---|---|
-| A1 | Email verification with a six-digit code after sign-up (`verify` screen; `ve_*` strings) | No email verification in v1 (PRD §2 Authentication) | The `verify` screen is not built. Device trust is confirmed on the after-sign-in choices screen instead | Backlog: add verification later; strings are kept in the catalogs |
+| A1 | Email verification with a six-digit code after sign-up (`verify` screen; `ve_*` strings), and a `trust` step that only offers "Trust this device" | No email verification in v1; after sign-in the user chooses to add the device and, separately, to copy local history (PRD §2 Authentication, Signing in) | The `verify` screen is not built. The after-sign-in choices screen (AC-4) uses the design's `trust` layout with two switches, `product.add_device` and `product.copy_history` (section E11) | Backlog: add verification later; strings are kept in the catalogs |
 | A2 | Sign in with Apple on iOS | v1 accounts are email + password only | Not built. App Review requires Sign in with Apple only when another third-party sign-in exists, and none does | Backlog |
 | A3 | Two-step verification settings (`tf_*` strings) | Not in the PRD | Not built; the Settings row is hidden | Backlog |
 | A4 | Transfer strategy picker with "Direct only" and "Prefer relay" | Settings shows transfer strategy Auto (PRD §5.8); route policy is per receiver in the client (PRD §6.3) | Only Auto is offered until Phase 8 decides whether the other two policies ship | Phase 8 |
@@ -31,9 +31,9 @@ These refine the PRD without contradicting it, so the design wins and the owner 
 | B8 | Screen IDs (`home`, `send`, `send-review`, `session`, …) | `docs/UX_SCREEN_MAP.md` |
 | B9 | A "Require approval" default in Settings › Transfer, in addition to the per-session switch | PRD §5.8: Settings holds the default for new sessions (off); each session can still switch it |
 | B10 | Web layout breakpoints 760 px (rail) and 1100 px (sidebar) replace the generic `sm/md/lg/xl` list in the Phase 0 plan | `docs/DESIGN_SYSTEM.md` §4, `docs/phases/PHASE_0_FOUNDATION.md` |
+| B11 | Screen-on pill with per-state copy ("Screen stays on", "Screen can sleep", "Screen-on is off in Settings", "…keep this tab visible") instead of the earlier status-row sentences | `docs/ARCHITECTURE.md` §7.3 |
 | B12 | Receiver code-expired wording "Code expired — ask the sender for a new code" (`common.cx_rx`) and "Stored only on this device" (`common.local`) instead of the PRD's earlier sentences | PRD §5.4, §9 |
 | B13 | Vietnamese pattern translations (`TRP`) become templates with `{1}` placeholders under `<app>_patterns` | `docs/DESIGN_SYSTEM.md` §1.2 |
-| B11 | Screen-on pill with per-state copy ("Screen stays on", "Screen can sleep", "Screen-on is off in Settings", "…keep this tab visible") instead of the earlier status-row sentences | `docs/ARCHITECTURE.md` §7.3 |
 
 ## C. Accessibility notes on design values
 
@@ -79,3 +79,4 @@ These are required by the PRD or `CLAUDE.md` but have no design specimen. Each u
 | E8 | Session full for the receiver | PRD §5.4 | Error state on the preview | `product.session_full_rx` |
 | E9 | Parameterized versions of design strings that only exist as samples or code ternaries: join toast, receiver slots, join-window countdown, "Choose where to save" | PRD §5.3, §5.4, §9 | Toast, Capacity, Share panel, preview CTA | `product.peer_joined`, `slots_left`, `code_expires_in`, `choose_save` |
 | E10 | Clipboard sign-in prompt and the pill's platform hints | PRD §5.9, `docs/ARCHITECTURE.md` §7.3 | Account-required intro; text next to the keep-open banner | `product.sign_in_clipboard`, `hint_android_screen_off`, `hint_ios_lock` |
+| E11 | Account-flow and lifecycle strings the design lacks: after-sign-in choices, add-device prompt for Clipboard, history-sync banner, sender's background join notification, iOS guest Cloud prompt, Cloud "cost unknown", parameterized connection-log lines, loading labels, capacity, email validation | PRD §2, §5.6, §5.9, §6.6, `docs/SECURITY_MODEL.md` §3.1, `docs/DESIGN_SYSTEM.md` §6b | AC-4 trust layout, account-required intro, History banner, local notification, Cloud option, connection-log drawer, Button, Capacity, Input | `product.add_device`, `copy_history`, `add_device_clipboard`, `turn_on_history_sync`, `peer_joined_receiving`, `ios_cloud_signin`, `cost_unknown`, `log_*`, `creating`, `joining`, `capacity`, `capacity_full`, `email_invalid` |

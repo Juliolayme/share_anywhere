@@ -27,7 +27,7 @@ The Design System page wins over the prototypes' CSS when both give a value.
 
 ### 1.2 Strings
 
-- Catalog keys are namespaced by source: `common`, `phrases`, `web`, `web_vv`, `web_xx`, `web_yy`, `web_patterns`, `android*`, `ios*`, `handoff`, `product`. `<app>_patterns` holds the design's Vietnamese pattern translations (`TRP`) as templates with `{1}`, `{2}` placeholders; plural forms are the design's plural wording, and code that needs a singular form uses `Intl.PluralRules` with a separate key.
+- Catalog keys are namespaced by source: `common`, `phrases`, `web`, `web_vv`, `web_xx`, `web_yy`, `web_patterns`, `android*`, `ios*`, `handoff`, `product`. `<app>_patterns` holds the design's Vietnamese pattern translations (`TRP`) as templates with `{1}`, `{2}` placeholders; plural forms are the design's plural wording, and code that needs a singular form uses `Intl.PluralRules` with a separate key. Placeholder rule: `product` keys use named placeholders (`{name}`, `{n}`, `{time}`), `<app>_patterns` use positional ones (`{1}`, `{2}`); one formatting helper accepts an object for named and an array for positional values. `<app>_log` holds the native prototypes' connection-log lines; lines that carry sample values (TURN region, file counts, percentages) are used through the parameterized `product.log_*` keys.
 - Some design strings carry prototype sample data (`common.ve_p` with an example email, `common.ve_resend` with "0:42", `web.joined` with "Minh", dated phrases) or are fragments meant to be concatenated (`android.expires` + `android.left`). Production code must not use them; it uses a parameterized key from `product` instead (for example `product.joined_session` with `{name}`, `product.join_within` with `{time}`). QA treats any of these sample-data keys in a production path as a defect.
 
 ## 2. Color tokens
@@ -118,9 +118,9 @@ Every component implements default, hover, pressed, focus, disabled, loading, an
 
 | Component | Variants and states | Web name | First phase |
 |---|---|---|---|
-| Button | primary, secondary, ghost, destructive; `sm`/`md`/`lg`; loading label ("Creating…") | `<Button variant size loading/>` | 1 |
+| Button | primary, secondary, ghost, destructive; `sm`/`md`/`lg`; loading label (`product.creating`) | `<Button variant size loading/>` | 1 |
 | Input | default, focus, error with message, disabled | `<TextField/>` | 1 |
-| OTP six-digit input | default, filled, focus, error ("Code not found or expired") | `<CodeInput/>` | 2 |
+| OTP six-digit input | default, filled, focus, error (`common.nf_rx`, `common.cx_rx`) | `<CodeInput/>` | 2 |
 | Card, Toast / Snackbar, Dialog / Alert, Bottom sheet, Empty state, Skeleton, Permission banner, Tabs / Segmented, Search and filter bar, Switch | per Design System page | same names | 1 |
 | Sidebar / Rail / Bottom nav (Web); bottom navigation (Android); tab bar (iOS) | active, inactive, focus | `<AppNav/>` | 1 |
 | Identity chip | Guest + Sign in (Sign in hidden until Phase 5A), account menu | `<IdentityChip/>` | 1 |
@@ -131,7 +131,7 @@ Every component implements default, hover, pressed, focus, disabled, loading, an
 | Screen-on pill | one component for every keep-screen-on status; states, strings, and tap behavior are defined once in `docs/ARCHITECTURE.md` §7.3 | `<ScreenOnPill/>` | 2 |
 | QR panel, six-digit code with 10:00 countdown, code expired state | valid, under one minute (stays calm, no red), expired with Create new code | `<SharePanel/>` | 2 |
 | Security words | same three words on sender and receiver | `<SecurityWords/>` | 2 |
-| Capacity five-segment | "2/5 receivers · 3 slots left", "5/5 · Session full" | `<Capacity/>` | 2 |
+| Capacity five-segment | `product.capacity` ("{joined}/5 receivers · {left} slots left"), `product.capacity_full` | `<Capacity/>` | 2 |
 | Participant card | auto-joined receiver (default): device name, platform, Guest/Signed in badge, security words, status, **Remove** and **Block** (Block is a PRD addition, `DESIGN_DEVIATIONS.md` E1); join request (approval on) with Approve / Reject / Block; removed and blocked end states | `<ParticipantCard/>` | 2 |
 | File row | name, type, size; reading metadata | `<FileRow/>` | 2 |
 | Route badge | Direct P2P, Relay, Cloud, Finding route… | `<RouteBadge route/>` | 3 |
@@ -148,10 +148,10 @@ From the Design System Input and OTP specimens:
 
 - Labels are always visible above the field; placeholders never replace labels.
 - Validate on blur and on submit, not on every keystroke; once a field has shown an error, re-validate on input so the error clears as soon as it is fixed.
-- Error state: `danger` border and ring, an icon plus a one-line message below the field ("Enter a valid email address"), linked with `aria-describedby` and announced with `aria-invalid="true"`.
-- The six-digit code input accepts digits only, supports paste of the whole code, moves focus forward and backward automatically, and shows one error for the whole group ("Code not found or expired", "Code expired — ask the sender for a new code").
-- Submit buttons show a loading label ("Creating…", "Joining…") and stay disabled until the form is valid; server errors appear inline above the button, never only in a toast.
-- Rate limits show the wait time from `Retry-After` ("Too many attempts. Try again in {time}.").
+- Error state: `danger` border and ring, an icon plus a one-line message below the field (`product.email_invalid`), linked with `aria-describedby` and announced with `aria-invalid="true"`.
+- The six-digit code input accepts digits only, supports paste of the whole code, moves focus forward and backward automatically, and shows one error for the whole group (`common.nf_rx`, `common.cx_rx`).
+- Submit buttons show a loading label (`product.creating`, `product.joining`) and stay disabled until the form is valid; server errors appear inline above the button, never only in a toast.
+- Rate limits show the wait time from `Retry-After` (`product.rate_limited`).
 
 ## 7. Accessibility rules
 

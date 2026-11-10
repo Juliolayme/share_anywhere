@@ -9,6 +9,7 @@
 //   <App>.dc.html       `const TRP = [[/regex/, m => expr], ...]` VI pattern translations
 //                       -> "<app>_patterns" as EN/VI templates with {1}, {2} placeholders
 //                       (regex and expression are parsed as text, never executed)
+//   <App>.dc.html       `L('en', 'vi')` inline pairs (connection log)  -> "<app>_log" (parsed as text)
 //   Handoff Checklist.dc.html  `copy: [[key, en, vi], ...]`   -> "handoff"
 //   shared/i18n/product.json   PRD strings the design lacks     -> "product" (hand-written)
 // All tables are parsed as JSON5 data (never executed). A table that looks like {en, vi} but cannot be parsed fails the run.
@@ -164,6 +165,9 @@ export function extractPatternTable(source) {
   const line = source.slice(start + 'const TRP = ['.length, source.indexOf('\n', start));
   const entries = [...line.matchAll(/\[\/(.*?)\/, m => (.*?)\](?=, \[|\];?\s*$)/g)];
   if (!entries.length) throw new Error('TRP table found but no entries could be read');
+  // Every "[/" that opens an entry must have been read, so a new entry shape cannot be skipped silently.
+  const opened = (line.match(/\[\//g) ?? []).length;
+  if (opened !== entries.length) throw new Error(`TRP has ${opened} entries but ${entries.length} were converted`);
   const en = {};
   const vi = {};
   for (const [, re, expr] of entries) {
@@ -175,6 +179,20 @@ export function extractPatternTable(source) {
     vi[key] = t.vi;
   }
   return { en, vi };
+}
+
+/** Inline `L('en', 'vi')` pairs (the prototypes' connection-log helper) as {key: {en, vi}}. */
+export function extractInlinePairs(source) {
+  const en = {};
+  const vi = {};
+  for (const m of source.matchAll(/\bL\('((?:[^'\\]|\\.)*)',\s*'((?:[^'\\]|\\.)*)'\)/g)) {
+    const e = m[1].replace(/\\(.)/g, '$1');
+    const v = m[2].replace(/\\(.)/g, '$1');
+    const key = slugify(e);
+    en[key] = e;
+    vi[key] = v;
+  }
+  return Object.keys(en).length ? { en, vi } : null;
 }
 
 /** The Handoff Checklist's key microcopy list: [[key, en, vi], ...]. */
@@ -232,6 +250,11 @@ export function buildCatalogs() {
       const ns = name === 'T' ? app : `${app}_${name.toLowerCase()}`;
       en[ns] = table.en;
       vi[ns] = table.vi;
+    }
+    const pairs = extractInlinePairs(readFileSync(join(DESIGN, file), 'utf8'));
+    if (pairs) {
+      en[`${app}_log`] = pairs.en;
+      vi[`${app}_log`] = pairs.vi;
     }
     const patterns = extractPatternTable(readFileSync(join(DESIGN, file), 'utf8'));
     if (patterns) {

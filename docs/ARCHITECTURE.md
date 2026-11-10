@@ -155,7 +155,7 @@ The banner ends with the **screen-on pill**, the single component that shows kee
 
 | State | When | Icon | Label (catalog key, `<app>` = `web_xx`, `android_xx`, `ios_xx`) | Tap |
 |---|---|---|---|---|
-| On | Controller active, setting on, lock held | sun | "Screen stays on" (`<app>.wake_on`) | Turns it off for this transfer → "Off for this transfer" |
+| On | Controller active, setting on, lock held | sun | "Screen stays on" (`<app>.wake_on`) | Turns it off for this transfer (next row) |
 | Off for this transfer | User tapped the pill off; resets for the next session | sun-dim | "Screen can sleep" (`<app>.wake_off`) | Turns it back on |
 | Paused or done | No active transfer and no open join window | sun-dim | "Screen can sleep — paused" (`<app>.wake_paused`) | Not interactive (`aria-disabled`) |
 | Off in Settings | "Keep screen on during transfers" is off | sun-dim | "Screen-on is off in Settings" (`<app>.wake_setoff`) | Turns the setting back on |

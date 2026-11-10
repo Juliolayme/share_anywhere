@@ -69,6 +69,19 @@ test('every catalog key named in the PRD section 9 microcopy table exists in EN 
   const fv = flatten(vi);
   const missing = keys.filter((k) => !(k in fe) || !(k in fv));
   assert.deepEqual(missing, []);
+  // Positional design keys could be renumbered by a re-import; pin their meaning.
+  assert.equal(fe['web_vv.k34'], 'Start sharing');
+  assert.equal(fe['web_xx.wake_on'], 'Screen stays on');
+  assert.equal(fe['common.local'], 'Stored only on this device');
+  assert.equal(fe['common.cx_rx'], 'Code expired — ask the sender for a new code');
+});
+
+test('inline L(en, vi) pairs from the native prototypes are extracted', () => {
+  const en = flatten(buildCatalogs().en);
+  for (const app of ['android', 'ios']) {
+    assert.equal(en[`${app}_log.joined_the_session`], 'Joined the session');
+    assert.equal(en[`${app}_log.direct_path_blocked_symmetric_nat`], 'Direct path blocked (symmetric NAT)');
+  }
 });
 
 test('TRP patterns convert to templates without executing code', async () => {

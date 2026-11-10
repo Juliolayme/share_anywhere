@@ -54,7 +54,7 @@ Decisions marked **(v2)** were open in the first brief and are now fixed. Decisi
 | Account-only features **(v3)** | Exactly these require Sign in / Create account: Clipboard Sync, the account-wide Devices list (other devices, revoke, pairing), cloud-synced transfer history, and Cloud Distribution as a sender. Everything else works as a guest. |
 | Device identity **(v3)** | Every installation or browser profile gets an **anonymous device identity** on first launch: a server-issued device ID, a short-lived signed **device access token** (JWT, EdDSA/Ed25519, 15 min TTL, strict algorithm allowlist, `kid` for key rotation), and a long-lived **device refresh secret** (256-bit, hashed at rest, rotated on every use, reuse detection revokes the device). Anonymous identities expire after 30 days without use. Details in `docs/SECURITY_MODEL.md` §4 and `docs/ARCHITECTURE.md` §3. |
 | Authentication **(v3)** | Email + password (Argon2id) for accounts. An account session is **layered on top of** the device identity: after sign-in the device access token carries an `acct` claim. All API calls use the bearer access token; the Web keeps the refresh secret in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to the refresh endpoint and holds the access token in memory only. Native apps keep the refresh secret in Android Keystore-backed storage or the iOS Keychain. **No email verification in v1** (structure present, disabled). Password reset via emailed link behind a mail adapter with a dev-mode console/mailpit sink. |
-| Signing in on a device **(v3)** | Sign-in never interrupts an active transfer (the device ID does not change). After sign-in the user chooses: **"Add this device to your account"** (default on; required for Clipboard Sync on this device and for it to appear as trusted in Devices) and **"Copy this device's transfer history to your account"** (default off; shown only when the device is added). A signed-in but not-added device gets a short account session (24 h max, browser-session cookie on Web) and sees "Add this device to use Clipboard Sync". |
+| Signing in on a device **(v3)** | Sign-in never interrupts an active transfer (the device ID does not change). After sign-in the user chooses: **"Add this device to your account"** (`product.add_device`; default on; required for Clipboard Sync on this device and for it to appear as trusted in Devices) and **"Copy this device's transfer history to your account"** (`product.copy_history`; default off; shown only when the device is added). A signed-in but not-added device gets a short account session (24 h max, browser-session cookie on Web) and sees `product.add_device_clipboard`. |
 | Signing out **(v3)** | Removes the device from the account, deletes local account key material, revokes the account session, and issues a **fresh anonymous identity** (new device ID) so guest activity after sign-out cannot be linked to the account. Local history is kept or cleared at the user's choice. |
 | History **(v3)** | Always stored **locally** on the device (IndexedDB on Web, Room on Android, Core Data or GRDB on iOS; iOS 16 rules out SwiftData). Signed-in users can turn on **cloud history sync**, which uploads end-to-end encrypted entries (§7.5). The server's own session records are operational, not history, and are purged 7 days after a session ends. |
 | Abuse controls for anonymous use **(v3, extended v4)** | Rate limits keyed by IP (IPv6 by /64) **and** by device for device creation, session creation, code lookup and failed lookups, joins, TURN credentials, and WebSocket connections; proof-of-work on anonymous device creation above a soft limit; protected mode; Remove and Block (device ID and IP /64); strict session lifetimes. Values in `docs/SECURITY_MODEL.md` §5 and §6. |
@@ -67,7 +67,7 @@ Decisions marked **(v2)** were open in the first brief and are now fixed. Decisi
 | Account key bootstrap **(v2, renamed v3)** | An **Account Data Key (ADK)** is generated on the first device at account creation. It derives separate subkeys for clipboard and cloud history (HKDF labels `clipboard-v1`, `history-v1`). New devices receive the ADK through **QR pairing** from an existing device (ephemeral X25519 exchange). A **12-word recovery phrase** is shown once at key creation and can unwrap the ADK. Server stores only wrapped keys and public metadata. |
 | Clipboard remote write | User taps Copy; never overwrite the system clipboard automatically |
 | Android SDK **(v2)** | minSdk 26, targetSdk 35 |
-| iOS long transfers **(v3)** | iOS suspends apps roughly 30 s after backgrounding; WebRTC and sockets do not survive. Transfers run only while the app is foreground or in the short `beginBackgroundTask` window; the engine checkpoints the bitmap, shows a local notification "Return to Share Anywhere to continue", and resumes on foreground. `BGProcessingTask` is used only for deferrable clipboard sync and cleanup, never for transfers. Do not use audio/VoIP/location background modes as workarounds (App Review rejection). Cloud Distribution (Phase 8) is the recommended path for very large iOS transfers and the UI should say so; because Cloud requires a signed-in sender, a guest iOS sender sees "Sign in to let large transfers finish in the background". |
+| iOS long transfers **(v3)** | iOS suspends apps roughly 30 s after backgrounding; WebRTC and sockets do not survive. Transfers run only while the app is foreground or in the short `beginBackgroundTask` window; the engine checkpoints the bitmap, shows the local notification `ios.susp_h` ("Transfer paused — reopen the app to resume", `docs/ARCHITECTURE.md` §7.3), and resumes on foreground. `BGProcessingTask` is used only for deferrable clipboard sync and cleanup, never for transfers. Do not use audio/VoIP/location background modes as workarounds (App Review rejection). Cloud Distribution (Phase 8) is the recommended path for very large iOS transfers and the UI should say so; because Cloud requires a signed-in sender, a guest iOS sender sees `product.ios_cloud_signin`. |
 | Android long transfers **(v2)** | Foreground service type `dataSync`. Android 15 caps `dataSync` at roughly 6 hours per 24 hours; the transfer engine must checkpoint, stop cleanly at the limit, notify the user, and resume on next launch. Evaluate `JobScheduler` user-initiated data transfer jobs (API 34+) as the preferred path in Phase 6. |
 | Browser support **(v2)** | See §6.8 matrix. Full large-file receive on Chromium; capability-limited on Firefox and Safari. |
 | iOS storage and files **(v3)** | Received files are written with streaming `FileHandle` into the app's Documents directory exposed through the Files app (`UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`); users may also pick a destination folder with `UIDocumentPickerViewController` (security-scoped bookmarks persisted for resume). Sending uses `UIDocumentPickerViewController` with `asCopy: false` and security-scoped access. |
@@ -161,7 +161,7 @@ Guests see a "Guest" header with Sign in and Create account. Available to everyo
 ### 5.9 Clipboard
 
 - Guests see an informational intro (what it does, end-to-end encrypted, needs an account) with Sign in and Create account. **No** clipboard reads, permission prompts, or clipboard API calls happen for guests.
-- Signed in but device not added: "Add this device to use Clipboard Sync". Device added without the key: pairing or recovery phrase first.
+- Signed in but device not added: `product.add_device_clipboard`. Device added without the key: pairing or recovery phrase first.
 - When ready: history, Sync Clipboard (Web button, Android action, iOS `UIPasteControl` with a fallback button), capture status, item detail with Copy, search, clear history. UX always states whether capture is automatic, best-effort, or manual.
 
 ### 5.10 Keep the app open and the screen on
@@ -209,7 +209,7 @@ Measure at clients: candidate pair type, connection state, RTT, effective throug
 
 ### 6.6 Cloud cost and consent
 
-Cloud Distribution requires a signed-in sender (§2). The server rejects `POST /v1/files/{id}/distribute` from a token without `acct` with `403 cloud_requires_account`. Before Cloud Distribution: show estimated temporary storage, receiver egress, retention, estimated cost or "cost unknown"; require explicit consent; enforce budget cap; on exhaustion pause and offer alternatives. Provider pricing is configuration, never hard-coded facts.
+Cloud Distribution requires a signed-in sender (§2). The server rejects `POST /v1/files/{id}/distribute` from a token without `acct` with `403 cloud_requires_account`. Before Cloud Distribution: show estimated temporary storage, receiver egress, retention, estimated cost or `product.cost_unknown`; require explicit consent; enforce budget cap; on exhaustion pause and offer alternatives. Provider pricing is configuration, never hard-coded facts.
 
 ### 6.7 TURN credentials
 
@@ -324,6 +324,14 @@ Microcopy lives in the catalogs (`shared/i18n/en.json`, `vi.json`), never in thi
 | Automatic capture is available when your browser permits it | `handoff.cb_auto` |
 | Open Share Anywhere to sync clipboard | `handoff.cb_notif` |
 | Your clipboard content is encrypted before sync | `handoff.cb_e2e` |
+| iOS background notification "Transfer paused — reopen the app to resume" | `ios.susp_h` |
+| After sign-in choices: add device / copy history | `product.add_device`, `product.copy_history` |
+| Signed in but device not added | `product.add_device_clipboard` |
+| Turn on history sync | `product.turn_on_history_sync` |
+| Sender background join notification | `product.peer_joined_receiving` |
+| iOS guest prompt for Cloud | `product.ios_cloud_signin` |
+| Cloud cost unknown | `product.cost_unknown` |
+| Connection log lines | `android_log.*`, `ios_log.*`, and parameterized `product.log_*` |
 
 ## 10. Accessibility and localization
 

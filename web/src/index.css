@@ -1,3 +1,11 @@
+/* Fonts from the Design System: Plus Jakarta Sans (UI), JetBrains Mono (codes, hashes, sizes). Self-hosted (OFL). */
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/plus-jakarta-sans/800.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
 @import './styles/tokens.css';
 @tailwind base;
 @tailwind components;
@@ -6,16 +14,24 @@
 @layer base {
   html {
     font-family: var(--sa-font-sans);
-    background: var(--sa-color-bg);
-    color: var(--sa-color-text);
+    font-size: 15px;
+    line-height: 24px;
+    background: var(--sa-bg);
+    color: var(--sa-fg);
   }
   body {
     margin: 0;
     min-height: 100vh;
-    background: var(--sa-color-bg);
+    background: var(--sa-bg);
   }
   :focus-visible {
-    outline: var(--sa-border-focus) solid var(--sa-color-focus);
-    outline-offset: 2px;
+    outline: var(--sa-border-focus) solid var(--sa-focus);
+    outline-offset: var(--sa-border-focusOffset);
+  }
+  a {
+    color: var(--sa-send);
+  }
+  a:hover {
+    color: var(--sa-send-hover);
   }
 }

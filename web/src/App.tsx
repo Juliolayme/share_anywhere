@@ -13,7 +13,7 @@ export function App() {
         <Route
           path="/brand"
           element={
-            <Suspense fallback={<p className="p-6 text-text-muted">Loading…</p>}>
+            <Suspense fallback={<p className="p-6 text-fg-2">Loading…</p>}>
               <BrandPreview />
             </Suspense>
           }

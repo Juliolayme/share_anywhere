@@ -36,7 +36,7 @@ test('generated CSS declares every variable and the dark theme in both selectors
 
 test('a failing pair is reported', () => {
   const t = structuredClone(loadTokens());
-  t.color.light['text-muted'] = '#C0C0C0';
+  t.color.light['fg-2'] = '#C0C0C0';
   const failures = checkContrast(t);
-  assert.ok(failures.some((f) => f.startsWith('light: text-muted on')));
+  assert.ok(failures.some((f) => f.startsWith('light: fg-2 on')));
 });

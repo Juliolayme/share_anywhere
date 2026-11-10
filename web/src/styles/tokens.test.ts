@@ -18,13 +18,13 @@ describe('generated design tokens', () => {
       css.indexOf(':root[data-theme="dark"]'),
     );
     for (const name of colorTokens) {
-      expect(darkBlock).toContain(`--sa-color-${name}: ${palettes.dark[name]};`);
-      expect(mediaBlock).toContain(`--sa-color-${name}: ${palettes.dark[name]};`);
+      expect(darkBlock).toContain(`--sa-${name}: ${palettes.dark[name]};`);
+      expect(mediaBlock).toContain(`--sa-${name}: ${palettes.dark[name]};`);
     }
   });
 
   it('defines every color for the light theme on :root', () => {
     const lightBlock = css.slice(0, css.indexOf('@media (prefers-color-scheme: dark)'));
-    for (const name of colorTokens) expect(lightBlock).toContain(`--sa-color-${name}: ${palettes.light[name]};`);
+    for (const name of colorTokens) expect(lightBlock).toContain(`--sa-${name}: ${palettes.light[name]};`);
   });
 });

@@ -16,7 +16,7 @@ const Redacted = "[REDACTED]"
 var sensitiveSubstrings = []string{
 	"token", "secret", "password", "passwd", "authorization", "cookie",
 	"email", "ticket", "capability", "refresh", "ciphertext", "clipboard",
-	"verification_words", "forwarded",
+	"verification_words", "security_words", "forwarded",
 }
 
 // sensitiveWords redact keys that contain them as a whole word (split on _ . -),

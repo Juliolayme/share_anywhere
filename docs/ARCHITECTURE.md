@@ -55,7 +55,7 @@ sequenceDiagram
   App->>API: POST /v1/devices/anonymous (platform, name, [PoW])
   API-->>App: device_id, access token (15 min), refresh secret
   App->>App: Store refresh secret securely; keep access token in memory
-  App->>App: Get started → Transfer home
+  App->>App: Start sharing → Transfer home
   Note over App,API: If bootstrap fails, Transfer home still opens with an inline retry
 ```
 
@@ -93,15 +93,15 @@ sequenceDiagram
   R->>R: Tap Receive (Web: choose save target)
   R->>API: POST /sessions/{id}/join (ticket)
   API->>API: Lock session row, check slot, blocks, accepting
-  API-->>R: Participant JOINED + verification words
-  API-->>S: PARTICIPANT_JOINED (name, badge, verification words)
+  API-->>R: Participant JOINED + security words
+  API-->>S: PARTICIPANT_JOINED (name, badge, security words)
   S->>S: Toast / notification; Remove and Block available
   S-->>R: Signaling (OFFER / ANSWER / ICE) → transfer starts
 ```
 
 ### 4.3 Approval required, or protected mode for code joins
 
-Same as above until `join`, which returns `REQUESTED`. The sender sees a request card with verification words and approves, rejects, or blocks. On approval the participant becomes `JOINED` and signaling starts. Protected mode (`docs/SECURITY_MODEL.md` §3.1) forces this path for joins made with a six-digit code, in every session, while it is active.
+Same as above until `join`, which returns `REQUESTED`. The sender sees a request card with security words and approves, rejects, or blocks. On approval the participant becomes `JOINED` and signaling starts. Protected mode (`docs/SECURITY_MODEL.md` §3.1) forces this path for joins made with a six-digit code, in every session, while it is active.
 
 ### 4.4 Sender controls
 
@@ -128,7 +128,7 @@ The client picks the route per receiver: Direct P2P → TURN UDP → TURN TCP/TL
 
 ### 7.1 When the screen is kept on
 
-A single **keep-awake controller** per client decides, from transfer and session state, whether to hold the screen on. It holds while any of these is true and the setting **Keep screen on during transfers** (default on, stored locally per device) is on:
+A single **keep-awake controller** per client decides, from transfer and session state, whether to hold the screen on. It holds while any of these is true, the setting **Keep screen on during transfers** (default on, stored locally per device) is on, and the user has not tapped the screen-on pill off for the current transfer (that choice resets for the next session):
 
 - the user is a sender whose session has an **open join window** (waiting for receivers, at most 10 minutes per window) or has transfers in progress;
 - any transfer this device takes part in is `CONNECTING`, `TRANSFERRING`, `RESUMING`, `RECONNECTING`, or verifying;
@@ -149,6 +149,8 @@ It releases as soon as none is true: every transfer is completed, failed, cancel
 
 ### 7.3 Status shown to the user
 
+Every send, receive, and waiting screen carries the sticky keep-open banner ("Keep Share Anywhere open — don't close it so the transfer continues."). The Web app registers a `beforeunload` confirmation while the controller is active; Android shows the same text in the foreground-service notification; iOS shows "Transfer paused — reopen the app to resume" with a local notification when the app is backgrounded.
+
 Every send, receive, and active-session screen shows one status row from the controller: "Screen stays on during this transfer", "Screen may turn off: turned off in Settings", "Your browser can't keep the screen on. Keep this tab open and visible.", or "Couldn't keep the screen on". Platform hints sit next to it: Android "You can turn the screen off; the transfer continues", iOS "Locking your iPhone pauses the transfer". Tapping the row opens the setting.
 
 ## 8. Server data model
@@ -159,7 +161,7 @@ Core (guest and account):
 
 - `devices(id, kind anonymous|account, user_id NULL, display_name, platform, refresh_secret_hash, refresh_generation, created_at, last_seen_at, expires_at, revoked_at)` with `CHECK ((kind = 'account') = (user_id IS NOT NULL))`.
 - `share_sessions(id, owner_device_id NOT NULL, owner_user_id NULL, status, require_approval DEFAULT false, join_window_state OPEN|EXPIRED|ENDED_FULL|ENDED_BY_SENDER, join_window_opened_at, join_window_ends_at, code_hmac NULL, created_at, expires_at, ended_at, purge_after)`. `owner_user_id` is set only when the sender was signed in at creation and is used for Cloud and per-account limits, never required.
-- `session_participants(id, session_id, device_id NOT NULL, user_id NULL, role sender|receiver, status, verification_words, joined_via code|link, joined_at, decided_at)` with `UNIQUE (session_id, device_id)`.
+- `session_participants(id, session_id, device_id NOT NULL, user_id NULL, role sender|receiver, status, security_words, joined_via code|link, joined_at, decided_at)` with `UNIQUE (session_id, device_id)`.
 - `session_blocks(session_id, device_id, ip_prefix)`.
 - `shared_files`, `transfers(participant_id, file_id, status, verified_bytes, route, …)`, `session_events`.
 - `capability_tokens(id, session_id, participant_id NULL, purpose join|transfer, token_hash, expires_at, revoked_at)`.

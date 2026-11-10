@@ -62,7 +62,7 @@ The sender can turn Require approval on or off at any time during the session. T
 - **Lockout on guessing:** per-IP and per-device failed-lookup limits with 30-minute lockouts (§5).
 - **Protected mode (global circuit breaker):** when failed code lookups across the whole service exceed `CODE_GUESS_ALARM_PER_MIN` (default 300), the service enters protected mode for 30 minutes. In protected mode, every join **made with a six-digit code** lands in `REQUESTED` and needs the sender's approval, even in open-join sessions. Joins through a link or QR are unaffected because their token is high-entropy. Both sides see why ("Extra check: the sender needs to let you in").
 - **Five-receiver cap**, enforced atomically in the database.
-- **Verification words:** two words derived from the session and the receiver device (2048-word list, about 22 bits) appear next to each receiver on the sender's list and on the receiver's screen, so the sender can spot an unexpected device and remove it.
+- **Security words:** three words derived from the session and the receiver device (one English 2048-word list on every platform and language, about 33 bits) appear next to each receiver on the sender's list and on the receiver's screen, so the sender can spot an unexpected device and remove it.
 - **Visible joins:** every join shows a toast on the sender's screen and, when the sender's app is in the background, a local notification ("Calm Otter joined and is receiving your files").
 - **Block:** removes the receiver, revokes its capabilities, and refuses rejoin from that device ID and from its IP /64 for the rest of the session.
 - **Link and QR tokens** carry at least 128 bits of entropy, are hashed at rest, expire with the join window (at most 10 minutes), and are replaced by Create new code.
@@ -142,15 +142,15 @@ Implemented in Phase 2.
 
 | Abuse case | Mitigations | Residual risk |
 |---|---|---|
-| Guessing a six-digit code to receive a stranger's files (open join) | 10-min join window per code, window ends when full or not accepting, IP and device lockouts, global protected mode forcing approval for code joins, 5-receiver cap, verification words, join toasts and notifications, Remove and Block | Distributed guessing can succeed before protected mode trips (§3.2); senders of sensitive files should turn on Require approval |
+| Guessing a six-digit code to receive a stranger's files (open join) | 10-min join window per code, window ends when full or not accepting, IP and device lockouts, global protected mode forcing approval for code joins, 5-receiver cap, security words, join toasts and notifications, Remove and Block | Distributed guessing can succeed before protected mode trips (§3.2); senders of sensitive files should turn on Require approval |
 | Guessing a code to read the join preview | Same limits; preview shows only sender display name, badge, file names, sizes, count | File names leak to a lucky guesser |
-| Shoulder-surfing or overhearing a code | 10-min join window, Stop accepting nudge, verification words, Remove/Block, Require approval option | Someone nearby can join within the remaining window |
+| Shoulder-surfing or overhearing a code | 10-min join window, Stop accepting nudge, security words, Remove/Block, Require approval option | Someone nearby can join within the remaining window |
 | Leaked share link or QR photo | Expires with the 10-min join window, replaced by Create new code, Stop accepting, 5-receiver cap | Anyone with the link inside the window can join an open session |
 | Removed or blocked receiver keeps receiving | Capabilities revoked, sender closes the peer connection, block covers device ID and IP /64, transfer protocol re-authenticates on every reconnect | TURN allocation stays valid until its credential expires but carries no new data |
 | Block evasion by resetting device identity | Block also covers IP /64 for the session; device creation is rate-limited | Attacker with many IPs |
 | Mass creation of anonymous devices (Sybil) | IP-keyed creation limit, proof-of-work, IP keys on every sensitive limit | Large botnets; CAPTCHA adapter available |
 | Join-request flooding when approval is on | Per-device join limit, 10 pending requests per session, Block, Stop accepting | Annoyance until the sender stops accepting |
-| Impersonation through display names | Guest / Signed in badge, verification words, names labeled as self-chosen | Social engineering of inattentive users |
+| Impersonation through display names | Guest / Signed in badge, security words, names labeled as self-chosen | Social engineering of inattentive users |
 | TURN as a free relay or proxy | Credentials only for joined participants of active sessions, short TTL, issue limits, coturn quotas, relay byte caps per session | Abuse within caps |
 | Hosting abuse via Cloud Distribution | Signed-in sender only, budget cap, TTL, deletion after completion | Abuse by registered accounts; suspension tooling is backlog |
 | Malware distribution | Server never sees content; receiver sees names and sizes before tapping Receive; no public session listing | Recipients may accept malicious files from someone they trust |
@@ -167,7 +167,7 @@ Implemented in Phase 2.
 ## 8. Privacy and logging
 
 - No file content, clipboard plaintext, or history plaintext in logs, metrics, or analytics.
-- Tokens, refresh secrets, capabilities, codes, emails, and verification words are redacted from logs.
+- Tokens, refresh secrets, capabilities, codes, emails, and security words are redacted from logs.
 - IP addresses are used for rate limiting in memory only; logs keep a keyed hash of the IP truncated to /24 (IPv4) or /48 (IPv6) for 7 days.
 - Metrics are aggregates, never per person. No third-party analytics without an ADR.
 

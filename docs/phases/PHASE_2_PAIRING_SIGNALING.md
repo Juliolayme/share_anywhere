@@ -2,7 +2,7 @@
 
 Read: PRD §2 (guest-first, join and approval, keep screen on, abuse controls), §5.2–§5.5, §5.10, §13 (Guest-first, Abuse and rate limits, Join and pairing, Keep screen on); `docs/SECURITY_MODEL.md` §3 (including §3.0 join window and §3.2 guess model), §5, §6, §7; `docs/ARCHITECTURE.md` §4 (including §4.1b), §6, §7, §8; `docs/API.md` §2.2, §3, §4; `docs/UX_SCREEN_MAP.md` §4, §5; `docs/TESTING_AND_CI.md` §2b, §3, §4.
 
-This is the **first vertical slice**, and it requires **no account**: a guest opens the Web app → anonymous device identity → create Share Session → QR / six-digit code / link → a guest receiver enters the code → **joins immediately** (open join is the default) → both see each other with verification words. No test in this phase may sign in; accounts do not exist yet.
+This is the **first vertical slice**, and it requires **no account**: a guest opens the Web app → anonymous device identity → create Share Session → QR / six-digit code / link → a guest receiver enters the code → **joins immediately** (open join is the default) → both see each other with security words. No test in this phase may sign in; accounts do not exist yet.
 
 ## Scope
 
@@ -16,7 +16,7 @@ This is the **first vertical slice**, and it requires **no account**: a guest op
 - Rate limits and lockouts per `docs/SECURITY_MODEL.md` §5 for session creation, concurrent open sessions, code lookup and failed lookups, link resolution, joins, TURN credentials, and WebSocket connections.
 - WebSocket signaling and session events per `docs/API.md` §4. Signaling only between the sender and `JOINED` receivers.
 - `turncreds` for the sender and `JOINED` receivers of an `ACTIVE` session with guest TTL and limits.
-- Web screens TR-1 to TR-5, TR-8, RX-2 to RX-5, RX-7 (outcome states) per `docs/UX_SCREEN_MAP.md`: share panel with the 10:00 join-window countdown, the "Code expired — Create new code" state (Vietnamese "Mã đã hết hạn — Tạo mã mới") with the Create new code button, the "Session full" state, participant list with badges and verification words, join toasts, Remove/Block, Stop accepting nudge, Require approval toggle, request cards, protected-mode notices, join preview, waiting screen, "Join within m:ss" in the preview's last minute, removed/blocked/full/code-expired/session-expired outcomes. Transfer cards show `PENDING`; bytes arrive in Phase 3. Turn on the `sharing` flag.
+- Web screens TR-1 to TR-5, TR-8, RX-2 to RX-5, RX-7 (outcome states) per `docs/UX_SCREEN_MAP.md`: share panel with the 10:00 join-window countdown, the "Code expired — Create new code" state (Vietnamese "Mã đã hết hạn — Tạo mã mới") with the Create new code button, the "Session full" state, participant list with badges and security words, join toasts, Remove/Block, Stop accepting nudge, Require approval toggle, request cards, protected-mode notices, join preview, waiting screen, "Join within m:ss" in the preview's last minute, removed/blocked/full/code-expired/session-expired outcomes. Transfer cards show `PENDING`; bytes arrive in Phase 3. Turn on the `sharing` flag.
 - **Keep screen on (Web), first part:** the keep-awake controller from `docs/ARCHITECTURE.md` §7 with the Screen Wake Lock API, holding while the sender's join window is open (at most 10 minutes per window) and while a receiver waits for approval, and releasing when the window ends with no transfer in progress; re-request on `visibilitychange`; unsupported and refused states; status row on TR-4, TR-5, and RX-5; setting **Keep screen on during transfers** (default on) in Settings. Phase 3 extends it to active transfers.
 - Update `docs/SECURITY_MODEL.md` (status of §3, §5, §6, §7 rows implemented here), `docs/ARCHITECTURE.md` §4 and §8, and `docs/API.md` §2.2 with any deviations.
 
@@ -38,7 +38,7 @@ File bytes over DataChannel, accounts, Android, iOS, Cloud.
   - Access-level route test updated for every new endpoint (`docs/API.md` §1).
 - Web unit: state reducers; join-window countdown from `join_window_ends_at` with server time offset, expired and full states, Create new code resets to 10:00; verification-words rendering; keep-awake controller (acquire while the join window is open, release when it ends with no transfer, release on close/expire/leave/remove, setting off never acquires, re-request on visible, unsupported and `NotAllowedError` statuses).
 - Playwright, all participants guests; sender on `chromium-desktop`, receiver on each of `firefox-desktop`, `webkit-desktop`, `android-chrome`, `ios-safari`:
-  - Receiver opens the link in a fresh context (no Welcome) → preview → Receive → `JOINED` immediately; sender sees the join toast, badge, and the same verification words.
+  - Receiver opens the link in a fresh context (no Welcome) → preview → Receive → `JOINED` immediately; sender sees the join toast, badge, and the same security words.
   - Same via six-digit code.
   - Require approval on → receiver waits → approve; reject path.
   - Remove and Block from the sender; blocked receiver cannot rejoin.

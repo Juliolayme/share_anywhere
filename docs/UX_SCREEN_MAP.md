@@ -2,13 +2,14 @@
 
 Source of truth for every screen, how users reach it, and what guests and signed-in users see on it. Behavior and copy rules live in `docs/PRODUCT_REQUIREMENTS.md` §4, §5, §9; components and tokens in `docs/DESIGN_SYSTEM.md` (Phase 0). Phase 0 adds component references and per-screen state models; each implementing phase marks screens as built.
 
-Status: **planned**.
+Status: **planned**; reconciled with the Claude Design handoff (commit 089e59c). Differences are listed in `docs/design/DESIGN_DEVIATIONS.md`.
 
 ---
 
 ## 1. Conventions
 
 - **Destination** is one path string shared by the Web router, the Android navigation graph, and the iOS router, so deep links and tests use the same names. Web serves it as a URL; native apps map it to a route.
+- **Design screen IDs** from `design/claude-design/` (Screen Map and each prototype's `startScreen` options) are the names used in code and tests: route names, component names, `data-screen` attributes, and test titles. §12 maps each row of this document to them per platform.
 - **Guest** and **Signed in** say what each identity state sees. "Same" means no difference.
 - Every screen implements the shared states where they apply: loading, empty, populated, error, offline, permission-denied, success, partial.
 - No screen in the Onboarding, Transfer, Receive, History, or Settings areas may require an account. Account screens are reached only from the account CTAs in §9.
@@ -18,7 +19,7 @@ Status: **planned**.
 
 ```mermaid
 flowchart LR
-  L[Launch] -->|first launch| W[ON-1 Welcome] -->|Get started| H[TR-1 Transfer home]
+  L[Launch] -->|first launch| W[ON-1 Welcome] -->|Start sharing| H[TR-1 Transfer home]
   L -->|later launches| H
   J[Join link opened] -->|app installed + verified link| P[RX-4 Join preview]
   J -->|no app| WP[Web /join/:token] --> P
@@ -33,7 +34,7 @@ flowchart LR
 
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
-| ON-1 | Welcome | `/welcome` | Value proposition, "No account needed to send or receive files", privacy line, optional "Already have an account? Sign in" link | Not shown (Welcome is first launch only) | Get started → TR-1 |
+| ON-1 | Welcome | `/welcome` | Value proposition, "No account needed to send or receive files", privacy line, optional "Already have an account? Sign in" link | Not shown (Welcome is first launch only) | Start sharing → TR-1 |
 | ON-2 | Identity bootstrap error (inline on TR-1) | — | Inline card: offline, rate-limited with wait time, or proof-of-work in progress; Retry | Same | Retry |
 
 ## 4. Transfer (send)
@@ -44,7 +45,7 @@ flowchart LR
 | TR-2 | Select files | `/send` | Web picker + drag-and-drop; Android SAF; iOS document picker | Same | Continue |
 | TR-3 | Review selection | `/send/review` | Names, types, sizes, total; **Require approval** toggle (default off) with hint for sensitive files; Cloud option disabled with "Sign in to use Cloud transfer" (Phase 8) | Same, Cloud option enabled when consented (Phase 8) | Create session |
 | TR-4 | Session: share and waiting | `/send/session/:id` | QR, six-digit code, and link sharing one join window with a countdown from **10:00**; receiver slots "0 of 5"; Require approval toggle; Stop accepting; keep-screen-on status. **Expired state:** code, link, and QR hidden, "Code expired — Create new code" with the Create new code button; joined receivers keep transferring. **Full state:** "Session full", Create new code disabled until a slot frees | Same | Copy link / Create new code |
-| TR-5 | Participants and requests | `/send/session/:id` (panel) | Joined receivers with name, platform, Guest/Signed in badge, verification words, Remove, Block; when approval is on, request cards with Approve, Reject, Block; join toasts; "Everyone here? Stop accepting" nudge; protected-mode notice when active | Same | Remove / Approve |
+| TR-5 | Participants and requests | `/send/session/:id` (panel) | Joined receivers with name, platform, Guest/Signed in badge, security words, Remove, Block; when approval is on, request cards with Approve, Reject, Block; join toasts; "Everyone here? Stop accepting" nudge; protected-mode notice when active | Same | Remove / Approve |
 | TR-6 | Transfer dashboard | `/send/session/:id/transfers` | Per receiver and per file progress, speed, ETA with uncertainty, route badge, pause/resume/retry/cancel, error drawer, aggregate progress, keep-screen-on status | Same | Pause all / Close session |
 | TR-7 | Session result | `/send/session/:id/result` | Completed, partially completed, failed, cancelled; per-receiver summary; entry written to local history | Same, plus synced to cloud history when sync is on | Done / New session |
 | TR-8 | Close or expire confirmation | dialog | Confirms ending the session and what happens to running transfers | Same | Close session |
@@ -56,8 +57,8 @@ flowchart LR
 | RX-1 | Receive entry | `/receive` | Scan QR (camera permission asked just in time; simulator and desktop show code entry), enter code | Same | Scan / Enter code |
 | RX-2 | Code entry | `/join` | Six digits, validation, lockout message with wait time, "This code has expired. Ask the sender for a new code." | Same | Continue |
 | RX-3 | Web join page | `/join/:token` | Opens the app when installed and verified; otherwise the Web flow | Same | — |
-| RX-4 | Join preview | `/join/preview` | Sender display name, Guest/Signed in badge, file names, sizes, count; browser capability check (Web); "Join within m:ss" in the last minute of the join window; expired message if the window ends before Receive; verification words shown after joining | Same | Receive (Web: choose save target first) |
-| RX-5 | Waiting for approval | `/join/waiting` | Only when approval is on or protected mode applies; verification words; keep-screen-on status | Same | Cancel |
+| RX-4 | Join preview | `/join/preview` | Sender display name, Guest/Signed in badge, file names, sizes, count; browser capability check (Web); "Join within m:ss" in the last minute of the join window; expired message if the window ends before Receive; security words shown after joining | Same | Receive (Web: choose save target first) |
+| RX-5 | Waiting for approval | `/join/waiting` | Only when approval is on or protected mode applies; security words; keep-screen-on status | Same | Cancel |
 | RX-6 | Receiving | `/receive/:sessionId` | Destination, per-file progress, verification, pause/resume/retry, keep-screen-on status, iOS hint "Locking your iPhone pauses the transfer" | Same | Pause |
 | RX-7 | Receive result | `/receive/:sessionId/result` | Completed, partial, failed; open, share, or locate files where the platform allows; removed/blocked/code-expired/session-expired/session-full outcomes; entry written to local history | Same, plus cloud history when on | Open / Done |
 
@@ -116,3 +117,38 @@ Entry points: header chip and ST-1 Sign in, Clipboard intro (CB-1), Devices intr
 | Clipboard tab before Phase 5B | Hidden by the `clipboard` flag | Hidden | Hidden |
 | Keep-screen-on row | Wake Lock status, including "can't keep the screen on" | "Transfer continues with the screen off" | "Locking your iPhone pauses the transfer" |
 | QR scan | Not offered; code entry and links cover Web | CameraX | AVFoundation + Vision (real device only) |
+
+## 12. Design screen IDs, components, and state models
+
+Web IDs come from `Web App.dc.html`, Android IDs from `Android App.dc.html`, iOS IDs from `iOS App.dc.html`. "—" means the platform has no separate screen. Components are named in `docs/DESIGN_SYSTEM.md` §6.
+
+| Row | Web ID | Android ID | iOS ID | Main components | State model (design prototype states) |
+|---|---|---|---|---|---|
+| ON-1 Welcome | `welcome` | `welcome` | `welcome` | Logo lockup, Button lg "Start sharing" | default |
+| ON-2 Identity bootstrap error | `home` (inline) | `home` | `home` | Permission/offline banner | `homeState`: `offline`, `loading` |
+| ON-3 Permissions and privacy (just in time, not on the first-launch path) | `perms` | `perms` | system prompt | Permission banner, system dialog | `notifPermission`: `ask`, `granted`, `denied` |
+| TR-1 Transfer home | `home` | `home` | `home` | Hero Send/Receive buttons, active transfer card, recent list, empty state, skeleton | `homeState`: `active`, `new`, `loading`, `offline` |
+| TR-2 Select files | `send` | `send` | `send` | Drop zone / picker, File row | empty, picking, picked, error |
+| TR-3 Review selection | `send-review` | `send` | `send` | File row list, total, Require approval switch | default, offline |
+| TR-4 Session share and waiting | `session`, `session-full`, `session-expired` | `session`, `session-expired` | `session`, `session-expired` | QR panel, six-digit code, 10:00 countdown, Capacity, Keep-open banner, Screen-on toggle | open window, under one minute, `session-expired`, `session-full`, `wakeLock`: `auto`, `unsupported` |
+| TR-5 Participants and requests | `session` panel, `session-approved` | `session` (`approval=1`) | `session-approval` | Participant card, Security words, toast | auto-joined, pending request, approved, rejected, removed, blocked, protected mode |
+| TR-6 Transfer dashboard | `dashboard` | `dashboard` | `dashboard`, `suspended` | Progress bar/ring, Route badge, Status chip, Files × receivers matrix, connection-log drawer/sheet, Keep-open banner, Screen-on toggle | per receiver: connecting, transferring, paused, reconnecting, verifying, completed, failed, removed, cancelled, budget; iOS `suspended` |
+| TR-7 Session result | `dashboard-done`, `dashboard-partial` | `dashboard-done`, `dashboard-partial` | `dashboard-done`, `dashboard-partial` | Status chip, summary | completed, partial, failed, cancelled |
+| TR-8 Close session dialog | `dashboard` dialog | sheet | alert | Dialog / bottom sheet | default |
+| RX-1 Receive entry | `receive` | `receive` (scan) | `receive` (scan) | QR scanner (native), code input | camera denied, scanning |
+| RX-2 Code entry | `receive` | `receive-code` | `receive-code` | OTP six-digit input | default, error not found, code expired, locked out |
+| RX-3 Web join page | `receive-preview` from a link | App Link | Universal Link | — | — |
+| RX-4 Join preview | `receive-preview` | `rx-preview` | `rx-preview` | Sender card, File row list, total | default, join window under one minute, expired |
+| RX-5 Waiting for approval | `receive-wait` | `rx-wait` | `rx-wait` | Security words, Keep-open banner | `receiveOutcome`: `approved`, `rejected`, `expired` |
+| RX-5b Save location | `receive-save` | `rx-save` | `rx-preview` (Save to Files) | Folder picker, large-file warning | default, `rxIssue`: `storage` |
+| RX-6 Receiving | `receive-progress` | `rx-progress` | `rx-progress` | Progress, Status chip, Keep-open banner, Screen-on toggle | receiving, reconnecting, verifying, paused in background (iOS) |
+| RX-7 Receive result | `receive-done` | `rx-done` | `rx-done` | Status chip, Open / Share / Show in folder | completed, `rxIssue`: `checksum`, `partial` |
+| HI-1, HI-2 History | `history` | `history` | `history` | Tabs, search and filter bar, list, empty state, clear dialog | empty, populated, no match, cleared |
+| DV-1, DV-2 Devices | `devices` | `devices` | `devices` | This device card, device list, rename sheet, revoke dialog | guest, signed in |
+| ST-1 Settings | `settings` | `settings` | `settings` | Grouped list, pickers, Switch | guest, signed in |
+| AC-1 Sign in | `signin` | `signin` | `signin` | Input, Button | default, error |
+| AC-2 Create account | `signup` | `signup` | `signup` | Input with password strength | default, error |
+| AC-3 Reset password | `forgot` | `forgot` | `forgot` | Input, sent state | form, sent |
+| AC-4 After sign-in choices / trust device | `trust` | trust step | trust step | Switch, Button | default (the design's `verify` email step is not built, `DESIGN_DEVIATIONS.md` A1) |
+| AC-8 First-run checklist after sign-in | `checklist` | `checklist` | `checklist` | Checklist | default |
+| CB-1 to CB-6 Clipboard | `clipboard` | `clipboard` | `clipboard` | Account-required intro, Sync Clipboard / PasteButton, status banner, timeline, item detail | Web `clipboardStatus`: `auto`, `besteffort`, `denied`, `unsupported`, `offline`, `paused`; Android: `foreground`, `offline`, `paused`, `error`; iOS: `manual`, `offline`, `paused`, `denied` |

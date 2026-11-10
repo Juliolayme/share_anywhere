@@ -40,11 +40,16 @@ jobs:
               - 'web/**'
               - 'shared/**'
               - 'scripts/**'
+              - 'design/**'
             shared:
               - *common
               - 'shared/**'
               - 'scripts/**'
+              - 'design/**'
               - 'web/src/styles/tokens.*'
+              - 'web/public/**'
+              - 'android/app/src/main/res/**'
+              - 'ios/ShareAnywhere/Assets.xcassets/**'
             docs:
               - *common
               - '**/*.md'
@@ -151,8 +156,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Generated design tokens are current
-        run: pnpm tokens:check
+      - name: Generated design tokens, strings, and brand assets are current
+        run: pnpm tokens:check && pnpm i18n:check && pnpm brand:check
       - name: Format
         run: pnpm --filter @share-anywhere/web format:check
       - name: Lint
@@ -185,6 +190,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Design tokens are valid, meet contrast, and generated files are current
         run: pnpm tokens:check
+      - name: EN/VI catalogs match the design handoff
+        run: pnpm i18n:check
+      - name: Brand assets match the logo definition
+        run: pnpm brand:check
       - name: Script tests
         run: pnpm test:scripts
 

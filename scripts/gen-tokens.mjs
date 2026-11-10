@@ -23,19 +23,22 @@ export function renderCss(t) {
   shared.push(`  --sa-font-sans: ${t.font.family.sans};`);
   shared.push(`  --sa-font-mono: ${t.font.family.mono};`);
   for (const [k, v] of Object.entries(t.font.weight)) shared.push(`  --sa-font-weight-${k}: ${v};`);
-  for (const [k, [size, lh]] of Object.entries(t.font.size)) {
-    shared.push(`  --sa-text-${k}: ${size};`);
-    shared.push(`  --sa-leading-${k}: ${lh};`);
+  for (const [k, ty] of Object.entries(t.font.type)) {
+    shared.push(`  --sa-type-${k}-size: ${ty.size};`);
+    shared.push(`  --sa-type-${k}-line: ${ty.line};`);
+    shared.push(`  --sa-type-${k}-weight: ${ty.weight};`);
+    shared.push(`  --sa-type-${k}-family: var(--sa-font-${ty.family});`);
   }
   for (const [k, v] of Object.entries(t.space)) shared.push(`  --sa-space-${k}: ${v};`);
   for (const [k, v] of Object.entries(t.radius)) shared.push(`  --sa-radius-${k}: ${v};`);
   for (const [k, v] of Object.entries(t.border)) shared.push(`  --sa-border-${k}: ${v};`);
+  for (const [k, v] of Object.entries(t.control)) shared.push(`  --sa-control-${k}: ${v};`);
   for (const [k, v] of Object.entries(t.motion.duration)) shared.push(`  --sa-duration-${k}: ${v};`);
   for (const [k, v] of Object.entries(t.motion.easing)) shared.push(`  --sa-easing-${k}: ${v};`);
   shared.push(`  --sa-touch-target: ${t.touchTarget.web};`);
 
   const theme = (name) => [
-    ...Object.entries(t.color[name]).map(([k, v]) => `  --sa-color-${k}: ${v};`),
+    ...Object.entries(t.color[name]).map(([k, v]) => `  --sa-${k}: ${v};`),
     ...Object.entries(t.elevation[name]).map(([k, v]) => `  --sa-elevation-${k}: ${v};`),
     `  color-scheme: ${name};`,
   ];
@@ -58,9 +61,12 @@ export function renderTs(t) {
     `export const colorTokens = ${JSON.stringify(colorNames)} as const;`,
     `export type ColorToken = (typeof colorTokens)[number];`,
     `export const brand = ${JSON.stringify(t.brand)} as const;`,
-    `export const fontSizes = ${JSON.stringify(t.font.size)} as const;`,
+    `export const logo = ${JSON.stringify(t.logo)} as const;`,
+    `export type LogoMode = keyof typeof logo.modes;`,
+    `export const typeScale = ${JSON.stringify(t.font.type)} as const;`,
     `export const space = ${JSON.stringify(t.space)} as const;`,
     `export const radius = ${JSON.stringify(t.radius)} as const;`,
+    `export const control = ${JSON.stringify(t.control)} as const;`,
     `export const breakpoints = ${JSON.stringify(t.breakpoint)} as const;`,
     `export const elevationLevels = ${JSON.stringify(Object.keys(t.elevation.light))} as const;`,
     `export const palettes = ${JSON.stringify(t.color)} as const;`,
@@ -76,14 +82,15 @@ export function cssVariableNames(t) {
     '--sa-font-sans',
     '--sa-font-mono',
     ...Object.keys(t.font.weight).map((k) => `--sa-font-weight-${k}`),
-    ...Object.keys(t.font.size).flatMap((k) => [`--sa-text-${k}`, `--sa-leading-${k}`]),
+    ...Object.keys(t.font.type).flatMap((k) => ['size', 'line', 'weight', 'family'].map((p) => `--sa-type-${k}-${p}`)),
     ...Object.keys(t.space).map((k) => `--sa-space-${k}`),
     ...Object.keys(t.radius).map((k) => `--sa-radius-${k}`),
     ...Object.keys(t.border).map((k) => `--sa-border-${k}`),
+    ...Object.keys(t.control).map((k) => `--sa-control-${k}`),
     ...Object.keys(t.motion.duration).map((k) => `--sa-duration-${k}`),
     ...Object.keys(t.motion.easing).map((k) => `--sa-easing-${k}`),
     '--sa-touch-target',
-    ...Object.keys(t.color.light).map((k) => `--sa-color-${k}`),
+    ...Object.keys(t.color.light).map((k) => `--sa-${k}`),
     ...Object.keys(t.elevation.light).map((k) => `--sa-elevation-${k}`),
   ];
 }

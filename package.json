@@ -10,11 +10,17 @@
     "tokens": "node scripts/gen-tokens.mjs",
     "tokens:check": "node scripts/gen-tokens.mjs --check",
     "test:scripts": "node --test \"scripts/**/*.test.mjs\"",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#design\""
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#design\"",
+    "brand": "node scripts/export-brand.mjs",
+    "brand:check": "node scripts/export-brand.mjs --check",
+    "i18n": "node scripts/gen-i18n.mjs",
+    "i18n:check": "node scripts/gen-i18n.mjs --check"
   },
   "devDependencies": {
     "ajv": "8.20.0",
-    "markdownlint-cli2": "0.24.0"
+    "json5": "2.2.3",
+    "markdownlint-cli2": "0.24.0",
+    "sharp": "0.35.5"
   },
   "pnpm": {
     "overrides": {

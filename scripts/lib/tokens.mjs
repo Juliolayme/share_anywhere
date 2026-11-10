@@ -27,6 +27,7 @@ export function checkContrast(tokens) {
   const failures = [];
   const rules = [
     ['AA', 4.5],
+    ['AALarge', 3],
     ['nonText', 3],
   ];
   for (const theme of ['light', 'dark']) {

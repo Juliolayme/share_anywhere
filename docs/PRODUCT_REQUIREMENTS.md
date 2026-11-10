@@ -45,7 +45,7 @@ Decisions marked **(v2)** were open in the first brief and are now fixed. Decisi
 | File size target | 4–20 GB, with honest per-browser limits (§6.8) |
 | Receivers | Max 5 per session, enforced atomically server-side |
 | Pairing | QR + six-digit code + HTTPS share link |
-| Join and approval **(v4)** | **Open join is the default:** a valid six-digit code, link, or QR admits the receiver immediately, up to 5 receivers. **Require approval** is an optional per-session setting, **default off**, that the sender can switch at any time (future joins only). The sender can always **Remove** or **Block** a receiver and **Stop accepting**. Because an open-join code admits people, it is protected as a short-lived secret: the code, link, and QR share a **join window of at most 10 minutes**, after which nobody else can join until the sender taps **Create new code** for another 10 minutes; the window ends early when 5 receivers are in or on Stop accepting; receivers who already joined keep transferring and the session follows its own lifetime (24 h guest, 72 h signed in); per-IP and per-device lockouts, and a global **protected mode** that forces approval for code joins when guessing spikes. Both sides see verification words. Details in `docs/SECURITY_MODEL.md` §3. |
+| Join and approval **(v4)** | **Open join is the default:** a valid six-digit code, link, or QR admits the receiver immediately, up to 5 receivers. **Require approval** is an optional per-session setting, **default off**, that the sender can switch at any time (future joins only). The sender can always **Remove** or **Block** a receiver and **Stop accepting**. Because an open-join code admits people, it is protected as a short-lived secret: the code, link, and QR share a **join window of at most 10 minutes**, after which nobody else can join until the sender taps **Create new code** for another 10 minutes; the window ends early when 5 receivers are in or on Stop accepting; receivers who already joined keep transferring and the session follows its own lifetime (24 h guest, 72 h signed in); per-IP and per-device lockouts, and a global **protected mode** that forces approval for code joins when guessing spikes. Both sides see security words. Details in `docs/SECURITY_MODEL.md` §3. |
 | Keep screen on **(v4)** | While sending, receiving, or waiting for receivers, the app keeps the screen on: iOS `isIdleTimerDisabled`, Web Screen Wake Lock API (re-requested when the tab becomes visible again, with a fallback reminder when unsupported or refused), Android `FLAG_KEEP_SCREEN_ON` while a transfer screen is visible (the foreground service still carries the transfer when the screen is off). It turns off automatically when transfers finish, pause, or are cancelled, or the session ends. Setting **Keep screen on during transfers**, default on. Every transfer screen shows the current status. Details in `docs/ARCHITECTURE.md` §7. |
 | Route selection | Per receiver, decided by the **client**, recorded by the server |
 | Route preference | Direct P2P → TURN UDP → TURN TCP/TLS 443 → Cloud (consented) → queue/retry |
@@ -77,18 +77,9 @@ Decisions marked **(v2)** were open in the first brief and are now fixed. Decisi
 
 ## 3. Brand identity
 
-Direction: **Concept 3 — Universal Transfer**. No logo asset exists in the repository; do not search external sites for one. Create an original logo as part of Phase 0.
+Direction: **Concept 3 — Universal Transfer**, realized in the Claude Design handoff as the "Passing lanes" mark: two capsules passing each other with a dot on each leading edge, blue sends and green receives (`design/claude-design/Logo.dc.html`, `Brand.dc.html`). The logo, its four color modes, clear space, minimum sizes, and icon specifications are summarized in `docs/DESIGN_SYSTEM.md` §8; all icons are generated from that single definition by `pnpm brand`.
 
-Creative guidance:
-
-- a clear two-way transfer/exchange idea;
-- a modern rounded symbol suggesting connection across devices and web;
-- blue and green primary colors;
-- legible at favicon and launcher sizes;
-- not literal, not cluttered with device illustrations;
-- original; do not imitate a known brand.
-
-Deliverables: primary lockup (symbol + wordmark), standalone symbol, Android adaptive icon layers, iOS `AppIcon.appiconset` (1024 px source, light/dark/tinted variants for iOS 18), Web favicon/app icons, light/dark variants, monochrome variants, SVG sources plus raster exports, and a short brand usage guide (`docs/DESIGN_SYSTEM.md` §Brand). Assets live in `web/public/brand/`, Android `res/`, and `ios/ShareAnywhere/Assets.xcassets`, and share one vector source. Add a brand preview page at `/brand` in the Web app (dev builds only).
+Brand deliverables (generated): primary lockup and symbol (React `Logo` component and SVGs), Android adaptive icon layers with a monochrome layer, iOS `AppIcon.appiconset` (1024 px light, dark, tinted), Web favicons, PWA icons and manifest. A development-only page at `/brand` renders them.
 
 Palette tokens:
 
@@ -104,7 +95,7 @@ Design-system deliverables before screens: tokens (color, type, spacing, radii, 
 
 ## 4. Information architecture
 
-All three clients open on **Transfer home** for guests and signed-in users alike. Navigation is the same for both: **Transfer, Clipboard, History, Devices, Settings**. Account-only content appears inside those tabs, never as a gate in front of the app. Web uses a sidebar on desktop and a compact bar on small screens; Android uses bottom navigation; iOS uses a `TabView` with a `NavigationStack` per tab. Welcome is shown once on first launch and leads only to Transfer home. Account screens are reached only from account CTAs and return the user to where they started.
+All three clients open on **Transfer home** for guests and signed-in users alike. Navigation is the same for both: **Transfer, Clipboard, History, Devices, Settings**. Account-only content appears inside those tabs, never as a gate in front of the app. Web uses a bottom bar below 760 px, an icon rail from 760 to 1099 px, and a sidebar from 1100 px (account menu in the sidebar footer when signed in); Android uses bottom navigation; iOS uses a `TabView` with a `NavigationStack` per tab. Welcome is shown once on first launch and leads only to Transfer home. Account screens are reached only from account CTAs and return the user to where they started.
 
 Every screen, its destination, entry points, and what guests and signed-in users see are listed in `docs/UX_SCREEN_MAP.md`.
 
@@ -114,7 +105,7 @@ Every screen includes loading, empty, populated, error, offline, and permission-
 
 ### 5.1 Onboarding (guest-first)
 
-- Welcome is a single screen with one primary action, **Get started**, which opens Transfer home. An optional "Already have an account? Sign in" link is allowed but never required.
+- Welcome is a single screen with one primary action, **Start sharing** (design copy), which opens Transfer home. An optional "Already have an account? Sign in" link is allowed but never required.
 - The anonymous device identity is created silently in the background. If creation fails, Transfer home still opens with an inline retry; local features keep working.
 - The device display name is auto-generated (platform model + two random words) and editable later. It is shown to the other side when joining.
 - Permissions are requested just in time: camera when scanning a QR code, notifications when a transfer starts. Local network access is never requested.
@@ -134,8 +125,9 @@ Send files and Receive files are the two primary actions, identical for guests a
 - Creating a session produces a QR code, a six-digit code, and an HTTPS share link that share one 10-minute join window, plus the remaining receiver slots. The session screen counts down from **10:00**. When the window ends it shows **"Code expired — Create new code"** (Vietnamese: "Mã đã hết hạn — Tạo mã mới"), hides the old code, link, and QR, and offers **Create new code**, which shows a new code and restarts the countdown. When the window ended because 5 receivers are in, the screen says "Session full" instead and Create new code is unavailable until a slot frees.
 - Ending the join window never interrupts receivers who already joined.
 - **Require approval** is visible on the review screen and in the session, default off. The review screen hints to turn it on for sensitive files.
-- With open join, receivers appear in the participant list as they join, each with display name, platform, Guest/Signed in badge, and verification words, and the sender gets a toast (or a local notification when the app is in the background). Remove and Block are always one tap away. After the first join the sender is nudged: "Everyone here? Stop accepting new receivers".
+- With open join, receivers appear in the participant list as they join, each with display name, platform, Guest/Signed in badge, and three security words, and the sender gets a toast (or a local notification when the app is in the background). Remove and Block are always one tap away. After the first join the sender is nudged: "Everyone here? Stop accepting new receivers".
 - With approval on, joiners appear as request cards with Approve, Reject, and Block.
+- The session holds five receivers; a sixth device is declined automatically and the sender sees a notice ("Session full — extra devices are declined automatically.").
 - When protected mode applies, the sender sees why code joins need approval.
 - The Cloud option is visible but disabled for guests with "Sign in to use Cloud transfer".
 - The keep-screen-on status row is visible while the join window is open and during transfers.
@@ -144,7 +136,7 @@ Send files and Receive files are the two primary actions, identical for guests a
 
 - Works without an account. Entry by QR scan (native), six-digit code, or link. A first-time visitor arriving by link skips Welcome.
 - The join preview shows the sender's display name and badge and the file names, sizes, and count, nothing more.
-- Tapping **Receive** joins the session. With open join the transfer starts right away (on Web after the save target is chosen). With approval on, or in protected mode for code joins, the receiver waits for the sender and sees the same verification words.
+- Tapping **Receive** joins the session. With open join the transfer starts right away (on Web after the save target is chosen). With approval on, or in protected mode for code joins, the receiver waits for the sender and sees the same three security words.
 - Outcomes include removed, blocked, rejected, code expired ("This code has expired. Ask the sender for a new code."), session expired, session full, and session not accepting, each with a clear message. In the last minute of the window the preview shows "Join within m:ss".
 - Browser capability limits are detected and explained before the transfer starts. Never promise background downloads in mobile browsers.
 - If the Android or iOS app is installed and App Links / Universal Links are verified, the link opens the app; otherwise the Web join page.
@@ -172,8 +164,10 @@ Guests see a "Guest" header with Sign in and Create account. Available to everyo
 - Signed in but device not added: "Add this device to use Clipboard Sync". Device added without the key: pairing or recovery phrase first.
 - When ready: history, Sync Clipboard (Web button, Android action, iOS `UIPasteControl` with a fallback button), capture status, item detail with Copy, search, clear history. UX always states whether capture is automatic, best-effort, or manual.
 
-### 5.10 Keep screen on
+### 5.10 Keep the app open and the screen on
 
+- While sending, receiving, or waiting, a sticky banner says "Keep Share Anywhere open — don't close it so the transfer continues." (VI: "Giữ ứng dụng mở — không thoát để việc truyền không bị gián đoạn."). The Web app asks for confirmation before the tab closes (`beforeunload`); Android repeats the text in the ongoing foreground-service notification.
+- A screen-on pill next to the banner shows the state and can be tapped off for the current transfer only; it resets for the next session.
 - Applies to sending, receiving, waiting for receivers while the join window is open (at most 10 minutes per window), and waiting for approval; released when transfers complete, fail, pause, or are cancelled, when the join window ends with no transfer in progress, when the session ends, or when the receiver leaves or is removed.
 - Controlled by **Keep screen on during transfers** (default on, stored per device).
 - Every transfer screen shows one status: on, off by setting, not supported (Web), or refused (Web), with platform hints. Mechanics per platform are in `docs/ARCHITECTURE.md` §7.
@@ -211,7 +205,7 @@ Block count sanity: 20 GB / 4 MiB = 5120 blocks → 640-byte bitmap.
 
 ### 6.5 Metrics and ETA
 
-Measure at clients: candidate pair type, connection state, RTT, effective throughput, loss/retransmit indicators, `bufferedAmount`, ACK rate, verified bytes. Smooth with EWMA. ETA = remaining verified bytes / effective throughput, provisional at first, hidden during disconnect/negotiation; group ETA follows the slowest active receiver. No large pre-transfer speed tests.
+Measure at clients: candidate pair type, connection state, RTT, effective throughput, loss/retransmit indicators, `bufferedAmount`, ACK rate, verified bytes. Smooth with EWMA. ETA = remaining verified bytes / effective throughput; the UI shows "Estimating time…" until progress passes 3 % and while reconnecting; group ETA follows the slowest active receiver. No large pre-transfer speed tests.
 
 ### 6.6 Cloud cost and consent
 
@@ -294,7 +288,7 @@ These are specified in their own documents. This section only states the require
 **Web shell:** brand mark and wordmark, main nav, identity chip ("Guest" + Sign in, or account menu), theme selector, responsive sidebar/topbar, page title and primary action.
 **Account-required intro:** one reusable component on all platforms for the Clipboard tab, the Devices account section, and disabled Settings sections: icon, headline, two-sentence benefit, privacy line, Sign in and Create account buttons. It is an informational state, never styled as an error.
 **Transfer dashboard:** prominent Send/Receive, active transfer summary, session card, device/network indicators, first-run empty state.
-**Send session:** drag-and-drop + picker, file list with icon/name/size/remove, total size, Require approval toggle, create action, QR/code/copy-link panel with a 10:00 join-window countdown and the "Code expired — Create new code" state, live participant list with verification words and Remove/Block, request cards when approval is on, capacity indicator, Stop accepting, keep-screen-on status row.
+**Send session:** drag-and-drop + picker, file list with icon/name/size/remove, total size, Require approval toggle, create action, QR/code/copy-link panel with a 10:00 join-window countdown and the "Code expired — Create new code" state, live participant list with security words and Remove/Block, request cards when approval is on, capacity indicator, Stop accepting, keep-screen-on status row.
 **Active transfer:** keep-screen-on status row; overall, per-receiver, per-file progress; route badge (Direct / Relay / Cloud); throughput and ETA with uncertainty state; pause/resume/retry/cancel; details/error drawer; restrained completion state.
 **Receive page:** sender details, file preview, Receive action, approval wait only when approval is on, destination/permission guidance, progress and verification, keep-screen-on status row.
 **Clipboard:** Sync button, capture status with capability explanation, item timeline with device and time, truncated preview, Copy, search/filter, clear history, privacy hints.
@@ -302,7 +296,7 @@ These are specified in their own documents. This section only states the require
 **Android:** all equivalent screens in Compose with state hoisting; long-running work out of composables.
 **iOS:** all equivalent screens in SwiftUI with `@Observable` view models, engine work on structured-concurrency tasks off the main actor, Human Interface Guidelines patterns while keeping the Share Anywhere identity.
 
-Microcopy: "Get started", "No account needed to send or receive files", "Guest", "Sign in to sync your clipboard", "Stored on this device only", "Sign in to use Cloud transfer", "Send files", "Receive files", "Calm Otter joined", "Remove", "Block", "Require approval", "Everyone here? Stop accepting new receivers", "Waiting for the sender to let you in", "Code expires in 9:41", "Code expired — Create new code", "Create new code", "This code has expired. Ask the sender for a new code.", "Screen stays on during this transfer", "Keep this tab open and visible", "Locking your iPhone pauses the transfer", "Connected directly", "Using relay", "Cloud transfer requires your approval", "Sync Clipboard", "Automatic capture is available when your browser permits it", "Open Share Anywhere to sync clipboard", "Your clipboard content is encrypted before sync". Never "Always syncing".
+Microcopy: "Start sharing", "No account needed to send or receive files", "Guest", "Sign in to sync your clipboard", "Stored on this device only", "Sign in to use Cloud transfer", "Send files", "Receive files", "Calm Otter joined", "Remove", "Block", "Require approval", "Everyone here? Stop accepting new receivers", "Waiting for the sender to let you in", "Code expires in 9:41", "Code expired — Create new code", "Create new code", "This code has expired. Ask the sender for a new code.", "Screen stays on during this transfer", "Keep this tab open and visible", "Locking your iPhone pauses the transfer", "Connected directly", "Using relay", "Cloud transfer requires your approval", "Sync Clipboard", "Automatic capture is available when your browser permits it", "Open Share Anywhere to sync clipboard", "Your clipboard content is encrypted before sync". Never "Always syncing".
 
 ## 10. Accessibility and localization
 
@@ -313,7 +307,7 @@ Keyboard navigation; screen reader labels and landmarks (VoiceOver labels and tr
 Security is a product feature. The controls, join-mode analysis, lifetimes, rate limits, threat model, residual risks, and privacy rules are in `docs/SECURITY_MODEL.md`. Requirements that product work must respect:
 
 - File sharing never requires an account; account-only features are exactly those in §2.
-- Open join is the default; its protections (10-minute join window, lockouts, protected mode, five-receiver cap, verification words, Remove/Block) are mandatory, not optional hardening.
+- Open join is the default; its protections (10-minute join window, lockouts, protected mode, five-receiver cap, security words, Remove/Block) are mandatory, not optional hardening.
 - Every route enforces its declared access level (`docs/API.md` §1).
 - Clipboard and cloud history are account-only and end-to-end encrypted.
 - `docs/SECURITY_MODEL.md` is extended by Phases 1, 2, 5A, 5B, and 8 and reviewed end to end in Phase 9.
@@ -328,7 +322,7 @@ Mapped to CI jobs in `docs/TESTING_AND_CI.md`.
 
 **Guest-first:** first launch goes Welcome → Transfer home with no sign-in screen on Web, Android, and iOS; join link on first visit skips Welcome; guest sender and guest receiver complete a transfer without any account on every client pair; anonymous identity survives reload/restart; refresh rotation and reuse detection; reset device identity; History stored locally for guests and survives restart; Settings shows Guest and Sign in; Clipboard tab shows the intro for guests and makes no clipboard API or permission calls; clipboard, history-sync, devices-list, and keys endpoints return `403 account_required` for guest tokens and `403 device_not_added` for signed-in but not-added devices; Cloud distribute as guest returns `403 cloud_requires_account` and the UI shows the disabled option; guest receiver who joined can download a cloud-distributed file; sign-in during an active transfer does not interrupt it; post-sign-in choices (add device on/off, copy history on/off) behave as specified; sign-out issues a new device ID and wipes ADK material.
 **Abuse and rate limits:** anonymous device creation limit and proof-of-work; session creation limit; concurrent open sessions per device; code lookup limits and lockout; failed-lookup lockouts per IP and per device; protected mode trips on the global guess rate and forces approval for code joins only; join limit and per-session pending cap when approval is on; Block refuses rejoin from the same device and from a new identity on the same IP /64; TURN credential refused for non-joined or non-active participants and when over limit; WebSocket connection caps; `Retry-After` present and shown in UI; `X-Forwarded-For` ignored from untrusted sources; every route enforces its declared `x-sa-access` level.
-**Join and pairing:** open join by code, link, and QR starts receiving without any sender action; Require approval off by default; with approval on, receiver waits, then approve and reject both work; toggling Require approval affects only future joins; Remove stops the transfer and frees the slot; Block refuses rejoin; Stop accepting ends the join window; the code, link, and QR stop admitting after 10 minutes and when the session is full; the session screen counts down from 10:00 and then shows "Code expired — Create new code"; Create new code issues a new code, link, and QR, restarts at 10:00, and the old ones fail with `join_window_expired`; a join ticket obtained at 9:58 fails after 10:00; receivers who joined before expiry keep transferring and the session stays alive until its own lifetime; Create new code is unavailable while 5 receivers are in; invalid code; verification words match on both sides; join toast and background notification for the sender; sender closes; session lifetimes (idle, max); sixth receiver rejected atomically under concurrency.
+**Join and pairing:** open join by code, link, and QR starts receiving without any sender action; Require approval off by default; with approval on, receiver waits, then approve and reject both work; toggling Require approval affects only future joins; Remove stops the transfer and frees the slot; Block refuses rejoin; Stop accepting ends the join window; the code, link, and QR stop admitting after 10 minutes and when the session is full; the session screen counts down from 10:00 and then shows "Code expired — Create new code"; Create new code issues a new code, link, and QR, restarts at 10:00, and the old ones fail with `join_window_expired`; a join ticket obtained at 9:58 fails after 10:00; receivers who joined before expiry keep transferring and the session stays alive until its own lifetime; Create new code is unavailable while 5 receivers are in; invalid code; security words match on both sides; join toast and background notification for the sender; sender closes; session lifetimes (idle, max); sixth receiver rejected atomically under concurrency.
 **Keep screen on:** held while the join window is open, while waiting for approval, sending, and receiving on Web, Android, and iOS; released automatically on join-window end with no transfer running, completion, failure, pause, cancel, session close or expiry, and removal; setting off means never held; Web re-requests after the tab becomes visible again; Web wake lock unsupported shows the reminder; Web wake lock refused (`NotAllowedError`) shows the refused status; Android flag set only while a transfer screen is visible and the transfer continues with the screen off; iOS idle timer reset on background and restored on foreground; status row text matches the state.
 **Transfer:** Web→Web; Android→Web; Web→Android; iOS→Web; Web→iOS; Android↔iOS (nightly); multiple files; empty/unsupported file; read permission revoked; storage full; sender disconnect; receiver disconnect; pause/resume; out-of-order blocks; missing-block bitmap; checksum mismatch; reconnect and route migration; slow receiver does not stall others; five concurrent receivers; forced TURN relay.
 **Clipboard (signed in, device added):** Web manual capture; Web auto best-effort; permission denied; insecure/unsupported context; in-page copy event only; no false universal-observation claim; Android foreground capture; Android background restriction; Android manual action; iOS foreground capture; iOS background non-capture; iOS `UIPasteControl` sync without banner; iOS fallback button path; sensitive skipped; duplicate event idempotency; remote item shown; explicit Copy writes; no auto-overwrite; offline queue and reconnect; expiry and deletion; ciphertext undecryptable without client key; new-device pairing; recovery phrase; revoke and rotate; encrypted cloud history round-trip and import of local history.

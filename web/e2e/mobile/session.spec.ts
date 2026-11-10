@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { closeSenderBrowser, createSession, guestPage, enterCode, senderPage } from '../pairing/helpers';
+import { closeContexts, closeSenderBrowser, createSession, enterCode, guestPage, senderPage } from '../pairing/helpers';
 
 test.skip(({ isMobile }) => !isMobile, 'mobile projects only');
 test.afterAll(closeSenderBrowser);
+test.afterEach(closeContexts);
 
 test('session (mobile): QR and code are legible at phone size; receiver flow fits the screen', async ({ browser }) => {
   const sender = await guestPage(browser, { wake: 'granted' });

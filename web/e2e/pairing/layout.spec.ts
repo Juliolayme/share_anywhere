@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { apiDevice, apiJoin, closeSenderBrowser, createSession, senderPage } from './helpers';
+import { apiDevice, apiJoin, closeContexts, closeSenderBrowser, createSession, senderPage } from './helpers';
 
 // Layout regressions on the sender's session screen (Chromium sender, so this runs once per project cheaply).
 test.afterAll(closeSenderBrowser);
+test.afterEach(closeContexts);
 
 test('session: the code is readable and the copy button keeps its 44 px target at every width', async () => {
   const sender = await senderPage();

@@ -1,11 +1,20 @@
 import { expect, test, type Page } from '@playwright/test';
-import { closeSenderBrowser, createSession, enterCode, guestPage, renameDevice, senderPage } from '../pairing/helpers';
+import {
+  closeContexts,
+  closeSenderBrowser,
+  createSession,
+  enterCode,
+  guestPage,
+  renameDevice,
+  senderPage,
+} from '../pairing/helpers';
 import { fixture, receiverPage } from '../transfer/helpers';
 
 // Visual baselines per mobile project (docs/TESTING_AND_CI.md §3). Baselines are generated on the CI runner
 // (nightly.yml mobile-snapshots) so fonts match; values that change every run are masked.
 test.skip(({ isMobile }) => !isMobile, 'mobile projects only');
 test.afterAll(closeSenderBrowser);
+test.afterEach(closeContexts);
 const shot = (page: Page, name: string, mask: string[]) =>
   expect(page).toHaveScreenshot(name, {
     animations: 'disabled',

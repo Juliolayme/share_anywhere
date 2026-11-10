@@ -4,7 +4,15 @@ import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, wri
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, expect, firefox, test, webkit, type Browser, type Download, type Page } from '@playwright/test';
-import { BASE, enterCode, guestPage, stubWakeLock, type WakeMode } from '../pairing/helpers';
+import {
+  BASE,
+  closeContexts,
+  enterCode,
+  guestPage,
+  stubWakeLock,
+  trackContext,
+  type WakeMode,
+} from '../pairing/helpers';
 
 const DIR = process.env.E2E_FIXTURE_DIR ?? join(tmpdir(), 'sa-fixtures');
 const SCRIPT = new URL('../../../scripts/gen-fixture.sh', import.meta.url).pathname;
@@ -86,8 +94,9 @@ export function receiverCounters(rx: Page, sessionId: string): Promise<Counters>
  */
 const ownBrowsers: Browser[] = [];
 
-/** Closes the per-receiver browsers that receiverPage launched (call after diagnostics are attached). */
+/** Closes every context the helpers opened and the per-receiver browsers (call after diagnostics are attached). */
 export async function closeReceiverBrowsers() {
+  await closeContexts();
   await Promise.all(ownBrowsers.splice(0).map((b) => b.close()));
 }
 
@@ -128,16 +137,18 @@ export async function receiverPage(
   }
   if (!persistent) return guestPage(browser, wake ? { wake } : {});
   const type = browserName === 'webkit' ? webkit : chromium;
-  const ctx = await type.launchPersistentContext(mkdtempSync(join(tmpdir(), `sa-${browserName}-`)), {
-    ...(browserName === 'chromium' ? { args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] } : {}),
-    baseURL: BASE,
-    locale: 'en-US',
-    ...(use.viewport ? { viewport: use.viewport } : {}),
-    ...(use.userAgent ? { userAgent: use.userAgent } : {}),
-    ...(use.deviceScaleFactor ? { deviceScaleFactor: use.deviceScaleFactor } : {}),
-    ...(use.isMobile !== undefined ? { isMobile: use.isMobile } : {}),
-    ...(use.hasTouch !== undefined ? { hasTouch: use.hasTouch } : {}),
-  });
+  const ctx = trackContext(
+    await type.launchPersistentContext(mkdtempSync(join(tmpdir(), `sa-${browserName}-`)), {
+      ...(browserName === 'chromium' ? { args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] } : {}),
+      baseURL: BASE,
+      locale: 'en-US',
+      ...(use.viewport ? { viewport: use.viewport } : {}),
+      ...(use.userAgent ? { userAgent: use.userAgent } : {}),
+      ...(use.deviceScaleFactor ? { deviceScaleFactor: use.deviceScaleFactor } : {}),
+      ...(use.isMobile !== undefined ? { isMobile: use.isMobile } : {}),
+      ...(use.hasTouch !== undefined ? { hasTouch: use.hasTouch } : {}),
+    }),
+  );
   if (wake) await stubWakeLock(ctx, wake);
   await ctx.addInitScript(() => {
     try {

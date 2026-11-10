@@ -1,5 +1,5 @@
 import type { SessionSocket, SocketEvent } from '../../../lib/ws/socket';
-import type { HistoryStatus, HistoryStore } from '../../history/store/history-store';
+import type { HistoryEntry, HistoryStatus, HistoryStore } from '../../history/store/history-store';
 import type { SessionView } from '../../sharing/api';
 import { fromDataChannel } from '../engine/channel';
 import { Throughput } from '../engine/eta';
@@ -124,7 +124,16 @@ export const txExcluded = (s: TxStatus) => s === 'removed' || s === 'blocked';
 const ENDED: TxStatus[] = ['completed', 'failed', 'cancelled', 'removed', 'blocked'];
 export const txEnded = (s: TxStatus) => ENDED.includes(s);
 
-type ResultInput = Pick<TxReceiver, 'status' | 'delivered'>;
+/**
+ * One receiver as the result rule sees it. `done` and `total` count its files (transfers); without them the
+ * receiver counts as one unit, complete when its status is completed.
+ */
+export interface ResultInput {
+  status: TxStatus;
+  delivered: boolean;
+  done?: number;
+  total?: number;
+}
 
 /**
  * Whether a receiver counts toward the session result (docs/ARCHITECTURE.md §4.5, the same rule as the
@@ -133,12 +142,22 @@ type ResultInput = Pick<TxReceiver, 'status' | 'delivered'>;
  */
 export const txCounts = (r: ResultInput) => !txExcluded(r.status) || r.delivered;
 
-/** Session result on the sender over the receivers that count (txCounts). */
+/**
+ * Session result on the sender over the files of the receivers that count (txCounts), like the server's
+ * EndStatus: completed when every counted file arrived, partial when some did (a receiver that got one file of
+ * two makes it partial), otherwise failed or cancelled.
+ */
 export function finalOf(rs: ResultInput[]): NonNullable<TxFinal> {
   const counted = rs.filter(txCounts);
-  const completed = counted.filter((r) => r.status === 'completed' || r.delivered).length;
-  if (counted.length && completed === counted.length) return 'completed';
-  if (completed > 0) return 'partial';
+  let total = 0;
+  let done = 0;
+  for (const r of counted) {
+    const t = r.total ?? 1;
+    total += t;
+    done += r.status === 'completed' || r.delivered ? t : Math.min(t, r.done ?? 0);
+  }
+  if (total > 0 && done === total) return 'completed';
+  if (done > 0) return 'partial';
   return counted.some((r) => r.status === 'failed') ? 'failed' : 'cancelled';
 }
 
@@ -211,7 +230,8 @@ export class SenderController extends Observable<TxState> {
   private sampler: ReturnType<typeof setInterval> | null = null;
   /** What the History entry last recorded, so it is rewritten (same id) only when the result changes. */
   private historyKey = '';
-  private historyCreatedAt = 0;
+  private historyWritten = false;
+  private historyChain: Promise<void> = Promise.resolve();
   /** When the first verified byte reached any receiver (History duration). */
   private startedAt: number | undefined;
   private initialized: Promise<void> | null = null;
@@ -684,16 +704,27 @@ export class SenderController extends Observable<TxState> {
   /** Session result (resultOf); the History entry follows it (one entry per session, rewritten when it changes). */
   private checkFinal(): void {
     const rs = this.state_.receivers;
-    const final = resultOf(rs, this.state_.ended);
+    const all = [...this.transfers.values()];
+    const inputs = rs.map((r): ResultInput => {
+      const mine = all.filter((t) => t.participant_id === r.participantId);
+      const total = Math.max(mine.length, this.state_.files.length);
+      return {
+        status: r.status,
+        delivered: r.delivered,
+        done: mine.filter((t) => t.status === 'COMPLETED').length,
+        total,
+      };
+    });
+    const final = resultOf(inputs, this.state_.ended);
     if (this.state_.final !== final) this.update({ final });
     if (!final || !this.d.history) return;
     const key = JSON.stringify([final, rs.map((r) => [r.participantId, r.status, r.verified])]);
     if (key === this.historyKey) return;
     this.historyKey = key;
-    this.historyCreatedAt ||= Date.now();
+    const history = this.d.history;
     const files = this.state_.files;
     const status: HistoryStatus = final;
-    void this.d.history.add({
+    const entry: HistoryEntry = {
       id: `tx:${this.d.sessionId}`,
       direction: 'sent',
       title: files[0]?.name ?? '',
@@ -709,9 +740,23 @@ export class SenderController extends Observable<TxState> {
         transferredBytes: Math.max(0, ...rs.map((r) => r.perFile[f.index] ?? 0)),
       })),
       ...routeOf(rs.map((r) => r.route)),
-      ...(this.startedAt ? { startedAt: this.startedAt } : {}),
       status,
-      createdAt: this.historyCreatedAt,
-    });
+      createdAt: Date.now(),
+    };
+    // Writes run one after another. The entry keeps its first creation time and start time across rewrites and
+    // reloads, and an entry the user deleted after this tab wrote it is not brought back.
+    this.historyChain = this.historyChain
+      .then(async () => {
+        const prev = (await history.list()).find((e) => e.id === entry.id);
+        if (!prev && this.historyWritten) return;
+        const startedAt = this.startedAt ?? prev?.startedAt;
+        await history.add({
+          ...entry,
+          createdAt: prev?.createdAt ?? entry.createdAt,
+          ...(startedAt ? { startedAt } : {}),
+        });
+        this.historyWritten = true;
+      })
+      .catch(() => undefined);
   }
 }

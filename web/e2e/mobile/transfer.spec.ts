@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { closeSenderBrowser, createSession, senderPage } from '../pairing/helpers';
+import { closeContexts, closeSenderBrowser, createSession, senderPage } from '../pairing/helpers';
 import { downloadAndHash, fixture, joinToSave, receiverPage } from '../transfer/helpers';
 
 test.skip(({ isMobile }) => !isMobile, 'mobile projects only');
 test.afterAll(closeSenderBrowser);
+test.afterEach(closeContexts);
 
 test('receive (mobile): the capability check shows this browser’s row and an 8 MB file arrives through browser storage', async ({
   browser,

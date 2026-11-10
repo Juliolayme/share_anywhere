@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { closeSenderBrowser, createSession, senderPage } from '../pairing/helpers';
+import { closeContexts, closeSenderBrowser, createSession, senderPage } from '../pairing/helpers';
 import {
   MiB,
   downloadAndHash,
@@ -15,6 +15,7 @@ import {
 // reload mid-transfer, final SHA-256, and a JS heap ceiling on both sides (docs/TESTING_AND_CI.md §2.2).
 test.skip(!process.env.E2E_LARGE, 'nightly large-file job only (E2E_LARGE=1)');
 test.afterAll(closeSenderBrowser);
+test.afterEach(closeContexts);
 
 const CEILING = 512 * MiB; // the engine buffers at most a few 4 MiB blocks; whole-file buffering would blow this
 

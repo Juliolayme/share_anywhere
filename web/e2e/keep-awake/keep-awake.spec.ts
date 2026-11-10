@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { closeSenderBrowser, createSession, guestPage, open, type WakeMode } from '../pairing/helpers';
+import { closeContexts, closeSenderBrowser, createSession, guestPage, open, type WakeMode } from '../pairing/helpers';
 
 // Keep screen on with navigator.wakeLock stubbed (docs/TESTING_AND_CI.md §3). Runs in this project's browser.
 test.afterAll(closeSenderBrowser);
+test.afterEach(closeContexts);
 
 const wl = (page: import('@playwright/test').Page) =>
   page.evaluate(() => (window as unknown as { __wl: { requests: number; releases: number } }).__wl);

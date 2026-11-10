@@ -273,6 +273,10 @@ describe('SenderController', () => {
     // Blocked after receiving every file: still a delivery.
     expect(finalOf([r('blocked', true)])).toBe('completed');
     expect(finalOf([r('blocked', true), r('failed')])).toBe('partial');
+    // Counted over files: one receiver with one file of two is partial, as on the server and the receiver.
+    expect(finalOf([{ status: 'failed', delivered: false, done: 1, total: 2 }])).toBe('partial');
+    expect(finalOf([{ status: 'cancelled', delivered: false, done: 1, total: 2 }])).toBe('partial');
+    expect(finalOf([{ status: 'failed', delivered: false, done: 0, total: 2 }])).toBe('failed');
   });
   it('the result is provisional while the session is live: none until someone counts, cleared by a late receiver', () => {
     const r = (status: TxStatus, delivered = status === 'completed') => ({ status, delivered });
@@ -312,12 +316,15 @@ describe('SenderController', () => {
       api,
       view,
       socket: { subscribe: () => () => undefined, send: () => true } as unknown as SessionSocket,
-      history: { add: async (e: (typeof writes)[number]) => void writes.push(e) } as unknown as HistoryStore,
+      history: {
+        add: async (e: (typeof writes)[number]) => void writes.push(e),
+        list: async () => (writes.length ? [writes[writes.length - 1]] : []),
+      } as unknown as HistoryStore,
       files: undefined,
     });
     await tx.init();
     expect(tx.state.final).toBe('completed');
-    expect(writes.map((w) => [w.status, w.peers])).toEqual([['completed', ['A']]]);
+    await vi.waitFor(() => expect(writes.map((w) => [w.status, w.peers])).toEqual([['completed', ['A']]]));
 
     participants.push({ id: 'p2', role: 'receiver', status: 'JOINED', display_name: 'B', platform: 'Web' });
     transfers.push({ id: 't2', participant_id: 'p2', file_id: 'f1', status: 'TRANSFERRING', verified_bytes: 4 });
@@ -328,14 +335,71 @@ describe('SenderController', () => {
     (transfers[1] as { status: string }).status = 'FAILED';
     await tx.refresh();
     expect(tx.state.final).toBe('partial');
-    expect(writes.map((w) => [w.status, w.peers])).toEqual([
-      ['completed', ['A']],
-      ['partial', ['A', 'B']],
-    ]);
+    await vi.waitFor(() =>
+      expect(writes.map((w) => [w.status, w.peers])).toEqual([
+        ['completed', ['A']],
+        ['partial', ['A', 'B']],
+      ]),
+    );
     expect(new Set(writes.map((w) => w.id)).size).toBe(1); // the same entry, rewritten
     expect(writes[1]?.createdAt).toBe(writes[0]?.createdAt);
     await tx.refresh(); // nothing changed: no rewrite
+    await new Promise((r) => setTimeout(r, 10));
     expect(writes).toHaveLength(2);
+    tx.dispose();
+  });
+  it('History: a reload keeps the creation and start time; an entry deleted after it was written stays deleted', async () => {
+    const transfers = [
+      { id: 't1', participant_id: 'p1', file_id: 'f1', status: 'COMPLETED', verified_bytes: 10 },
+      { id: 't2', participant_id: 'p1', file_id: 'f2', status: 'FAILED', verified_bytes: 3 },
+    ];
+    const participants = [{ id: 'p1', role: 'receiver', status: 'JOINED', display_name: 'A', platform: 'Web' }];
+    const stored = new Map<string, { id: string; status: string; createdAt: number; startedAt?: number }>([
+      ['tx:s1', { id: 'tx:s1', status: 'partial', createdAt: 1000, startedAt: 900 }],
+    ]);
+    const history = {
+      add: async (e: { id: string; status: string; createdAt: number }) => void stored.set(e.id, e),
+      list: async () => [...stored.values()],
+    } as unknown as HistoryStore;
+    const make = () =>
+      new SenderController({
+        sessionId: 's1',
+        api: {
+          list: async () => ({ role: 'sender', transfers: transfers.map((x) => ({ ...x })), peers: [] }),
+          action: async () => transfers[0],
+          report: async () => transfers[0],
+          turn: async () => {
+            throw new Error('no TURN in this test');
+          },
+        } as unknown as TransfersApi,
+        view: async () =>
+          ({
+            id: 's1',
+            status: 'ACTIVE',
+            files: [
+              { id: 'f1', name: 'a.bin', size: 10, mime: 'x' },
+              { id: 'f2', name: 'b.bin', size: 10, mime: 'x' },
+            ],
+            participants: participants.map((x) => ({ ...x })),
+            join_window: { state: 'EXPIRED' },
+            server_time: new Date().toISOString(),
+          }) as unknown as SessionView,
+        socket: { subscribe: () => () => undefined, send: () => true } as unknown as SessionSocket,
+        history,
+        files: undefined,
+      });
+    // After a reload: one file of two arrived, so the result is partial (counted over files, like the server).
+    const tx = make();
+    await tx.init();
+    expect(tx.state.final).toBe('partial');
+    await vi.waitFor(() => expect(stored.get('tx:s1')).toMatchObject({ createdAt: 1000, startedAt: 900 }));
+    // The user deletes the entry; a later change (the receiver is blocked) does not bring it back.
+    await new Promise((r) => setTimeout(r, 10));
+    stored.clear();
+    participants[0] = { ...participants[0], status: 'BLOCKED' } as (typeof participants)[number];
+    await tx.refresh();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(stored.size).toBe(0);
     tx.dispose();
   });
   it('when the session ends mid-transfer, receivers still going show cancelled and the result is final', async () => {

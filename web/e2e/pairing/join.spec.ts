@@ -2,17 +2,19 @@ import { expect, test } from '@playwright/test';
 import {
   apiDevice,
   apiJoin,
+  closeContexts,
   closeSenderBrowser,
   createSession,
   enterCode,
   guestPage,
   linkPath,
-  senderPage,
   open,
+  senderPage,
 } from './helpers';
 
 // First vertical slice, all guests: sender on Chromium, receiver on this project's browser.
 test.afterAll(closeSenderBrowser);
+test.afterEach(closeContexts);
 
 test('receive-preview: link in a fresh context joins immediately; both sides see the same security words', async ({
   browser,

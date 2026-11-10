@@ -193,10 +193,11 @@ test('a receiver who joins after the result: the dashboard comes back, then New 
 
   const late = await receiver(browser, browserName, 'Receiver Late');
   await joinToSave(late, s.code);
-  await startInBrowser(late);
-  // The provisional result clears while the late receiver transfers.
+  // The provisional result clears as soon as the late receiver has joined (it is waiting to start).
   await expect(sender.locator('[data-screen="dashboard"]')).toBeVisible({ timeout: 30_000 });
   await expect(sender.getByTestId('final-banner')).toHaveCount(0);
+  await expect(card(sender, 'Receiver Late')).toHaveAttribute('data-status', 'waiting');
+  await startInBrowser(late);
   await expect(result(late)).toHaveAttribute('data-result', 'completed', { timeout: 90_000 });
   await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 30_000 });
   await expect(card(sender, 'Receiver Late')).toHaveAttribute('data-status', 'completed');

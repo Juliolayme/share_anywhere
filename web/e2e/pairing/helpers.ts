@@ -47,9 +47,26 @@ export async function stubWakeLock(ctx: BrowserContext, mode: WakeMode) {
   }, mode);
 }
 
+const contexts: BrowserContext[] = [];
+
+/** Remembers a context a helper opened, so closeContexts can close it after the test. */
+export function trackContext(ctx: BrowserContext): BrowserContext {
+  contexts.push(ctx);
+  return ctx;
+}
+
+/**
+ * Closes every context the helpers opened during the test. Call it in afterEach (after diagnostics): open
+ * contexts keep their WebSockets, and a worker that runs many tests would otherwise reach the backend's
+ * per-address WebSocket cap and see later sockets refused.
+ */
+export async function closeContexts() {
+  await Promise.all(contexts.splice(0).map((c) => c.close().catch(() => undefined)));
+}
+
 /** A fresh guest context (Welcome already seen) in the given browser. */
 export async function guestPage(browser: Browser, opts: { wake?: WakeMode; mobile?: boolean } = {}): Promise<Page> {
-  const ctx = await browser.newContext({ baseURL: BASE, locale: 'en-US', permissions: [] });
+  const ctx = trackContext(await browser.newContext({ baseURL: BASE, locale: 'en-US', permissions: [] }));
   await ctx.addInitScript(() => {
     try {
       window.localStorage.setItem('sa.pref.welcomed', '1');

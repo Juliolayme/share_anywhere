@@ -1,18 +1,20 @@
 import { expect, test } from '@playwright/test';
 import {
   advanceClock,
+  closeContexts,
   closeSenderBrowser,
   createSession,
   enterCode,
   guestPage,
   linkPath,
+  open,
   senderPage,
   setProtectedMode,
-  open,
 } from './helpers';
 
 // These specs move the test server's clock and toggle protected mode (test-only hooks, single worker).
 test.afterAll(closeSenderBrowser);
+test.afterEach(closeContexts);
 
 test('session-expired: 10:00 window ends, old code refused, Create new code restarts at 10:00, joined receiver unaffected', async ({
   browser,

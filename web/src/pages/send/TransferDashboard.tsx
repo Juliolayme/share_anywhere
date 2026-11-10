@@ -111,16 +111,15 @@ export default function TransferDashboard() {
   const holdForWindow = windowOpen && !s.ended;
   const pill = useKeepAwake((s.hasFiles && active) || holdForWindow);
   const [error, setError] = useState<string | null>(null);
-  const lateReceiver = s.receivers.some((r) => !txEnded(r.status));
   // Where Close leads: the session screen, or a new transfer (TR-7 "New transfer" closes a finished session).
   const [closeTo, setCloseTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (s.final && location.pathname.endsWith('/transfers')) navigate(`/send/session/${id}/result`, { replace: true });
-    // A receiver joined after the result (Create new code, or a window still open): back to the dashboard.
-    if (!s.final && lateReceiver && location.pathname.endsWith('/result'))
+    // No result (yet, or any more: a receiver joined after it): the dashboard, not TR-7.
+    if (!s.final && s.loaded && location.pathname.endsWith('/result'))
       navigate(`/send/session/${id}/transfers`, { replace: true });
-  }, [s.final, lateReceiver, location.pathname, navigate, id]);
+  }, [s.final, s.loaded, location.pathname, navigate, id]);
 
   const total = s.files.reduce((a, f) => a + f.size, 0);
   const count = s.files.length === 1 ? t('product.files_count_one') : t('product.files_count', { n: s.files.length });

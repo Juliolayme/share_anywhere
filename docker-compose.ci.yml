@@ -1,0 +1,62 @@
+# CI and automated-test stack: plain HTTP on http://localhost:8080, no persistent volumes.
+# docker compose -f docker-compose.ci.yml up -d --build --wait
+name: share-anywhere-ci
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: shareanywhere
+      POSTGRES_USER: shareanywhere
+      POSTGRES_PASSWORD: ci-password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shareanywhere -d shareanywhere"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      SA_ENV: test
+      SA_HTTP_ADDR: ":8080"
+      SA_LOG_LEVEL: debug
+      DATABASE_URL: postgres://shareanywhere:ci-password@postgres:5432/shareanywhere?sslmode=disable
+      SA_ALLOWED_ORIGINS: http://localhost:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/server", "-healthcheck"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+
+  coturn:
+    image: coturn/coturn:4.6
+    command: ["-c", "/etc/coturn/turnserver.conf", "--static-auth-secret=ci-turn-secret"]
+    volumes:
+      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+
+  caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./infra/caddy/Caddyfile.ci:/etc/caddy/Caddyfile:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+      web:
+        condition: service_started

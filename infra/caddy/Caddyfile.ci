@@ -1,0 +1,16 @@
+# Plain-HTTP edge proxy for CI and automated tests on http://localhost:8080.
+{
+	auto_https off
+	admin off
+}
+
+:8080 {
+	encode zstd gzip
+	@api path /v1/* /healthz /readyz
+	handle @api {
+		reverse_proxy backend:8080
+	}
+	handle {
+		reverse_proxy web:80
+	}
+}

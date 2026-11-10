@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Share Anywhere design tokens",
+  "type": "object",
+  "required": ["version", "brand", "color", "contrast", "font", "space", "radius", "border", "elevation", "motion", "breakpoint", "touchTarget"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "brand": {
+      "type": "object",
+      "required": ["blue", "green", "navy", "white"],
+      "additionalProperties": { "$ref": "#/$defs/hex" }
+    },
+    "color": {
+      "type": "object",
+      "required": ["light", "dark"],
+      "additionalProperties": false,
+      "properties": {
+        "light": { "$ref": "#/$defs/palette" },
+        "dark": { "$ref": "#/$defs/palette" }
+      }
+    },
+    "contrast": {
+      "type": "object",
+      "required": ["AA", "nonText"],
+      "additionalProperties": { "type": "array", "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 } }
+    },
+    "font": { "type": "object", "required": ["family", "weight", "size"] },
+    "space": { "type": "object", "additionalProperties": { "$ref": "#/$defs/px" } },
+    "radius": { "type": "object", "additionalProperties": { "$ref": "#/$defs/px" } },
+    "border": { "type": "object", "additionalProperties": { "$ref": "#/$defs/px" } },
+    "elevation": { "type": "object", "required": ["light", "dark"] },
+    "motion": { "type": "object", "required": ["duration", "easing"] },
+    "breakpoint": { "type": "object", "required": ["sm", "md", "lg", "xl"], "additionalProperties": { "$ref": "#/$defs/px" } },
+    "touchTarget": { "type": "object", "required": ["web", "android", "ios"] }
+  },
+  "$defs": {
+    "hex": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+    "px": { "type": "string", "pattern": "^[0-9]+px$" },
+    "palette": {
+      "type": "object",
+      "required": ["bg", "surface", "surface-raised", "surface-muted", "border", "border-strong", "text", "text-muted", "text-inverse", "primary", "primary-hover", "on-primary", "primary-soft", "on-primary-soft", "receive", "receive-soft", "on-receive-soft", "success", "success-soft", "warning", "warning-soft", "error", "error-soft", "info", "info-soft", "focus", "overlay"],
+      "additionalProperties": { "type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|rgba\\([0-9 ,.]+\\))$" }
+    }
+  }
+}

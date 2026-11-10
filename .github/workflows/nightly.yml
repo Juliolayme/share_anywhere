@@ -1,0 +1,27 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Nightly jobs land with their phases
+        run: |
+          cat <<'TXT'
+          This workflow is a stub in Phase 0. Jobs are added by the phases that need them
+          (docs/TESTING_AND_CI.md section 2.2):
+            Phase 3  large-file          2 GB Web-to-Web transfer with receiver reload and memory ceiling
+            Phase 4  five-receivers      one sender, five receivers, one throttled, sixth rejected
+            Phase 6  android-matrix      emulator API 29 / 34 / 35, FGS time-budget simulation
+            Phase 6  android-web-interop guest Android <-> Playwright transfers
+            Phase 5B clipboard-cross-client encrypted clipboard Web <-> Android / iOS
+            Phase 7  ios-matrix, ios-web-interop, ios-background-suspend
+            Phase 8  turn-forced         relay-only transfers over UDP and TCP/TLS
+          TXT

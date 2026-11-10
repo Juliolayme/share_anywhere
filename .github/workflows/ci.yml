@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      web: ${{ steps.filter.outputs.web }}
+      shared: ${{ steps.filter.outputs.shared }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            common: &common
+              - '.github/**'
+              - 'docker-compose*.yml'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            backend:
+              - *common
+              - 'backend/**'
+              - 'shared/**'
+            web:
+              - *common
+              - 'web/**'
+              - 'shared/**'
+              - 'scripts/**'
+            shared:
+              - *common
+              - 'shared/**'
+              - 'scripts/**'
+            docs:
+              - *common
+              - '**/*.md'
+              - '.markdownlint*'
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Markdown lint
+        run: pnpm lint:md
+      - name: Relative link check
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress --include-fragments --exclude-path node_modules --exclude-path design './**/*.md'
+          fail: true
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Secret scan (gitleaks)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.3 detect --source /repo --redact --verbose
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Go vulnerability check
+        working-directory: backend
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: npm advisories (high and above)
+        run: pnpm audit --audit-level high
+      - name: Dependency review
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+      - name: Build backend image for scanning
+        run: docker build -t share-anywhere-backend:ci backend
+      - name: Image scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: share-anywhere-backend:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: shareanywhere
+          POSTGRES_USER: shareanywhere
+          POSTGRES_PASSWORD: ci-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U shareanywhere -d shareanywhere"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://shareanywhere:ci-password@localhost:5432/shareanywhere?sslmode=disable
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5.0
+          working-directory: backend
+      - run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - run: go tool cover -func=coverage.out | tail -1
+      - name: Build image
+        run: docker build -t share-anywhere-backend:ci .
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format
+        run: pnpm --filter @share-anywhere/web format:check
+      - name: Lint
+        run: pnpm --filter @share-anywhere/web lint
+      - name: Type check
+        run: pnpm --filter @share-anywhere/web typecheck
+      - name: Unit tests
+        run: pnpm --filter @share-anywhere/web test
+      - name: Build
+        run: pnpm --filter @share-anywhere/web build
+      - name: Bundle size budget (main JS gzip <= 120 kB)
+        run: |
+          size=$(find web/dist/assets -name 'index-*.js' -exec sh -c 'gzip -c "$1" | wc -c' _ {} \; | sort -n | tail -1)
+          echo "main bundle gzip: $size bytes"
+          test "$size" -le 122880
+      - name: Build image
+        run: docker build -f web/Dockerfile -t share-anywhere-web:ci .
+
+  protocol:
+    needs: changes
+    if: needs.changes.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Design tokens are valid, meet contrast, and generated files are current
+        run: pnpm tokens:check
+      - name: Script tests
+        run: pnpm test:scripts
+
+  compose:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start CI stack
+        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 180
+      - name: Smoke test through the edge proxy
+        run: |
+          curl -fsS http://localhost:8080/healthz
+          curl -fsS http://localhost:8080/readyz | grep '"database":"ok"'
+          curl -fsS http://localhost:8080/ | grep '<title>Share Anywhere</title>'
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v

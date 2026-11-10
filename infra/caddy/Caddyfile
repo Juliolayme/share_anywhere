@@ -1,0 +1,26 @@
+# Edge proxy for local development: HTTPS with Caddy's internal CA on https://localhost:8443.
+{
+	auto_https disable_redirects
+	admin off
+}
+
+https://localhost:8443 {
+	tls internal
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	@api path /v1/* /healthz /readyz
+	handle @api {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}

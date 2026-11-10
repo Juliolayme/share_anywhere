@@ -1,6 +1,7 @@
 import {
   chromium,
   expect,
+  test,
   type Browser,
   type BrowserContext,
   type Page,
@@ -60,18 +61,31 @@ export async function guestPage(browser: Browser, opts: { wake?: WakeMode; mobil
   return ctx.newPage();
 }
 
+const escapeRe = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
- * Navigates to an app path and waits for the app shell. Playwright's Firefox driver sometimes never reports
- * the lifecycle events of a fresh page's first navigation although the document, assets and API calls all
- * completed (CI trace of run 42802588370: /receive 200 in 2 ms, app rendered, goto still waiting at 30 s).
- * So wait only for the commit, with a short bound, and then assert on the rendered app instead.
+ * Navigates to an app path, then proves the navigation happened (URL) and the app rendered (shell).
+ *
+ * Playwright's Firefox driver sometimes never reports any lifecycle event, not even the commit, for a fresh
+ * page's first navigation, although the document, its assets and the API calls all complete (CI traces of
+ * runs 42802588370 and 42805131808). So the commit wait is bounded at 10 s, and on that timeout the
+ * navigation is issued once more, with an annotation on the test so it shows in the report. Nothing is
+ * swallowed: if the second attempt fails, or the URL is not the target afterwards, the test fails.
  */
 export async function open(page: Page, path: string) {
+  const attempt = () => page.goto(path, { waitUntil: 'commit', timeout: 10_000 });
   try {
-    await page.goto(path, { waitUntil: 'commit', timeout: 10_000 });
+    await attempt();
   } catch (e) {
-    if (!page.url().startsWith(new URL(path, BASE).origin)) throw e; // really did not navigate
+    if (!(e instanceof Error) || !/Timeout/i.test(e.message)) throw e;
+    test.info().annotations.push({ type: 'navigation-retry', description: `${path}: no commit event within 10 s` });
+    await attempt();
   }
+  // A join link resolves in place (error) or moves on to the preview (success).
+  const target = path.startsWith('/j/')
+    ? new RegExp(`(${escapeRe(path)}|/join/preview)$`)
+    : new RegExp(`${escapeRe(path)}$`);
+  await expect(page).toHaveURL(target);
   await expect(page.locator('#main')).toBeVisible();
 }
 

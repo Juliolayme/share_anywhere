@@ -1251,7 +1251,7 @@
     "version_web": "Share Anywhere Web {version}",
     "via_code": "joined with the code",
     "via_link": "joined with the link",
-    "waiting_body": "{name} needs to approve this device before files are sent. Keep this tab open.",
+    "waiting_body": "{name} needs to approve {device} before files are sent. Keep this tab open.",
     "waiting_sender": "Waiting for the sender to let you in",
     "wake_refused": "Couldn’t keep the screen on — keep this tab visible",
     "wants_to_join": "{name} wants to join",

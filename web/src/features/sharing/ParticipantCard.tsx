@@ -17,10 +17,18 @@ export function IdentityBadge({ signedIn }: { signedIn: boolean }) {
   );
 }
 
-export function SecurityWords({ words, label }: { words?: string[] | undefined; label: string }) {
+export function SecurityWords({
+  words,
+  label,
+  center = false,
+}: {
+  words?: string[] | undefined;
+  label: string;
+  center?: boolean;
+}) {
   if (!words || words.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 text-caption text-fg-2">
+    <div className={`flex flex-wrap items-center gap-2 text-caption text-fg-2 ${center ? 'justify-center' : ''}`}>
       <ShieldCheck aria-hidden size={14} className="text-receive-ink" />
       <span>{label}</span>
       <b data-testid="security-words" className="font-mono text-fg">
@@ -59,16 +67,16 @@ export function ParticipantCard({
       <div className="flex flex-wrap items-center gap-3">
         <span
           aria-hidden
-          className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-md bg-surface-2 text-fg-2"
+          className={`flex flex-none items-center justify-center ${requested ? 'h-[44px] w-[44px] rounded-[12px] bg-surface text-fg' : 'h-[38px] w-[38px] rounded-md bg-surface-2 text-fg-2'}`}
         >
-          <Icon size={18} />
+          <Icon size={requested ? 21 : 18} />
         </span>
         <div className="min-w-[140px] flex-1">
           <span className="flex flex-wrap items-center gap-2">
-            <b className="text-[14px]">{p.display_name}</b>
+            <b className={requested ? 'text-[15px]' : 'text-[14px]'}>{p.display_name}</b>
             <IdentityBadge signedIn={p.signed_in} />
           </span>
-          <div className="text-[12px] text-fg-2">
+          <div className={`${requested ? 'text-[13px]' : 'text-[12px]'} text-fg-2`}>
             {p.platform}
             {requested
               ? ` · ${t('web.wants')}`
@@ -90,7 +98,7 @@ export function ParticipantCard({
           <>
             <Button
               variant="send"
-              size="sm"
+              className="flex-1"
               icon={Check}
               busy={busy}
               onClick={onApprove}
@@ -100,7 +108,7 @@ export function ParticipantCard({
             </Button>
             <Button
               variant="secondary"
-              size="sm"
+              className="flex-1"
               disabled={busy}
               onClick={onReject}
               aria-label={t('product.reject_named', { name: p.display_name })}
@@ -123,7 +131,7 @@ export function ParticipantCard({
         )}
         <Button
           variant="danger-ghost"
-          size="sm"
+          size={requested ? 'md' : 'sm'}
           icon={Ban}
           disabled={busy}
           onClick={onBlock}

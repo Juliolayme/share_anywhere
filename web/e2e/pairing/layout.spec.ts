@@ -4,22 +4,39 @@ import { apiDevice, apiJoin, closeSenderBrowser, createSession, senderPage } fro
 // Layout regressions on the sender's session screen (Chromium sender, so this runs once per project cheaply).
 test.afterAll(closeSenderBrowser);
 
-test('session: the code stays on one readable line from phone to wide desktop', async () => {
+test('session: the code is readable and the copy button keeps its 44 px target at every width', async () => {
   const sender = await senderPage();
   await createSession(sender);
   const code = sender.getByTestId('session-code');
-  for (const width of [360, 390, 760, 1099, 1280, 1440, 1920]) {
+  for (const width of [360, 390, 760, 1060, 1099, 1260, 1280, 1300, 1320, 1440, 1920]) {
     await sender.setViewportSize({ width, height: 900 });
     const m = await code.evaluate((el) => {
       const cs = getComputedStyle(el);
+      const font = parseFloat(cs.fontSize);
+      const line = parseFloat(cs.lineHeight);
+      const button = el.parentElement?.querySelector('button')?.getBoundingClientRect();
+      const row = el.parentElement?.getBoundingClientRect();
+      const card = el.closest('section');
+      const pad = card ? parseFloat(getComputedStyle(card).paddingRight) : 0;
+      const cardRight = (card?.getBoundingClientRect().right ?? 0) - pad;
       return {
-        font: parseFloat(cs.fontSize),
-        line: parseFloat(cs.lineHeight),
+        font,
+        line,
+        lines: Math.round(el.getBoundingClientRect().height / line),
         height: el.getBoundingClientRect().height,
+        bw: button?.width ?? 0,
+        bh: button?.height ?? 0,
+        rowRight: Math.max(row?.right ?? 0, button?.right ?? 0),
+        cardRight,
       };
     });
+    // The design lets the code break between its two groups of three when the column is narrow.
     expect(m.line, `line-height at ${width}px`).toBeGreaterThanOrEqual(m.font);
-    expect(m.height, `one line at ${width}px`).toBeLessThan(m.font * 1.5);
+    expect(m.lines, `at most two lines at ${width}px`).toBeLessThanOrEqual(2);
+    expect(Math.abs(m.height - m.lines * m.line), `lines do not overlap at ${width}px`).toBeLessThan(1);
+    expect(m.bw, `copy button width at ${width}px`).toBeGreaterThanOrEqual(44);
+    expect(m.bh, `copy button height at ${width}px`).toBeGreaterThanOrEqual(44);
+    expect(m.rowRight, `code row inside the card at ${width}px`).toBeLessThanOrEqual(m.cardRight + 0.5);
     const overflow = await sender.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, `no horizontal scroll at ${width}px`).toBeLessThanOrEqual(0);
   }
@@ -46,5 +63,9 @@ test('session-approved: a join request card uses the design request style', asyn
   expect(style.bg).toBe(style.sendSoft);
   expect(style.border).toBe(style.send);
   expect(style.pad).toBe('16px');
+  for (const name of [/^Approve /, /^Reject /]) {
+    const box = await card.getByRole('button', { name }).boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  }
   await sender.context().close();
 });

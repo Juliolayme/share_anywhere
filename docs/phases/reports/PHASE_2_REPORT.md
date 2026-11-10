@@ -107,7 +107,7 @@ Local runs used the CI Compose stack, with a backend built with `-tags testhooks
 | Keep-awake stub: granted (On, release after Close), refused, unsupported, hidden→visible re-request, pill off, setting off → no request | Passed locally | Passed locally | CI |
 | Mobile: QR and code size, no horizontal scroll | skipped (desktop) | Passed locally | ios-safari in CI |
 
-After the QA fixes the full suite passes locally on chromium-desktop and android-chrome: 58 passed and 4 skipped (mobile-only specs on desktop). `e2e/pairing/layout.spec.ts` checks that the session code stays on one line from 360 px to 1920 px and that a join request card uses the design request style.
+After the QA fixes the full suite passes locally on chromium-desktop and android-chrome: 58 passed and 4 skipped (mobile-only specs on desktop). `e2e/pairing/layout.spec.ts` checks, from 360 px to 1920 px, that the session code lines never overlap, the copy button keeps its 44 × 44 px target and the code row stays inside the card; it also checks that a join request card uses the design request style with 44 px Approve and Reject buttons.
 
 ## 4. Commands and results
 
@@ -139,7 +139,7 @@ New: `SA_PUBLIC_URL`, `SA_METRICS_ADDR` (internal metrics listener), `SA_TURN_SE
 | Priority | Item |
 |---|---|
 | P0 | Phase 3: DataChannel transfers, save location, dashboard, history entries |
-| P1 | Access matrix generated per level including expired and revoked tokens (Phase 1 backlog P2-5); confirm the Firefox navigation workaround (`open()` helper) leaves CI with zero flaky tests over several runs |
+| P1 | Access matrix generated per level including expired and revoked tokens (Phase 1 backlog P2-5); root-cause the Firefox driver's missing navigation events; the `open()` helper only mitigates them (retry once, annotated). Target: zero flaky Firefox tests over several CI runs |
 | P2 | Sender notice for auto-declined receivers (F13); mobile visual snapshot baselines (Phase 3); lazy-load the session screens |
 
 ## 8. Local run
@@ -157,4 +157,5 @@ Same as Phase 1: `docker compose up --build`, then open `https://localhost:8443`
 | 49efca8 | Deterministic participant order; regenerated Go types |
 | 8356a0a | QA round 1 fixes |
 | c6e1fd2 | QA round 2 fixes and QA record |
-| (this commit) | QA round 3 fixes and QA record |
+| b14a592 | QA round 3 fixes and QA record |
+| (this commit) | QA round 4 fixes and QA record |

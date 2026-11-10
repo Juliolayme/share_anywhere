@@ -7,6 +7,8 @@ import { useI18n } from '../../i18n/i18n';
 import { ApiError } from '../../lib/api/errors';
 import { formatBytes } from '../../lib/format';
 import { useKeepAwake } from '../../lib/keepAwake/KeepAwakeContext';
+import { useIdentity } from '../../lib/identity/identity';
+import { platformLabel } from '../../lib/api/device-client';
 import type { SessionView } from '../../features/sharing/api';
 import { SecurityWords } from '../../features/sharing/ParticipantCard';
 import { useSharing, useSocketEvents } from '../../features/sharing/SharingContext';
@@ -50,6 +52,7 @@ export default function ReceiveSessionPage() {
   const { t, locale } = useI18n();
   const navigate = useNavigate();
   const { api } = useSharing();
+  const { device } = useIdentity();
   const [view, setView] = useState<SessionView | null>(null);
   const [gone, setGone] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -132,6 +135,7 @@ export default function ReceiveSessionPage() {
     );
   }
   const senderName = view.sender?.display_name ?? '';
+  const myDevice = device?.display_name ?? platformLabel();
   if (waiting) {
     return (
       <Screen id="receive-wait">
@@ -145,13 +149,13 @@ export default function ReceiveSessionPage() {
               <Hourglass size={30} />
             </span>
             <h1 className="m-0 text-[clamp(22px,3vw,28px)]">{t('web.waiting')}</h1>
-            <p className="m-0 text-fg-2">
-              <NameIn text={t('product.waiting_body', { name: NAME_SLOT })} name={senderName} />
+            <p className="m-0 max-w-[400px] leading-[1.55] text-fg-2">
+              <NameIn text={t('product.waiting_body', { name: senderName, device: NAME_SLOT })} name={myDevice} />
             </p>
             {view.me?.request_reason === 'protected_mode' && (
               <Banner tone="warning" title={t('product.protected_mode')} />
             )}
-            <SecurityWords words={view.me?.security_words} label={t('web_xx.secw_r')} />
+            <SecurityWords words={view.me?.security_words} label={t('web_xx.secw_r')} center />
             {leaveError && <Banner tone="danger" role="alert" title={t('product.leave_failed')} />}
             <Button variant="secondary" busy={leaving} onClick={() => void leave()}>
               {t('web.cancel')}
@@ -194,7 +198,7 @@ export default function ReceiveSessionPage() {
 }
 
 const NAME_SLOT = '\u0000';
-/** Renders a translated sentence with the device name in bold, as in the design. */
+/** Renders a translated sentence with this device's name in bold, as in the design. */
 function NameIn({ text, name }: { text: string; name: string }) {
   const [before = '', after = ''] = text.split(NAME_SLOT);
   return (

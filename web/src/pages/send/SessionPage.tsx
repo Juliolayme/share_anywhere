@@ -222,14 +222,16 @@ export default function SessionPage() {
           {windowOpen && view.code && view.join_url ? (
             <>
               <div className="flex flex-wrap items-center gap-[18px]">
-                <QRCode value={view.join_url} label={t('product.qr_aria')} />
+                <div className="flex w-full justify-center rail:w-auto">
+                  <QRCode value={view.join_url} label={t('product.qr_aria')} />
+                </div>
                 <div className="flex min-w-[180px] flex-1 flex-col gap-2">
                   <span className="text-caption font-semibold text-fg-2">{t('web.code')}</span>
                   <div className="flex items-center gap-2">
                     <span
                       data-testid="session-code"
                       aria-label={t('product.code_aria', { code: view.code.split('').join(' ') })}
-                      className="whitespace-nowrap font-mono text-[clamp(30px,4vw,38px)] font-medium leading-[1.2] tracking-[0.08em]"
+                      className="min-w-0 font-mono text-[clamp(30px,4vw,38px)] font-medium leading-[1.2] tracking-[0.08em]"
                     >
                       {view.code.slice(0, 3)}
                       <span aria-hidden className="inline-block w-3" />
@@ -239,7 +241,7 @@ export default function SessionPage() {
                       type="button"
                       onClick={() => void copy('code', view.code ?? '')}
                       aria-label={t('product.copy_code')}
-                      className="flex h-[44px] w-[44px] items-center justify-center rounded-md bg-surface-2 text-fg hover:bg-border"
+                      className="flex h-[44px] w-[44px] flex-none items-center justify-center rounded-md bg-surface-2 text-fg hover:bg-border"
                     >
                       {copied === 'code' ? <Check aria-hidden size={18} /> : <Copy aria-hidden size={18} />}
                     </button>

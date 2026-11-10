@@ -31,40 +31,70 @@ function files(dir: string): string[] {
   });
 }
 
+const ctx = createContext(resolveConfig(loadConfig(join(WEB, 'tailwind.config.ts')))) as TwContext;
+const extract = defaultExtractor(ctx) as (src: string) => string[];
+const roots = new Set(ctx.candidateRuleMap.keys());
+// Single-word utilities whose stock default disappears with the token-only theme (or that only make sense
+// with a value), checked even without a dash: `rounded`, `shadow`, ...
+const BARE = new Set(['rounded', 'shadow', 'blur', 'drop-shadow', 'ring', 'outline', 'border', 'transition']);
+
+/** True when the candidate looks like a utility: its variant-stripped base starts with a known utility root. */
+function utilityLike(candidate: string): boolean {
+  const variants = candidate.split(/:(?![^[]*\])/);
+  const base = (variants.pop() ?? '').replace(/^[!-]+/, '');
+  if (!base || !/^[a-z0-9[]/i.test(base)) return false;
+  const hasVariant = variants.length > 0;
+  if (!hasVariant && !/[-/]/.test(base) && !BARE.has(base)) return false; // plain words in code
+  if (/[-/]$/.test(base)) return false; // template fragments such as `gap-${n}`
+  const parts = base.split('-');
+  for (let i = parts.length; i > 0; i--) if (roots.has(parts.slice(0, i).join('-'))) return true;
+  return false;
+}
+
+/** Class-like candidates in a source file that Tailwind generates no CSS for. */
+export function undefinedClasses(src: string): string[] {
+  const candidates = [...new Set(extract(src))].filter(
+    (c) => /^[!a-z0-9[-][\w\-:/.[\]#%(),&>_=+*@]*$/i.test(c) && !/:$/.test(c) && utilityLike(c),
+  );
+  return ctx
+    .getClassOrder(candidates)
+    .filter(([, order]) => order === null)
+    .map(([c]) => c);
+}
+
 describe('Tailwind utilities', () => {
-  const ctx = createContext(resolveConfig(loadConfig(join(WEB, 'tailwind.config.ts')))) as TwContext;
-
-  const extract = defaultExtractor(ctx) as (src: string) => string[];
-  const roots = new Set(ctx.candidateRuleMap.keys());
-  const utilityRoot = (c: string) => {
-    const base = (c.split(':').pop() ?? '').replace(/^[!-]+/, '');
-    const parts = base.split('-');
-    for (let i = parts.length; i > 0; i--) if (roots.has(parts.slice(0, i).join('-'))) return true;
-    return false;
-  };
-
-  it('every class-like candidate generates CSS with the token-only theme', () => {
+  it('every class-like candidate in web/src generates CSS with the token-only theme', () => {
     const bad: string[] = [];
     for (const f of files(SRC)) {
       const rel = relative(SRC, f);
       if (SKIP.has(rel)) continue;
-      const candidates = [...new Set(extract(readFileSync(f, 'utf8')))].filter(
-        (c) => /[-/]/.test(c) && !/[-/:]$/.test(c) && /^[!a-z0-9-][\w\-:/.[\]#%(),]*$/i.test(c) && utilityRoot(c),
-      );
-      for (const [c, order] of ctx.getClassOrder(candidates)) if (order === null) bad.push(`${rel}: ${c}`);
+      for (const c of undefinedClasses(readFileSync(f, 'utf8'))) bad.push(`${rel}: ${c}`);
     }
     expect(bad).toEqual([]);
   });
 
-  it('the check catches undefined utilities', () => {
-    const order = ctx.getClassOrder(['gap-5', 'h-px', 'bg-warning-soft/40', 'md:flex', 'gap-4', 'p-[20px]']);
-    expect(order.map(([c, o]) => [c, o !== null])).toEqual([
-      ['gap-5', false],
-      ['h-px', false],
-      ['bg-warning-soft/40', false],
-      ['md:flex', false],
-      ['gap-4', true],
-      ['p-[20px]', true],
-    ]);
+  it('the scan itself catches undefined utilities in a source file', () => {
+    const src = `
+      import { thing } from './x';
+      const delay = 3; // plain words are not classes
+      export const A = () => (
+        <div className="flex gap-5 h-px bg-warning-soft/40 md:flex sm:block lg:hidden rounded shadow text-sm
+          gap-4 p-[20px] rounded-lg shadow-e1 rail:flex sidebar:hidden bg-send-soft text-caption hover:bg-surface-2
+          [&>svg]:h-5 [&>svg]:h-[20px]" data-x={\`gap-\${delay}\`} />
+      );`;
+    expect(undefinedClasses(src).sort()).toEqual(
+      [
+        '[&>svg]:h-5',
+        'bg-warning-soft/40',
+        'gap-5',
+        'h-px',
+        'lg:hidden',
+        'md:flex',
+        'rounded',
+        'shadow',
+        'sm:block',
+        'text-sm',
+      ].sort(),
+    );
   });
 });

@@ -1251,7 +1251,7 @@
     "version_web": "Share Anywhere Web {version}",
     "via_code": "vào bằng mã",
     "via_link": "vào bằng liên kết",
-    "waiting_body": "{name} cần duyệt thiết bị này trước khi gửi tệp. Hãy giữ thẻ này mở.",
+    "waiting_body": "{name} cần duyệt {device} trước khi gửi tệp. Hãy giữ thẻ này mở.",
     "waiting_sender": "Đang chờ người gửi cho bạn vào",
     "wake_refused": "Không giữ được màn hình sáng — hãy để tab này luôn hiển thị",
     "wants_to_join": "{name} muốn vào phiên",

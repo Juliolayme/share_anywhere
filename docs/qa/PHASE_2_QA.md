@@ -57,11 +57,26 @@ No P0, two P1, five P2. Backend, protocol and CI were clean (run 42802588370 on 
 | Session code wraps to two overlapping lines at about 1100 px and 1280 px (40 px font on the inherited 24 px line-height) | P1 | Design values `text-[clamp(30px,4vw,38px)]` with `leading-[1.2]` and `whitespace-nowrap`. `e2e/pairing/layout.spec.ts` asserts one line, line-height ≥ font size and no horizontal scroll at 360, 390, 760, 1099, 1280, 1440 and 1920 px |
 | Join request card: `bg-warning-soft/40` generates no CSS, and the card did not match the design (blue border, blue-soft fill, 16 px padding, 14 px radius) | P1 | Card uses `border-send bg-send-soft p-4 rounded-lg` as in the design; the layout spec compares its computed colors with the tokens. The regex guard is replaced by a test that asks Tailwind itself (`getClassOrder` with `tailwind.config.ts`) whether each class-like candidate in `web/src` generates CSS. It covers every scale (spacing, colors and opacity modifiers, font size, radius, shadow, breakpoints), and a self-test proves it rejects `gap-5`, `h-px`, `bg-warning-soft/40` and `md:flex` |
 | `h-px w-px` on the hidden file input generate no CSS | P2 | `h-[1px] w-[1px]`; the `px` allow-list is gone with the old guard |
-| Firefox flakiness not resolved | P2 | Root cause from the uploaded trace: `/receive` returned 200 in 2 ms, all assets and API calls completed and the app rendered, but Playwright's Firefox driver never reported `domcontentloaded`, so `goto` waited 30 s. The specs now navigate with an `open()` helper that waits for the commit (bounded at 10 s) and then asserts the app shell. Documented in `docs/TESTING_AND_CI.md` §3; zero-flake confirmation across several CI runs is in the backlog |
+| Firefox flakiness not resolved | P2 | Diagnosis from the uploaded trace: `/receive` returned 200 in 2 ms, all assets and API calls completed and the app rendered, but Playwright's Firefox driver never reported `domcontentloaded`, so `goto` waited 30 s. The specs moved to an `open()` helper bounded at 10 s. Round 4 showed this did not remove the flakes and could swallow a navigation; see round 4 |
 | QR frame used `rounded-[14px]` instead of the `rounded-lg` token | P2 | Reverted to `rounded-lg` |
 | receive-wait: device name not bold, less space above the icon | P2 | Name in bold (`<b>` inside the translated sentence) and 32 px top padding |
 | Countdown announcement used exact-second equality | P2 | `ExpiryAnnouncer` announces when the countdown crosses 1:00 or 0:30, even when ticks are skipped, and clears for a new window; unit and component tests added |
 
-## Round 4
+## Round 4 — commit b14a592 — FAIL
+
+No P0, one P1, four P2. CI run 42805131808 on b14a592: 12/12 jobs green, Firefox with 2 flaky tests. All other round-3 resolutions were verified.
+
+### Resolution of round 4 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| `whitespace-nowrap` on the code squeezed the copy button to 18–23 px at 1060–1099 and 1260–1320 px, and the row overflowed the card at 1060 and 1260 px | P1 | Follows the design: the code may break between its two groups of three (line-height 1.2, `min-w-0`) and the copy button is `flex-none`. The layout spec now checks at 11 widths (360–1920, including 1060, 1099, 1260, 1280, 1300, 1320) that the lines never overlap, the button is at least 44 × 44 px and the code row stays inside the card content box |
+| Firefox flake not fixed; `open()` could swallow a navigation that never happened (origin-only check) | P2 | `open()` now asserts the target URL (a join link may end on `/join/preview`) and the app shell, so a missing navigation fails the test. On a commit timeout it navigates once more and annotates the test (`navigation-retry`). `docs/TESTING_AND_CI.md` §3 and the report call this a mitigation, not a root-cause fix; zero flakes over several CI runs stays in the backlog |
+| Class guard dropped `md:flex`, `sm:block`, bare `rounded` and `shadow`, and arbitrary variants; the self-test bypassed the filter | P2 | Candidates with variants are checked by their base utility, bare single-word utilities whose default disappears are checked, and arbitrary variants such as `[&>svg]:h-5` pass the filter. The self-test runs a synthetic source through the same extract-and-filter path and expects exactly the ten bad classes in it (`text-sm`, `lg:hidden`, `rounded`, `[&>svg]:h-5`, ...) |
+| Request card: icon tile, text sizes, Approve and Reject size | P2 | 44 px `surface` icon tile with 12 px radius, 15/13 px name and platform, equal-width 44 px Approve and Reject (Block, a PRD addition, is 44 px in the request card too) |
+| receive-wait sentence: the design bolds the receiver's own device; paragraph width; security words alignment | P2 | Sentence is now "{name} needs to approve **{device}** …" (EN and VI) with this device's name in bold, `max-w-[400px]` and line-height 1.55; security words are centered |
+| Mobile session: QR left-aligned | P2 | QR is centered below the 760 px breakpoint |
+
+## Round 5
 
 Pending.

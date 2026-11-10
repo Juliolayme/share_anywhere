@@ -47,7 +47,7 @@ TR-4/TR-5 session (reachable from TR-6/TR-7 by "Back to the session"; Create new
 | A receiver joins after the result: TR-6 returns, then New transfer closes the session (code refused) and both receivers keep RX-7 | CI [42920840711](https://github.com/Juliolayme/share_anywhere/actions/runs/42920840711) and locally: chromium-desktop, firefox-desktop, webkit-desktop |
 | Five receivers (3 Chromium, Firefox, WebKit), sixth join refused with 409 `session_full` | Nightly [42920858447](https://github.com/Juliolayme/share_anywhere/actions/runs/42920858447) on b247af7 (final backend), earlier [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) (06e9211) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410) (546873f, with the strict sixth-join check); locally |
 | History search, filters, detail, delete, clear | CI and locally: all five projects |
-| Open-session cap reached: the send screen lists open sessions; Close one, then Create succeeds; Open goes to the session | Locally: chromium-desktop, firefox-desktop, webkit-desktop; CI pending |
+| Open-session cap reached: the send screen lists open sessions; Close one, then Create succeeds; Open goes to the session | CI [42925255350](https://github.com/Juliolayme/share_anywhere/actions/runs/42925255350) and locally: chromium-desktop, firefox-desktop, webkit-desktop |
 | Phase 3 transfer and pairing specs (including Create new code after expiry) | CI and locally: all five projects |
 
 ## 4. Commands and results
@@ -59,8 +59,8 @@ TR-4/TR-5 session (reachable from TR-6/TR-7 by "Back to the session"; Create new
 | `pnpm -C web format:check`, `lint`, `exec tsc -b`, `test --run` | Pass; 176 unit tests |
 | `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md` | Pass (32 operations; 1,800 keys each) |
 | Playwright, all five projects locally (ac7a284) | 197 passed, 61 skipped (project-specific); the 2 Android screenshot comparisons differ by local fonts (baselines are made on the runner) |
-| CI | On b247af7, [42920840711](https://github.com/Juliolayme/share_anywhere/actions/runs/42920840711) was green, but the new late-receiver spec passed only on retry on chromium-desktop and webkit-desktop (QA round 3; fixed in 0c4a20d). [42916941586](https://github.com/Juliolayme/share_anywhere/actions/runs/42916941586) on ac7a284: all 12 jobs green. Earlier: 42913806193 on 06e9211 (non-e2e green; four e2e jobs cancelled by the next push) |
-| Nightly | [42920858447](https://github.com/Juliolayme/share_anywhere/actions/runs/42920858447) on b247af7 (dispatched on the branch), [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410): five-receivers, large-file and mobile-snapshots green |
+| CI | [42925255350](https://github.com/Juliolayme/share_anywhere/actions/runs/42925255350) on b8b4405: green, and every e2e project passed on the first attempt (no test needed a retry: chromium 44, firefox 43, webkit 44, android-chrome 38, ios-safari 38 passed). On b247af7, [42920840711](https://github.com/Juliolayme/share_anywhere/actions/runs/42920840711) was green, but the new late-receiver spec passed only on retry on chromium-desktop and webkit-desktop (QA round 3; fixed in 0c4a20d). [42916941586](https://github.com/Juliolayme/share_anywhere/actions/runs/42916941586) on ac7a284: all 12 jobs green. Earlier: 42913806193 on 06e9211 (non-e2e green; four e2e jobs cancelled by the next push) |
+| Nightly | [42924813119](https://github.com/Juliolayme/share_anywhere/actions/runs/42924813119) on 0c4a20d (after the e2e cleanup change), [42920858447](https://github.com/Juliolayme/share_anywhere/actions/runs/42920858447) on b247af7 (dispatched on the branch), [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410): five-receivers, large-file and mobile-snapshots green |
 
 ## 5. Environment variables and external services
 
@@ -102,3 +102,4 @@ Unchanged from Phase 3. New: `VITE_BLOCK_CACHE_MB` (optional, build time, in `.e
 | b247af7 | QA round 2: provisional sender result, New transfer closes a finished session, session-end cleanup |
 | dd5e363 | Report links |
 | 0c4a20d | QA round 3: e2e context cleanup, result over files, History times |
+| b8b4405 | QA round 3: open-sessions list when the cap is reached (`GET /v1/sessions`) |

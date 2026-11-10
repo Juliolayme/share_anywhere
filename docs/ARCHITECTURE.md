@@ -147,7 +147,7 @@ The client picks the route per receiver: Direct P2P → TURN UDP → TURN TCP/TL
 A single **keep-awake controller** per client decides, from transfer and session state, whether to hold the screen on. It holds while any of these is true, the setting **Keep screen on during transfers** (default on, stored locally per device) is on, and the user has not tapped the screen-on pill off for the current transfer (that choice resets for the next session):
 
 - the user is a sender whose session has an **open join window** (waiting for receivers, at most 10 minutes per window) or has transfers in progress;
-- any transfer this device takes part in is `CONNECTING`, `TRANSFERRING`, `RESUMING`, `RECONNECTING`, or verifying;
+- any transfer this device takes part in is `CONNECTING`, `TRANSFERRING`, `RESUMING`, `RECONNECTING`, or verifying, within the reconnect window (`docs/TRANSFER_PROTOCOL.md` §6: a peer gone for 10 minutes no longer holds the screen; on the Web a sender tab that lost its picked files after a reload cannot send and does not hold);
 - the user is a receiver waiting for approval (approval on or protected mode).
 
 It releases as soon as none is true: every transfer is completed, failed, cancelled, or paused; the session is closed or expired; the join window ended with no transfer in progress; the receiver left or was removed; or the setting is turned off. Waiting for receivers therefore holds the screen for at most 10 minutes per join window.

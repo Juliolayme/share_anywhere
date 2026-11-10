@@ -15,7 +15,7 @@ import { ExpiryAnnouncer } from '../../features/sharing/ExpiryAnnouncer';
 import { useSharing, useSocketEvents } from '../../features/sharing/SharingContext';
 import { useSender } from '../../features/transfer/TransferContext';
 import { txActive, type TxReceiver } from '../../features/transfer/runtime/sender-controller';
-import { ProgressBar, TransferChip, percent, type ChipState } from '../../features/transfer/ui';
+import { ProgressBar, TransferChip, barTone, percent, type ChipState } from '../../features/transfer/ui';
 
 const LIVE = new Set(['WAITING', 'ACTIVE']);
 
@@ -443,15 +443,14 @@ function TransferLine({ r }: { r: TxReceiver | undefined }) {
       <div className="flex items-center justify-between gap-2 text-[12px]">
         <TransferChip state={r.status as ChipState} />
         <span className="font-mono text-fg-2">
-          {r.status === 'waiting' ? t('product.transfer_waiting') : percent(r.verified, r.total)}
+          {r.status === 'waiting'
+            ? t('product.transfer_waiting')
+            : r.status === 'offline'
+              ? t('product.transfer_offline')
+              : percent(r.verified, r.total)}
         </span>
       </div>
-      <ProgressBar
-        value={r.total ? r.verified / r.total : 0}
-        label={r.name}
-        height={4}
-        tone={r.status === 'completed' ? 'receive' : 'send'}
-      />
+      <ProgressBar value={r.total ? r.verified / r.total : 0} label={r.name} height={4} tone={barTone(r.status)} />
     </div>
   );
 }

@@ -71,12 +71,15 @@ const ORDER: TxStatus[] = [
   'reconnecting',
   'verifying',
   'paused',
+  'offline',
   'waiting',
   'completed',
   'failed',
   'cancelled',
   'removed',
 ];
+/** Matrix cells as in the design: red for a failed receiver, amber while reconnecting, otherwise blue. */
+const matrixTone = (s: TxStatus) => (s === 'failed' ? 'danger' : s === 'reconnecting' ? 'warning' : 'send');
 const mobile = (platform: string) => /android|iphone|ipad|ios|mobile/i.test(platform);
 
 /** TR-6 Transfer dashboard (`dashboard`) and TR-7 Session result (`dashboard-done`, `dashboard-partial`). */
@@ -270,7 +273,12 @@ export default function TransferDashboard() {
                             ) : (
                               <span className="font-mono text-[12px] text-fg-2">{percent(v, f.size)}</span>
                             )}
-                            <ProgressBar value={f.size ? v / f.size : 1} label={`${f.name} · ${r.name}`} height={4} />
+                            <ProgressBar
+                              value={f.size ? v / f.size : 1}
+                              label={`${f.name} · ${r.name}`}
+                              height={4}
+                              tone={matrixTone(r.status)}
+                            />
                           </span>
                         </td>
                       );
@@ -392,9 +400,11 @@ function ReceiverCard({
             <span className="text-fg-2">
               {r.status === 'waiting'
                 ? t('product.transfer_waiting')
-                : r.status === 'paused'
-                  ? t('web.st.paused')
-                  : eta(r.eta)}
+                : r.status === 'offline'
+                  ? t('product.transfer_offline')
+                  : r.status === 'paused'
+                    ? t('web.st.paused')
+                    : eta(r.eta)}
             </span>
           )}
         </div>

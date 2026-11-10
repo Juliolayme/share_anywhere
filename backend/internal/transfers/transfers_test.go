@@ -293,7 +293,7 @@ func TestCompletedWhilePaused(t *testing.T) {
 	e.join(rx, s.Code)
 	l, _ := e.svc.List(ctx, rx.DeviceID, s.ID)
 	tr := byFile(l, 1000)
-	for _, r := range []Report{{Status: Connecting}, {Status: Transferring, VerifiedBytes: 1000}} {
+	for _, r := range []Report{{Status: Connecting}, {Status: Transferring, VerifiedBytes: 999}} {
 		if _, err := e.svc.Report(ctx, rx.DeviceID, tr.ID, r); err != nil {
 			t.Fatal(err)
 		}
@@ -302,6 +302,7 @@ func TestCompletedWhilePaused(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantCode(t, mustErr(e.svc.Report(ctx, sender.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 1000})), "receiver_only")
+	wantCode(t, mustErr(e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 999})), "not_verified")
 	if c, err := e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 1000}); err != nil || c.Status != Completed {
 		t.Fatalf("completed while paused: %+v %v", c, err)
 	}

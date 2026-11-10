@@ -10,6 +10,7 @@ import {
   Radio,
   ShieldCheck,
   UserX,
+  WifiOff,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ import type { LogLine } from './runtime/receiver-controller';
 /** Status chip states shared by the sender dashboard and the receive screens (design `chip` table). */
 export type ChipState =
   | 'waiting'
+  | 'offline'
   | 'connecting'
   | 'transferring'
   | 'receiving'
@@ -35,6 +37,7 @@ export type ChipState =
 
 const CHIP: Record<ChipState, { cls: string; icon: LucideIcon; key: string }> = {
   waiting: { cls: 'bg-surface-2 text-fg-2', icon: Clock, key: 'product.st_waiting' },
+  offline: { cls: 'bg-warning-soft text-warning-ink', icon: WifiOff, key: 'product.st_offline' },
   connecting: { cls: 'bg-send-soft text-send-ink', icon: Loader, key: 'web.st.connecting' },
   transferring: { cls: 'bg-send-soft text-send-ink', icon: Radio, key: 'web.st.transferring' },
   receiving: { cls: 'bg-send-soft text-send-ink', icon: Radio, key: 'web.st.receiving' },
@@ -88,7 +91,7 @@ export type BarTone = 'send' | 'receive' | 'warning' | 'danger' | 'muted';
 
 /** Progress bar color per state, as in the design (Web App `BAR`): grey when paused, green when verifying. */
 export function barTone(state: string): BarTone {
-  if (state === 'paused' || state === 'cancelled' || state === 'removed') return 'muted';
+  if (state === 'paused' || state === 'cancelled' || state === 'removed' || state === 'offline') return 'muted';
   if (state === 'verifying' || state === 'completed') return 'receive';
   if (state === 'reconnecting') return 'warning';
   if (state === 'failed') return 'danger';

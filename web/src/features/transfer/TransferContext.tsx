@@ -106,7 +106,8 @@ export function senderFor(sessionId: string, d: Deps): SenderController {
     });
     senders.set(sessionId, c);
     keepAwake ??= d.keepAwake ?? null;
-    holdWhileActive(c, (s) => s.receivers.some((r) => txActive(r.status)));
+    // Only a tab that still has the picked files can send; after a reload it cannot, so it does not hold.
+    holdWhileActive(c, (s) => s.hasFiles && s.receivers.some((r) => txActive(r.status)));
     const h = hooks();
     if (h) h.senders[sessionId] = c;
   }

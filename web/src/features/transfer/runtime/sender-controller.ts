@@ -14,6 +14,8 @@ import type { LogLine } from './receiver-controller';
 
 export type TxStatus =
   | 'waiting'
+  /** Dropped and not back within the reconnect window; a new connection from the receiver resumes. */
+  | 'offline'
   | 'connecting'
   | 'transferring'
   | 'paused'
@@ -102,6 +104,7 @@ export class SenderController extends Observable<TxState> {
   private peers = new Map<string, Peer>();
   private transfers = new Map<string, Transfer>();
   private downTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private resuming = new Set<string>();
   private hashes = new Map<number, FileHash>();
   private senderFiles: SenderFile[] = [];
   private list: TransferList | null = null;
@@ -203,11 +206,13 @@ export class SenderController extends Observable<TxState> {
       serverOffset: Date.parse(v.server_time) - Date.now(),
     });
     for (const r of receivers) if (r.status === 'removed') this.drop(r.participantId);
+    for (const r of receivers) this.syncWindow(r.participantId);
     this.checkFinal();
   }
 
   pause(pid: string): void {
     const p = this.peers.get(pid);
+    this.resuming.delete(pid);
     p?.conn?.pause();
     this.patch(pid, { status: 'paused' });
     for (const t of this.openTransfers(pid)) void this.d.api.action(t.id, 'pause').catch(() => undefined);
@@ -215,6 +220,7 @@ export class SenderController extends Observable<TxState> {
 
   resume(pid: string): void {
     const p = this.peers.get(pid);
+    this.resuming.add(pid); // until the server stops saying PAUSED for this receiver
     this.patch(pid, { status: p?.conn ? 'transferring' : 'reconnecting' });
     for (const t of this.openTransfers(pid)) void this.d.api.action(t.id, 'resume').catch(() => undefined);
     p?.conn?.resume();
@@ -273,6 +279,28 @@ export class SenderController extends Observable<TxState> {
       ...s,
       receivers: s.receivers.map((r) => (r.participantId === pid ? { ...r, ...patch } : r)),
     }));
+    if (patch.status) this.syncWindow(pid);
+  }
+
+  /**
+   * Reconnect window, like the receiver's: a receiver that is connecting or reconnecting with no open channel
+   * has 10 minutes to come back; after that it shows Offline and stops holding the screen on. A new connection
+   * from it picks the transfer up again.
+   */
+  private syncWindow(pid: string): void {
+    const r = this.state_.receivers.find((x) => x.participantId === pid);
+    const down = !!r && (r.status === 'reconnecting' || r.status === 'connecting') && !this.peers.get(pid)?.conn;
+    if (!down) return this.clearDownTimer(pid);
+    if (this.downTimers.has(pid)) return;
+    this.downTimers.set(
+      pid,
+      setTimeout(() => {
+        this.downTimers.delete(pid);
+        const cur = this.state_.receivers.find((x) => x.participantId === pid);
+        if ((cur?.status === 'reconnecting' || cur?.status === 'connecting') && !this.peers.get(pid)?.conn)
+          this.patch(pid, { status: 'offline' });
+      }, RECONNECT_WINDOW_MS),
+    );
   }
 
   private log(pid: string, key: string, params?: Record<string, string | number>): void {
@@ -305,7 +333,10 @@ export class SenderController extends Observable<TxState> {
       const r = this.state_.receivers.find((x) => x.participantId === t.participant_id);
       if (r && server && ['completed', 'failed', 'cancelled'].includes(server) && r.status !== 'removed')
         this.patch(r.participantId, { status: server });
-      if (r && server === 'paused' && txActive(r.status)) this.patch(r.participantId, { status: 'paused' });
+      if (server !== 'paused') this.resuming.delete(t.participant_id);
+      // While a resume of several files is in flight, the files still PAUSED must not flip the card back.
+      if (r && server === 'paused' && txActive(r.status) && !this.resuming.has(r.participantId))
+        this.patch(r.participantId, { status: 'paused' });
       // Resumed through the server (by the receiver, possibly over a new connection): leave Paused here too.
       if (
         r &&
@@ -316,7 +347,8 @@ export class SenderController extends Observable<TxState> {
           status: this.peers.get(r.participantId)?.conn ? 'transferring' : 'reconnecting',
         });
       this.checkFinal();
-    } else if (e.type.startsWith('PARTICIPANT_') || e.type === 'SESSION_UPDATED') {
+    } else if (e.type.startsWith('PARTICIPANT_') || e.type === 'SESSION_UPDATED' || e.type === 'SOCKET_OPEN') {
+      // SOCKET_OPEN: events may have been missed while the socket was down; reload the records.
       void this.refresh();
     } else if (e.type === 'SESSION_CLOSED' || e.type === 'SESSION_EXPIRED') {
       for (const pid of [...this.peers.keys()]) this.drop(pid);
@@ -453,18 +485,9 @@ export class SenderController extends Observable<TxState> {
     const r = this.state_.receivers.find((x) => x.participantId === pid);
     if (!r || !txActive(r.status)) return;
     this.log(pid, 'product.log_connection_lost_plain');
+    const p = this.peers.get(pid);
+    if (p) p.conn = null; // the channel is gone; the window starts now
     this.patch(pid, { status: 'reconnecting', eta: null });
-    // Like the receiver's reconnect window: after 10 minutes stop holding the screen on and show the receiver
-    // as waiting; a new connection from it picks the transfer up again.
-    this.clearDownTimer(pid);
-    this.downTimers.set(
-      pid,
-      setTimeout(() => {
-        this.downTimers.delete(pid);
-        const cur = this.state_.receivers.find((x) => x.participantId === pid);
-        if (cur?.status === 'reconnecting') this.patch(pid, { status: 'waiting' });
-      }, RECONNECT_WINDOW_MS),
-    );
   }
 
   private clearDownTimer(pid: string): void {

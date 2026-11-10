@@ -153,4 +153,31 @@ describe('ReceiverController', () => {
     expect(t.dials()).toBe(before);
     t.rx.dispose();
   });
+  it('Retry after the reconnect window stays paused when the sender paused meanwhile', async () => {
+    vi.useFakeTimers();
+    const t = setup('TRANSFERRING');
+    await t.rx.init();
+    await vi.advanceTimersByTimeAsync(3 * 60_000); // no channel ever opens: the 2-minute first-connection window ends
+    expect(t.rx.state.phase).toBe('unreachable');
+    t.setServer('PAUSED');
+    const internals = t.rx as unknown as { reporter: { seed(id: string, s: TransferStatus, v: number): void } };
+    internals.reporter.seed('t1', 'PAUSED', 0);
+    const dials = t.dials();
+    t.rx.retry();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(t.rx.state.phase).toBe('paused');
+    expect(t.dials()).toBe(dials);
+    expect(t.actions).not.toContain('resume:cap');
+    t.rx.dispose();
+  });
+
+  it('Pause is ignored while verifying: every byte is here', async () => {
+    const t = setup('TRANSFERRING');
+    await t.rx.init();
+    (t.rx as unknown as { update(p: { phase: string }): void }).update({ phase: 'verifying' });
+    t.rx.pause();
+    expect(t.rx.state.phase).toBe('verifying');
+    expect(t.actions).toEqual([]);
+    t.rx.dispose();
+  });
 });

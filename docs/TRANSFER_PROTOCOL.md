@@ -96,6 +96,8 @@ When the channel closes without a fatal error (reconnect window: 2 minutes to ma
 2. The receiver re-offers with backoff (1 s doubling to 15 s), reporting `RECONNECTING`.
 3. Once the channel opens, it repeats the handshake (§3), reports `RESUMING`, then `TRANSFERRING` once blocks flow.
 
+The sender has the same 10-minute window per receiver: a receiver that is connecting or reconnecting with no open channel for 10 minutes shows **Offline** on TR-5 and TR-6 ("Lost contact. They can reconnect while this page stays open") and no longer holds the sender's screen on. The record keeps its state, and a new connection from that receiver resumes as above.
+
 The sender keeps its file handles and whole-file hash state across reconnects, but a sender page reload loses the file handles: the transfer then fails for that receiver and the sender must create a new session. Route migration (Phase 8) uses the same path.
 
 ## 7. State reporting

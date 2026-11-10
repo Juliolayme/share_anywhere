@@ -235,7 +235,9 @@
     "close_failed": "Couldn’t close the session. Try again.",
     "rx_download_named": "Download {name}",
     "pause_named": "Pause {name}",
-    "resume_named": "Resume {name}"
+    "resume_named": "Resume {name}",
+    "st_offline": "Offline",
+    "transfer_offline": "Lost contact. They can reconnect while this page stays open"
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -472,6 +474,8 @@
     "close_failed": "Không đóng được phiên. Hãy thử lại.",
     "rx_download_named": "Tải xuống {name}",
     "pause_named": "Tạm dừng {name}",
-    "resume_named": "Tiếp tục {name}"
+    "resume_named": "Tiếp tục {name}",
+    "st_offline": "Mất kết nối",
+    "transfer_offline": "Mất liên lạc. Người nhận có thể kết nối lại khi trang này vẫn mở"
   }
 }

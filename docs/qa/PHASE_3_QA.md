@@ -86,6 +86,24 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 | Docs said production images never include the hooks | P2 | Reworded: the hooks cannot be reached without `VITE_TEST_HOOKS`; the code is still in the bundle |
 | Accessible names built by concatenation | P2 | `product.rx_download_named`, `product.pause_named`, `product.resume_named` (EN/VI) |
 
-## Round 4
+## Round 4 — commit 1730861 — FAIL
+
+0 P0, 4 P1, 5 P2. The round-3 behaviour fixes held: backend, web checks, 116 unit tests, protocol, i18n, tokens and markdown passed. The transfer specs passed on chromium, firefox and webkit plus both mobile projects. QA scenarios A–D (sender pause across a receiver reload, pause while reconnecting, receiver pause across a sender drop, sender pause while verifying) passed on three engines. CI 42858451466 on 1730861 was green in all 12 jobs.
+
+### Resolution of round 4 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| No Pause while verifying not recorded as a deviation | P1 | G13 |
+| Bar colors still off on the TR-6 matrix and TR-5 rows | P1 | Matrix cells red for a failed receiver and amber while reconnecting; TR-5 rows use `barTone` |
+| After the sender's reconnect window TR-5/TR-6 said "Waiting for the receiver to choose where to save" | P1 | New `offline` status with its own chip ("Offline") and text ("Lost contact. They can reconnect while this page stays open"), EN/VI, Remove still offered; G14; fake-timer unit tests |
+| Red required Firefox run on 385b20e left out of the report | P1 | Recorded in the report (CI row, §6 known limitation, P1 backlog) as an open intermittent with its diagnostics. Not reproduced locally without the proxy (12 browsers × 4 reloads with live connections); not retried or quarantined. Further CI runs are listed below as they complete |
+| Window not armed on every path; sender without its files still held the screen | P2 | The window is armed whenever a receiver is connecting or reconnecting without an open channel (Resume while away, server resume, after a refresh); a sender tab without its picked files does not hold the screen |
+| Transfer map stale after a socket reconnect | P2 | `SOCKET_OPEN` reloads the records; unit test |
+| Multi-file resume flicker | P2 | A pending resume ignores files still `PAUSED` until the server moves on |
+| Unit-test gaps | P2 | `sender-controller.test.ts` (follow a resume, window to Offline, Resume while away, refresh on reconnect); receiver tests for Retry staying paused and Pause ignored while verifying; Go test asserts `not_verified` for a partial `COMPLETED` while paused |
+| Sender window missing from the owner docs | P2 | ARCHITECTURE §7.1 and TRANSFER_PROTOCOL §6 |
+
+## Round 5
 
 Pending.

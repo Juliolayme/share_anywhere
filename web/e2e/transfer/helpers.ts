@@ -100,7 +100,19 @@ export async function receiverPage(
   // Each Firefox receiver gets its own browser: a clean process per test, and no state from earlier specs
   // (docs/TESTING_AND_CI.md §3).
   if (browserName === 'firefox') {
-    const own = await firefox.launch({ ...(use.channel ? { channel: use.channel } : {}), ...use.launchOptions });
+    // With MOZ_LOG_FILE set (CI), each receiver browser logs to its own file: they would overwrite one another.
+    const info = test.info();
+    const logFile = process.env.MOZ_LOG_FILE
+      ? `${process.env.MOZ_LOG_FILE}-${info.titlePath
+          .at(-1)
+          ?.replace(/[^a-z0-9]+/gi, '-')
+          .slice(0, 60)}-r${info.retry}-${Date.now()}`
+      : undefined;
+    const own = await firefox.launch({
+      ...(use.channel ? { channel: use.channel } : {}),
+      ...use.launchOptions,
+      ...(logFile ? { env: { ...process.env, MOZ_LOG_FILE: logFile } } : {}),
+    });
     ownBrowsers.push(own);
     return guestPage(own, wake ? { wake } : {});
   }

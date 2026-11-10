@@ -266,7 +266,7 @@ jobs:
         env:
           E2E_BASE_URL: http://localhost:8080
           # Firefox ICE logs for the open receiver-reload failure (docs/TESTING_AND_CI.md §3); uploaded with the results.
-          MOZ_LOG: ${{ matrix.project == 'firefox-desktop' && 'timestamp,nr_ice:4,jsep:4,signaling:4' || '' }}
+          MOZ_LOG: ${{ matrix.project == 'firefox-desktop' && 'timestamp,jsep:4,signaling:4,mtransport:3,nicer:4' || '' }}
           # Not under test-results: Playwright empties that folder when the run starts, and Firefox creates no folders.
           MOZ_LOG_FILE: ${{ matrix.project == 'firefox-desktop' && format('{0}/web/moz-log/firefox', github.workspace) || '' }}
         run: |

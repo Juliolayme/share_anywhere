@@ -222,6 +222,15 @@
     "log_empty": "Nothing logged yet.",
     "transfer_waiting": "Waiting for the receiver to choose where to save",
     "history_partial_bytes": "{done} of {total}",
+    "history_title_more": "{name} + {n} files",
+    "history_title_more_one": "{name} + 1 file",
+    "history_original_size": "Original size",
+    "history_route": "Route",
+    "history_route_mixed": "Direct and relay",
+    "history_duration": "Duration",
+    "history_delete_failed": "Couldn’t delete this entry. Try again.",
+    "history_results": "{n} transfers",
+    "history_results_one": "1 transfer",
     "back_to_session": "Back to the session",
     "verifying_sha": "Checking file integrity (SHA-256)…",
     "eta_hm": "{h} h {m} min",
@@ -237,7 +246,8 @@
     "pause_named": "Pause {name}",
     "resume_named": "Resume {name}",
     "st_offline": "Offline",
-    "transfer_offline": "Lost contact. They can reconnect while this page stays open"
+    "transfer_offline": "Lost contact. They can reconnect while this page stays open",
+    "block_failed": "Couldn’t block {name}. Try again."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -461,6 +471,15 @@
     "log_empty": "Chưa có nhật ký.",
     "transfer_waiting": "Đang chờ người nhận chọn nơi lưu",
     "history_partial_bytes": "{done} / {total}",
+    "history_title_more": "{name} + {n} tệp",
+    "history_title_more_one": "{name} + 1 tệp",
+    "history_original_size": "Kích thước gốc",
+    "history_route": "Đường truyền",
+    "history_route_mixed": "Trực tiếp và relay",
+    "history_duration": "Thời lượng",
+    "history_delete_failed": "Không xoá được mục này. Hãy thử lại.",
+    "history_results": "{n} lần truyền",
+    "history_results_one": "1 lần truyền",
     "back_to_session": "Quay lại phiên",
     "verifying_sha": "Đang kiểm tra toàn vẹn tệp (SHA-256)…",
     "eta_hm": "{h} giờ {m} phút",
@@ -476,6 +495,7 @@
     "pause_named": "Tạm dừng {name}",
     "resume_named": "Tiếp tục {name}",
     "st_offline": "Ngoại tuyến",
-    "transfer_offline": "Mất liên lạc. Người nhận có thể kết nối lại khi trang này vẫn mở"
+    "transfer_offline": "Mất liên lạc. Người nhận có thể kết nối lại khi trang này vẫn mở",
+    "block_failed": "Không chặn được {name}. Hãy thử lại."
   }
 }

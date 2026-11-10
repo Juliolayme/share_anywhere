@@ -128,6 +128,8 @@ export class ReceiverController extends Observable<RxState> {
   private stopped = false;
   private hadData = false;
   private historyWritten = false;
+  /** When the first verified byte arrived (History duration). */
+  private startedAt: number | undefined;
   private initialized: Promise<void> | null = null;
   private participantId = '';
   /** When the current run of failed attempts started (null while a channel is open). */
@@ -135,6 +137,8 @@ export class ReceiverController extends Observable<RxState> {
   private everOpened = false;
   /** ICE and connection diagnostics (memory only). */
   readonly diag: string[] = [];
+  /** Test hook: delay before each block is written (a slow receiver; VITE_TEST_HOOKS builds only). */
+  readonly pace = { ms: 0 };
   /** Per-file completion work (folder copy, records), serialized so completion sees every file. */
   private fileWork: Promise<void> = Promise.resolve();
 
@@ -406,7 +410,7 @@ export class ReceiverController extends Observable<RxState> {
         participant_id: this.participantId,
         capability: this.capability,
       },
-      prepare: (e) => this.prepare(e),
+      prepare: async (e) => this.paced(await this.prepare(e)),
       events: {
         onProgress: (file, bytes) => this.onProgress(file, bytes),
         onVerifying: () => this.state_.phase !== 'paused' && this.update({ phase: 'verifying' }),
@@ -431,6 +435,23 @@ export class ReceiverController extends Observable<RxState> {
       this.update({ route });
       this.log(route === 'relay' ? 'product.log_relay_plain' : 'product.log_direct');
     });
+  }
+
+  /** Applies the test-only write delay; a no-op unless a test sets `pace.ms`. */
+  private paced(p: PreparedFile): PreparedFile {
+    const sink = p.sink;
+    const pace = this.pace;
+    return {
+      ...p,
+      sink: {
+        write: async (offset, data) => {
+          if (pace.ms) await new Promise((r) => setTimeout(r, pace.ms));
+          return sink.write(offset, data);
+        },
+        read: (offset, length) => sink.read(offset, length),
+        flush: () => sink.flush(),
+      },
+    };
   }
 
   private async prepare(e: FileMetaEntry): Promise<PreparedFile> {
@@ -479,6 +500,7 @@ export class ReceiverController extends Observable<RxState> {
   private onProgress(file: number, bytes: number): void {
     const f = this.state_.files.find((x) => x.index === file);
     if (!f) return;
+    if (bytes > f.verified) this.startedAt ??= Date.now();
     const files = this.state_.files.map((x) => (x.index === file ? { ...x, verified: bytes } : x));
     const phase: RxPhase =
       this.state_.phase === 'paused' ? 'paused' : this.state_.phase === 'verifying' ? 'verifying' : 'transferring';
@@ -551,7 +573,7 @@ export class ReceiverController extends Observable<RxState> {
     this.lost();
   }
 
-  /** The channel dropped or never opened: report DISCONNECTED and retry with backoff (1 s doubling to 15 s). */
+  /** The channel dropped or never opened: report DISCONNECTED and retry with jittered backoff (1 s doubling to 15 s). */
   private lost(): void {
     if (this.stopped || rxFinal(this.state_.phase) || this.retryTimer) return;
     const paused = this.state_.phase === 'paused';
@@ -566,7 +588,8 @@ export class ReceiverController extends Observable<RxState> {
       return this.update({ phase: 'unreachable', eta: null });
     }
     this.update({ phase: 'reconnecting' });
-    const delay = Math.min(15_000, 1000 * 2 ** this.attempt);
+    // Exponential backoff with ±25 % jitter, so receivers that lost the sender together do not redial in step.
+    const delay = Math.min(15_000, 1000 * 2 ** this.attempt) * (0.75 + Math.random() * 0.5);
     this.attempt++;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
@@ -692,6 +715,10 @@ export class ReceiverController extends Observable<RxState> {
       totalBytes: this.state_.total,
       transferredBytes: sum(files),
       peer: this.senderName,
+      peers: this.senderName ? [this.senderName] : [],
+      files: files.map((f) => ({ name: f.name, size: f.size, transferredBytes: f.done ? f.size : f.verified })),
+      ...(this.state_.route ? { route: this.state_.route } : {}),
+      ...(this.startedAt ? { startedAt: this.startedAt } : {}),
       status,
       createdAt: Date.now(),
     });

@@ -21,6 +21,7 @@ import { useKeepAwake } from '../../lib/keepAwake/KeepAwakeContext';
 import { useSharing } from '../../features/sharing/SharingContext';
 import { useSender } from '../../features/transfer/TransferContext';
 import {
+  groupEta,
   txActive,
   type TxFinal,
   type TxReceiver,
@@ -115,6 +116,8 @@ export default function TransferDashboard() {
   const n = s.receivers.length;
   const overallDone = s.receivers.reduce((a, r) => a + r.verified, 0);
   const overallTotal = n * total;
+  const groupSeconds = groupEta(s.receivers);
+  const overallEta = useEta();
   const counts = ORDER.map((st) => ({ st, n: s.receivers.filter((r) => r.status === st).length })).filter(
     (c) => c.n > 0,
   );
@@ -132,6 +135,20 @@ export default function TransferDashboard() {
     } finally {
       setClosing(false);
       setConfirmClose(false);
+    }
+  };
+  const [blockTarget, setBlockTarget] = useState<TxReceiver | null>(null);
+  const [blocking, setBlocking] = useState(false);
+  const block = async (r: TxReceiver) => {
+    setBlocking(true);
+    setError(null);
+    try {
+      await api.decide(r.participantId, 'block');
+      setBlockTarget(null);
+    } catch {
+      setError(t('product.block_failed', { name: r.name }));
+    } finally {
+      setBlocking(false);
     }
   };
   const remove = (r: TxReceiver) => {
@@ -184,11 +201,12 @@ export default function TransferDashboard() {
               </b>
               <span className="text-[14px] text-fg-2">{t('web.overall')}</span>
             </span>
-            <span className="font-mono text-[13px] text-fg-2">
+            <span className="font-mono text-[13px] text-fg-2" data-testid="group-eta">
               {t('product.bytes_of', {
                 done: formatBytes(overallDone, locale),
                 total: formatBytes(overallTotal, locale),
               })}
+              {groupSeconds !== undefined && !s.final && ` · ${overallEta(groupSeconds)}`}
             </span>
           </div>
           <ProgressBar value={overallTotal ? overallDone / overallTotal : 0} label={t('web.overall')} height={10} />
@@ -226,6 +244,7 @@ export default function TransferDashboard() {
                 onPause={() => tx.pause(r.participantId)}
                 onResume={() => tx.resume(r.participantId)}
                 onRemove={() => remove(r)}
+                onBlock={() => setBlockTarget(r)}
               />
             ))}
           </div>
@@ -293,6 +312,19 @@ export default function TransferDashboard() {
         )}
       </div>
       <ConfirmDialog
+        open={!!blockTarget}
+        title={t('product.block_confirm_h')}
+        body={t('product.block_confirm_p')}
+        confirmLabel={t('product.block')}
+        cancelLabel={t('web.cancel')}
+        danger
+        busy={blocking}
+        onConfirm={() => {
+          if (blockTarget) void block(blockTarget);
+        }}
+        onCancel={() => setBlockTarget(null)}
+      />
+      <ConfirmDialog
         open={confirmStop}
         title={t('product.stopall_h')}
         body={t('product.stopall_p')}
@@ -359,11 +391,13 @@ function ReceiverCard({
   onPause,
   onResume,
   onRemove,
+  onBlock,
 }: {
   r: TxReceiver;
   onPause: () => void;
   onResume: () => void;
   onRemove: () => void;
+  onBlock: () => void;
 }) {
   const { t, locale } = useI18n();
   const eta = useEta();
@@ -448,6 +482,17 @@ function ReceiverCard({
             aria-label={t('product.remove_confirm', { name: r.name })}
           >
             {t('web.remove')}
+          </Button>
+        )}
+        {!ended && (
+          <Button
+            size="sm"
+            variant="danger-ghost"
+            icon={Ban}
+            onClick={onBlock}
+            aria-label={t('product.block_named', { name: r.name })}
+          >
+            {t('product.block')}
           </Button>
         )}
       </div>

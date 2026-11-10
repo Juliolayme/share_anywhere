@@ -3,7 +3,7 @@ import type { SessionSocket, SocketEvent } from '../../../lib/ws/socket';
 import type { SessionView } from '../../sharing/api';
 import type { TransferStatus, TransfersApi } from './api';
 import { Throughput } from '../engine/eta';
-import { SenderController, sanitizeCandidate } from './sender-controller';
+import { SenderController, groupEta, routeOf, sanitizeCandidate } from './sender-controller';
 
 /** A sender tab with one joined receiver and one file, no picked files (so no peer connection is served). */
 function setup(status: TransferStatus, createPeer?: (cfg: RTCConfiguration) => RTCPeerConnection) {
@@ -224,5 +224,33 @@ describe('SenderController', () => {
     expect(sanitizeCandidate({ candidate: 'x'.repeat(2000) })).toBeNull();
     expect(sanitizeCandidate({ candidate: 42 })).toBeNull();
     expect(sanitizeCandidate(null)).toBeNull();
+  });
+  it('group ETA follows the slowest active receiver and estimates while one has no ETA yet', () => {
+    expect(groupEta([])).toBeUndefined();
+    expect(groupEta([{ status: 'completed', eta: null }])).toBeUndefined();
+    expect(
+      groupEta([
+        { status: 'transferring', eta: 30 },
+        { status: 'transferring', eta: 90 },
+      ]),
+    ).toBe(90);
+    expect(
+      groupEta([
+        { status: 'transferring', eta: 30 },
+        { status: 'paused', eta: 500 },
+      ]),
+    ).toBe(30);
+    expect(
+      groupEta([
+        { status: 'transferring', eta: 30 },
+        { status: 'reconnecting', eta: null },
+      ]),
+    ).toBeNull();
+  });
+  it('History route: one route for every receiver, mixed otherwise, nothing when unknown', () => {
+    expect(routeOf([])).toEqual({});
+    expect(routeOf([null, null])).toEqual({});
+    expect(routeOf(['direct', null, 'direct'])).toEqual({ route: 'direct' });
+    expect(routeOf(['direct', 'relay'])).toEqual({ route: 'mixed' });
   });
 });

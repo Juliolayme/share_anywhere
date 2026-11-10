@@ -11,6 +11,7 @@ on:
       - '.github/workflows/nightly.yml'
       - 'web/e2e/nightly/**'
       - 'web/e2e/transfer/helpers.ts'
+      - 'web/e2e/pairing/helpers.ts'
       - 'web/e2e/mobile/snapshots.spec.ts'
 
 permissions:
@@ -91,6 +92,55 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
 
+  five-receivers:
+    # docs/TESTING_AND_CI.md §2.2: one sender, five receivers (three Chromium, stock Firefox, WebKit), one slowed,
+    # the other four finish first, a sixth join is refused.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install chromium, firefox and webkit
+        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium firefox webkit
+      - name: Stock Firefox for WebRTC (pinned, checksum verified)
+        env:
+          FIREFOX_VERSION: '160.0'
+          FIREFOX_SHA256: fde774e9757c8878534c05ec210db592bf6a1b244c57941ffb2e364c04f35fcd
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/firefox.tar.xz" "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz"
+          echo "${FIREFOX_SHA256}  $RUNNER_TEMP/firefox.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP"
+          echo "E2E_FIREFOX_BIN=$RUNNER_TEMP/firefox/firefox" >> "$GITHUB_ENV"
+      - name: Five receivers
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_FIVE: '1'
+          E2E_FIXTURE_DIR: ${{ runner.temp }}/fixtures
+        run: pnpm --filter @share-anywhere/web exec playwright test e2e/nightly/five-receivers.spec.ts --project=chromium-desktop --retries=0 --trace retain-on-failure
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-five-receivers
+          if-no-files-found: ignore
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 14
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   plan:
     runs-on: ubuntu-latest
     steps:
@@ -98,7 +148,6 @@ jobs:
         run: |
           cat <<'TXT'
           Jobs still to be added by later phases (docs/TESTING_AND_CI.md section 2.2):
-            Phase 4  five-receivers      one sender, five receivers, one throttled, sixth rejected
             Phase 6  android-matrix      emulator API 29 / 34 / 35, FGS time-budget simulation
             Phase 6  android-web-interop guest Android <-> Playwright transfers
             Phase 5B clipboard-cross-client encrypted clipboard Web <-> Android / iOS

@@ -5,6 +5,7 @@ import { fromDataChannel } from '../engine/channel';
 import { Throughput } from '../engine/eta';
 import type { ErrorCode } from '../engine/frame';
 import { sha256Hex } from '../engine/hash';
+import { BlockCache, defaultBlockCacheBytes } from '../engine/cache';
 import { FileHash, SenderConnection, fileSource, type SenderFile } from '../engine/sender';
 import type { Route, Transfer, TransferList, TransferStatus, TransfersApi } from './api';
 import { Observable } from './observable';
@@ -110,6 +111,25 @@ export function sanitizeCandidate(c: unknown): RTCIceCandidateInit | null {
 const ACTIVE: TxStatus[] = ['connecting', 'transferring', 'reconnecting', 'verifying'];
 export const txActive = (s: TxStatus) => ACTIVE.includes(s);
 
+/**
+ * Group ETA (docs/PRODUCT_REQUIREMENTS.md §6.5): the slowest active receiver decides. `undefined` when no
+ * receiver is active (nothing to estimate); `null` ("Estimating time…") while any active receiver has no
+ * estimate yet, for example one still connecting or reconnecting.
+ */
+/** One route for every receiver, or `mixed` (History). Nothing when no route was ever known. */
+export function routeOf(routes: (Route | null)[]): { route?: Route | 'mixed' } {
+  const known = [...new Set(routes.filter((r): r is Route => !!r))];
+  if (!known.length) return {};
+  return { route: known.length === 1 ? (known[0] as Route) : 'mixed' };
+}
+
+export function groupEta(receivers: Pick<TxReceiver, 'status' | 'eta'>[]): number | null | undefined {
+  const active = receivers.filter((r) => txActive(r.status));
+  if (!active.length) return undefined;
+  if (active.some((r) => r.eta === null)) return null;
+  return Math.max(...active.map((r) => r.eta ?? 0));
+}
+
 function statusFromServer(ts: TransferStatus[]): TxStatus | null {
   if (!ts.length) return null;
   if (ts.every((s) => s === 'COMPLETED')) return 'completed';
@@ -137,11 +157,15 @@ export class SenderController extends Observable<TxState> {
    */
   private pendingIce = new Map<string, Map<string, RTCIceCandidateInit[]>>();
   private hashes = new Map<number, FileHash>();
+  /** One block cache for every receiver of this session (docs/TRANSFER_PROTOCOL.md §5.1). */
+  readonly cache = new BlockCache(defaultBlockCacheBytes());
   private senderFiles: SenderFile[] = [];
   private list: TransferList | null = null;
   private unsub: (() => void) | null = null;
   private sampler: ReturnType<typeof setInterval> | null = null;
   private historyWritten = false;
+  /** When the first verified byte reached any receiver (History duration). */
+  private startedAt: number | undefined;
   private initialized: Promise<void> | null = null;
   private refusing = 0;
   /** Test hook: corrupt the next N blocks after hashing (VITE_TEST_HOOKS builds only). */
@@ -202,7 +226,11 @@ export class SenderController extends Observable<TxState> {
           (p.status === 'JOINED' || p.status === 'REMOVED' || p.status === 'BLOCKED' || p.status === 'LEFT'),
       )
       .filter(
-        (p) => p.status === 'JOINED' || list.transfers.some((t) => t.participant_id === p.id && t.verified_bytes > 0),
+        // Ended receivers stay listed once a transfer to them began (or was cancelled by Remove or Block), so
+        // the sender sees what happened to them.
+        (p) =>
+          p.status === 'JOINED' ||
+          list.transfers.some((t) => t.participant_id === p.id && (t.verified_bytes > 0 || t.status !== 'PENDING')),
       )
       .map((p): TxReceiver => {
         const prev = this.state_.receivers.find((r) => r.participantId === p.id);
@@ -301,6 +329,7 @@ export class SenderController extends Observable<TxState> {
     for (const t of this.downTimers.values()) clearTimeout(t);
     this.downTimers.clear();
     this.pendingIce.clear();
+    this.cache.clear();
     if (this.sampler) clearInterval(this.sampler);
     for (const pid of [...this.peers.keys()]) this.drop(pid);
   }
@@ -453,6 +482,7 @@ export class SenderController extends Observable<TxState> {
       sessionId: this.d.sessionId,
       files,
       hashes: this.hashes,
+      cache: this.cache,
       unavailable: !this.state_.hasFiles,
       corrupt: this.corrupt,
       pace: this.pace,
@@ -481,6 +511,7 @@ export class SenderController extends Observable<TxState> {
           this.log(pid, 'product.log_sending_to', { name: cur?.name ?? '' });
         },
         onProgress: (file, bytes) => {
+          if (bytes > 0) this.startedAt ??= Date.now();
           const cur = this.state_.receivers.find((r) => r.participantId === pid);
           if (!cur) return;
           const perFile = cur.perFile.map((n, i) => (i === file ? Math.max(n, bytes) : n));
@@ -613,6 +644,10 @@ export class SenderController extends Observable<TxState> {
       totalBytes: files.reduce((a, f) => a + f.size, 0),
       transferredBytes: Math.max(0, ...rs.map((r) => r.verified)),
       peer: rs.map((r) => r.name).join(', '),
+      peers: rs.map((r) => r.name),
+      files: files.map((f) => ({ name: f.name, size: f.size })),
+      ...routeOf(rs.map((r) => r.route)),
+      ...(this.startedAt ? { startedAt: this.startedAt } : {}),
       status,
       createdAt: Date.now(),
     });

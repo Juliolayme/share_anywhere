@@ -22,6 +22,7 @@ import {
   type HelloSender,
   type NackBody,
 } from './frame';
+import type { BlockCache, CachedBlock } from './cache';
 import { StreamHasher, digest } from './hash';
 
 /** A file the sender reads in slices; never loaded whole (File.slice streaming). */
@@ -95,6 +96,8 @@ export interface SenderOptions {
   sessionId: string;
   files: SenderFile[];
   hashes: Map<number, FileHash>;
+  /** Block cache shared with the connections to the other receivers (none: read every block directly). */
+  cache?: BlockCache | undefined;
   /** True when the participant is a JOINED receiver whose capability hash matches. */
   authorize(participantId: string, capability: string): Promise<boolean>;
   events?: SenderEvents;
@@ -358,13 +361,21 @@ export class SenderConnection {
     const f = this.o.files.find((x) => x.index === file);
     if (!f) throw new ProtocolError(`unknown file ${file}`);
     const len = blockLength(f.size, block, this.bs);
-    const data = await f.source.read(block * this.bs, len);
-    if (data.byteLength !== len)
-      throw new DOMException('The file changed while it was being sent.', 'NotReadableError');
-    this.o.hashes.get(file)?.feed(block * this.bs, data);
-    const sum = await digest(data);
+    const load = async (): Promise<Uint8Array> => {
+      const read = await f.source.read(block * this.bs, len);
+      if (read.byteLength !== len)
+        throw new DOMException('The file changed while it was being sent.', 'NotReadableError');
+      this.o.hashes.get(file)?.feed(block * this.bs, read); // once per actual read, in file order when it can
+      return read;
+    };
+    const cached: CachedBlock = this.o.cache
+      ? await this.o.cache.get(file, block, load)
+      : await load().then(async (d) => ({ data: d, sum: await digest(d) }));
+    const { sum } = cached;
+    let data = cached.data; // shared with other connections: never modified in place
     if (this.o.corrupt && this.o.corrupt.blocks > 0) {
       this.o.corrupt.blocks--;
+      data = data.slice();
       data[0] = (data[0] ?? 0) ^ 0xff;
     }
     const key = `${file}:${block}`;

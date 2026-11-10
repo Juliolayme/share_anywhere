@@ -41,6 +41,8 @@ function outcomeOf(v: SessionView | null, gone: boolean): Outcome | null {
       return 'left';
   }
   if (v.status === 'CLOSED') return 'closed';
+  // The session finished: this receiver's own result (RX-7) comes from its transfers, not an outcome screen.
+  if (v.status === 'COMPLETED' || v.status === 'PARTIALLY_COMPLETED') return null;
   if (v.status !== 'WAITING' && v.status !== 'ACTIVE') return 'ended';
   return null;
 }

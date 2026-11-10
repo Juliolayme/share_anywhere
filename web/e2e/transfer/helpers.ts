@@ -53,7 +53,11 @@ export async function downloadAndHash(rx: Page, name: string): Promise<string> {
   const wait: Promise<Download> = rx.waitForEvent('download');
   await rx.getByRole('button', { name: `Download ${name}` }).click();
   const dl = await wait;
-  expect(dl.suggestedFilename()).toBe(name);
+  // Firefox under automation de-duplicates names in its shared download folder ("name(1).bin").
+  const dot = name.lastIndexOf('.');
+  const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  expect(dl.suggestedFilename()).toMatch(new RegExp(`^${esc(base)}(\\(\\d+\\))?${esc(ext)}$`));
   const path = await dl.path();
   return sha256Of(path);
 }
@@ -148,7 +152,7 @@ export async function receiverPage(
 type Hooks = {
   __saTest: {
     senders: Record<string, { pace: { ms: number }; corrupt: { blocks: number }; dropFor(ms: number): void }>;
-    receivers: Record<string, { state: { phase: string; verified: number } }>;
+    receivers: Record<string, { state: { phase: string; verified: number }; pace: { ms: number } }>;
   };
 };
 
@@ -171,6 +175,20 @@ export async function senderHook(
       if (hk.dropForMs !== undefined) c.dropFor(hk.dropForMs);
     },
     [sessionId, hook] as const,
+  );
+}
+
+/** Test-build hook on a receiver: delay each block write by `pace` ms (a slow receiver), 0 to stop. */
+export async function receiverHook(rx: Page, sessionId: string, hook: { pace: number }) {
+  await expect
+    .poll(() => rx.evaluate((id) => !!(window as unknown as Hooks).__saTest?.receivers[id], sessionId))
+    .toBe(true);
+  await rx.evaluate(
+    ([id, ms]) => {
+      const c = (window as unknown as Hooks).__saTest.receivers[id as string];
+      if (c) c.pace.ms = ms as number;
+    },
+    [sessionId, hook.pace] as const,
   );
 }
 

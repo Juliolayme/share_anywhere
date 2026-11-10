@@ -88,12 +88,19 @@ A malformed frame, a frame out of order, or a frame of the wrong direction is a 
 - **Pause and resume:** either side may send `PAUSE`. The sender stops scheduling new blocks, and blocks already in flight complete. `RESUME` continues. Pause is also recorded on the server (`POST /v1/transfers/{id}/pause`) so the other side learns it even without a channel.
 - **Cancel:** `ERROR cancelled` (fatal) plus `POST /v1/transfers/{id}/cancel`.
 
+### 5.1 Several receivers
+
+- Each receiver has its own connection, window, flow control, bitmap and retry state, so a slow or disconnected receiver only waits on its own channel; it never holds back the others.
+- The sender's connections share one **block cache** (least recently used blocks evicted beyond a byte budget, 64 MiB by default, `VITE_BLOCK_CACHE_MB` at build time). A block is read from the file and hashed once while it is cached, and concurrent requests for the same block share that read. Receivers moving together read the file once; a receiver that falls far behind reads its blocks again instead of holding memory for everyone. Cached blocks are never modified in place.
+- The whole-file hash state is shared too: it is fed only by actual reads, in file order where it can be.
+- Pause, resume, Remove and Block act on one receiver; Stop all cancels every transfer; Close session ends the session for everyone (`docs/ARCHITECTURE.md` §4.4). The group ETA follows the slowest active receiver (PRD §6.5).
+
 ## 6. Reconnect
 
 When the channel closes without a fatal error (reconnect window: 2 minutes to make a first connection, 10 minutes to get one back; after that the receiver shows "Couldn't reach the sender" with Retry, and nothing is reported as failed):
 
 1. The receiver reports `DISCONNECTED`.
-2. The receiver re-offers with backoff (1 s doubling to 15 s), reporting `RECONNECTING`.
+2. The receiver re-offers with backoff (1 s doubling to 15 s, ±25 % jitter so receivers that lost the sender together do not redial in step), reporting `RECONNECTING`. The WebSocket reconnects separately with its own jittered backoff and a fresh one-time ticket each time (signaling re-authentication).
 3. Once the channel opens, it repeats the handshake (§3), reports `RESUMING`, then `TRANSFERRING` once blocks flow.
 
 The sender has the same 10-minute window per receiver: a receiver that is connecting or reconnecting with no open channel for 10 minutes shows **Offline** on TR-5 and TR-6 ("Lost contact. They can reconnect while this page stays open") and no longer holds the sender's screen on. The record keeps its state, and a new connection from that receiver resumes as above.

@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test';
 export const chromiumWebRtc = { args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] };
 // No proxy for the test browser: the suite only talks to localhost, and a system proxy picked up from the
 // environment stops Firefox from gathering ICE candidates on every page after the first (docs/TESTING_AND_CI.md §3).
-const firefoxPrefs = { 'media.peerconnection.ice.obfuscate_host_addresses': false, 'network.proxy.type': 0 };
+export const firefoxPrefs = { 'media.peerconnection.ice.obfuscate_host_addresses': false, 'network.proxy.type': 0 };
 // Playwright's patched Firefox never gathers ICE candidates (docs/TESTING_AND_CI.md §3), so when
 // E2E_FIREFOX_BIN points at a stock Firefox the project drives it over WebDriver BiDi instead.
 const firefox = process.env.E2E_FIREFOX_BIN

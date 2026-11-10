@@ -1,6 +1,6 @@
 import { Copy, Check, Link2, Lock, Share2, TimerOff, Clock, UserCheck } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Banner, Button, Card, ConfirmDialog, Screen, Switch } from '../../components/ui';
 import { KeepOpenBanner } from '../../components/KeepOpenBanner';
 import { QRCode } from '../../components/QRCode';
@@ -171,6 +171,9 @@ export default function SessionPage() {
   const filesLabel =
     view.file_count === 1 ? t('product.files_count_one') : t('product.files_count', { n: view.file_count });
 
+  // Every transfer has ended with something delivered (docs/ARCHITECTURE.md §4.5): show the result (TR-7).
+  if (view.status === 'COMPLETED' || view.status === 'PARTIALLY_COMPLETED')
+    return <Navigate to={`/send/session/${id}/result`} replace />;
   if (!live) {
     return (
       <Screen id="session-ended">

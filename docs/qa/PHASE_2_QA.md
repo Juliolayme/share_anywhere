@@ -17,18 +17,35 @@ No P0. Seven P1 and seventeen P2 findings. The backend logic was confirmed corre
 | P1-5 Required backend tests missing | P1 | Added: Create new code rate limit; session creation IP limit; 72 h signed-in lifetime and 5 open sessions; link admits at 9:59; renew after Remove; signaling after expiry; tickets revoked by renew and Stop accepting; coturn allocation test (valid, wrong secret, expired) run in the CI `compose` job against the stack's coturn (passes locally); HTTP IDOR table for close, renew, PATCH, leave, remove, approve |
 | P1-6 No locked-out e2e spec | P1 | Test-build hook `POST /v1/_test/lockout` (device level) and a spec asserting "Too many attempts. Try again in 30:00." |
 | P1-7 Vacuous wake-lock release assertion | P1 | No reload: the spec waits for `SESSION_UPDATED` to switch to `session-expired` and asserts exactly one more `release()` |
-| Tests: snapshot vs size checks; exact `cx_rx`; IDOR; "Join within" | P2 | Snapshot deviation recorded (F15); exact message asserted; IDOR HTTP table; JoinPreview unit tests (last-minute hint, expired window, lapsed ticket) |
+| Tests: snapshot vs size checks; exact `cx_rx`; IDOR; "Join within" | P2 | Snapshot deferral recorded (moved to `docs/TESTING_AND_CI.md` §3 in round 2, target Phase 3); exact message asserted; IDOR HTTP table; JoinPreview unit tests (last-minute hint, expired window, lapsed ticket) |
 | i18n: sentence fragments, unlocalized `too_many_open_sessions`, unmapped `own_session` | P2 | `product.wants_to_join`, `product.too_many_open`, `product.own_session` |
 | Link after Stop accepting said "expired" | P2 | Window state is checked before token revocation: `session_not_accepting` |
 | Lapsed 5-minute ticket expired the preview while the code was valid | P2 | The preview keeps its source (code or link) and renews the ticket on Receive |
 | "10 pending requests" unreachable | P2 | Removed; docs say requests count toward the five slots |
 | SECURITY_MODEL header and TURN row; `.env.example` flag; nested `join_window` in API.md; IP-keyed join and TURN limits | P2 | Fixed; joins also limited per IP (30/min), TURN per IP (120/h) |
 | RX-5 overflow at 390 px with the Refused pill | P2 | Pill wraps; mobile spec asserts no horizontal scroll on the waiting screen |
-| Visual deltas (banner position, QR frame and center mark, filled copy button, countdown pill, RX-5 icon colors) | P2 | Matched to the design |
-| Countdown live region every second | P2 | Removed |
+| Visual deltas (banner position, QR frame and center mark, filled copy button, countdown pill, RX-5 icon colors) | P2 | Partly: banner position, center mark, copy button and icon colors done; the rest and two broken spacing classes were found in round 2 and fixed there |
+| Countdown live region every second | P2 | Not changed in this round (found again in round 2, fixed there) |
 | Leave swallowed errors; lockout map pruning | P2 | Error banner on failure; expired lockouts pruned in the maintenance tick |
 | No unit test for release on leave/remove | P2 | Covered by the controller test (`setActive(false)` releases) used by every screen on unmount |
 
-## Round 2
+## Round 2 — commit 8356a0a — FAIL
+
+No P0, one P1, seven P2. All seven round-1 P1s were verified fixed, including attempts to break them (live DOM IDs after the clock moved, full database dump for addresses, metrics only on the internal listener and not through Caddy, a negative control for the coturn test). CI run 42800623094 on 8356a0a was green in all 12 jobs; Firefox passed only with retries.
+
+### Resolution of round 2 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| `gap-5` and `p-5` generate no CSS (token spacing scale), breaking the share panel spacing and the empty receivers state | P1 | Replaced with `gap-[18px]` and `p-[20px]`. New unit test `src/styles/classes.test.ts` fails on any numeric spacing utility outside the token keys (verified to catch `gap-5`, `p-5`, `h-10`) |
+| Firefox e2e green only through retries (page `load` timeouts on fresh contexts) | P2 | Helpers wait for `domcontentloaded` and then for elements (single-page app); traces and reports are now uploaded on every e2e run, so retried tests can be diagnosed. Root cause tracked in the backlog |
+| Countdown live region announced every second | P2 | `role="timer"` with `aria-live="off"`; a separate polite region announces only at 1:00 and 0:30 |
+| Visual deltas: countdown bar, RX-5 icon, RX-5 banner width, QR frame | P2 | Full-width `surface-2` countdown bar; 72 px pulsing circle (no animation with reduced motion); banner spans the content width; QR frame 12 px padding and 14 px radius |
+| Stale report lines | P2 | Fixed (pending requests, 72 h, lockout hook, screen IDs, counts, backlog, CI runs) |
+| Stale owner and test docs | P2 | TESTING_AND_CI pending cap, ARCHITECTURE test hooks, SECURITY_MODEL §8 participants, UX_SCREEN_MAP TR-4 Stop accepting |
+| F15 filed as a design deviation | P2 | Moved to `docs/TESTING_AND_CI.md` §3 and the phase file, target Phase 3 |
+| `session-ended` never asserted | P2 | Keep-awake granted spec asserts it |
+
+## Round 3
 
 Pending.

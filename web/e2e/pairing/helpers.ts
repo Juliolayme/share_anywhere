@@ -80,7 +80,9 @@ export interface Created {
 
 /** Sender creates a session through the UI and returns its code, link and id. */
 export async function createSession(page: Page, opts: { approval?: boolean } = {}): Promise<Created> {
-  await page.goto('/send');
+  // The app is a single-page app: wait for the DOM, then for elements (waiting for every subresource
+  // 'load' was flaky in Firefox on fresh contexts).
+  await page.goto('/send', { waitUntil: 'domcontentloaded' });
   await page
     .getByTestId('file-input')
     .setInputFiles({ name: 'holiday.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2048, 1) });
@@ -96,7 +98,7 @@ export async function createSession(page: Page, opts: { approval?: boolean } = {
 
 /** Receiver enters a code on /receive and continues to the preview. */
 export async function enterCode(page: Page, code: string) {
-  await page.goto('/receive');
+  await page.goto('/receive', { waitUntil: 'domcontentloaded' });
   await page.getByRole('textbox', { name: 'Digit 1 of 6' }).fill(code);
   await page.getByRole('button', { name: 'Continue' }).click();
 }

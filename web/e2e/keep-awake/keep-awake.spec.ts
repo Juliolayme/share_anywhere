@@ -23,6 +23,7 @@ for (const [mode, state, label] of [
       await page.getByRole('button', { name: 'Close session' }).click();
       await page.getByRole('dialog').getByRole('button', { name: 'Close session' }).click();
       await expect(page.getByRole('heading', { name: 'Session closed' })).toBeVisible();
+      await expect(page.locator('[data-screen="session-ended"]')).toHaveCount(1);
       await expect.poll(async () => (await wl(page)).releases).toBe(1);
     }
     await page.context().close();

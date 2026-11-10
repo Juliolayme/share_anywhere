@@ -47,7 +47,7 @@ File bytes over DataChannel, accounts, Android, iOS, Cloud.
   - Sixth receiver sees "session full"; expired link page; locked-out code entry shows the wait time.
   - Protected mode (forced through a test-only admin hook) → code join waits for approval with the explanation.
   - Keep screen on with `navigator.wakeLock` stubbed through `addInitScript` in three modes: granted (pill state On, `web_xx.wake_on`, and `release()` called after Close session), refused (pill state Refused, `product.wake_refused`), unsupported (pill state Unsupported, `web_xx.wake_unsup`), per `docs/ARCHITECTURE.md` §7.3; hidden → visible re-request; Settings toggle off → no request.
-  - Mobile projects assert QR and code legibility at the project viewport (snapshot).
+  - Mobile projects assert QR and code legibility at the project viewport (size and overflow assertions in Phase 2; snapshot baselines follow in Phase 3, see `docs/TESTING_AND_CI.md` §3).
 
 ## CI changes
 

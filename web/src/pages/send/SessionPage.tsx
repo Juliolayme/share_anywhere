@@ -220,7 +220,7 @@ export default function SessionPage() {
           <h2 className="sr-only">{t('web.share_h')}</h2>
           {windowOpen && view.code && view.join_url ? (
             <>
-              <div className="flex flex-wrap items-center gap-5">
+              <div className="flex flex-wrap items-center gap-[18px]">
                 <QRCode value={view.join_url} label={t('product.qr_aria')} />
                 <div className="flex min-w-[180px] flex-1 flex-col gap-2">
                   <span className="text-caption font-semibold text-fg-2">{t('web.code')}</span>
@@ -270,17 +270,21 @@ export default function SessionPage() {
                   </Button>
                 )}
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-caption text-fg-2">
-                <span className="inline-flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-surface-2 px-3 py-[10px] text-caption text-fg-2">
+                <span className="inline-flex items-center gap-2">
                   <Clock aria-hidden size={14} />
                   {t('common.cx_valid')} ·{' '}
                   <b
                     data-testid="countdown"
                     className={`font-mono ${left <= 60 ? 'text-warning-ink' : 'text-fg'}`}
-                    aria-live={left <= 60 ? 'polite' : 'off'}
+                    role="timer"
+                    aria-live="off"
                   >
                     {mmss(left)}
                   </b>
+                  <span className="sr-only" aria-live="polite">
+                    {left === 60 || left === 30 ? t('product.code_expires_in', { time: mmss(left) }) : ''}
+                  </span>
                 </span>
                 <Button
                   size="sm"
@@ -369,7 +373,7 @@ export default function SessionPage() {
           ))}
           {receivers.length === 0 && (
             <div
-              className="flex flex-col items-center gap-2 rounded-[12px] border border-dashed border-border-strong p-5 text-center"
+              className="flex flex-col items-center gap-2 rounded-[12px] border border-dashed border-border-strong p-[20px] text-center"
               data-testid="no-receivers"
             >
               <b>{t('web.waiting_r')}</b>

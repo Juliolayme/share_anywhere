@@ -171,7 +171,7 @@ Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests dr
 
 - No file content, clipboard plaintext, or history plaintext in logs, metrics, or analytics.
 - Tokens, refresh secrets, capabilities, codes, emails, and security words are redacted from logs.
-- IP addresses are used for rate limiting in memory only (Block stores a keyed hash of the IPv4 address or IPv6 /64, never the address, and it is purged with the session); logs keep a keyed hash of the IP truncated to /24 (IPv4) or /48 (IPv6) for 7 days. **As built (Phase 1):** request logs carry `ip_hash` (HMAC-SHA-256 with `SA_SERVER_SECRET`, first 8 bytes) and never the address or the query string; the log redactor also drops token, secret, cookie, authorization, and security-word fields. Log retention is set by the deployment (Phase 9).
+- IP addresses are used for rate limiting in memory only (participants and blocks store a keyed hash of the IPv4 address or IPv6 /64 so a Block can match it, never the address; both are purged with the session); logs keep a keyed hash of the IP truncated to /24 (IPv4) or /48 (IPv6) for 7 days. **As built (Phase 1):** request logs carry `ip_hash` (HMAC-SHA-256 with `SA_SERVER_SECRET`, first 8 bytes) and never the address or the query string; the log redactor also drops token, secret, cookie, authorization, and security-word fields. Log retention is set by the deployment (Phase 9).
 - Metrics are aggregates, never per person. No third-party analytics without an ADR.
 
 ## 9. Controls checklist

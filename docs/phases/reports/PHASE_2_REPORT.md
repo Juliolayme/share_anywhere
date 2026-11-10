@@ -18,20 +18,20 @@ Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
   - One 10-minute join window. It ends on timeout, when the fifth receiver joins, or on Stop accepting. Create new code issues a new code and link and invalidates the previous ones.
   - Single-use join tickets of at most 5 minutes, never past the window end, bound to the device and the window.
   - Open join by default. Joins are `REQUESTED` when approval is on, or when protected mode applies to a code join.
-  - Atomic five-receiver cap under a row lock. At most 10 pending requests.
+  - Atomic five-receiver cap under a row lock; pending requests count toward the five slots.
   - Sender controls: Approve, Reject, Remove, Block (device ID and IP /64), Stop accepting, Require approval (future joins only), Close.
   - Receivers can leave.
   - Three security words from the session and device, using the 2048-word BIP-0039 English list.
   - Lockouts: failed lookups per address (10/hour) and per device (5 per 10 minutes) lock out for 30 minutes.
   - Global protected mode for 30 minutes.
   - Limits on creation, open sessions, lookups, joins, renewals, and TURN.
-  - Lifetimes: idle 30 minutes, maximum 24 hours for guests, purge after 7 days.
+  - Lifetimes: idle 30 minutes, maximum 24 hours for guests (72 hours for signed-in senders, tested by injecting a signed-in caller), purge after 7 days.
 - **`internal/signaling`.** Relays `OFFER`/`ANSWER`/`ICE_CANDIDATE` over the WebSocket only between the sender and a `JOINED` receiver of a live session. Payloads are capped at 32 KiB. Errors return as `ERROR` events.
 - **`internal/turncreds`.** coturn `use-auth-secret` credentials (an automated test allocates a relay on the stack's coturn with an issued credential and checks that wrong-secret and expired credentials are refused) for the sender or a `JOINED` receiver of an `ACTIVE` session: guest TTL 30 minutes, account 60 minutes, 20 or 60 credentials per hour.
 - **Privacy and metrics.** Participants and blocks store only a keyed hash of the address (migration 0004). Aggregate counters (sessions, joins, requests, blocks, failed lookups, lockouts, protected-mode activations and seconds) are served on an internal `/metrics` listener (`SA_METRICS_ADDR`).
 - **WebSocket hub.** Connection registry, a writer goroutine per socket, message dispatch, and sockets closed when a device is revoked (resolves the Phase 1 backlog item P2-7).
 - **Access router.** 405 fallbacks are registered per method after all routes, so literal and wildcard paths coexist.
-- **Test builds** (`-tags testhooks`, used only by the CI Compose stack) add an adjustable clock and a protected-mode switch.
+- **Test builds** (`-tags testhooks`, used only by the CI Compose stack) add an adjustable clock, a protected-mode switch, and a device-lockout hook.
 - **Contract.** `openapi.yaml` covers §2.1 and §2.2: 24 operations, each with `x-sa-access`, checked against `docs/API.md` in both directions. `websocket-events.json` defines every Phase 2 event. New error codes are in `docs/API.md` §3.
 
 **Web** (sharing flag on)
@@ -46,7 +46,7 @@ Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
   - Receiver slots and capacity bar. Require approval toggle.
   - Participant cards with the Guest or Signed in badge and security words. Request cards with Approve and Reject. Remove, and Block with confirmation.
   - Join toasts. Close dialog (TR-8). Ended state.
-- **`receive` / `receive-link` / `receive-preview` (RX-2 to RX-4):**
+- **`receive` / `receive-preview` (RX-2 to RX-4; `/j/<token>` resolves on `receive-preview`):**
   - The code goes to the preview; `/j/<token>` opens the preview without the Welcome screen.
   - Preview shows the sender with badge, files, total, "Join within m:ss" in the last minute, and the expired message if the window ends first.
   - Lookup and join errors map to the catalog messages: not found, code expired, full, not accepting, blocked, session ended, locked out with the wait time.
@@ -107,7 +107,7 @@ Local runs used the CI Compose stack, with a backend built with `-tags testhooks
 | Keep-awake stub: granted (On, release after Close), refused, unsupported, hidden→visible re-request, pill off, setting off → no request | Passed locally | Passed locally | CI |
 | Mobile: QR and code size, no horizontal scroll | skipped (desktop) | Passed locally | ios-safari in CI |
 
-After the QA round 1 fixes the full suite passed twice in a row locally: 53 passed and 3 skipped (mobile-only specs on desktop), plus 4 of 4 mobile specs on android-chrome.
+After the QA fixes the full suite passes locally on chromium-desktop and android-chrome: 54 passed and 4 skipped (mobile-only specs on desktop).
 
 ## 4. Commands and results
 
@@ -120,8 +120,8 @@ After the QA round 1 fixes the full suite passed twice in a row locally: 53 pass
 | `pnpm protocol:check` | 24 operations agree with `docs/API.md`; WebSocket schema valid |
 | `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 55 unit tests (keep-awake controller, countdown with server offset, expired, full and renew states, words and badges) |
 | `pnpm --filter web build` | Main JS 104.6 kB gzip (budget 120 kB) |
-| `playwright test --project=chromium-desktop --project=android-chrome` | 51 passed, 3 skipped; repeated with the same result |
-| CI | Recorded in `docs/qa/PHASE_2_QA.md` |
+| `playwright test --project=chromium-desktop --project=android-chrome` | 54 passed, 4 skipped (mobile-only specs on desktop) |
+| CI | Run 42797239669 (49efca8) and run 42800623094 (8356a0a): all 12 jobs green, including `e2e-web` on all five projects and the coturn allocation test in `compose` (Firefox needed retries on 8356a0a). Later runs in `docs/qa/PHASE_2_QA.md` |
 
 ## 5. Environment variables and external services
 
@@ -130,7 +130,7 @@ New: `SA_PUBLIC_URL`, `SA_METRICS_ADDR` (internal metrics listener), `SA_TURN_SE
 ## 6. Known limitations
 
 - **In-memory state.** Protected mode, lockouts, and rate-limit buckets live in process memory (single-instance MVP).
-- **No visual snapshots for mobile.** They would need committed per-project baseline images. Size assertions are used instead; snapshots are backlog.
+- **No visual snapshots for mobile yet.** Size and overflow assertions are used; baselines generated on the CI runner follow in Phase 3 (`docs/TESTING_AND_CI.md` §3).
 - **Bundle size.** The main bundle grew to 104.6 kB gzip. Lazy-loading the session screens is backlog if Phase 3 approaches the 120 kB budget.
 - **Copy buttons use the clipboard.** Copy code and Copy link call `navigator.clipboard.writeText` on a user click. This is ordinary copying, not Clipboard Sync. The Phase 5B guest-clipboard spec must scope its "zero clipboard calls" assertion to the Clipboard feature.
 
@@ -139,8 +139,8 @@ New: `SA_PUBLIC_URL`, `SA_METRICS_ADDR` (internal metrics listener), `SA_TURN_SE
 | Priority | Item |
 |---|---|
 | P0 | Phase 3: DataChannel transfers, save location, dashboard, history entries |
-| P1 | TURN credential exercised against coturn; access matrix generated per level including expired and revoked tokens (Phase 1 backlog P2-5) |
-| P2 | Sender notice for auto-declined receivers (F13); mobile visual snapshots; lazy-load the session screens |
+| P1 | Access matrix generated per level including expired and revoked tokens (Phase 1 backlog P2-5); diagnose Firefox page-load retries in CI (traces are now uploaded on every run) |
+| P2 | Sender notice for auto-declined receivers (F13); mobile visual snapshot baselines (Phase 3); lazy-load the session screens |
 
 ## 8. Local run
 
@@ -155,4 +155,5 @@ Same as Phase 1: `docker compose up --build`, then open `https://localhost:8443`
 | 6a4af87 | Web: session, receive, approval, keep screen on, Playwright pairing and keep-awake specs |
 | e9b1195 | Docs and report |
 | 49efca8 | Deterministic participant order; regenerated Go types |
-| (this commit) | QA round 1 fixes |
+| 8356a0a | QA round 1 fixes |
+| (this commit) | QA round 2 fixes and QA record |

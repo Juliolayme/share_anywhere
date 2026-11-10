@@ -253,11 +253,12 @@ jobs:
         env:
           E2E_BASE_URL: http://localhost:8080
         run: pnpm --filter @share-anywhere/web exec playwright test --project=${{ matrix.project }} --trace retain-on-failure
-      - name: Upload report on failure
-        if: failure()
+      - name: Upload report and traces (also when a test only passed on retry)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-${{ matrix.project }}
+          if-no-files-found: ignore
           path: |
             web/playwright-report
             web/test-results

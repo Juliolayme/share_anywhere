@@ -135,14 +135,14 @@ export default function ReceiveSessionPage() {
   if (waiting) {
     return (
       <Screen id="receive-wait">
+        <KeepOpenBanner state={pill} />
         <div className="mx-auto flex w-full max-w-[560px] flex-col gap-4">
-          <KeepOpenBanner state={pill} />
           <div className="flex flex-col items-center gap-3 text-center">
             <span
               aria-hidden
-              className="flex h-[56px] w-[56px] items-center justify-center rounded-[16px] bg-send-soft text-send-ink"
+              className="flex h-[72px] w-[72px] animate-pulse items-center justify-center rounded-full bg-send-soft text-send-ink motion-reduce:animate-none"
             >
-              <Hourglass size={26} />
+              <Hourglass size={30} />
             </span>
             <h1 className="m-0 text-[clamp(22px,3vw,28px)]">{t('web.waiting')}</h1>
             <p className="m-0 text-fg-2">{t('product.waiting_body', { name: senderName })}</p>

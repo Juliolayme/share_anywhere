@@ -94,7 +94,7 @@ Code, link, and QR share one join window (`docs/SECURITY_MODEL.md` §3.0). The s
 - Window expiry is computed at request time (an open window past `join_window_ends_at` is treated as expired) and persisted by a maintenance job every 5 seconds, which also emits `SESSION_UPDATED`, expires idle (30 min with no connected participant) and over-age sessions, and purges ended sessions after 7 days.
 - A removed, left, or rejected receiver may join again with a new valid ticket; a blocked one cannot (device ID and IP /64).
 - Signaling: the WebSocket hub routes `OFFER`/`ANSWER`/`ICE_CANDIDATE` only between the sender and a `JOINED` receiver of a live session; anything else gets an `ERROR` reply. A device's sockets close when its identity is revoked.
-- Test builds (`go build -tags testhooks`, used only by `docker-compose.ci.yml` with `SA_ENV=test`) add an adjustable clock (`POST /v1/_test/clock`) and a protected-mode switch (`POST /v1/_test/protected-mode`); production binaries contain neither.
+- Test builds (`go build -tags testhooks`, used only by `docker-compose.ci.yml` with `SA_ENV=test`) add an adjustable clock (`POST /v1/_test/clock`), a protected-mode switch (`POST /v1/_test/protected-mode`), and a device lockout (`POST /v1/_test/lockout`, device level); production binaries contain none of them.
 - Web: `web/src/features/sharing` (API, socket, participant card), `web/src/pages/send/SessionPage.tsx`, `web/src/pages/receive/*`, keep-awake controller in `web/src/lib/keepAwake`. Countdowns use the offset from `server_time`.
 
 ### 4.2 Open join (default)

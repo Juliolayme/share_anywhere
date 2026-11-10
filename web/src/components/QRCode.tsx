@@ -14,7 +14,7 @@ export function QRCode({ value, size = 176, label }: { value: string; size?: num
     return { path: d, n: qr.size };
   }, [value]);
   return (
-    <span className="inline-flex rounded-lg border border-border bg-[#fff] p-2">
+    <span className="inline-flex rounded-[14px] border border-border bg-[#fff] p-3">
       <svg
         width={size}
         height={size}

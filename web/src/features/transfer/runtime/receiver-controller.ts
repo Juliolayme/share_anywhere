@@ -154,6 +154,12 @@ export class ReceiverController extends Observable<RxState> {
       words: [],
     });
     this.reporter = new Reporter(d.api);
+    // The server can only be moved out of PAUSED by the resume action. If a report finds the transfer paused
+    // while nobody paused it here, resume it with the capability; if the user (or the sender) paused, stay.
+    this.reporter.resume = async (id) => {
+      if (this.state_.phase === 'paused') return null;
+      return this.d.api.action(id, 'resume', this.capability).catch(() => null);
+    };
   }
 
   /** Loads the session, transfer records and any saved progress; resumes when a save target is known. */
@@ -222,8 +228,13 @@ export class ReceiverController extends Observable<RxState> {
 
   pause(): void {
     if (rxFinal(this.state_.phase) || this.state_.phase === 'paused') return;
-    this.conn?.pause();
-    this.update({ phase: 'paused' });
+    if (this.state_.phase === 'unreachable') return;
+    // No open channel yet (connecting or reconnecting): stop dialling until Resume.
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    if (this.conn) this.conn.pause();
+    else this.teardown();
+    this.update({ phase: 'paused', eta: null });
     for (const f of this.open())
       void this.d.api
         .action(f.transferId, 'pause')
@@ -238,7 +249,7 @@ export class ReceiverController extends Observable<RxState> {
         const t = await this.d.api.action(f.transferId, 'resume', this.capability);
         this.reporter.seed(f.transferId, t.status, t.verified_bytes);
       } catch {
-        /* the report path below still moves it */
+        /* the next report retries the resume action through the reporter's hook */
       }
     }
     if (this.conn && this.pc?.connectionState === 'connected') {
@@ -246,6 +257,9 @@ export class ReceiverController extends Observable<RxState> {
       this.update({ phase: 'transferring' });
       for (const f of this.open()) void this.reporter.state(f.transferId, 'TRANSFERRING', f.verified);
     } else {
+      this.update({ phase: 'connecting' }); // connect() stays put while paused
+      this.attempt = 0;
+      this.downSince = null; // a pause does not use up the reconnect window
       this.connect();
     }
   }
@@ -294,7 +308,7 @@ export class ReceiverController extends Observable<RxState> {
   // --- connection ---
 
   private connect(): void {
-    if (this.stopped || rxFinal(this.state_.phase)) return;
+    if (this.stopped || rxFinal(this.state_.phase) || this.state_.phase === 'paused') return;
     this.teardown();
     this.downSince ??= Date.now();
     const reconnecting = this.hadData || this.attempt > 0;
@@ -367,6 +381,7 @@ export class ReceiverController extends Observable<RxState> {
     });
     this.conn = conn;
     conn.start();
+    if (this.state_.phase === 'paused') conn.pause();
     this.sampler = setInterval(() => this.sample(), 500);
     void selectedRoute(pc).then((route) => {
       if (!route) return;
@@ -487,7 +502,7 @@ export class ReceiverController extends Observable<RxState> {
     }
     if (fatal) {
       for (const f of this.open()) void this.reporter.state(f.transferId, 'FAILED', f.verified);
-      void this.cleanupStaging(true); // keep files that finished, drop partial data
+      void this.cleanupStaging(true); // keep files that finished, drop partial data and its bitmaps
       this.update({ error: ERROR_KEYS[code as ErrorCode] ?? 'product.tx_err_protocol' });
       return this.finish(this.state_.files.some((f) => f.done) ? 'partial' : 'failed');
     }
@@ -566,7 +581,10 @@ export class ReceiverController extends Observable<RxState> {
     if (status === 'PAUSED' && rxActive(this.state_.phase)) this.update({ phase: 'paused' });
     if (status === 'RESUMING' && this.state_.phase === 'paused') {
       if (this.conn && this.pc?.connectionState === 'connected') this.update({ phase: 'transferring' });
-      else this.connect();
+      else {
+        this.update({ phase: 'connecting' });
+        this.connect();
+      }
     }
     if (status === 'CANCELLED' && !rxFinal(this.state_.phase)) {
       this.conn?.close();
@@ -595,7 +613,12 @@ export class ReceiverController extends Observable<RxState> {
   }
 
   private async cleanupStaging(keepDone: boolean): Promise<void> {
-    for (const f of this.state_.files) if (!(keepDone && f.done)) await removeOpfs(f.transferId);
+    for (const f of this.state_.files) {
+      if (keepDone && f.done) continue;
+      await removeOpfs(f.transferId);
+      // Without its file a bitmap would resume against nothing and end in a hash mismatch.
+      if (keepDone) await this.d.store.remove(progressKey(this.capHash, f.transferId)).catch(() => undefined);
+    }
     if (!keepDone) await this.d.store.removeSession(this.d.sessionId).catch(() => undefined);
   }
 

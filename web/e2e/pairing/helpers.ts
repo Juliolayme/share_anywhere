@@ -103,6 +103,19 @@ export async function senderPage(wake: WakeMode = 'granted'): Promise<Page> {
   return guestPage(senderBrowser, { wake });
 }
 
+/** Renames this device through Devices (real keystrokes, so it works in every driver). */
+export async function renameDevice(page: Page, name: string) {
+  await open(page, '/devices');
+  await expect(page.getByTestId('device-name')).not.toHaveText(/Setting up/);
+  await page.getByRole('button', { name: 'Rename' }).click();
+  const input = page.getByRole('textbox', { name: 'Device name' });
+  await input.click();
+  await input.press('ControlOrMeta+a');
+  await input.pressSequentially(name);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('device-name')).toHaveText(name);
+}
+
 export async function closeSenderBrowser() {
   await senderBrowser?.close();
   senderBrowser = null;

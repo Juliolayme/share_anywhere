@@ -17,10 +17,32 @@ describe('transitions mirror', () => {
     expect(pathTo('DISCONNECTED', 'TRANSFERRING')).toEqual(['CONNECTING', 'TRANSFERRING']);
     expect(pathTo('RECONNECTING', 'TRANSFERRING')).toEqual(['RESUMING', 'TRANSFERRING']);
     expect(pathTo('TRANSFERRING', 'RECONNECTING')).toEqual(['DISCONNECTED', 'RECONNECTING']);
-    expect(pathTo('PAUSED', 'TRANSFERRING')).toEqual(['TRANSFERRING']);
+    // After a receiver reload the server still says TRANSFERRING; never detour through PAUSED.
+    expect(pathTo('TRANSFERRING', 'CONNECTING')).toEqual(['DISCONNECTED', 'CONNECTING']);
+    // Leaving PAUSED takes the resume action, not a report.
+    expect(pathTo('PAUSED', 'TRANSFERRING')).toEqual([]);
+    expect(pathTo('PAUSED', 'CONNECTING')).toEqual([]);
+    expect(pathTo('PAUSED', 'CANCELLED')).toEqual(['CANCELLED']);
+    expect(pathTo('TRANSFERRING', 'PAUSED')).toEqual(['PAUSED']);
     expect(pathTo('CONNECTING', 'COMPLETED')).toEqual(['TRANSFERRING', 'COMPLETED']);
     expect(pathTo('COMPLETED', 'TRANSFERRING')).toEqual([]);
     expect(pathTo('TRANSFERRING', 'TRANSFERRING')).toEqual([]);
+  });
+
+  it('every reported walk is one the server accepts and passes through PAUSED only as the destination', () => {
+    const all = Object.keys(NEXT) as TransferStatus[];
+    for (const from of all.filter((s) => !terminal(s)))
+      for (const to of all) {
+        const path = pathTo(from, to);
+        let cur: TransferStatus = from;
+        for (const [i, step] of path.entries()) {
+          expect(NEXT[cur]).toContain(step);
+          // Server rule (backend/internal/transfers/service.go): a report cannot leave PAUSED except to end.
+          expect(cur === 'PAUSED' && !terminal(step)).toBe(false);
+          if (step === 'PAUSED') expect(i).toBe(path.length - 1);
+          cur = step;
+        }
+      }
   });
 
   it('terminal states have no exits', () => {
@@ -71,6 +93,23 @@ describe('Reporter', () => {
     await vi.advanceTimersByTimeAsync(600);
     expect(calls.at(-1)).toEqual(['t1', 'TRANSFERRING', 150]);
     vi.useRealTimers();
+  });
+
+  it('leaves PAUSED only through the resume hook, and stays paused when the hook declines', async () => {
+    const { api, calls } = fakeApi();
+    const r = new Reporter(api);
+    r.seed('t1', 'PAUSED', 10);
+    await r.state('t1', 'CONNECTING', 10);
+    expect(calls).toEqual([]); // no hook: nothing the server would refuse is sent
+    const resume = vi.fn(async () => null);
+    r.resume = resume;
+    await r.state('t1', 'CONNECTING', 10);
+    expect(resume).toHaveBeenCalledWith('t1');
+    expect(calls).toEqual([]);
+    r.resume = async () => ({ status: 'RESUMING' as TransferStatus, verified_bytes: 10 });
+    await r.state('t1', 'TRANSFERRING', 20);
+    expect(calls.map((c) => c[1])).toEqual(['TRANSFERRING']);
+    expect(r.current('t1')).toBe('TRANSFERRING');
   });
 
   it('stops at terminal states', async () => {

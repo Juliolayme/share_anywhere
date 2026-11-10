@@ -126,7 +126,7 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 405 | `method_not_allowed` | Known path, wrong method; `Allow` header lists the methods |
 | 409 | `session_full` | Five receivers already joined or requested |
 | 409 | `too_many_open_sessions` | Guest device already has 2 open sessions (signed in: 5) |
-| 409 | `invalid_transition`, `not_verified`, `use_resume`, `session_ended` | Transfer state change not allowed now; `COMPLETED` from the sender or before every byte is verified; changes after the session ended |
+| 409 | `invalid_transition`, `not_verified`, `use_resume`, `session_ended` | Transfer state change not allowed now; `COMPLETED` before every byte is verified; a report leaving `PAUSED` (`use_resume`); changes after the session ended |
 | 409 | `invalid_state`, `own_session`, `session_not_active` | Action does not apply to the current state; resolving your own code; TURN before a receiver joined |
 | 410 | `join_window_expired` | The 10-minute join window for this code, link, or QR has ended or was replaced by Create new code |
 | 410 | `session_not_accepting`, `session_expired` | Sender tapped Stop accepting, or the session lifetime ended |

@@ -32,7 +32,7 @@ import {
 
 const CHIP: Partial<Record<RxPhase, ChipState>> = {
   connecting: 'connecting',
-  unreachable: 'failed',
+  unreachable: 'waiting', // nothing failed: Retry starts a new window
   transferring: 'receiving',
   paused: 'paused',
   reconnecting: 'reconnecting',
@@ -255,7 +255,7 @@ export function ReceiveTransfer({
           )}
           {s.error && <Banner tone="warning" role="alert" title={t(s.error)} />}
           <div className="flex flex-wrap gap-2">
-            {running ? (
+            {s.phase === 'unreachable' ? null : running ? (
               <Button icon={Pause} onClick={() => rx.pause()}>
                 {t('web.pause')}
               </Button>

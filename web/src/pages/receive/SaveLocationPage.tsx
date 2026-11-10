@@ -86,13 +86,17 @@ export default function SaveLocationPage() {
     const target = state.target;
     if (!target?.folder) return;
     setBusy(true);
-    if (await folderPermission(target.folder, true)) {
-      await rx.start(target);
-      navigate(`/receive/${sessionId}`, { replace: true });
-    } else {
-      setBusy(false);
+    try {
+      if (await folderPermission(target.folder, true)) {
+        await rx.start(target);
+        navigate(`/receive/${sessionId}`, { replace: true });
+        return;
+      }
       setNotice(t('product.save_pick_cancelled'));
+    } catch {
+      setNotice(t('product.error_generic'));
     }
+    setBusy(false);
   };
 
   if (state.phase === 'permission' && state.target) {
@@ -163,9 +167,25 @@ export default function SaveLocationPage() {
                     type="button"
                     role="radio"
                     aria-checked={selected}
+                    tabIndex={selected || (!mode && o.mode === plan.recommended) ? 0 : -1}
                     disabled={!o.available}
                     data-testid={`save-${o.mode}`}
                     onClick={() => setMode(o.mode)}
+                    onKeyDown={(e) => {
+                      // Radio group keyboard pattern: arrows move the choice among available options.
+                      const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+                      if (!step) return;
+                      e.preventDefault();
+                      const avail = plan.options.filter((x) => x.available).map((x) => x.mode);
+                      if (!avail.length) return;
+                      const at = mode ? avail.indexOf(mode) : -1;
+                      const next = avail[(at + step + avail.length) % avail.length] ?? avail[0];
+                      if (!next) return;
+                      setMode(next);
+                      e.currentTarget.parentElement
+                        ?.querySelector<HTMLElement>(`[data-testid="save-${next}"]`)
+                        ?.focus();
+                    }}
                     className={`flex items-start gap-[14px] rounded-[16px] border-2 bg-surface px-[18px] py-4 text-left text-fg disabled:cursor-not-allowed disabled:opacity-60 ${selected ? 'border-send' : 'border-border'}`}
                   >
                     <span

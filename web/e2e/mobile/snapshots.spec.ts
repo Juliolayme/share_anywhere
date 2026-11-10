@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { closeSenderBrowser, createSession, enterCode, guestPage, senderPage } from '../pairing/helpers';
+import { closeSenderBrowser, createSession, enterCode, guestPage, renameDevice, senderPage } from '../pairing/helpers';
 import { fixture, receiverPage } from '../transfer/helpers';
 
 // Visual baselines per mobile project (docs/TESTING_AND_CI.md §3). Baselines are generated on the CI runner
@@ -21,6 +21,8 @@ test('mobile screens match their baselines: session, preview, save location, res
   test.setTimeout(120_000);
   const f = fixture('8M');
   const sender = await senderPage();
+  // A fixed sender name: its length decides whether the Guest badge wraps, which moves the whole card.
+  await renameDevice(sender, 'Snapshot Sender');
   const s = await createSession(sender, { files: [f.path] });
   const rx = await receiverPage(browser, browserName);
   await enterCode(rx, s.code);

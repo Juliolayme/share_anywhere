@@ -7,6 +7,7 @@ import {
   joinToSave,
   receiverCounters,
   attachDiagnostics,
+  closeReceiverBrowsers,
   receiverPage,
   rxVerified,
   senderHook,
@@ -21,6 +22,7 @@ const opened: Page[] = [];
 test.afterEach(async () => {
   await attachDiagnostics(opened);
   opened.length = 0;
+  await closeReceiverBrowsers();
 });
 test.skip(({ isMobile }) => isMobile, 'mobile projects run e2e/mobile/transfer.spec.ts');
 
@@ -161,14 +163,29 @@ test('transfer: a receiver reload resumes from the saved bitmap with zero re-sen
   const sender = track(await senderPage());
   const s = await createSession(sender, { files: [f.path] });
   await senderHook(sender, s.id, { pace: 300 });
-  const rx = track(await receiverPage(browser, browserName));
+  const rx = track(await receiverPage(browser, browserName, 'granted'));
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
   await expect.poll(() => rxVerified(rx, s.id), { timeout: 60_000 }).toBeGreaterThanOrEqual(4 * 4 * MiB);
   await rx.reload();
   await expect(rx.locator('[data-screen="receive-progress"], [data-screen="receive-done"]')).toHaveCount(1);
+  // The reload must not leave the transfer PAUSED: bytes keep moving, nobody shows Paused, the screen stays on.
+  await sender.getByRole('button', { name: 'View transfers' }).click();
+  const card = sender.getByTestId('receiver-card');
+  await expect(card).toHaveAttribute('data-status', 'transferring', { timeout: 30_000 });
+  const resumedAt = await rxVerified(rx, s.id);
+  await expect.poll(() => rxVerified(rx, s.id), { timeout: 30_000 }).toBeGreaterThan(resumedAt);
+  await expect(rx.getByTestId('screen-on-pill')).toHaveAttribute('data-state', 'on');
+  await expect(card).not.toHaveAttribute('data-status', 'paused');
+  expect((await wl(rx)).releases).toBe(0);
   await senderHook(sender, s.id, { pace: 0 });
   await expect(result(rx)).toHaveAttribute('data-result', 'completed', { timeout: 120_000 });
+  // Sender reaches TR-7 live, and after a reload (state rebuilt from the server records) still says completed.
+  await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 30_000 });
+  await sender.reload();
+  await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 30_000 });
+  await sender.goto('/history');
+  await expect(sender.getByText(nameOf(f.path))).toBeVisible();
   const c = await receiverCounters(rx, s.id);
   expect(c.duplicates).toBe(0);
   expect(c.resumedBytes).toBeGreaterThanOrEqual(4 * 4 * MiB);

@@ -396,7 +396,11 @@ export class SenderController extends Observable<TxState> {
           });
         },
         onFileDone: () => undefined,
-        onComplete: () => this.patch(pid, { status: 'completed' }),
+        onComplete: () => {
+          // The receiver confirmed every file hash: done here even before its COMPLETED report arrives.
+          this.patch(pid, { status: 'completed' });
+          this.checkFinal();
+        },
         onPaused: () => this.patch(pid, { status: 'paused' }),
         onResumed: () => this.patch(pid, { status: 'transferring' }),
         onError: (code, fatal) => this.onConnError(pid, code, fatal),

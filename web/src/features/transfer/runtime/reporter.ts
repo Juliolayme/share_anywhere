@@ -13,6 +13,11 @@ export class Reporter {
   private chains = new Map<string, Promise<void>>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   route: Route | undefined;
+  /**
+   * Called when a report would have to leave PAUSED (which only the resume action may do). Returns the
+   * transfer after resuming, or null when the transfer should stay paused (the user or sender paused it).
+   */
+  resume: ((transferId: string) => Promise<{ status: TransferStatus; verified_bytes: number } | null>) | undefined;
 
   constructor(
     private readonly api: TransfersApi,
@@ -34,8 +39,14 @@ export class Reporter {
   state(transferId: string, target: TransferStatus, verified?: number): Promise<void> {
     if (verified !== undefined) this.verified.set(transferId, Math.max(verified, this.verified.get(transferId) ?? 0));
     return this.enqueue(transferId, async () => {
-      const from = this.status.get(transferId) ?? 'PENDING';
+      let from = this.status.get(transferId) ?? 'PENDING';
       if (terminal(from)) return;
+      if (from === 'PAUSED' && target !== 'PAUSED' && pathTo(from, target).length === 0) {
+        const t = await this.resume?.(transferId);
+        if (!t) return;
+        this.status.set(transferId, t.status);
+        from = t.status;
+      }
       for (const s of pathTo(from, target)) await this.send(transferId, s);
     });
   }

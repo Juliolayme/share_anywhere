@@ -20,15 +20,20 @@ export const NEXT: Record<TransferStatus, TransferStatus[]> = {
 
 export const terminal = (s: TransferStatus) => s === 'COMPLETED' || s === 'FAILED' || s === 'CANCELLED';
 
-/** Shortest list of states to report to get from `from` to `to` (empty when already there or unreachable). */
+/**
+ * Shortest list of states to report to get from `from` to `to` (empty when already there or unreachable).
+ * Reports never pass through PAUSED on the way somewhere else, and never leave PAUSED: the server refuses
+ * that with `use_resume` (docs/API.md §2.3), so only the resume action (with the capability) gets out of it.
+ */
 export function pathTo(from: TransferStatus, to: TransferStatus): TransferStatus[] {
   if (from === to) return [];
+  if (from === 'PAUSED') return terminal(to) && NEXT.PAUSED.includes(to) ? [to] : [];
   const prev = new Map<TransferStatus, TransferStatus>();
   const queue: TransferStatus[] = [from];
   while (queue.length) {
     const cur = queue.shift() as TransferStatus;
     for (const n of NEXT[cur]) {
-      if (n === from || prev.has(n)) continue;
+      if (n === from || prev.has(n) || (n === 'PAUSED' && to !== 'PAUSED')) continue;
       prev.set(n, cur);
       if (n === to) {
         const path: TransferStatus[] = [to];

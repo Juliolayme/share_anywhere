@@ -91,6 +91,9 @@ test('large file: 2 GB arrives intact across a receiver reload, under the memory
   expect(peak.sender).toBeLessThan(CEILING);
   expect(peak.receiver).toBeLessThan(CEILING);
   expect(await downloadAndHash(rx, f.path.split('/').pop() ?? '')).toBe(f.sha256);
+  // The server record reached COMPLETED (the dashboard rebuilt from it after a load says so), not PAUSED.
+  await sender.goto(`/send/session/${s.id}/transfers`);
+  await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 30_000 });
   await sender.context().close();
   await rx.context().close();
 });

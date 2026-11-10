@@ -1,6 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { DeviceClient } from '../../lib/api/device-client';
 import { useIdentity } from '../../lib/identity/identity';
+import { useKeepAwakeController } from '../../lib/keepAwake/KeepAwakeContext';
+import type { KeepAwakeController } from '../../lib/keepAwake/controller';
 import type { SessionSocket } from '../../lib/ws/socket';
 import type { HistoryStore } from '../history/store/history-store';
 import { useHistory } from '../history/HistoryContext';
@@ -8,8 +10,9 @@ import { useSharing } from '../sharing/SharingContext';
 import type { sessionsApi } from '../sharing/api';
 import { transfersApi } from './runtime/api';
 import { getOutbox } from './runtime/outbox';
-import { ReceiverController, type RxState } from './runtime/receiver-controller';
-import { SenderController, type TxState } from './runtime/sender-controller';
+import type { Observable } from './runtime/observable';
+import { ReceiverController, rxActive, type RxState } from './runtime/receiver-controller';
+import { SenderController, txActive, type TxState } from './runtime/sender-controller';
 import { openProgressStore, type ProgressStore } from './storage/progress-store';
 import { sweepStorage } from './storage/sweep';
 
@@ -20,8 +23,21 @@ import { sweepStorage } from './storage/sweep';
 const receivers = new Map<string, ReceiverController>();
 const senders = new Map<string, SenderController>();
 let progress: ProgressStore | null = null;
+let keepAwake: KeepAwakeController | null = null;
+
+/**
+ * Every transfer this tab takes part in holds the screen on while it is active, whichever page is showing
+ * (docs/ARCHITECTURE.md §7.1): opening History mid-transfer does not let the screen sleep.
+ */
+function holdWhileActive<T>(c: Observable<T>, active: (s: T) => boolean): void {
+  const holder = Symbol('transfer');
+  const apply = () => keepAwake?.hold(holder, active(c.state));
+  c.subscribe(apply);
+  apply();
+}
 
 interface Deps {
+  keepAwake?: KeepAwakeController;
   client: DeviceClient;
   sessions: ReturnType<typeof sessionsApi>;
   socket: SessionSocket;
@@ -43,6 +59,7 @@ function hooks(): TestHooks | null {
 /** For tests: the store to use instead of IndexedDB, and a reset between cases. */
 export function setProgressStoreForTests(s: ProgressStore | null): void {
   progress = s;
+  keepAwake = null;
   for (const c of receivers.values()) c.dispose();
   for (const c of senders.values()) c.dispose();
   receivers.clear();
@@ -65,6 +82,8 @@ export function receiverFor(sessionId: string, d: Deps): ReceiverController {
       history: d.history,
     });
     receivers.set(sessionId, c);
+    keepAwake ??= d.keepAwake ?? null;
+    holdWhileActive(c, (s) => rxActive(s.phase));
     const h = hooks();
     if (h) h.receivers[sessionId] = c;
   }
@@ -83,6 +102,8 @@ export function senderFor(sessionId: string, d: Deps): SenderController {
       files: getOutbox(sessionId),
     });
     senders.set(sessionId, c);
+    keepAwake ??= d.keepAwake ?? null;
+    holdWhileActive(c, (s) => s.receivers.some((r) => txActive(r.status)));
     const h = hooks();
     if (h) h.senders[sessionId] = c;
   }
@@ -93,7 +114,8 @@ function useDeps(): Deps {
   const { client } = useIdentity();
   const { api: sessions, socket } = useSharing();
   const { store: history } = useHistory();
-  return { client, sessions, socket, history };
+  const keepAwake = useKeepAwakeController();
+  return { client, sessions, socket, history, keepAwake };
 }
 
 /** The receive controller for a session and its live state; loads on first use when `enabled`. */

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chromium, expect, test, webkit, type Browser, type Download, type Page } from '@playwright/test';
+import { chromium, expect, firefox, test, webkit, type Browser, type Download, type Page } from '@playwright/test';
 import { BASE, enterCode, guestPage, stubWakeLock, type WakeMode } from '../pairing/helpers';
 
 const DIR = process.env.E2E_FIXTURE_DIR ?? join(tmpdir(), 'sa-fixtures');
@@ -80,6 +80,13 @@ export function receiverCounters(rx: Page, sessionId: string): Promise<Counters>
  * browsing, which has no Origin Private File System), so WebKit receivers run in a persistent context, like a
  * normal Safari window (docs/TESTING_AND_CI.md §3).
  */
+const ownBrowsers: Browser[] = [];
+
+/** Closes the per-receiver browsers that receiverPage launched (call after diagnostics are attached). */
+export async function closeReceiverBrowsers() {
+  await Promise.all(ownBrowsers.splice(0).map((b) => b.close()));
+}
+
 export async function receiverPage(
   browser: Browser,
   browserName: string,
@@ -89,8 +96,17 @@ export async function receiverPage(
   // Chromium's default test contexts are off-the-record too: their OPFS lives in memory, which is fine for
   // PR-sized files but not for the nightly 2 GB run, which asks for a persistent profile.
   const persistent = browserName === 'webkit' || (opts.persistent && browserName === 'chromium');
-  if (!persistent) return guestPage(browser, wake ? { wake } : {});
   const use = test.info().project.use;
+  // Stock Firefox under automation: in roughly a third of browser instances every page after the first one
+  // never gathers an ICE candidate (iceConnectionState goes straight to "failed"), for the rest of that
+  // browser's life (docs/TESTING_AND_CI.md §3; reproduced outside the app with a bare RTCPeerConnection).
+  // The first page of a fresh browser always gathers, so each Firefox receiver gets its own browser.
+  if (browserName === 'firefox') {
+    const own = await firefox.launch({ ...(use.channel ? { channel: use.channel } : {}), ...use.launchOptions });
+    ownBrowsers.push(own);
+    return guestPage(own, wake ? { wake } : {});
+  }
+  if (!persistent) return guestPage(browser, wake ? { wake } : {});
   const type = browserName === 'webkit' ? webkit : chromium;
   const ctx = await type.launchPersistentContext(mkdtempSync(join(tmpdir(), `sa-${browserName}-`)), {
     ...(browserName === 'chromium' ? { args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] } : {}),

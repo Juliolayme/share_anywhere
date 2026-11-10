@@ -6,7 +6,7 @@ import { useOnline } from '../lib/online';
 import { useIdentity } from '../lib/identity/identity';
 import { useHistory } from '../features/history/HistoryContext';
 import { IdentityNotice } from '../features/identity/IdentityNotice';
-import { HistoryRow } from '../features/history/HistoryRow';
+import { HistoryRow, historyPath } from '../features/history/HistoryRow';
 
 /** TR-1 / design screen `home`: Send and Receive, recent local history, this device. */
 export default function TransferHome() {
@@ -88,7 +88,7 @@ export default function TransferHome() {
           </div>
           <ul className="m-0 list-none p-0">
             {recent.map((h) => (
-              <HistoryRow key={h.id} entry={h} compact />
+              <HistoryRow key={h.id} entry={h} compact to={historyPath(h.id)} />
             ))}
           </ul>
         </Card>

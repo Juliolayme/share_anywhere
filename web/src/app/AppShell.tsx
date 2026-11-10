@@ -99,11 +99,13 @@ const navClass = (active: boolean) =>
 export function AppShell() {
   const { t } = useI18n();
   const items = useNavItems();
-  const { pathname } = useLocation();
+  const { pathname, state } = useLocation();
+  // A navigation inside one screen (History list ↔ entry drawer) passes `{ keepFocus: true }` and manages focus itself.
+  const keepFocus = (state as { keepFocus?: boolean } | null)?.keepFocus === true;
 
   useEffect(() => {
-    document.getElementById('main')?.focus({ preventScroll: true });
-  }, [pathname]);
+    if (!keepFocus) document.getElementById('main')?.focus({ preventScroll: true });
+  }, [pathname, keepFocus]);
 
   return (
     <div className="flex min-h-screen">

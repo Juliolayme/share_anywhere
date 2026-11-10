@@ -1,25 +1,79 @@
 import { HardDrive, History as HistoryIcon, Search, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMatch, useNavigate } from 'react-router-dom';
 import { Banner, Button, Card, ConfirmDialog, PageHeader, Screen } from '../components/ui';
 import { useToast } from '../components/Toast';
 import { useI18n } from '../i18n/i18n';
 import { useHistory } from '../features/history/HistoryContext';
-import { HistoryRow } from '../features/history/HistoryRow';
-import { filterHistory, type HistoryFilter } from '../features/history/store/history-store';
+import { HistoryDetail } from '../features/history/HistoryDetail';
+import { HistoryRow, historyPath } from '../features/history/HistoryRow';
+import { EMPTY_FILTER, filterHistory, historyPeers, type HistoryFilter } from '../features/history/store/history-store';
+
+/** History list ↔ drawer navigations keep focus where the drawer puts it (see AppShell). */
+const KEEP_FOCUS = { keepFocus: true };
 
 const selectCls = 'h-[42px] rounded-md border border-border-strong bg-surface px-[10px] text-[14px] text-fg';
 
-/** HI-1 / design screen `history`: local-only history with tabs, search and filters. */
+/**
+ * HI-1 / HI-2, design screen `history`: local-only history with tabs, search and filters (date, device, status),
+ * and the entry detail drawer at `/history/:entryId` with Delete from history. Opening the page refreshes the list
+ * and applies the retention sweep from Settings.
+ */
 export default function HistoryPage() {
   const { t } = useI18n();
   const toast = useToast();
-  const { entries, loading, error, clear } = useHistory();
-  const [filter, setFilter] = useState<HistoryFilter>({ tab: 'all', query: '', status: 'any', range: 'all', peer: '' });
+  const navigate = useNavigate();
+  const { entries, loading, error, clear, remove, refresh } = useHistory();
+  const [filter, setFilter] = useState<HistoryFilter>(EMPTY_FILTER);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
-  const peers = useMemo(() => [...new Set(entries.map((e) => e.peer))].sort(), [entries]);
+  const [deleting, setDeleting] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const peers = useMemo(() => historyPeers(entries), [entries]);
   const shown = useMemo(() => filterHistory(entries, filter), [entries, filter]);
   const set = (p: Partial<HistoryFilter>) => setFilter((f) => ({ ...f, ...p }));
+
+  const match = useMatch('/history/:entryId');
+  const selectedId = match?.params.entryId;
+  const selected = selectedId ? entries.find((e) => e.id === selectedId) : undefined;
+
+  // Entries written by a transfer since the list was loaded appear, and the retention sweep runs, on every visit.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // A link to an entry that is gone (deleted, swept, cleared) falls back to the list.
+  useEffect(() => {
+    if (selectedId && !loading && !selected) navigate('/history', { replace: true });
+  }, [selectedId, loading, selected, navigate]);
+
+  // The drawer returns focus to the row that opened it; when that row is gone, focus lands on the search field.
+  const focusFallback = useCallback(() => {
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body) searchRef.current?.focus();
+    });
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    navigate('/history', { state: KEEP_FOCUS });
+    focusFallback();
+  }, [navigate, focusFallback]);
+
+  const deleteSelected = async () => {
+    if (!selected) return;
+    setDeleting(true);
+    try {
+      await remove(selected.id);
+      navigate('/history', { replace: true, state: KEEP_FOCUS });
+      focusFallback();
+      toast.show(t('phrases.removed_from_history'));
+    } catch {
+      toast.show(t(error ? 'product.history_unavailable' : 'product.history_delete_failed'));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const tabs: { value: HistoryFilter['tab']; label: string }[] = [
     { value: 'all', label: t('common.f_all') },
@@ -83,11 +137,13 @@ export default function HistoryPage() {
         <label className="flex h-[42px] min-w-[200px] flex-1 items-center gap-2 rounded-md border border-border-strong bg-surface px-3 text-fg-3">
           <Search aria-hidden size={16} />
           <input
+            ref={searchRef}
+            type="search"
             value={filter.query}
             onChange={(e) => set({ query: e.target.value })}
             placeholder={t('common.h_search')}
             aria-label={t('common.h_search')}
-            className="h-full flex-1 border-0 bg-transparent text-[14px] text-fg outline-none"
+            className="h-full min-w-0 flex-1 border-0 bg-transparent text-[14px] text-fg outline-none"
           />
         </label>
         <select
@@ -117,7 +173,7 @@ export default function HistoryPage() {
           aria-label={t('product.filter_device')}
           value={filter.peer}
           onChange={(e) => set({ peer: e.target.value })}
-          className={selectCls}
+          className={`${selectCls} max-w-full`}
         >
           <option value="">{t('web_vv.k106')}</option>
           {peers.map((p) => (
@@ -127,11 +183,26 @@ export default function HistoryPage() {
           ))}
         </select>
       </div>
-      <div id="history-panel" role="tabpanel" aria-labelledby={`history-tab-${filter.tab}`}>
+      <div
+        id="history-panel"
+        role="tabpanel"
+        aria-labelledby={`history-tab-${filter.tab}`}
+        aria-busy={loading || undefined}
+      >
+        <span className="sr-only" aria-live="polite" data-testid="history-count">
+          {loading || entries.length === 0
+            ? ''
+            : shown.length === 1
+              ? t('product.history_results_one')
+              : t('product.history_results', { n: shown.length })}
+        </span>
         {loading ? (
           <div aria-hidden className="h-[120px] animate-pulse rounded-[16px] bg-surface-2" />
         ) : shown.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-[16px] border border-dashed border-border-strong bg-surface px-[20px] py-[40px] text-center">
+          <div
+            data-testid="history-empty"
+            className="flex flex-col items-center gap-2 rounded-[16px] border border-dashed border-border-strong bg-surface px-[20px] py-[40px] text-center"
+          >
             <span
               aria-hidden
               className="flex h-[48px] w-[48px] items-center justify-center rounded-lg bg-surface-2 text-fg-2"
@@ -147,12 +218,13 @@ export default function HistoryPage() {
           <Card className="overflow-hidden">
             <ul className="m-0 list-none p-0">
               {shown.map((h) => (
-                <HistoryRow key={h.id} entry={h} />
+                <HistoryRow key={h.id} entry={h} to={historyPath(h.id)} keepFocus />
               ))}
             </ul>
           </Card>
         )}
       </div>
+      {selected && <HistoryDetail entry={selected} busy={deleting} onClose={closeDetail} onDelete={deleteSelected} />}
       <ConfirmDialog
         open={confirm}
         title={t('common.hc_h')}

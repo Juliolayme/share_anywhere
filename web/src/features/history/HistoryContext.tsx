@@ -8,6 +8,8 @@ interface HistoryValue {
   error: boolean;
   refresh: () => Promise<void>;
   clear: () => Promise<void>;
+  /** Deletes one entry (HI-2 "Delete from history"). */
+  remove: (id: string) => Promise<void>;
   store: HistoryStore | null;
 }
 
@@ -46,14 +48,23 @@ export function HistoryProvider({ children, store: given }: { children: ReactNod
     setEntries([]);
   }, [store]);
 
+  const remove = useCallback(
+    async (id: string) => {
+      if (!store) return;
+      await store.remove(id);
+      setEntries((list) => list.filter((e) => e.id !== id));
+    },
+    [store],
+  );
+
   useEffect(() => {
     if (store) void refresh();
     else setLoading(false);
   }, [store, refresh]);
 
   const value = useMemo(
-    () => ({ entries, loading, error, refresh, clear, store }),
-    [entries, loading, error, refresh, clear, store],
+    () => ({ entries, loading, error, refresh, clear, remove, store }),
+    [entries, loading, error, refresh, clear, remove, store],
   );
   return <HistoryContext.Provider value={value}>{children}</HistoryContext.Provider>;
 }

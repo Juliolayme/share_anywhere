@@ -27,3 +27,21 @@ export function formatDate(iso: string, locale = 'en'): string {
   const t = Date.parse(iso);
   return Number.isFinite(t) ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(t) : '';
 }
+
+/** Absolute date and time for detail views ("10 Nov 2026, 09:12"). */
+export function formatDateTime(epochMs: number, locale = 'en'): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(epochMs);
+}
+
+/** A duration as the design writes it ("6 min 12 sec", "2 sec", "1 hr 5 min"), with locale unit names. */
+export function formatDuration(ms: number, locale = 'en'): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const unit = (value: number, u: 'hour' | 'minute' | 'second') =>
+    new Intl.NumberFormat(locale, { style: 'unit', unit: u, unitDisplay: 'short' }).format(value);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return m > 0 ? `${unit(h, 'hour')} ${unit(m, 'minute')}` : unit(h, 'hour');
+  if (m > 0) return s > 0 ? `${unit(m, 'minute')} ${unit(s, 'second')}` : unit(m, 'minute');
+  return unit(s, 'second');
+}

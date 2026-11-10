@@ -1,7 +1,15 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
-import { filterHistory, openHistoryStore, type HistoryEntry } from './history-store';
+import {
+  entryPeers,
+  filterHistory,
+  historyPeers,
+  openHistoryStore,
+  rangeStart,
+  transferredOf,
+  type HistoryEntry,
+} from './history-store';
 
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 10, 10, 12);
@@ -72,5 +80,60 @@ describe('history filters', () => {
     expect(ids({ peer: 'Minh’s Pixel 7' })).toEqual(['trip']);
     expect(ids({ query: 'REP' })).toEqual(['report']);
     expect(ids({ query: 'pixel' })).toEqual(['trip']);
+  });
+});
+
+describe('history filters with Phase 4 fields', () => {
+  const multi = entry('deck', 1, {
+    title: 'deck.pdf',
+    fileCount: 3,
+    peer: 'Minh’s Pixel 7, Lan’s MacBook',
+    peers: ['Minh’s Pixel 7', 'Lan’s MacBook'],
+    files: [
+      { name: 'deck.pdf', size: 10 },
+      { name: 'notes.txt', size: 5 },
+      { name: 'Wedding_photos.zip', size: 900 },
+    ],
+  });
+  const legacy = entry('legacy', 2, { peer: 'Office PC' });
+  const all = [multi, legacy];
+  const f = { tab: 'all', query: '', status: 'any', range: 'all', peer: '' } as const;
+
+  it('searches every recorded file name, not only the title', () => {
+    expect(filterHistory(all, { ...f, query: 'wedding' }, NOW).map((e) => e.id)).toEqual(['deck']);
+    expect(filterHistory(all, { ...f, query: 'office' }, NOW).map((e) => e.id)).toEqual(['legacy']);
+    expect(filterHistory(all, { ...f, query: '  ' }, NOW)).toHaveLength(2);
+  });
+
+  it('filters by one peer of a multi-receiver entry and lists each peer once', () => {
+    expect(filterHistory(all, { ...f, peer: 'Lan’s MacBook' }, NOW).map((e) => e.id)).toEqual(['deck']);
+    expect(historyPeers(all)).toEqual(['Lan’s MacBook', 'Minh’s Pixel 7', 'Office PC']);
+    expect(entryPeers(legacy)).toEqual(['Office PC']);
+    expect(entryPeers({ ...legacy, peers: [] })).toEqual(['Office PC']);
+    expect(entryPeers({ ...legacy, peer: '' })).toEqual([]);
+  });
+
+  it('computes the date window for each preset', () => {
+    expect(rangeStart('all', NOW)).toBe(0);
+    expect(rangeStart('7d', NOW)).toBe(NOW - 7 * DAY);
+    expect(rangeStart('30d', NOW)).toBe(NOW - 30 * DAY);
+    const today = new Date(NOW);
+    today.setHours(0, 0, 0, 0);
+    expect(rangeStart('today', NOW)).toBe(today.getTime());
+  });
+
+  it('reports transferred bytes, or the size for a completed entry without them, or unknown', () => {
+    expect(transferredOf(entry('a', 0, { status: 'partial', transferredBytes: 400 }))).toBe(400);
+    expect(transferredOf(entry('b', 0))).toBe(1000);
+    expect(transferredOf(entry('c', 0, { status: 'failed' }))).toBeUndefined();
+  });
+
+  it('stores and returns the optional fields unchanged', async () => {
+    const store = openHistoryStore(new IDBFactory());
+    await store.add({ ...multi, route: 'mixed', startedAt: multi.createdAt - 60_000 });
+    const [back] = await store.list();
+    expect(back?.files).toHaveLength(3);
+    expect(back?.peers).toEqual(['Minh’s Pixel 7', 'Lan’s MacBook']);
+    expect(back?.route).toBe('mixed');
   });
 });

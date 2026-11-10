@@ -4,6 +4,17 @@
 export type Direction = 'sent' | 'received';
 export type HistoryStatus = 'completed' | 'partial' | 'failed' | 'cancelled';
 
+/** One file of a history entry (optional; entries written before Phase 4 have only `title` and `fileCount`). */
+export interface HistoryFile {
+  name: string;
+  size: number;
+  /** Bytes that arrived or were verified when the transfer ended short of `size`. */
+  transferredBytes?: number;
+}
+
+/** How the bytes travelled: one route for every receiver, or a mix (some direct, some relayed). */
+export type HistoryRoute = 'direct' | 'relay' | 'mixed';
+
 export interface HistoryEntry {
   id: string;
   direction: Direction;
@@ -18,6 +29,15 @@ export interface HistoryEntry {
   status: HistoryStatus;
   /** Epoch milliseconds when the transfer ended. */
   createdAt: number;
+  // Optional fields (Phase 4). Older entries lack them and still render; the detail view hides what is missing.
+  /** Each peer's display name when there were several receivers; `peer` stays the joined summary. */
+  peers?: string[];
+  /** Per-file names and sizes, for search by file name and the detail view. */
+  files?: HistoryFile[];
+  /** Route the transfer used, for the detail view. */
+  route?: HistoryRoute;
+  /** Epoch milliseconds when the first byte moved; with `createdAt` it gives the duration. */
+  startedAt?: number;
 }
 
 export type Retention = '30' | '90' | 'none';
@@ -116,24 +136,49 @@ export interface HistoryFilter {
   peer: string; // '' = all devices
 }
 
+export const EMPTY_FILTER: HistoryFilter = { tab: 'all', query: '', status: 'any', range: 'all', peer: '' };
+
+/** The peers of an entry: the per-receiver list when recorded, else the single `peer` name. */
+export function entryPeers(e: HistoryEntry): string[] {
+  const list = e.peers?.filter((p) => p.trim() !== '');
+  return list && list.length > 0 ? list : e.peer ? [e.peer] : [];
+}
+
+/** Every peer that appears in the entries, sorted for the device filter. */
+export function historyPeers(entries: HistoryEntry[]): string[] {
+  return [...new Set(entries.flatMap(entryPeers))].sort((a, b) => a.localeCompare(b));
+}
+
+/** Names a search matches: the entry title, every recorded file name, and every peer. */
+function searchable(e: HistoryEntry): string[] {
+  return [e.title, e.peer, ...entryPeers(e), ...(e.files ?? []).map((f) => f.name)];
+}
+
+/** Start of the date window for a range preset, in epoch ms (0 = no lower bound). */
+export function rangeStart(range: HistoryFilter['range'], now = Date.now()): number {
+  if (range === 'today') {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    return start.getTime();
+  }
+  return range === '7d' ? now - 7 * DAY : range === '30d' ? now - 30 * DAY : 0;
+}
+
 export function filterHistory(entries: HistoryEntry[], f: HistoryFilter, now = Date.now()): HistoryEntry[] {
   const q = f.query.trim().toLocaleLowerCase();
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  const since =
-    f.range === 'today'
-      ? startOfToday.getTime()
-      : f.range === '7d'
-        ? now - 7 * DAY
-        : f.range === '30d'
-          ? now - 30 * DAY
-          : 0;
+  const since = rangeStart(f.range, now);
   return entries.filter(
     (e) =>
       (f.tab === 'all' || e.direction === f.tab) &&
       (f.status === 'any' || e.status === f.status) &&
-      (!f.peer || e.peer === f.peer) &&
+      (!f.peer || entryPeers(e).includes(f.peer)) &&
       e.createdAt >= since &&
-      (!q || e.title.toLocaleLowerCase().includes(q) || e.peer.toLocaleLowerCase().includes(q)),
+      (!q || searchable(e).some((s) => s.toLocaleLowerCase().includes(q))),
   );
+}
+
+/** Bytes that moved: the recorded count, else the full size for a completed entry, else unknown. */
+export function transferredOf(e: HistoryEntry): number | undefined {
+  if (e.transferredBytes !== undefined) return e.transferredBytes;
+  return e.status === 'completed' ? e.totalBytes : undefined;
 }

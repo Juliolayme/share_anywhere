@@ -101,7 +101,8 @@ export function App() {
             />
           </>
         )}
-        <Route path="history" element={<HistoryPage />} />
+        {/* HI-1 list and HI-2 detail (/history/:entryId) share one page so filters survive opening an entry. */}
+        <Route path="history/*" element={<HistoryPage />} />
         <Route path="devices" element={<DevicesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFound />} />

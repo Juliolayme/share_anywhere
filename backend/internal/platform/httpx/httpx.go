@@ -2,10 +2,12 @@
 package httpx
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"math"
+	"mime"
 	"net/http"
 	"strconv"
 	"time"
@@ -47,14 +49,26 @@ var ErrBadBody = errors.New("bad request body")
 
 // Decode reads a JSON body of at most maxBytes into v, rejecting unknown fields and trailing data.
 // An empty body decodes to the zero value when allowEmpty is true.
+//
+// A non-empty body must be sent as application/json. Cross-site HTML forms can only send text/plain,
+// form-urlencoded or multipart bodies without a CORS preflight, so this blocks form-based request forgery.
 func Decode(r *http.Request, v any, maxBytes int64, allowEmpty bool) error {
-	body := http.MaxBytesReader(nil, r.Body, maxBytes)
-	dec := json.NewDecoder(body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		if allowEmpty && errors.Is(err, io.EOF) {
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxBytes))
+	if err != nil {
+		return ErrBadBody
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		if allowEmpty {
 			return nil
 		}
+		return ErrBadBody
+	}
+	if !isJSON(r.Header.Get("Content-Type")) {
+		return ErrBadBody
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
 		return ErrBadBody
 	}
 	if dec.More() {
@@ -66,4 +80,9 @@ func Decode(r *http.Request, v any, maxBytes int64, allowEmpty bool) error {
 // BadRequest writes 400 invalid_request.
 func BadRequest(w http.ResponseWriter, message string) {
 	Error(w, http.StatusBadRequest, "invalid_request", message)
+}
+
+func isJSON(contentType string) bool {
+	mt, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mt == "application/json"
 }

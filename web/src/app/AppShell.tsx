@@ -11,13 +11,13 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Logo } from '../components/Logo';
 import { useI18n } from '../i18n/i18n';
 import { flags } from '../config/flags';
 import { useIdentity } from '../lib/identity/identity';
 import { useOnline } from '../lib/online';
-import { getThemePreference, setThemePreference } from '../lib/theme';
+import { useTheme } from '../lib/theme';
 
 interface NavItem {
   to: string;
@@ -46,15 +46,10 @@ export function useNavItems(): NavItem[] {
   return items.filter((i) => i.to !== '/clipboard' || flags.clipboard);
 }
 
-function isDark(): boolean {
-  const pref = getThemePreference();
-  if (pref !== 'system') return pref === 'dark';
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
-
 export function HeaderControls() {
   const { t, locale, setLocale } = useI18n();
-  const [dark, setDark] = useState(isDark);
+  const theme = useTheme();
+  const dark = theme.resolved === 'dark';
   return (
     <div className="flex items-center gap-1">
       <button
@@ -68,10 +63,7 @@ export function HeaderControls() {
       </button>
       <button
         type="button"
-        onClick={() => {
-          setThemePreference(dark ? 'light' : 'dark');
-          setDark(!dark);
-        }}
+        onClick={() => theme.set(dark ? 'light' : 'dark')}
         aria-label={t('common.s_theme')}
         aria-pressed={dark}
         className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-md text-fg-2 hover:bg-surface-2"
@@ -126,7 +118,7 @@ export function AppShell() {
         <div className="px-[10px] py-1">
           <Logo size={30} lockup />
         </div>
-        <nav aria-label="Main" className="flex flex-col gap-[2px]">
+        <nav aria-label={t('product.nav_main')} className="flex flex-col gap-[2px]">
           {items.map((n) => {
             const active = n.match(pathname);
             return (
@@ -159,7 +151,7 @@ export function AppShell() {
       {/* Icon rail from 760 to 1099 px */}
       <aside className="sticky top-0 hidden h-screen w-[80px] flex-none flex-col items-center gap-[18px] border-r border-border bg-surface px-2 py-[18px] rail:flex sidebar:hidden">
         <Logo size={32} />
-        <nav aria-label="Main" className="flex w-full flex-col gap-[6px]">
+        <nav aria-label={t('product.nav_main')} className="flex w-full flex-col gap-[6px]">
           {items.map((n) => {
             const active = n.match(pathname);
             return (
@@ -195,7 +187,7 @@ export function AppShell() {
       </div>
       {/* Bottom bar below 760 px */}
       <nav
-        aria-label="Main"
+        aria-label={t('product.nav_main')}
         className="fixed inset-x-0 bottom-0 z-[15] grid h-[72px] border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] rail:hidden"
         style={{ gridTemplateColumns: `repeat(${items.length}, 1fr)` }}
       >

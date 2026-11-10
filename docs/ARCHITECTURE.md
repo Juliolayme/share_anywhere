@@ -176,7 +176,7 @@ Implemented across Phases 1, 2, 5A, 5B, 8. Lifetimes and purge rules in `docs/SE
 
 Core (guest and account):
 
-- `devices(id, kind anonymous|account, user_id NULL, display_name, platform, refresh_generation, created_at, last_seen_at, expires_at, revoked_at)` with `CHECK ((kind = 'account') = (user_id IS NOT NULL))`. **Built in Phase 1** (`backend/migrations/0001_devices.sql`); `user_id` stays NULL until Phase 5A.
+- `devices(id, kind anonymous|account, user_id NULL, display_name, platform, refresh_transport cookie|body, refresh_generation, created_at, last_seen_at, expires_at, revoked_at)` with `CHECK ((kind = 'account') = (user_id IS NOT NULL))`. **Built in Phase 1** (`backend/migrations/0001_devices.sql`); `user_id` stays NULL until Phase 5A.
 - `device_refresh_secrets(secret_hash PK, device_id → devices ON DELETE CASCADE, generation, created_at, used_at)`: every issued refresh secret as a SHA-256 hash. A used secret keeps its row so reuse is detected; reuse revokes the device and deletes its rows. **Built in Phase 1.** Rotation locks the secret and the device rows (`SELECT … FOR UPDATE`) so two concurrent refreshes cannot both win.
 - `share_sessions(id, owner_device_id NOT NULL, owner_user_id NULL, status, require_approval DEFAULT false, join_window_state OPEN|EXPIRED|ENDED_FULL|ENDED_BY_SENDER, join_window_opened_at, join_window_ends_at, code_hmac NULL, created_at, expires_at, ended_at, purge_after)`. `owner_user_id` is set only when the sender was signed in at creation and is used for Cloud and per-account limits, never required.
 - `session_participants(id, session_id, device_id NOT NULL, user_id NULL, role sender|receiver, status, security_words, joined_via code|link, joined_at, decided_at)` with `UNIQUE (session_id, device_id)`.

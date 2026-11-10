@@ -6,13 +6,18 @@ import { fakeClient, renderApp } from '../test/render';
 import { writePref } from '../lib/storage';
 import { parseShareLink } from './ReceiveEntry';
 
-describe('receive code entry', () => {
-  it('validates six digits, supports paste, and keeps the join action hidden', async () => {
+describe('receive (RX-1) code entry', () => {
+  it('validates an incomplete code on blur, supports paste, and shows no join action while sharing is off', async () => {
     writePref('welcomed', '1');
     renderApp(<App />, { path: '/receive' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+    const first = await screen.findByLabelText('Digit 1 of 6');
+    expect(document.querySelector('[data-screen="receive"]')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open link' })).toBeNull();
+    expect(screen.queryByText(/Scan the sender/)).toBeNull();
+    await userEvent.type(first, '4');
+    await userEvent.click(document.body);
     expect(screen.getByRole('alert')).toHaveTextContent('Enter all 6 digits.');
-    const first = screen.getByLabelText('Digit 1 of 6');
     fireEvent.paste(first, { clipboardData: { getData: () => '48 29 13' } });
     expect((screen.getByLabelText('Digit 6 of 6') as HTMLInputElement).value).toBe('3');
     expect(screen.queryByText('Enter all 6 digits.')).toBeNull();
@@ -29,8 +34,8 @@ describe('receive code entry', () => {
   });
 });
 
-describe('send picker', () => {
-  it('lists picked files with the total and hides Create while sharing is off', async () => {
+describe('send (TR-2/TR-3) picker', () => {
+  it('lists picked files with the total and shows no Create action while sharing is off', async () => {
     writePref('welcomed', '1');
     renderApp(<App />, { path: '/send' });
     const input = await screen.findByTestId('file-input');
@@ -44,7 +49,7 @@ describe('send picker', () => {
   });
 });
 
-describe('devices', () => {
+describe('devices (DV-1)', () => {
   it('renames this device', async () => {
     writePref('welcomed', '1');
     renderApp(<App />, { path: '/devices' });
@@ -58,7 +63,7 @@ describe('devices', () => {
   });
 });
 
-describe('identity failures', () => {
+describe('home (TR-1) identity failures', () => {
   it('shows the rate-limit wait and a retry on Transfer home', async () => {
     writePref('welcomed', '1');
     const limited = new Response(JSON.stringify({ error: 'rate_limited', retry_after_s: 125 }), {
@@ -70,5 +75,29 @@ describe('identity failures', () => {
       await screen.findByText(/Too many attempts. Try again in 2:0[3-5]/, {}, { timeout: 3000 }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Retry in/ })).toBeDisabled();
+  });
+});
+
+describe('theme', () => {
+  it('header toggle and Settings stay in sync', async () => {
+    writePref('welcomed', '1');
+    renderApp(<App />, { path: '/settings' });
+    await userEvent.click(await screen.findByRole('radio', { name: 'Dark' }));
+    const toggle = screen.getByRole('button', { name: 'Theme' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(toggle);
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true');
+  });
+});
+
+describe('share link validation', () => {
+  it('validates the pasted link on blur', async () => {
+    writePref('welcomed', '1');
+    renderApp(<App />, { path: '/receive' });
+    const input = await screen.findByLabelText('Or paste a share link');
+    await userEvent.type(input, 'https://example.com/x');
+    await userEvent.tab();
+    expect(screen.getByRole('alert')).toHaveTextContent('That doesn’t look like a Share Anywhere link.');
   });
 });

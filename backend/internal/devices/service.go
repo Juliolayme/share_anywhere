@@ -63,6 +63,12 @@ type PoWRequiredError struct {
 
 func (e *PoWRequiredError) Error() string { return "proof of work required" }
 
+// Refresh-secret transports (docs/ADR/0008-device-token-format.md).
+const (
+	TransportCookie = "cookie"
+	TransportBody   = "body"
+)
+
 // ErrInvalidInput reports a request that failed validation.
 var ErrInvalidInput = errors.New("invalid input")
 
@@ -99,7 +105,9 @@ func NewService(store Store, tokens *Tokens, pow *PoW, c clock.Clock, limits Lim
 
 // CreateInput is a validated bootstrap request.
 type CreateInput struct {
-	Platform    string
+	Platform string
+	// Transport is "cookie" or "body"; it is stored and used for every later refresh and reset.
+	Transport   string
 	DisplayName string
 	PoWToken    string
 	PoWSolution string
@@ -159,6 +167,9 @@ func (s *Service) Create(ctx context.Context, addrKey string, in CreateInput) (S
 	if err != nil {
 		return Session{}, err
 	}
+	if in.Transport != TransportCookie && in.Transport != TransportBody {
+		return Session{}, ErrInvalidInput
+	}
 	name := GenerateName(platform)
 	if in.DisplayName != "" {
 		if name, err = ValidateName(in.DisplayName); err != nil {
@@ -174,14 +185,14 @@ func (s *Service) Create(ctx context.Context, addrKey string, in CreateInput) (S
 			return Session{}, &PoWRequiredError{Token: tok, Difficulty: diff}
 		}
 	}
-	return s.createDevice(ctx, platform, name)
+	return s.createDevice(ctx, platform, name, in.Transport)
 }
 
-func (s *Service) createDevice(ctx context.Context, platform, name string) (Session, error) {
+func (s *Service) createDevice(ctx context.Context, platform, name, transport string) (Session, error) {
 	now := s.clock.Now()
 	secret, hash := newSecret()
 	d := Device{
-		ID: newUUID(), Kind: "anonymous", DisplayName: name, Platform: platform,
+		ID: newUUID(), Kind: "anonymous", DisplayName: name, Platform: platform, Transport: transport,
 		CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(AnonymousLifetime),
 	}
 	if err := s.store.CreateDevice(ctx, d, hash); err != nil {
@@ -258,7 +269,7 @@ func (s *Service) Reset(ctx context.Context, id, addrKey string) (Session, error
 		return Session{}, err
 	}
 	s.forget(id)
-	return s.createDevice(ctx, old.Platform, GenerateName(old.Platform))
+	return s.createDevice(ctx, old.Platform, GenerateName(old.Platform), old.Transport)
 }
 
 // Verify implements access.Verifier: token signature and expiry, then the device must still be active.

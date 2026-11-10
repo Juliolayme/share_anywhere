@@ -11,16 +11,16 @@ import (
 
 // Defines values for CreateDeviceRequestTransport.
 const (
-	CreateDeviceRequestTransportBody   CreateDeviceRequestTransport = "body"
-	CreateDeviceRequestTransportCookie CreateDeviceRequestTransport = "cookie"
+	Body   CreateDeviceRequestTransport = "body"
+	Cookie CreateDeviceRequestTransport = "cookie"
 )
 
 // Valid indicates whether the value is a known member of the CreateDeviceRequestTransport enum.
 func (e CreateDeviceRequestTransport) Valid() bool {
 	switch e {
-	case CreateDeviceRequestTransportBody:
+	case Body:
 		return true
-	case CreateDeviceRequestTransportCookie:
+	case Cookie:
 		return true
 	default:
 		return false
@@ -81,42 +81,6 @@ func (e ReadyStatus) Valid() bool {
 	}
 }
 
-// Defines values for RefreshRequestTransport.
-const (
-	RefreshRequestTransportBody   RefreshRequestTransport = "body"
-	RefreshRequestTransportCookie RefreshRequestTransport = "cookie"
-)
-
-// Valid indicates whether the value is a known member of the RefreshRequestTransport enum.
-func (e RefreshRequestTransport) Valid() bool {
-	switch e {
-	case RefreshRequestTransportBody:
-		return true
-	case RefreshRequestTransportCookie:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ResetDeviceRequestTransport.
-const (
-	ResetDeviceRequestTransportBody   ResetDeviceRequestTransport = "body"
-	ResetDeviceRequestTransportCookie ResetDeviceRequestTransport = "cookie"
-)
-
-// Valid indicates whether the value is a known member of the ResetDeviceRequestTransport enum.
-func (e ResetDeviceRequestTransport) Valid() bool {
-	switch e {
-	case ResetDeviceRequestTransportBody:
-		return true
-	case ResetDeviceRequestTransportCookie:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for RefreshDeviceTokenParamsXSARefresh.
 const (
 	N1 RefreshDeviceTokenParamsXSARefresh = "1"
@@ -137,12 +101,14 @@ type CreateDeviceRequest struct {
 	DisplayName *string `json:"display_name,omitempty"`
 
 	// Platform Example: Chrome on macOS
-	Platform  string                       `json:"platform"`
-	Pow       *PowSolution                 `json:"pow,omitempty"`
+	Platform string       `json:"platform"`
+	Pow      *PowSolution `json:"pow,omitempty"`
+
+	// Transport Fixed for the device's lifetime. Refresh and reset answer the same way; "cookie" secrets never appear in a response body.
 	Transport CreateDeviceRequestTransport `json:"transport"`
 }
 
-// CreateDeviceRequestTransport defines model for CreateDeviceRequest.Transport.
+// CreateDeviceRequestTransport Fixed for the device's lifetime. Refresh and reset answer the same way; "cookie" secrets never appear in a response body.
 type CreateDeviceRequestTransport string
 
 // Device defines model for Device.
@@ -223,20 +189,9 @@ type ReadyStatus string
 
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
-	RefreshSecret *string                  `json:"refresh_secret,omitempty"`
-	Transport     *RefreshRequestTransport `json:"transport,omitempty"`
+	// RefreshSecret Native apps only. The Web sends no body and uses the sa_device cookie.
+	RefreshSecret *string `json:"refresh_secret,omitempty"`
 }
-
-// RefreshRequestTransport defines model for RefreshRequest.Transport.
-type RefreshRequestTransport string
-
-// ResetDeviceRequest defines model for ResetDeviceRequest.
-type ResetDeviceRequest struct {
-	Transport *ResetDeviceRequestTransport `json:"transport,omitempty"`
-}
-
-// ResetDeviceRequestTransport defines model for ResetDeviceRequest.Transport.
-type ResetDeviceRequestTransport string
 
 // UpdateDeviceRequest defines model for UpdateDeviceRequest.
 type UpdateDeviceRequest struct {
@@ -276,9 +231,6 @@ type CreateAnonymousDeviceJSONRequestBody = CreateDeviceRequest
 
 // UpdateCurrentDeviceJSONRequestBody defines body for UpdateCurrentDevice for application/json ContentType.
 type UpdateCurrentDeviceJSONRequestBody = UpdateDeviceRequest
-
-// ResetCurrentDeviceJSONRequestBody defines body for ResetCurrentDevice for application/json ContentType.
-type ResetCurrentDeviceJSONRequestBody = ResetDeviceRequest
 
 // RefreshDeviceTokenJSONRequestBody defines body for RefreshDeviceToken for application/json ContentType.
 type RefreshDeviceTokenJSONRequestBody = RefreshRequest

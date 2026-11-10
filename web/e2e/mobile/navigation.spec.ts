@@ -3,9 +3,9 @@ import { openAsReturningGuest } from '../fixtures';
 
 test.skip(({ isMobile }) => !isMobile, 'mobile projects only');
 
-test('compact bottom navigation with touch targets of at least 44 px', async ({ page }) => {
+test('home (mobile): compact bottom navigation with touch targets of at least 44 px', async ({ page }) => {
   await openAsReturningGuest(page);
-  const nav = page.getByRole('navigation', { name: 'Main' }).filter({ visible: true });
+  const nav = page.getByRole('navigation', { name: 'Main navigation' }).filter({ visible: true });
   await expect(nav).toHaveCount(1);
   const links = nav.getByRole('link');
   await expect(links).toHaveText(['Transfer', 'History', 'Devices', 'Settings']);
@@ -26,7 +26,7 @@ test('compact bottom navigation with touch targets of at least 44 px', async ({ 
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
-test('code entry cells are touch-sized on phones', async ({ page }) => {
+test('receive (mobile): code entry cells are touch-sized on phones', async ({ page }) => {
   await openAsReturningGuest(page, '/receive');
   for (let i = 1; i <= 6; i++) {
     const box = await page.getByRole('textbox', { name: `Digit ${i} of 6` }).boundingBox();

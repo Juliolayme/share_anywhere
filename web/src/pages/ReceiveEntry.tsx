@@ -1,7 +1,7 @@
 import { ChevronLeft, CircleAlert, ScanLine } from 'lucide-react';
 import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Banner, Button, Card } from '../components/ui';
+import { Button, Card } from '../components/ui';
 import { useI18n } from '../i18n/i18n';
 import { flags } from '../config/flags';
 
@@ -19,8 +19,9 @@ export function parseShareLink(raw: string, origin: string = window.location.ori
 }
 
 /**
- * RX-1 / design screen `receive`: six-digit code with paste, arrow keys and validation, plus a share-link
- * field. Joining is behind the `sharing` flag until Phase 2.
+ * RX-1 / design screen `receive`: six-digit code with paste, arrow keys and inline validation (when focus
+ * leaves an incomplete code), plus a share-link field validated on blur. The Continue and Open link actions,
+ * and the QR hint that depends on the /j/<token> route, appear only with the `sharing` flag (Phase 2).
  */
 export default function ReceiveEntry() {
   const { t } = useI18n();
@@ -28,7 +29,6 @@ export default function ReceiveEntry() {
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [linkOk, setLinkOk] = useState(false);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
   const complete = digits.every((d) => /^\d$/.test(d));
 
@@ -68,13 +68,22 @@ export default function ReceiveEntry() {
     }
   };
   const checkLink = () => {
-    const ok = parseShareLink(link) !== null;
-    setLinkOk(ok);
-    setLinkError(ok ? null : t('product.link_invalid'));
+    if (!link.trim()) {
+      setLinkError(null);
+      return;
+    }
+    setLinkError(parseShareLink(link) !== null ? null : t('product.link_invalid'));
+  };
+  // Validate when focus leaves the code group with some, but not all, digits entered.
+  const groupRef = useRef<HTMLDivElement>(null);
+  const onCellBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    if (groupRef.current?.contains(e.relatedTarget as Node | null)) return;
+    const filled = digits.filter((d) => d).length;
+    if (filled > 0 && filled < 6) setError(t('product.code_incomplete'));
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-[560px] flex-col gap-[20px]">
+    <div data-screen="receive" className="mx-auto flex w-full max-w-[560px] flex-col gap-[20px]">
       <Link
         to="/"
         className="flex items-center gap-[6px] self-start text-caption font-semibold text-fg-2 no-underline hover:text-fg"
@@ -87,7 +96,12 @@ export default function ReceiveEntry() {
         <p className="mb-0 mt-[6px] text-fg-2">{t('web.rc_p')}</p>
       </div>
       <Card className="flex flex-col gap-4 rounded-xl p-[clamp(18px,4vw,28px)]">
-        <div role="group" aria-label={t('web.code')} className="flex justify-center gap-[clamp(4px,1.4vw,8px)]">
+        <div
+          role="group"
+          aria-label={t('web.code')}
+          ref={groupRef}
+          className="flex justify-center gap-[clamp(4px,1.4vw,8px)]"
+        >
           {digits.map((d, i) => (
             <input
               key={i}
@@ -98,6 +112,7 @@ export default function ReceiveEntry() {
               onChange={(e) => setAt(i, e.target.value)}
               onKeyDown={(e) => onKeyDown(i, e)}
               onPaste={(e) => onPaste(i, e)}
+              onBlur={onCellBlur}
               inputMode="numeric"
               autoComplete={i === 0 ? 'one-time-code' : 'off'}
               pattern="[0-9]*"
@@ -113,17 +128,10 @@ export default function ReceiveEntry() {
             {error}
           </div>
         )}
-        {flags.sharing ? (
+        {flags.sharing && (
           <Button variant="receive" size="lg" onClick={submit}>
             {t('web.cont')}
           </Button>
-        ) : (
-          <>
-            <Button variant="secondary" size="lg" onClick={submit}>
-              {t('web.cont')}
-            </Button>
-            {complete && <Banner tone="info">{t('product.joining_soon')}</Banner>}
-          </>
         )}
       </Card>
       <Card className="flex flex-col gap-[10px] p-[18px]">
@@ -138,27 +146,33 @@ export default function ReceiveEntry() {
             onChange={(e) => {
               setLink(e.target.value);
               setLinkError(null);
-              setLinkOk(false);
+            }}
+            onBlur={checkLink}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') checkLink();
             }}
             aria-invalid={linkError ? true : undefined}
             aria-describedby={linkError ? 'sa-link-error' : undefined}
             className="h-[44px] min-w-[200px] flex-1 rounded-md border border-border-strong bg-surface px-3 text-[14px] text-fg"
           />
-          <Button variant="secondary" onClick={checkLink} disabled={!link.trim()}>
-            {t('product.open_link')}
-          </Button>
+          {flags.sharing && (
+            <Button variant="secondary" onClick={checkLink} disabled={!link.trim()}>
+              {t('product.open_link')}
+            </Button>
+          )}
         </div>
         {linkError && (
           <span id="sa-link-error" role="alert" className="text-caption text-danger-ink">
             {linkError}
           </span>
         )}
-        {linkOk && !flags.sharing && <Banner tone="info">{t('product.joining_soon')}</Banner>}
       </Card>
-      <div className="flex items-center gap-3 px-1 text-caption text-fg-2">
-        <ScanLine aria-hidden size={18} />
-        {t('product.scan_hint')}
-      </div>
+      {flags.sharing && (
+        <div className="flex items-center gap-3 px-1 text-caption text-fg-2">
+          <ScanLine aria-hidden size={18} />
+          {t('product.scan_hint')}
+        </div>
+      )}
     </div>
   );
 }

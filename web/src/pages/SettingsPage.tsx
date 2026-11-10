@@ -1,11 +1,11 @@
 import { Trash2, User } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, ConfirmDialog, Segmented } from '../components/ui';
+import { Button, Card, ConfirmDialog, Segmented, Screen } from '../components/ui';
 import { useToast } from '../components/Toast';
 import { useI18n, type Locale } from '../i18n/i18n';
 import { useIdentity } from '../lib/identity/identity';
-import { getThemePreference, setThemePreference, type ThemePreference } from '../lib/theme';
+import { useTheme } from '../lib/theme';
 import { useRetention } from '../lib/prefs';
 import { useHistory } from '../features/history/HistoryContext';
 import type { Retention } from '../features/history/store/history-store';
@@ -30,12 +30,12 @@ export default function SettingsPage() {
   const toast = useToast();
   const { device } = useIdentity();
   const { refresh, clear, entries } = useHistory();
-  const [theme, setTheme] = useState<ThemePreference>(getThemePreference);
+  const theme = useTheme();
   const [retention, setRetention] = useRetention();
   const [confirm, setConfirm] = useState(false);
 
   return (
-    <>
+    <Screen id="settings">
       <h1 className="m-0 text-[clamp(26px,3vw,32px)] font-bold tracking-[-0.025em]">{t('web.st_h')}</h1>
       <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))]">
         <Section title={t('web_vv.k42')}>
@@ -66,11 +66,8 @@ export default function SettingsPage() {
             <span className="text-[14px]">{t('web_vv.k50')}</span>
             <Segmented
               label={t('web_vv.k50')}
-              value={theme}
-              onChange={(v) => {
-                setThemePreference(v);
-                setTheme(v);
-              }}
+              value={theme.preference}
+              onChange={theme.set}
               options={[
                 { value: 'system', label: t('common.th_sys') },
                 { value: 'light', label: t('common.th_light') },
@@ -117,7 +114,7 @@ export default function SettingsPage() {
               {t('web.clear')}
             </Button>
           </div>
-          <p className="m-0 text-caption leading-[1.5] text-fg-2">{t('common.s_priv_p')}</p>
+          <p className="m-0 text-caption leading-[1.5] text-fg-2">{t('web_vv.k74')}</p>
           <div className="flex justify-between border-t border-border pt-[10px] text-caption text-fg-2">
             <span>{t('product.version_web', { version: VERSION })}</span>
           </div>
@@ -132,11 +129,16 @@ export default function SettingsPage() {
         danger
         onCancel={() => setConfirm(false)}
         onConfirm={async () => {
-          await clear();
-          setConfirm(false);
-          toast.show(t('common.n_cleared'));
+          try {
+            await clear();
+            toast.show(t('common.n_cleared'));
+          } catch {
+            toast.show(t('product.history_unavailable'));
+          } finally {
+            setConfirm(false);
+          }
         }}
       />
-    </>
+    </Screen>
   );
 }

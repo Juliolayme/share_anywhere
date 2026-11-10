@@ -1,9 +1,9 @@
 import { Laptop, Pencil, RotateCcw, Smartphone } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Button, Card, ConfirmDialog, PageHeader } from '../components/ui';
+import { Button, Card, ConfirmDialog, PageHeader, Screen } from '../components/ui';
 import { useToast } from '../components/Toast';
 import { useI18n } from '../i18n/i18n';
-import { useIdentity } from '../lib/identity/identity';
+import { formatWait, useIdentity } from '../lib/identity/identity';
 import { ApiError } from '../lib/api/errors';
 import { formatDate } from '../lib/format';
 import { IdentityNotice } from '../features/identity/IdentityNotice';
@@ -48,7 +48,7 @@ export default function DevicesPage() {
   };
 
   return (
-    <>
+    <Screen id="devices">
       <PageHeader title={t('web.dv_h')} subtitle={<p className="m-0">{t('product.no_account')}</p>} />
       <IdentityNotice />
       <Card className="overflow-hidden">
@@ -154,15 +154,13 @@ export default function DevicesPage() {
             toast.show(t('product.reset_done'));
           } catch (err) {
             const wait = err instanceof ApiError && err.status === 429 ? err.retryAfterS : undefined;
-            toast.show(
-              wait ? t('product.rate_limited', { time: `${Math.ceil(wait / 60)} min` }) : t('product.identity_failed'),
-            );
+            toast.show(wait ? t('product.rate_limited', { time: formatWait(wait) }) : t('product.identity_failed'));
           } finally {
             setResetting(false);
             setConfirmReset(false);
           }
         }}
       />
-    </>
+    </Screen>
   );
 }

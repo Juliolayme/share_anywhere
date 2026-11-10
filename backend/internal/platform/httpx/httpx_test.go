@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -18,17 +19,33 @@ func TestRateLimitedHeaders(t *testing.T) {
 	}
 }
 
+func jsonReq(body string) *http.Request {
+	r := httptest.NewRequest("POST", "/", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json; charset=utf-8")
+	return r
+}
+
 func TestDecode(t *testing.T) {
 	type body struct {
 		Name string `json:"name"`
 	}
 	var b body
-	if err := Decode(httptest.NewRequest("POST", "/", strings.NewReader(`{"name":"x"}`)), &b, 1024, false); err != nil || b.Name != "x" {
+	if err := Decode(jsonReq(`{"name":"x"}`), &b, 1024, false); err != nil || b.Name != "x" {
 		t.Fatalf("valid body: %v %+v", err, b)
 	}
 	for _, bad := range []string{`{"name":1}`, `{"other":"x"}`, `{"name":"x"}{}`, `not json`, ``} {
-		if err := Decode(httptest.NewRequest("POST", "/", strings.NewReader(bad)), &b, 1024, false); err == nil {
+		if err := Decode(jsonReq(bad), &b, 1024, false); err == nil {
 			t.Fatalf("expected error for %q", bad)
+		}
+	}
+	// A cross-site form can post text/plain JSON-looking bodies; only application/json is accepted.
+	for _, ct := range []string{"text/plain", "application/x-www-form-urlencoded", ""} {
+		r := httptest.NewRequest("POST", "/", strings.NewReader(`{"name":"x"}`))
+		if ct != "" {
+			r.Header.Set("Content-Type", ct)
+		}
+		if err := Decode(r, &b, 1024, true); err == nil {
+			t.Fatalf("content type %q must be rejected", ct)
 		}
 	}
 	if err := Decode(httptest.NewRequest("POST", "/", strings.NewReader(``)), &b, 1024, true); err != nil {

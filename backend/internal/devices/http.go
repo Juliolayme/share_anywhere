@@ -55,7 +55,10 @@ func toAPIDevice(d Device) api.Device {
 	}
 }
 
-func (h *HTTP) writeSession(w http.ResponseWriter, status int, s Session, cookie bool) {
+// writeSession answers with the refresh secret in the transport fixed for the device at creation, never the
+// one a later request asks for: a Web device's secret only ever travels in the HttpOnly cookie.
+func (h *HTTP) writeSession(w http.ResponseWriter, status int, s Session) {
+	cookie := s.Device.Transport != TransportBody
 	body := api.DeviceSession{
 		Device: toAPIDevice(s.Device), AccessToken: s.AccessToken, ExpiresIn: s.ExpiresIn, ServerTime: h.clock.Now().UTC(),
 	}
@@ -115,7 +118,7 @@ func (h *HTTP) create(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, "Expected platform and transport (cookie or body).")
 		return
 	}
-	in := CreateInput{Platform: req.Platform}
+	in := CreateInput{Platform: req.Platform, Transport: string(req.Transport)}
 	if req.DisplayName != nil {
 		in.DisplayName = *req.DisplayName
 	}
@@ -126,7 +129,7 @@ func (h *HTTP) create(w http.ResponseWriter, r *http.Request) {
 	if writeServiceError(w, err) {
 		return
 	}
-	h.writeSession(w, http.StatusCreated, s, req.Transport == api.CreateDeviceRequestTransportCookie)
+	h.writeSession(w, http.StatusCreated, s)
 }
 
 func (h *HTTP) refresh(w http.ResponseWriter, r *http.Request) {
@@ -170,11 +173,7 @@ func (h *HTTP) refresh(w http.ResponseWriter, r *http.Request) {
 	if writeServiceError(w, err) {
 		return
 	}
-	useCookie := viaCookie
-	if req.Transport != nil {
-		useCookie = *req.Transport == api.RefreshRequestTransportCookie
-	}
-	h.writeSession(w, http.StatusOK, s, useCookie)
+	h.writeSession(w, http.StatusOK, s)
 }
 
 func (h *HTTP) current(w http.ResponseWriter, r *http.Request) {
@@ -202,15 +201,15 @@ func (h *HTTP) rename(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTP) reset(w http.ResponseWriter, r *http.Request) {
 	id, _ := access.FromContext(r.Context())
-	var req api.ResetDeviceRequest
-	if err := httpx.Decode(r, &req, maxBody, true); err != nil {
-		httpx.BadRequest(w, "Invalid reset request.")
+	var none struct{}
+	if err := httpx.Decode(r, &none, maxBody, true); err != nil {
+		httpx.BadRequest(w, "This request takes no body.")
 		return
 	}
 	s, err := h.svc.Reset(r.Context(), id.DeviceID, h.addrKey(r))
 	if writeServiceError(w, err) {
 		return
 	}
-	cookie := req.Transport == nil || *req.Transport == api.ResetDeviceRequestTransportCookie
-	h.writeSession(w, http.StatusCreated, s, cookie)
+	// The new identity inherits the old device's transport (cookie for the Web).
+	h.writeSession(w, http.StatusCreated, s)
 }

@@ -200,7 +200,8 @@ export class DeviceClient {
 
   /** Replaces this device with a new anonymous identity (the server revokes the old one). */
   async reset(): Promise<Device> {
-    const s = await this.request<DeviceSession>('POST', '/v1/devices/current/reset', { transport: 'cookie' });
+    // No body: the server keeps the transport the device was created with (cookie for the Web).
+    const s = await this.request<DeviceSession>('POST', '/v1/devices/current/reset');
     return this.accept(s).device;
   }
 

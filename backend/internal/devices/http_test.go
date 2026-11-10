@@ -41,6 +41,9 @@ func fromAddr(a string) reqOpt { return func(r *http.Request) { r.RemoteAddr = a
 func (h *httpFixture) do(method, path, body string, opts ...reqOpt) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.RemoteAddr = "203.0.113.7:4000"
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	for _, o := range opts {
 		o(req)
 	}
@@ -222,7 +225,7 @@ func TestRefreshOverHTTP(t *testing.T) {
 
 	// Native clients send the secret in the body and get the next one in the body.
 	s := decode[sessionBody](t, h.do("POST", "/v1/devices/anonymous", `{"platform":"iOS","transport":"body"}`, fromAddr("203.0.113.9:1")))
-	rec = h.do("POST", "/v1/devices/token", `{"refresh_secret":"`+*s.RefreshSecret+`","transport":"body"}`)
+	rec = h.do("POST", "/v1/devices/token", `{"refresh_secret":"`+*s.RefreshSecret+`"}`)
 	if rec.Code != 200 || decode[sessionBody](t, rec).RefreshSecret == nil {
 		t.Fatalf("body refresh: %d %s", rec.Code, rec.Body)
 	}
@@ -265,5 +268,56 @@ func TestCurrentRenameResetOverHTTP(t *testing.T) {
 	h.clk.Advance(AccessTokenTTL + time.Second)
 	if rec := h.do("GET", "/v1/devices/current", "", withToken(n.AccessToken)); rec.Code != 401 || !strings.Contains(rec.Body.String(), "device_token_expired") {
 		t.Fatalf("expired token: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A Web (cookie) device's refresh secret never appears in a response body, whatever the request asks for.
+func TestCookieDeviceSecretNeverInBody(t *testing.T) {
+	h := newHTTPFixture(t)
+	c := cookieFrom(t, h.do("POST", "/v1/devices/anonymous", `{"platform":"Web","transport":"cookie"}`))
+	rec := h.do("POST", "/v1/devices/token", `{"transport":"body"}`, withCookie(c.Value), withHeader("X-SA-Refresh", "1"))
+	if rec.Code != 400 {
+		t.Fatalf("transport is no longer a refresh field; want 400, got %d %s", rec.Code, rec.Body)
+	}
+	rec = h.do("POST", "/v1/devices/token", "", withCookie(c.Value), withHeader("X-SA-Refresh", "1"))
+	s := decode[sessionBody](t, rec)
+	if rec.Code != 200 || s.RefreshSecret != nil || strings.Contains(rec.Body.String(), "refresh_secret") || cookieFrom(t, rec) == nil {
+		t.Fatalf("cookie refresh must answer by cookie only: %d %s", rec.Code, rec.Body)
+	}
+	// Presenting the cookie secret in the body still answers by cookie.
+	next := cookieFrom(t, rec)
+	rec = h.do("POST", "/v1/devices/token", `{"refresh_secret":"`+next.Value+`"}`)
+	if rec.Code != 200 || strings.Contains(rec.Body.String(), "refresh_secret") || cookieFrom(t, rec) == nil {
+		t.Fatalf("body-presented cookie secret must still answer by cookie: %d %s", rec.Code, rec.Body)
+	}
+	// Reset keeps the device's transport.
+	rec = h.do("POST", "/v1/devices/current/reset", "", withToken(s.AccessToken))
+	if rec.Code != 201 || strings.Contains(rec.Body.String(), "refresh_secret") || cookieFrom(t, rec) == nil {
+		t.Fatalf("reset of a cookie device: %d %s", rec.Code, rec.Body)
+	}
+	if rec := h.do("POST", "/v1/devices/current/reset", `{"transport":"body"}`, withToken(decode[sessionBody](t, rec).AccessToken)); rec.Code != 400 {
+		t.Fatalf("reset takes no body fields: %d", rec.Code)
+	}
+}
+
+func TestBodyDeviceKeepsBodyTransportOnReset(t *testing.T) {
+	h := newHTTPFixture(t)
+	s := decode[sessionBody](t, h.do("POST", "/v1/devices/anonymous", `{"platform":"Android","transport":"body"}`))
+	rec := h.do("POST", "/v1/devices/current/reset", "", withToken(s.AccessToken))
+	if rec.Code != 201 || decode[sessionBody](t, rec).RefreshSecret == nil || cookieFrom(t, rec) != nil {
+		t.Fatalf("native reset answers in the body: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A cross-site HTML form can only send text/plain; such a create must not set an identity cookie.
+func TestCreateRejectsNonJSONContentType(t *testing.T) {
+	h := newHTTPFixture(t)
+	req := httptest.NewRequest("POST", "/v1/devices/anonymous", strings.NewReader(`{"platform":"web","transport":"cookie"}`))
+	req.Header.Set("Content-Type", "text/plain")
+	req.RemoteAddr = "203.0.113.50:1"
+	rec := httptest.NewRecorder()
+	h.mux.ServeHTTP(rec, req)
+	if rec.Code != 400 || cookieFrom(t, rec) != nil {
+		t.Fatalf("text/plain create: %d cookie=%v", rec.Code, cookieFrom(t, rec))
 	}
 }

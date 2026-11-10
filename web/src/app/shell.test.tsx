@@ -6,7 +6,7 @@ import { renderApp } from '../test/render';
 import { writePref } from '../lib/storage';
 
 describe('guest-first shell (flags off)', () => {
-  it('first visit shows Welcome; Start sharing opens Transfer home with no sign-in anywhere', async () => {
+  it('welcome (ON-1): first visit shows Welcome; Start sharing opens Transfer home with no sign-in anywhere', async () => {
     renderApp(<App />);
     expect(await screen.findByRole('heading', { name: 'Big files, any device, any network.' })).toBeInTheDocument();
     expect(screen.queryByText(/sign in/i)).toBeNull();
@@ -19,7 +19,7 @@ describe('guest-first shell (flags off)', () => {
   it('hides the Clipboard tab and shows Transfer, History, Devices, Settings', async () => {
     writePref('welcomed', '1');
     renderApp(<App />);
-    const navs = await screen.findAllByRole('navigation', { name: 'Main' });
+    const navs = await screen.findAllByRole('navigation', { name: 'Main navigation' });
     for (const nav of navs) {
       const links = within(nav)
         .getAllByRole('link')
@@ -28,7 +28,7 @@ describe('guest-first shell (flags off)', () => {
     }
   });
 
-  it('Settings shows Guest and the device name with no Sign in button', async () => {
+  it('settings (ST-1): shows Guest and the device name with no Sign in button', async () => {
     writePref('welcomed', '1');
     renderApp(<App />, { path: '/settings' });
     expect(await screen.findByTestId('identity-label')).toHaveTextContent('Guest');
@@ -54,7 +54,7 @@ describe('with flags on', () => {
     const storage = await import('../lib/storage');
     storage.writePref('welcomed', '1');
     render2(<FlaggedApp />);
-    const nav = (await screen.findAllByRole('navigation', { name: 'Main' }))[0];
+    const nav = (await screen.findAllByRole('navigation', { name: 'Main navigation' }))[0];
     expect(within(nav as HTMLElement).getByRole('link', { name: 'Clipboard' })).toBeInTheDocument();
     vi.doUnmock('../config/flags');
   });

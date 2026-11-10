@@ -1,6 +1,6 @@
 import { HardDrive, History as HistoryIcon, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Banner, Button, Card, ConfirmDialog, PageHeader } from '../components/ui';
+import { Banner, Button, Card, ConfirmDialog, PageHeader, Screen } from '../components/ui';
 import { useToast } from '../components/Toast';
 import { useI18n } from '../i18n/i18n';
 import { useHistory } from '../features/history/HistoryContext';
@@ -28,7 +28,7 @@ export default function HistoryPage() {
   ];
 
   return (
-    <>
+    <Screen id="history">
       <PageHeader
         title={t('web.hi_h')}
         subtitle={
@@ -46,13 +46,25 @@ export default function HistoryPage() {
       {error && <Banner tone="danger" role="alert" title={t('product.history_unavailable')} />}
       <div className="flex flex-wrap items-center gap-[10px]">
         <div role="tablist" aria-label={t('web.hi_h')} className="flex gap-1 rounded-md bg-surface-2 p-1">
-          {tabs.map((o) => (
+          {tabs.map((o, i) => (
             <button
               key={o.value}
+              id={`history-tab-${o.value}`}
               type="button"
               role="tab"
               aria-selected={filter.tab === o.value}
+              aria-controls="history-panel"
+              tabIndex={filter.tab === o.value ? 0 : -1}
               onClick={() => set({ tab: o.value })}
+              onKeyDown={(e) => {
+                const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+                if (!step) return;
+                e.preventDefault();
+                const next = tabs[(i + step + tabs.length) % tabs.length];
+                if (!next) return;
+                set({ tab: next.value });
+                document.getElementById(`history-tab-${next.value}`)?.focus();
+              }}
               className={`min-h-[34px] rounded-sm px-[14px] text-caption font-semibold ${filter.tab === o.value ? 'bg-surface text-fg shadow-e1' : 'text-fg-2'}`}
             >
               {o.label}
@@ -106,30 +118,32 @@ export default function HistoryPage() {
           ))}
         </select>
       </div>
-      {loading ? (
-        <div aria-hidden className="h-[120px] animate-pulse rounded-[16px] bg-surface-2" />
-      ) : shown.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-[16px] border border-dashed border-border-strong bg-surface px-[20px] py-[40px] text-center">
-          <span
-            aria-hidden
-            className="flex h-[48px] w-[48px] items-center justify-center rounded-lg bg-surface-2 text-fg-2"
-          >
-            <HistoryIcon size={22} />
-          </span>
-          <b>{entries.length === 0 ? t('common.empty_h') : t('common.h_empty_h')}</b>
-          <span className="max-w-[420px] text-[14px] text-fg-2">
-            {entries.length === 0 ? t('common.empty_p') : t('common.h_empty_p')}
-          </span>
-        </div>
-      ) : (
-        <Card className="overflow-hidden">
-          <ul className="m-0 list-none p-0">
-            {shown.map((h) => (
-              <HistoryRow key={h.id} entry={h} />
-            ))}
-          </ul>
-        </Card>
-      )}
+      <div id="history-panel" role="tabpanel" aria-labelledby={`history-tab-${filter.tab}`}>
+        {loading ? (
+          <div aria-hidden className="h-[120px] animate-pulse rounded-[16px] bg-surface-2" />
+        ) : shown.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-[16px] border border-dashed border-border-strong bg-surface px-[20px] py-[40px] text-center">
+            <span
+              aria-hidden
+              className="flex h-[48px] w-[48px] items-center justify-center rounded-lg bg-surface-2 text-fg-2"
+            >
+              <HistoryIcon size={22} />
+            </span>
+            <b>{entries.length === 0 ? t('common.empty_h') : t('common.h_empty_h')}</b>
+            <span className="max-w-[420px] text-[14px] text-fg-2">
+              {entries.length === 0 ? t('common.empty_p') : t('common.h_empty_p')}
+            </span>
+          </div>
+        ) : (
+          <Card className="overflow-hidden">
+            <ul className="m-0 list-none p-0">
+              {shown.map((h) => (
+                <HistoryRow key={h.id} entry={h} />
+              ))}
+            </ul>
+          </Card>
+        )}
+      </div>
       <ConfirmDialog
         open={confirm}
         title={t('common.hc_h')}
@@ -141,12 +155,17 @@ export default function HistoryPage() {
         onCancel={() => setConfirm(false)}
         onConfirm={async () => {
           setBusy(true);
-          await clear();
-          setBusy(false);
-          setConfirm(false);
-          toast.show(t('common.n_cleared'));
+          try {
+            await clear();
+            toast.show(t('common.n_cleared'));
+          } catch {
+            toast.show(t('product.history_unavailable'));
+          } finally {
+            setBusy(false);
+            setConfirm(false);
+          }
         }}
       />
-    </>
+    </Screen>
   );
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -152,7 +153,7 @@ func TestRequestLogHasIPHashNotAddress(t *testing.T) {
 	h := NewHandler(Options{Logger: logging.New(&buf, "debug"), LogKey: []byte("k"),
 		ClientIP: func(*http.Request) netip.Addr { return netip.MustParseAddr("198.51.100.23") }})
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if !strings.Contains(buf.String(), "ip_hash") || strings.Contains(buf.String(), "198.51.100") {
-		t.Fatalf("log line: %s", buf.String())
+	if !regexp.MustCompile(`"ip_hash":"[0-9a-f]{16}"`).MatchString(buf.String()) || strings.Contains(buf.String(), "198.51.100") {
+		t.Fatalf("log line must carry a 16-hex ip_hash and no address: %s", buf.String())
 	}
 }

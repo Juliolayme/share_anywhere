@@ -13,10 +13,11 @@ import {
 } from 'lucide-react';
 import { useRef, useState, type DragEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Banner, Button, Card } from '../components/ui';
+import { Banner, Button, Card, Screen } from '../components/ui';
 import { useI18n } from '../i18n/i18n';
 import { flags } from '../config/flags';
 import { formatBytes } from '../lib/format';
+import { useOnline } from '../lib/online';
 
 /** Session limit (PRD §6.1). */
 export const SESSION_LIMIT_BYTES = 20e9;
@@ -38,7 +39,7 @@ function Steps({ current }: { current: 1 | 2 | 3 }) {
   const { t } = useI18n();
   const labels = [t('product.step_choose'), t('product.step_share'), t('web_vv.k52')];
   return (
-    <ol aria-label="Steps" className="m-0 flex list-none flex-wrap gap-2 p-0 text-caption font-semibold">
+    <ol aria-label={t('product.steps')} className="m-0 flex list-none flex-wrap gap-2 p-0 text-caption font-semibold">
       {labels.map((l, i) => (
         <li key={l} className="flex items-center gap-2" aria-current={i + 1 === current ? 'step' : undefined}>
           {i > 0 && (
@@ -67,6 +68,7 @@ function Steps({ current }: { current: 1 | 2 | 3 }) {
  */
 export default function SendPicker() {
   const { t, locale } = useI18n();
+  const online = useOnline();
   const [files, setFiles] = useState<Picked[]>([]);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -85,7 +87,7 @@ export default function SendPicker() {
   };
 
   return (
-    <>
+    <Screen id="send">
       <div className="flex flex-col gap-[6px]">
         <Link
           to="/"
@@ -97,6 +99,11 @@ export default function SendPicker() {
         <h1 className="m-0 text-[clamp(24px,3vw,30px)] font-bold tracking-[-0.025em]">{t('web.choose_h')}</h1>
       </div>
       <Steps current={1} />
+      {!online && (
+        <Banner tone="offline" title={t('common.off_h')}>
+          {t('common.off_p')}
+        </Banner>
+      )}
       {/* Drag and drop is an extra path; the file input inside the label is the keyboard-accessible control. */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <label
@@ -191,7 +198,6 @@ export default function SendPicker() {
           </div>
         </Card>
       )}
-      {files.length > 0 && !flags.sharing && <Banner tone="info">{t('product.sharing_soon')}</Banner>}
-    </>
+    </Screen>
   );
 }

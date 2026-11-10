@@ -61,7 +61,7 @@ func newPGStore(t *testing.T) *PGStore {
 func TestPGStoreLifecycle(t *testing.T) {
 	store := newPGStore(t)
 	f := newFixture(t, store)
-	s0, err := f.svc.Create(ctx, "a", CreateInput{Platform: "Web", DisplayName: "Desk"})
+	s0, err := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web", DisplayName: "Desk"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,10 +93,13 @@ func TestPGStoreLifecycle(t *testing.T) {
 	}
 
 	// Reset and purge.
-	s2, _ := f.svc.Create(ctx, "b", CreateInput{Platform: "Web"})
+	s2, _ := f.svc.Create(ctx, "b", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	n, err := f.svc.Reset(ctx, s2.Device.ID, "b")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got, _ := store.GetDevice(ctx, n.Device.ID); got.Transport != TransportCookie {
+		t.Fatalf("reset must keep the refresh transport, got %q", got.Transport)
 	}
 	f.clk.Advance(25 * time.Hour)
 	purged, err := f.svc.Purge(ctx)
@@ -120,7 +123,7 @@ func TestPGStoreLifecycle(t *testing.T) {
 func TestPGStoreConcurrentRefresh(t *testing.T) {
 	store := newPGStore(t)
 	f := newFixture(t, store)
-	s, _ := f.svc.Create(ctx, "a", CreateInput{Platform: "Web"})
+	s, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	var wg sync.WaitGroup
 	results := make([]error, 2)
 	for i := range results {

@@ -92,7 +92,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Revoke this device identity and issue a new anonymous one. */
+        /**
+         * Revoke this device identity and issue a new anonymous one.
+         * @description No request body. The new identity keeps the refresh transport the old device was created with.
+         */
         post: operations["resetCurrentDevice"];
         delete?: never;
         options?: never;
@@ -162,7 +165,10 @@ export interface components {
             /** @example Chrome on macOS */
             platform: string;
             pow?: components["schemas"]["PowSolution"];
-            /** @enum {string} */
+            /**
+             * @description Fixed for the device's lifetime. Refresh and reset answer the same way; "cookie" secrets never appear in a response body.
+             * @enum {string}
+             */
             transport: "cookie" | "body";
         };
         Device: {
@@ -218,13 +224,8 @@ export interface components {
             status: "ok" | "unavailable";
         };
         RefreshRequest: {
+            /** @description Native apps only. The Web sends no body and uses the sa_device cookie. */
             refresh_secret?: string;
-            /** @enum {string} */
-            transport?: "cookie" | "body";
-        };
-        ResetDeviceRequest: {
-            /** @enum {string} */
-            transport?: "cookie" | "body";
         };
         UpdateDeviceRequest: {
             display_name: string;
@@ -430,11 +431,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["ResetDeviceRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description New anonymous identity. */
             201: {

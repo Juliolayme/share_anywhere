@@ -14,7 +14,7 @@ var ctx = context.Background()
 
 func TestCreateVerifyAndGeneratedName(t *testing.T) {
 	f := newFixture(t, nil)
-	s, err := f.svc.Create(ctx, "1.2.3.4", CreateInput{Platform: "Web · Chrome"})
+	s, err := f.svc.Create(ctx, "1.2.3.4", CreateInput{Transport: TransportCookie, Platform: "Web · Chrome"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestCreateValidation(t *testing.T) {
 			t.Errorf("%+v: got %v", in, err)
 		}
 	}
-	s, err := f.svc.Create(ctx, "a", CreateInput{Platform: " Web ", DisplayName: "  My\u202e   laptop\n"})
+	s, err := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: " Web ", DisplayName: "  My\u202e   laptop\n"})
 	if err != nil || s.Device.DisplayName != "My laptop" || s.Device.Platform != "Web" {
 		t.Fatalf("cleaning: %+v %v", s.Device, err)
 	}
@@ -48,24 +48,24 @@ func TestCreateValidation(t *testing.T) {
 func TestProofOfWorkAboveSoftLimitThenHardLimit(t *testing.T) {
 	f := newFixture(t, nil)
 	for i := 0; i < 3; i++ {
-		if _, err := f.svc.Create(ctx, "ip", CreateInput{Platform: "Web"}); err != nil {
+		if _, err := f.svc.Create(ctx, "ip", CreateInput{Transport: TransportCookie, Platform: "Web"}); err != nil {
 			t.Fatalf("create %d within the soft limit: %v", i, err)
 		}
 	}
-	_, err := f.svc.Create(ctx, "ip", CreateInput{Platform: "Web"})
+	_, err := f.svc.Create(ctx, "ip", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	var pow *PoWRequiredError
 	if !errors.As(err, &pow) || pow.Difficulty != testDifficulty {
 		t.Fatalf("4th create should require proof of work, got %v", err)
 	}
 	// A wrong solution gets a fresh challenge, not a device.
-	if _, err := f.svc.Create(ctx, "ip", CreateInput{Platform: "Web", PoWToken: pow.Token, PoWSolution: "nope"}); !errors.As(err, &pow) {
+	if _, err := f.svc.Create(ctx, "ip", CreateInput{Transport: TransportCookie, Platform: "Web", PoWToken: pow.Token, PoWSolution: "nope"}); !errors.As(err, &pow) {
 		t.Fatalf("bad solution: %v", err)
 	}
 	// Each solved challenge admits one device until the hard limit of 10/hour.
 	created := 3
 	for created < 10 {
 		tok, diff := f.pow.Challenge("ip")
-		_, err := f.svc.Create(ctx, "ip", CreateInput{Platform: "Web", PoWToken: tok, PoWSolution: solve(tok, diff)})
+		_, err := f.svc.Create(ctx, "ip", CreateInput{Transport: TransportCookie, Platform: "Web", PoWToken: tok, PoWSolution: solve(tok, diff)})
 		if err != nil {
 			// Earlier failed attempts above also spent hard-limit tokens.
 			var rl *RateLimitedError
@@ -77,25 +77,25 @@ func TestProofOfWorkAboveSoftLimitThenHardLimit(t *testing.T) {
 		created++
 	}
 	tok, diff := f.pow.Challenge("ip")
-	_, err = f.svc.Create(ctx, "ip", CreateInput{Platform: "Web", PoWToken: tok, PoWSolution: solve(tok, diff)})
+	_, err = f.svc.Create(ctx, "ip", CreateInput{Transport: TransportCookie, Platform: "Web", PoWToken: tok, PoWSolution: solve(tok, diff)})
 	var rl *RateLimitedError
 	if !errors.As(err, &rl) || rl.Wait <= 0 {
 		t.Fatalf("over the hard limit: want RateLimitedError, got %v", err)
 	}
 	// Another address is unaffected.
-	if _, err := f.svc.Create(ctx, "other", CreateInput{Platform: "Web"}); err != nil {
+	if _, err := f.svc.Create(ctx, "other", CreateInput{Transport: TransportCookie, Platform: "Web"}); err != nil {
 		t.Fatal(err)
 	}
 	// The limit refills over time.
 	f.clk.Advance(time.Hour)
-	if _, err := f.svc.Create(ctx, "ip", CreateInput{Platform: "Web"}); err != nil {
+	if _, err := f.svc.Create(ctx, "ip", CreateInput{Transport: TransportCookie, Platform: "Web"}); err != nil {
 		t.Fatalf("after an hour: %v", err)
 	}
 }
 
 func TestRefreshRotationAndReuseRevokes(t *testing.T) {
 	f := newFixture(t, nil)
-	s0, _ := f.svc.Create(ctx, "a", CreateInput{Platform: "Web"})
+	s0, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	f.clk.Advance(time.Minute)
 	s1, err := f.svc.Refresh(ctx, s0.Secret)
 	if err != nil {
@@ -128,7 +128,7 @@ func TestRefreshRotationAndReuseRevokes(t *testing.T) {
 
 func TestRefreshRateLimitPerDevice(t *testing.T) {
 	f := newFixture(t, nil)
-	s, _ := f.svc.Create(ctx, "a", CreateInput{Platform: "Web"})
+	s, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	secret := s.Secret
 	for i := 0; i < 60; i++ {
 		n, err := f.svc.Refresh(ctx, secret)
@@ -151,7 +151,7 @@ func TestRefreshRateLimitPerDevice(t *testing.T) {
 
 func TestRenameResetAndExpiry(t *testing.T) {
 	f := newFixture(t, nil)
-	s, _ := f.svc.Create(ctx, "a", CreateInput{Platform: "Web"})
+	s, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	d, err := f.svc.Rename(ctx, s.Device.ID, "Kitchen PC")
 	if err != nil || d.DisplayName != "Kitchen PC" {
 		t.Fatalf("rename: %v", err)
@@ -181,10 +181,10 @@ func TestRenameResetAndExpiry(t *testing.T) {
 
 func TestPurge(t *testing.T) {
 	f := newFixture(t, nil)
-	stale, _ := f.svc.Create(ctx, "a", CreateInput{Platform: "Web"})
-	revoked, _ := f.svc.Create(ctx, "a", CreateInput{Platform: "Web"})
+	stale, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
+	revoked, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	f.clk.Advance(29 * 24 * time.Hour)
-	fresh, _ := f.svc.Create(ctx, "b", CreateInput{Platform: "Web"})
+	fresh, _ := f.svc.Create(ctx, "b", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	if _, err := f.svc.Reset(ctx, revoked.Device.ID, "c"); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestPurge(t *testing.T) {
 
 func TestVerifyCachesButSeesLocalRevocation(t *testing.T) {
 	f := newFixture(t, nil)
-	s, _ := f.svc.Create(ctx, "a", CreateInput{Platform: "Web"})
+	s, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	if _, err := f.svc.Verify(ctx, s.AccessToken); err != nil {
 		t.Fatal(err)
 	}

@@ -26,7 +26,7 @@ Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
   - `httpx`: the error format and `Retry-After`.
   - `config`: token keys, server secret, trusted proxies, cookie `Secure`, proof-of-work difficulty, migrate on start, and the test-only rate-limit multiplier.
   - Request logs carry `ip_hash` (a keyed hash of the /24 or /48) instead of the address.
-- **Migration `0001_devices`**: tables `devices` and `device_refresh_secrets`.
+- **Migrations**: `0001_devices` (tables `devices` and `device_refresh_secrets`) and `0002_device_refresh_transport` (the refresh transport fixed per device, so a Web secret never leaves the HttpOnly cookie).
 - **Contract**:
   - `shared/protocol/openapi.yaml` declares `x-sa-access` on all 10 operations.
   - Go types are generated with oapi-codegen (`go generate`), TypeScript types with openapi-typescript (`pnpm protocol`).
@@ -41,8 +41,8 @@ Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
   - Header: online and identity status, language and theme toggles, and a skip link.
   - The Clipboard tab and every Sign in entry are hidden by flags (`web/src/config/flags.ts`).
 - `home` (TR-1): Send and Receive cards, offline banner, inline identity notice (offline, rate limited with a countdown and a disabled retry, failed with retry), recent local history or the empty state, and a This device card.
-- `send` / `send-review` (TR-2/3): real file input with drag and drop, file list with remove, total, and the 20 GB limit error. **Create** sits behind the `sharing` flag, and an info banner says sharing is not in this version.
-- `receive` (RX-1): six digit cells with paste, arrow and backspace navigation, validation (`product.code_incomplete`), and same-origin `/j/<token>` link validation. **Join** sits behind the `sharing` flag.
+- `send` / `send-review` (TR-2/3): real file input with drag and drop, file list with remove, total, and the 20 GB limit error. **Create** sits behind the `sharing` flag. Offline banner as on Transfer home.
+- `receive` (RX-1): six digit cells with paste, arrow and backspace navigation, inline validation when focus leaves an incomplete code (`product.code_incomplete`), and same-origin `/j/<token>` link validation on blur. **Continue**, **Open link** and the QR hint sit behind the `sharing` flag.
 - `history` (HI-1): IndexedDB store with tabs, search, status, date and device filters, retention sweep, clear with confirmation, loading, empty, no-match, and storage-blocked states.
 - `devices` (DV-1): This device with rename (validated, toast) and Reset device identity (confirmation; the old token stops working at once).
 - `settings` (ST-1, guest): Guest header without Sign in, device name, theme System/Light/Dark, language English/Tiếng Việt, history retention 30 / 90 days / Don't keep, Clear history, privacy text, version.
@@ -60,13 +60,12 @@ Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
 
 ### Implemented but untested
 
-- Firefox, WebKit, and `ios-safari` runs of the guest suite. They are configured in the CI matrix; results are in §4.
 - Cross-tab refresh serialization with Web Locks. The code path is covered by unit tests with an injected lock; two real tabs refreshing at the same moment were not exercised.
 - Production configuration (`SA_ENV=production` with real keys behind Caddy TLS). Validation is unit-tested; a production deployment is Phase 9.
 
 ### Partially implemented
 
-- **Feature-flagged actions:** Send review has no Create button and Receive has no Join until Phase 2 turns on `sharing`.
+- **Feature-flagged actions:** Send review has no Create button and Receive has no Continue or Open link until Phase 2 turns on `sharing`.
 - **Optional CAPTCHA adapter** (`docs/SECURITY_MODEL.md` §4): not built (backlog P2).
 - **Licenses page:** not built (deviation F7).
 
@@ -91,19 +90,19 @@ Screenshots (Chromium, local Compose stack):
 
 ## 3. End-to-end workflows executed (all as guest)
 
-Local runs used the Compose CI stack (`docker-compose.ci.yml` with host-built binaries, because container builds here have no internet) and Playwright 1.63.0.
+CI results are from run 42787622458 (f6f559c); the specs were updated in the QA round 1 fixes and rerun locally, and CI reruns them on that commit. Local runs used the Compose CI stack (`docker-compose.ci.yml` with host-built binaries, because container builds here have no internet) and Playwright 1.63.0.
 
 | Workflow (`web/e2e/`) | chromium-desktop | android-chrome | firefox-desktop | webkit-desktop | ios-safari |
 |---|---|---|---|---|---|
-| Welcome → Start sharing → Transfer home, no sign-in anywhere, Welcome only once | Passed locally | Passed locally | CI | CI | CI |
-| Reload keeps the same device ID | Passed locally | Passed locally | CI | CI | CI |
-| Rename in Devices, name shown in Settings and kept after reload; Settings says Guest | Passed locally | Passed locally | CI | CI | CI |
-| Theme and language persist across reloads | Passed locally | Passed locally | CI | CI | CI |
-| Reset identity gives a new device ID that survives reload | Passed locally | Passed locally | CI | CI | CI |
-| Simulated `429` shows the wait time and a disabled retry; navigation still works | Passed locally | Passed locally | CI | CI | CI |
-| Code entry validation | Passed locally | Passed locally | CI | CI | CI |
-| History empty state and local-only label | Passed locally | Passed locally | CI | CI | CI |
-| Mobile: bottom navigation, touch targets ≥ 44 px, no horizontal scroll, code cells | skipped (desktop) | Passed locally | skipped | skipped | CI |
+| Welcome → Start sharing → Transfer home, no sign-in anywhere, Welcome only once | Passed locally | Passed locally | Passed in CI | Passed in CI | Passed in CI |
+| Reload keeps the same device ID | Passed locally | Passed locally | Passed in CI | Passed in CI | Passed in CI |
+| Rename in Devices, name shown in Settings and kept after reload; Settings says Guest | Passed locally | Passed locally | Passed in CI | Passed in CI | Passed in CI |
+| Theme and language persist across reloads | Passed locally | Passed locally | Passed in CI | Passed in CI | Passed in CI |
+| Reset identity gives a new device ID that survives reload | Passed locally | Passed locally | Passed in CI | Passed in CI | Passed in CI |
+| Simulated `429` shows the wait time and a disabled retry; navigation still works | Passed locally | Passed locally | Passed in CI | Passed in CI | Passed in CI |
+| Code entry validation | Passed locally | Passed locally | Passed in CI | Passed in CI | Passed in CI |
+| History empty state and local-only label | Passed locally | Passed locally | Passed in CI | Passed in CI | Passed in CI |
+| Mobile: bottom navigation, touch targets ≥ 44 px, no horizontal scroll, code cells | skipped (desktop) | Passed locally | skipped | skipped | Passed in CI |
 
 Server-side flows were also checked by hand against the binary with a real PostgreSQL 16: create with cookie, refresh with `X-SA-Refresh`, migrations applied, `/readyz` database ok.
 
@@ -117,12 +116,13 @@ Server-side flows were also checked by hand against the binary with a real Postg
 | `govulncheck ./...` (v1.9.0) | No vulnerabilities |
 | `pnpm protocol:check` | 10 operations valid and in agreement with `docs/API.md`; generated client current |
 | `pnpm tokens:check`, `i18n:check` (1625 keys each), `brand:check`, `test:scripts` (20/20), `lint:md`, `pnpm audit` | All pass, no known vulnerabilities |
-| `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 42 unit tests in 8 files |
+| `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 44 unit tests |
 | `pnpm --filter web build` | Main JS 90.5 kB gzip (budget 120 kB); Vietnamese catalog chunk 13 kB gzip |
 | `playwright test --project=chromium-desktop --project=android-chrome` | 18 passed, 2 skipped (mobile-only specs on desktop) |
 | `docker compose -f docker-compose.ci.yml up --wait` (host-built images) | All services healthy; `/readyz` database ok; web CSP header present |
 | CI run 42784930757 (backend commit 38580ab) | success |
-| CI run 42787423644 (Web commit 0a37732) | failure: the Web image build lacked `shared/i18n` (compose and e2e-web). Fixed in f6f559c; later runs are recorded in `docs/qa/PHASE_1_QA.md` |
+| CI run 42787423644 (Web commit 0a37732) | failure: the Web image build lacked `shared/i18n` (compose and e2e-web) |
+| CI run 42787622458 attempt 2 (f6f559c) | success in every job, including `e2e-web` on chromium-desktop, firefox-desktop, webkit-desktop, android-chrome, ios-safari |
 
 ## 5. Environment variables and external services
 
@@ -179,4 +179,5 @@ pnpm --filter @share-anywhere/web exec playwright test --project=chromium-deskto
 | 38580ab | Backend: anonymous device identity, access levels, WebSocket tickets, migrations, protocol tooling, ADR 0007/0008 |
 | 0a37732 | Web: guest-first shell, identity client, IndexedDB history, Playwright suite, e2e-web CI job, CSP, IP hashing in logs |
 | f6f559c | Web image build copies `shared/i18n` (CI compose and e2e-web fix) |
-| (this commit) | Phase 1 report |
+| ff48c53 | Phase 1 report |
+| (this commit) | QA round 1 fixes: fixed refresh transport, `ip_hash` logging, Receive without dead actions, screen IDs, landmark strings, JSON-only bodies, theme sync, docs |

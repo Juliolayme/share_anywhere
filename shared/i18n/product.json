@@ -74,8 +74,6 @@
     "scan_hint": "On a phone? Scan the sender’s QR with the Share Anywhere app or your camera.",
     "code_incomplete": "Enter all 6 digits.",
     "link_invalid": "That doesn’t look like a Share Anywhere link.",
-    "sharing_soon": "Share sessions aren’t available in this version yet. Your selection stays here until you leave.",
-    "joining_soon": "Joining isn’t available in this version yet. The code format is checked here.",
     "version_web": "Share Anywhere Web {version}",
     "lang_en": "English",
     "lang_vi": "Tiếng Việt",
@@ -87,7 +85,9 @@
     "skip_to_content": "Skip to content",
     "not_found_h": "Page not found",
     "back_home": "Back to Transfer",
-    "history_unavailable": "History isn’t available because this browser blocks site storage."
+    "history_unavailable": "History isn’t available because this browser blocks site storage.",
+    "nav_main": "Main navigation",
+    "steps": "Steps"
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -163,8 +163,6 @@
     "scan_hint": "Đang dùng điện thoại? Quét mã QR của người gửi bằng ứng dụng Share Anywhere hoặc camera.",
     "code_incomplete": "Hãy nhập đủ 6 chữ số.",
     "link_invalid": "Đây không phải liên kết Share Anywhere.",
-    "sharing_soon": "Phiên bản này chưa có phiên chia sẻ. Lựa chọn của bạn được giữ ở đây cho đến khi bạn rời trang.",
-    "joining_soon": "Phiên bản này chưa hỗ trợ vào phiên. Định dạng mã được kiểm tra tại đây.",
     "version_web": "Share Anywhere Web {version}",
     "lang_en": "English",
     "lang_vi": "Tiếng Việt",
@@ -176,6 +174,8 @@
     "skip_to_content": "Bỏ qua đến nội dung",
     "not_found_h": "Không tìm thấy trang",
     "back_home": "Về Truyền tệp",
-    "history_unavailable": "Không dùng được lịch sử vì trình duyệt đang chặn bộ nhớ của trang."
+    "history_unavailable": "Không dùng được lịch sử vì trình duyệt đang chặn bộ nhớ của trang.",
+    "nav_main": "Điều hướng chính",
+    "steps": "Các bước"
   }
 }

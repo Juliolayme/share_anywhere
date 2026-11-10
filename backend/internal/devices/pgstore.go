@@ -18,11 +18,11 @@ type PGStore struct {
 // NewPGStore returns a store backed by pool.
 func NewPGStore(pool *pgxpool.Pool) *PGStore { return &PGStore{pool: pool} }
 
-const deviceColumns = `id::text, kind, display_name, platform, refresh_generation, created_at, last_seen_at, expires_at, revoked_at`
+const deviceColumns = `id::text, kind, display_name, platform, refresh_transport, refresh_generation, created_at, last_seen_at, expires_at, revoked_at`
 
 func scanDevice(row pgx.Row) (Device, error) {
 	var d Device
-	err := row.Scan(&d.ID, &d.Kind, &d.DisplayName, &d.Platform, &d.Generation, &d.CreatedAt, &d.LastSeenAt, &d.ExpiresAt, &d.RevokedAt)
+	err := row.Scan(&d.ID, &d.Kind, &d.DisplayName, &d.Platform, &d.Transport, &d.Generation, &d.CreatedAt, &d.LastSeenAt, &d.ExpiresAt, &d.RevokedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Device{}, ErrNotFound
 	}
@@ -32,9 +32,9 @@ func scanDevice(row pgx.Row) (Device, error) {
 func (s *PGStore) CreateDevice(ctx context.Context, d Device, secretHash []byte) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO devices (id, kind, display_name, platform, refresh_generation, created_at, last_seen_at, expires_at)
-			 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)`,
-			d.ID, d.Kind, d.DisplayName, d.Platform, d.Generation, d.CreatedAt, d.LastSeenAt, d.ExpiresAt); err != nil {
+			`INSERT INTO devices (id, kind, display_name, platform, refresh_transport, refresh_generation, created_at, last_seen_at, expires_at)
+			 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			d.ID, d.Kind, d.DisplayName, d.Platform, d.Transport, d.Generation, d.CreatedAt, d.LastSeenAt, d.ExpiresAt); err != nil {
 			return fmt.Errorf("insert device: %w", err)
 		}
 		if _, err := tx.Exec(ctx,

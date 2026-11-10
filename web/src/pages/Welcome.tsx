@@ -17,7 +17,7 @@ export default function Welcome() {
     navigate('/', { replace: true });
   };
   return (
-    <div className="flex min-h-screen flex-col">
+    <div data-screen="welcome" className="flex min-h-screen flex-col">
       <div className="flex items-center justify-between gap-3 px-[clamp(16px,4vw,40px)] py-4">
         <Logo size={32} lockup />
         <HeaderControls />

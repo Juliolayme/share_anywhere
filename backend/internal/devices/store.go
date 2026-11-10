@@ -13,11 +13,13 @@ type Device struct {
 	Kind        string
 	DisplayName string
 	Platform    string
-	Generation  int
-	CreatedAt   time.Time
-	LastSeenAt  time.Time
-	ExpiresAt   time.Time
-	RevokedAt   *time.Time
+	// Transport is how refresh secrets reach this device: "cookie" (Web) or "body" (native), fixed at creation.
+	Transport  string
+	Generation int
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+	RevokedAt  *time.Time
 }
 
 // Active reports whether the device can still be used at now.

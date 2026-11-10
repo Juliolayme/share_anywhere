@@ -24,7 +24,7 @@ var sensitiveSubstrings = []string{
 var sensitiveWords = map[string]bool{"ip": true, "code": true, "pin": true}
 
 // safeKeys are allowed even though they contain a sensitive word.
-var safeKeys = map[string]bool{"status_code": true, "http_code": true, "error_code": true}
+var safeKeys = map[string]bool{"status_code": true, "http_code": true, "error_code": true, "ip_hash": true}
 
 var jwtLike = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`)
 

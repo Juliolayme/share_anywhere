@@ -139,11 +139,7 @@ paths:
       operationId: resetCurrentDevice
       x-sa-access: device
       summary: Revoke this device identity and issue a new anonymous one.
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ResetDeviceRequest' }
+      description: No request body. The new identity keeps the refresh transport the old device was created with.
       responses:
         '201':
           description: New anonymous identity.
@@ -257,19 +253,16 @@ components:
       properties:
         platform: { type: string, minLength: 1, maxLength: 60, example: Chrome on macOS }
         display_name: { type: string, minLength: 1, maxLength: 40 }
-        transport: { type: string, enum: [cookie, body] }
+        transport:
+          type: string
+          enum: [cookie, body]
+          description: Fixed for the device's lifetime. Refresh and reset answer the same way; "cookie" secrets never appear in a response body.
         pow: { $ref: '#/components/schemas/PowSolution' }
     RefreshRequest:
       type: object
       additionalProperties: false
       properties:
-        refresh_secret: { type: string }
-        transport: { type: string, enum: [cookie, body] }
-    ResetDeviceRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        transport: { type: string, enum: [cookie, body] }
+        refresh_secret: { type: string, description: Native apps only. The Web sends no body and uses the sa_device cookie. }
     UpdateDeviceRequest:
       type: object
       required: [display_name]

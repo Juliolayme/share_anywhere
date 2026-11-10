@@ -106,6 +106,14 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 410 | `join_window_expired` | The 10-minute join window for this code, link, or QR has ended or was replaced by Create new code |
 | 410 | `session_not_accepting`, `session_expired` | Sender tapped Stop accepting, or the session lifetime ended |
 | 429 | `rate_limited`, `locked_out` | With `Retry-After` header and `retry_after_s` |
+| 400 | `invalid_request` | Malformed body, unknown field, or a non-empty body without `Content-Type: application/json` |
+| 401 | `refresh_invalid`, `refresh_reused` | Unknown, expired or revoked refresh secret; a consumed secret presented again (the device is revoked) |
+| 401 | `ticket_invalid` | WebSocket ticket missing, used, or expired |
+| 403 | `csrf_header_missing` | Cookie refresh without `X-SA-Refresh: 1` |
+| 403 | `origin_not_allowed` | WebSocket upgrade from an origin outside `SA_ALLOWED_ORIGINS` |
+| 405 | `method_not_allowed` | Known path, wrong method; `Allow` header lists the methods |
+| 428 | `pow_required` | Device creation above the soft limit; body carries the proof-of-work challenge |
+| 429 | `too_many_connections` | WebSocket cap per device or address reached |
 
 ## 4. WebSocket
 

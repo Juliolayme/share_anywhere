@@ -1,6 +1,6 @@
 import { ArrowDownLeft, ArrowUpRight, Inbox, Laptop } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Banner, Card } from '../components/ui';
+import { Banner, Card, Screen } from '../components/ui';
 import { useI18n } from '../i18n/i18n';
 import { useOnline } from '../lib/online';
 import { useIdentity } from '../lib/identity/identity';
@@ -17,7 +17,7 @@ export default function TransferHome() {
   const recent = entries.slice(0, 5);
 
   return (
-    <>
+    <Screen id="home">
       <div className="flex flex-col gap-[6px]">
         <h1 className="m-0 text-[clamp(26px,3vw,32px)] font-bold tracking-[-0.025em]">{t('web.home_h')}</h1>
         <p className="m-0 text-fg-2 [text-wrap:pretty]">{t('web.home_p')}</p>
@@ -115,6 +115,6 @@ export default function TransferHome() {
           </div>
         </div>
       </Card>
-    </>
+    </Screen>
   );
 }

@@ -280,3 +280,15 @@ export function ConfirmDialog({
     </div>
   );
 }
+
+/**
+ * Root of a screen, tagged with its design screen ID (docs/UX_SCREEN_MAP.md §12) so tests and QA can
+ * locate it. `display: contents` keeps the parent layout unchanged.
+ */
+export function Screen({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div data-screen={id} className="contents">
+      {children}
+    </div>
+  );
+}

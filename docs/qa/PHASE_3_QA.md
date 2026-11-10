@@ -125,6 +125,27 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 | UX_SCREEN_MAP TR-6 states lacked waiting and offline | P2 | Added |
 | Stale report numbers | P2 | Key count, CI rows, dial timings |
 
-## Round 6
+## Round 6 — commit b12ac19 — FAIL
+
+0 P0, 1 P1, 4 P2. Every round-5 fix held, with no regression. QA scenarios E–H passed on chromium, firefox and webkit:
+
+- E: sender pause, receiver leaves, Resume.
+- F: receiver leaves, sender reloads.
+- G: refresh and `SOCKET_OPEN` during a live transfer.
+- H: receiver navigates away and back.
+
+The backend, web checks (123 unit tests), protocol, i18n, tokens and markdown all passed, and so did 25 local transfer specs. CI 42868022615 on b12ac19 was green in all 12 jobs; Firefox had 34 passed, 0 flaky, no retries.
+
+### Resolution of round 6 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Relay route chip used the Cloud colors and the wrong icon | P1 | Relay is blue (`send-soft` / `send-ink`) with `RadioTower`; the badge is 26 px tall with a 6 px gap and 10 px padding, as in the Design System |
+| Stale report numbers | P2 | Unit test count, bundle size, CI 42868022615 |
+| G15 covered only TR-5 | P2 | Now TR-5 and TR-6 |
+| No test locked in "mute, don't close" on `pagehide` | P2 | Controller test (no `pc.close()` on suspend; `wake()` tears down and redials) and engine test (a muted connection sends nothing) |
+| Route chip stale while reconnecting | P2 | Hidden while connecting, reconnecting, unreachable or offline (G9 notes it instead of the probe badge) |
+
+## Round 7
 
 Pending.

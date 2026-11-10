@@ -258,3 +258,24 @@ describe('Throughput', () => {
     expect(t.estimate(12_000_000, 100_000_000).seconds).not.toBeNull();
   });
 });
+
+describe('ReceiverConnection.mute', () => {
+  it('sends nothing once muted (the page is going away)', () => {
+    const [a] = channelPair();
+    const rx = new ReceiverConnection({
+      channel: a,
+      hello: { v: 1, role: 'receiver', session_id: 's', participant_id: 'p', capability: 'c' },
+      prepare: async () => {
+        throw new Error('not used');
+      },
+    });
+    rx.start();
+    const sent = a.sent;
+    expect(sent).toBeGreaterThan(0); // HELLO went out
+    rx.mute();
+    rx.pause();
+    rx.resume();
+    rx.cancel();
+    expect(a.sent).toBe(sent);
+  });
+});

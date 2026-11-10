@@ -392,7 +392,7 @@ function ReceiverCard({
         <TransferChip state={r.status as ChipState} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <RouteChip route={r.route} />
+        <RouteChip route={['reconnecting', 'connecting', 'offline', 'waiting'].includes(r.status) ? null : r.route} />
         {!ended && <span className="font-mono text-[12px] text-fg-2">{speed(r.bytesPerSecond)}</span>}
       </div>
       <div className="flex flex-col gap-[6px]">

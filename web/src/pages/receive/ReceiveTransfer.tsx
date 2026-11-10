@@ -201,7 +201,10 @@ export function ReceiveTransfer({
             <span className="text-[13px] font-semibold text-fg-2">{t('product.rx_from', { name: senderName })}</span>
             <h1 className="m-0 mt-1 text-[clamp(24px,3vw,30px)] tracking-[-0.025em]">{t('web.receiving')}</h1>
           </div>
-          <RouteChip route={s.route} />
+          {/* The route is known only while a channel is open; hidden while (re)connecting. */}
+          <RouteChip
+            route={s.phase === 'reconnecting' || s.phase === 'connecting' || s.phase === 'unreachable' ? null : s.route}
+          />
         </div>
         <Card className="flex flex-col gap-3 px-[20px] py-[18px]" as="section">
           <div className="flex flex-wrap items-center justify-between gap-3">

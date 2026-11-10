@@ -9,7 +9,7 @@ import {
   Loader,
   Pause,
   RefreshCw,
-  Radio,
+  RadioTower,
   ShieldCheck,
   UserX,
   WifiOff,
@@ -72,7 +72,7 @@ export function TransferChip({ state }: { state: ChipState }) {
   );
 }
 
-/** Route badge: Direct (P2P) or Relay (TURN), never color-only. */
+/** Route badge as in the Design System: Direct (P2P, green, zap) or Relay (TURN, blue, radio tower); never color-only. */
 export function RouteChip({ route }: { route: Route | null }) {
   const { t } = useI18n();
   if (!route) return null;
@@ -81,9 +81,9 @@ export function RouteChip({ route }: { route: Route | null }) {
     <span
       data-testid="route-chip"
       data-route={route}
-      className={`inline-flex h-[24px] items-center gap-[5px] rounded-full px-[9px] text-[12px] font-semibold ${direct ? 'bg-receive-soft text-receive-ink' : 'bg-cloud-soft text-cloud-ink'}`}
+      className={`inline-flex h-[26px] items-center gap-[6px] rounded-full px-[10px] text-[12px] font-semibold ${direct ? 'bg-receive-soft text-receive-ink' : 'bg-send-soft text-send-ink'}`}
     >
-      {direct ? <Zap aria-hidden size={14} /> : <Radio aria-hidden size={14} />}
+      {direct ? <Zap aria-hidden size={14} /> : <RadioTower aria-hidden size={14} />}
       {t(direct ? 'handoff.p2p' : 'handoff.relay')}
     </span>
   );

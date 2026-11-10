@@ -36,13 +36,16 @@ function setup(initial: TransferStatus) {
     },
   } as unknown as TransfersApi;
   let dials = 0;
+  let closes = 0;
   const peer = {
     connectionState: 'new',
     createDataChannel: () => ({}),
     createOffer: async () => ({ type: 'offer', sdp: '' }),
     setLocalDescription: async () => undefined,
     localDescription: { toJSON: () => ({ type: 'offer', sdp: '' }) },
-    close: () => undefined,
+    close: () => {
+      closes++;
+    },
     addEventListener: () => undefined,
   } as unknown as RTCPeerConnection;
   const view = {
@@ -75,6 +78,7 @@ function setup(initial: TransferStatus) {
     reports,
     actions,
     dials: () => dials,
+    closes: () => closes,
     server: () => server,
     setServer: (v: TransferStatus) => (server = v),
   };
@@ -178,6 +182,23 @@ describe('ReceiverController', () => {
     t.rx.pause();
     expect(t.rx.state.phase).toBe('verifying');
     expect(t.actions).toEqual([]);
+    t.rx.dispose();
+  });
+  it('suspend on pagehide mutes but does not close the peer connection; wake tears down and redials', async () => {
+    vi.useFakeTimers();
+    const t = setup('TRANSFERRING');
+    await t.rx.init();
+    await vi.advanceTimersByTimeAsync(50);
+    const closes = t.closes();
+    const dials = t.dials();
+    t.rx.suspend();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(t.closes()).toBe(closes); // teardown is left to the browser
+    expect(t.dials()).toBe(dials);
+    t.rx.wake();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(t.closes()).toBe(closes + 1);
+    expect(t.dials()).toBe(dials + 1);
     t.rx.dispose();
   });
 });

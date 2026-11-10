@@ -3,7 +3,7 @@ import type { SessionSocket, SocketEvent } from '../../../lib/ws/socket';
 import type { SessionView } from '../../sharing/api';
 import type { TransferStatus, TransfersApi } from './api';
 import { Throughput } from '../engine/eta';
-import { SenderController } from './sender-controller';
+import { SenderController, sanitizeCandidate } from './sender-controller';
 
 /** A sender tab with one joined receiver and one file, no picked files (so no peer connection is served). */
 function setup(status: TransferStatus, createPeer?: (cfg: RTCConfiguration) => RTCPeerConnection) {
@@ -172,5 +172,57 @@ describe('SenderController', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(added).toHaveLength(4);
     t.tx.dispose();
+  });
+  it('holds early candidates per receiver and connection: stale connections never leak, caps apply', async () => {
+    const added: string[] = [];
+    let remoteSet = false;
+    const pc = {
+      connectionState: 'new',
+      setRemoteDescription: async () => {
+        remoteSet = true;
+      },
+      createAnswer: async () => ({ type: 'answer', sdp: '' }),
+      setLocalDescription: async () => undefined,
+      localDescription: { toJSON: () => ({ type: 'answer', sdp: '' }) },
+      addIceCandidate: async (c: RTCIceCandidateInit) => {
+        if (!remoteSet) throw new Error('no remote description');
+        added.push(c.candidate ?? '');
+      },
+      addEventListener: () => undefined,
+      close: () => undefined,
+    } as unknown as RTCPeerConnection;
+    const t = setup('TRANSFERRING', () => pc);
+    await t.tx.init();
+    const cand = (conn: string, n: number) =>
+      ({
+        type: 'ICE_CANDIDATE',
+        from: 'p1',
+        payload: { conn, candidate: { candidate: `candidate:${n} 1 udp 1 10.0.0.1 ${5000 + n} typ host` } },
+      }) as unknown as SocketEvent;
+    for (let n = 0; n < 3; n++) t.emit(cand('c0', n)); // an abandoned connection
+    for (let n = 0; n < 60; n++) t.emit(cand('c1', n)); // capped at 50
+    t.emit({
+      type: 'OFFER',
+      from: 'p1',
+      payload: { conn: 'c1', sdp: { type: 'offer', sdp: '' } },
+    } as unknown as SocketEvent);
+    await vi.waitFor(() => expect(added).toHaveLength(50));
+    expect(added[0]).toContain('candidate:0 ');
+    expect(added.at(-1)).toContain('candidate:49 ');
+    // The abandoned connection's candidates were never flushed into c1's peer connection.
+    expect(added.filter((c) => c.endsWith('5000 typ host'))).toHaveLength(1);
+    t.tx.dispose();
+  });
+
+  it('keeps only the known, well-formed fields of a relayed candidate', () => {
+    expect(
+      sanitizeCandidate({ candidate: 'candidate:1 1 udp 1 1.2.3.4 1 typ host', sdpMid: '0', extra: 'x'.repeat(9000) }),
+    ).toEqual({
+      candidate: 'candidate:1 1 udp 1 1.2.3.4 1 typ host',
+      sdpMid: '0',
+    });
+    expect(sanitizeCandidate({ candidate: 'x'.repeat(2000) })).toBeNull();
+    expect(sanitizeCandidate({ candidate: 42 })).toBeNull();
+    expect(sanitizeCandidate(null)).toBeNull();
   });
 });

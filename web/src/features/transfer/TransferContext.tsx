@@ -9,6 +9,7 @@ import { useHistory } from '../history/HistoryContext';
 import { useSharing } from '../sharing/SharingContext';
 import type { sessionsApi } from '../sharing/api';
 import { transfersApi } from './runtime/api';
+import { pushDiag } from './runtime/rtc';
 import { getOutbox } from './runtime/outbox';
 import type { Observable } from './runtime/observable';
 import { ReceiverController, rxActive, type RxState } from './runtime/receiver-controller';
@@ -65,7 +66,7 @@ function keepDiagAcrossLoads(sessionId: string, diag: string[]): void {
   try {
     // eslint-disable-next-line no-restricted-globals -- test builds only: ICE diagnostics, no tokens or secrets
     const prev = JSON.parse(sessionStorage.getItem(key) ?? '[]') as string[];
-    diag.push(...prev.map((l) => `prev: ${l}`).slice(-150));
+    for (const l of prev.slice(-150)) pushDiag(diag, `prev: ${l}`);
   } catch {
     /* ignore */
   }

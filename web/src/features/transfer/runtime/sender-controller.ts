@@ -94,6 +94,19 @@ interface Peer {
 
 const RECONNECT_WINDOW_MS = 10 * 60_000;
 
+/** Keeps only the known fields of a relayed candidate, with type and length checks (null when unusable). */
+export function sanitizeCandidate(c: unknown): RTCIceCandidateInit | null {
+  if (!c || typeof c !== 'object') return null;
+  const o = c as Record<string, unknown>;
+  if (typeof o.candidate !== 'string' || !o.candidate || o.candidate.length > 1024) return null;
+  const out: RTCIceCandidateInit = { candidate: o.candidate };
+  if (typeof o.sdpMid === 'string' && o.sdpMid.length <= 64) out.sdpMid = o.sdpMid;
+  if (typeof o.sdpMLineIndex === 'number' && Number.isInteger(o.sdpMLineIndex)) out.sdpMLineIndex = o.sdpMLineIndex;
+  if (typeof o.usernameFragment === 'string' && o.usernameFragment.length <= 256)
+    out.usernameFragment = o.usernameFragment;
+  return out;
+}
+
 const ACTIVE: TxStatus[] = ['connecting', 'transferring', 'reconnecting', 'verifying'];
 export const txActive = (s: TxStatus) => ACTIVE.includes(s);
 
@@ -118,8 +131,9 @@ export class SenderController extends Observable<TxState> {
   /**
    * Receiver candidates that arrive before their connection is set up here (the offer handler awaits the
    * session refresh and TURN credentials, and Chromium refuses candidates before the remote description).
-   * Kept per receiver and connection (at most 2 connections × 50 candidates of up to 1 KiB per receiver, so
-   * one receiver cannot crowd out another), flushed once the remote description is applied.
+   * Kept per receiver and connection (at most 2 connections × 50 sanitized candidates per receiver, each
+   * field length-capped, so one receiver cannot crowd out another), flushed once the remote description is
+   * applied; dropped for receivers that are no longer joined.
    */
   private pendingIce = new Map<string, Map<string, RTCIceCandidateInit[]>>();
   private hashes = new Map<number, FileHash>();
@@ -229,11 +243,10 @@ export class SenderController extends Observable<TxState> {
       windowEndsAt: v.join_window?.state === 'OPEN' ? v.join_window.ends_at : null,
       serverOffset: Date.parse(v.server_time) - Date.now(),
     });
-    for (const r of receivers)
-      if (r.status === 'removed') {
-        this.drop(r.participantId);
-        this.pendingIce.delete(r.participantId);
-      }
+    for (const r of receivers) if (r.status === 'removed') this.drop(r.participantId);
+    // Held candidates only for receivers that can still connect.
+    const joined = new Set(receivers.filter((r) => r.status !== 'removed').map((r) => r.participantId));
+    for (const pid of [...this.pendingIce.keys()]) if (!joined.has(pid)) this.pendingIce.delete(pid);
     for (const r of receivers) this.syncWindow(r.participantId);
     this.checkFinal();
   }
@@ -350,9 +363,10 @@ export class SenderController extends Observable<TxState> {
     else if (e.type === 'ICE_CANDIDATE' && from) {
       const p = this.peers.get(from);
       const c = e.payload as CandidatePayload;
-      if (!c.candidate || !c.conn || (c.candidate.candidate ?? '').length > 1024) return;
-      if (p && c.conn === p.connId && p.ready) this.addRemote(p, c.candidate);
-      else this.holdCandidate(from, c.conn, c.candidate);
+      const cand = sanitizeCandidate(c.candidate);
+      if (!cand || typeof c.conn !== 'string' || c.conn.length > 64) return;
+      if (p && c.conn === p.connId && p.ready) this.addRemote(p, cand);
+      else this.holdCandidate(from, c.conn, cand);
     } else if (e.type === 'TRANSFER_UPDATED') {
       const t = e.transfer as Transfer | undefined;
       if (!t) return;

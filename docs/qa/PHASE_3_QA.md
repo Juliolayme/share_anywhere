@@ -182,6 +182,19 @@ CI run 42896660474 on 991b5a0 was green on attempts 1, 2 and 3. The Firefox jobs
 | Candidate buffering missing from the protocol document | P2 | TRANSFER_PROTOCOL §1 states the rule for the answering side |
 | Test-only diagnostics code in the production bundle | P2 | The call is guarded by the literal `VITE_TEST_HOOKS` check, so production builds drop it (checked: absent from the production build, present in the test build) |
 
-## Round 9
+## Round 9 — commit 5953e38 — PASS
 
-Pending.
+0 P0, 0 P1, 4 P2. Every round-8 resolution was confirmed in code and docs. `TestPoWRejectsBadInput` passed 13,000 of 13,000 runs.
+
+- **Local:** backend vet, lint and race tests (no DB); web format, lint, types, 128 unit tests, production and test builds (the reload diagnostics are absent from the production bundle); protocol, i18n, tokens, markdown.
+- **CI:** run 42906475114 on 5953e38 was green in all 12 jobs. The backend job ran the DB-backed tests with no skips. e2e: chromium 35, webkit 35, firefox 34 (no retries), android-chrome 34, ios-safari 34 passed, none failed or flaky.
+- **Previous evidence:** run 42896660474 on 991b5a0 was green on three consecutive attempts, and Nightly 42896660534 (2 GB across a receiver reload) was green.
+
+### Resolution of round 9 findings (P2, fixed after the PASS)
+
+| Finding | Resolution |
+|---|---|
+| The 1 KiB check covered only the `candidate` string | Held candidates are sanitized to `candidate`, `sdpMid`, `sdpMLineIndex`, `usernameFragment` with type and length checks (`sanitizeCandidate`); unit test |
+| Held candidates cleared only for removed receivers | After every refresh, held candidates are dropped for anyone who is not a joined receiver |
+| No test for stale-connection isolation and caps | Unit test: an abandoned connection's candidates never reach the new peer connection; 50 per connection kept, in order |
+| One diagnostics push bypassed `pushDiag` | The reload diagnostics go through `pushDiag` |

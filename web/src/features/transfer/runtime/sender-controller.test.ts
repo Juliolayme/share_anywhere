@@ -3,7 +3,16 @@ import type { SessionSocket, SocketEvent } from '../../../lib/ws/socket';
 import type { SessionView } from '../../sharing/api';
 import type { TransferStatus, TransfersApi } from './api';
 import { Throughput } from '../engine/eta';
-import { SenderController, finalOf, groupEta, routeOf, sanitizeCandidate } from './sender-controller';
+import type { HistoryStore } from '../../history/store/history-store';
+import {
+  SenderController,
+  finalOf,
+  groupEta,
+  resultOf,
+  routeOf,
+  sanitizeCandidate,
+  type TxStatus,
+} from './sender-controller';
 
 /** A sender tab with one joined receiver and one file, no picked files (so no peer connection is served). */
 function setup(status: TransferStatus, createPeer?: (cfg: RTCConfiguration) => RTCPeerConnection) {
@@ -253,14 +262,91 @@ describe('SenderController', () => {
     expect(routeOf(['direct', null, 'direct'])).toEqual({ route: 'direct' });
     expect(routeOf(['direct', 'relay'])).toEqual({ route: 'mixed' });
   });
-  it('session result: removed and blocked receivers do not count; one that left counts with what it got', () => {
-    expect(finalOf(['completed', 'removed'])).toBe('completed');
-    expect(finalOf(['completed', 'blocked', 'removed'])).toBe('completed');
-    expect(finalOf(['completed', 'cancelled'])).toBe('partial'); // left early, or cancelled
-    expect(finalOf(['completed', 'failed'])).toBe('partial');
-    expect(finalOf(['failed', 'cancelled'])).toBe('failed');
-    expect(finalOf(['cancelled', 'removed'])).toBe('cancelled');
-    expect(finalOf(['removed', 'blocked'])).toBe('cancelled');
+  it('session result: removed and blocked receivers do not count unless delivered; one that left counts', () => {
+    const r = (status: TxStatus, delivered = status === 'completed') => ({ status, delivered });
+    expect(finalOf([r('completed'), r('removed')])).toBe('completed');
+    expect(finalOf([r('completed'), r('blocked'), r('removed')])).toBe('completed');
+    expect(finalOf([r('completed'), r('cancelled')])).toBe('partial'); // left early, or cancelled
+    expect(finalOf([r('completed'), r('failed')])).toBe('partial');
+    expect(finalOf([r('failed'), r('cancelled')])).toBe('failed');
+    expect(finalOf([r('cancelled'), r('removed')])).toBe('cancelled');
+    // Blocked after receiving every file: still a delivery.
+    expect(finalOf([r('blocked', true)])).toBe('completed');
+    expect(finalOf([r('blocked', true), r('failed')])).toBe('partial');
+  });
+  it('the result is provisional while the session is live: none until someone counts, cleared by a late receiver', () => {
+    const r = (status: TxStatus, delivered = status === 'completed') => ({ status, delivered });
+    expect(resultOf([], false)).toBeNull();
+    expect(resultOf([r('removed')], false)).toBeNull(); // the only receiver was a stranger the sender removed
+    expect(resultOf([r('completed')], false)).toBe('completed');
+    expect(resultOf([r('completed'), r('transferring')], false)).toBeNull(); // a late receiver joined
+    expect(resultOf([r('completed'), r('waiting')], false)).toBeNull();
+    expect(resultOf([r('completed'), r('failed')], false)).toBe('partial');
+    // Once the session has ended the result is final, whatever was still going.
+    expect(resultOf([r('completed'), r('cancelled')], true)).toBe('partial');
+    expect(resultOf([r('removed')], true)).toBe('cancelled');
+  });
+  it('a late receiver after the result: the result clears, then History is rewritten with both receivers', async () => {
+    const transfers = [{ id: 't1', participant_id: 'p1', file_id: 'f1', status: 'COMPLETED', verified_bytes: 10 }];
+    const participants = [{ id: 'p1', role: 'receiver', status: 'JOINED', display_name: 'A', platform: 'Web' }];
+    const writes: { id: string; status: string; peers?: string[]; createdAt: number }[] = [];
+    const api = {
+      list: async () => ({ role: 'sender', transfers: transfers.map((x) => ({ ...x })), peers: [] }),
+      action: async () => transfers[0],
+      report: async () => transfers[0],
+      turn: async () => {
+        throw new Error('no TURN in this test');
+      },
+    } as unknown as TransfersApi;
+    const view = async () =>
+      ({
+        id: 's1',
+        status: 'ACTIVE',
+        files: [{ id: 'f1', name: 'a.bin', size: 10, mime: 'application/octet-stream' }],
+        participants: participants.map((x) => ({ ...x })),
+        join_window: { state: 'OPEN', ends_at: new Date(Date.now() + 60_000).toISOString() },
+        server_time: new Date().toISOString(),
+      }) as unknown as SessionView;
+    const tx = new SenderController({
+      sessionId: 's1',
+      api,
+      view,
+      socket: { subscribe: () => () => undefined, send: () => true } as unknown as SessionSocket,
+      history: { add: async (e: (typeof writes)[number]) => void writes.push(e) } as unknown as HistoryStore,
+      files: undefined,
+    });
+    await tx.init();
+    expect(tx.state.final).toBe('completed');
+    expect(writes.map((w) => [w.status, w.peers])).toEqual([['completed', ['A']]]);
+
+    participants.push({ id: 'p2', role: 'receiver', status: 'JOINED', display_name: 'B', platform: 'Web' });
+    transfers.push({ id: 't2', participant_id: 'p2', file_id: 'f1', status: 'TRANSFERRING', verified_bytes: 4 });
+    await tx.refresh();
+    expect(tx.state.final).toBeNull();
+    expect(writes).toHaveLength(1);
+
+    (transfers[1] as { status: string }).status = 'FAILED';
+    await tx.refresh();
+    expect(tx.state.final).toBe('partial');
+    expect(writes.map((w) => [w.status, w.peers])).toEqual([
+      ['completed', ['A']],
+      ['partial', ['A', 'B']],
+    ]);
+    expect(new Set(writes.map((w) => w.id)).size).toBe(1); // the same entry, rewritten
+    expect(writes[1]?.createdAt).toBe(writes[0]?.createdAt);
+    await tx.refresh(); // nothing changed: no rewrite
+    expect(writes).toHaveLength(2);
+    tx.dispose();
+  });
+  it('when the session ends mid-transfer, receivers still going show cancelled and the result is final', async () => {
+    const t = setup('TRANSFERRING');
+    await t.tx.init();
+    expect(t.card()).toBe('reconnecting');
+    t.emit({ type: 'SESSION_EXPIRED', reason: 'max_lifetime' } as unknown as SocketEvent);
+    expect(t.card()).toBe('cancelled');
+    expect(t.tx.state.ended).toBe(true);
+    expect(t.tx.state.final).toBe('cancelled');
+    t.tx.dispose();
   });
   it('a blocked receiver is shown as blocked and left out of the result; a removed one as removed', async () => {
     const t = setup('CANCELLED');

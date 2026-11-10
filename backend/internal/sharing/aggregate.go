@@ -19,10 +19,26 @@ type ReceiverState struct {
 
 // countsTowardResult reports whether a receiver's transfers decide the session result. JOINED receivers and
 // receivers that LEFT on their own count (a receiver that left early did not get every file: partial). REMOVED
-// and BLOCKED receivers were excluded by the sender, so their cancelled transfers are not a delivery shortfall;
-// REJECTED and REQUESTED receivers never had live transfers.
-func countsTowardResult(participantStatus string) bool {
-	return participantStatus == PJoined || participantStatus == PLeft
+// and BLOCKED receivers were excluded by the sender, so their cancelled transfers are not a delivery shortfall,
+// but one that had already received every file before it was excluded still counts as a delivery. REJECTED and
+// REQUESTED receivers never had live transfers.
+func countsTowardResult(r ReceiverState) bool {
+	switch r.Status {
+	case PJoined, PLeft:
+		return true
+	case PRemoved, PBlocked:
+		return allCompleted(r.Transfers)
+	}
+	return false
+}
+
+func allCompleted(ts []string) bool {
+	for _, t := range ts {
+		if t != "COMPLETED" {
+			return false
+		}
+	}
+	return len(ts) > 0
 }
 
 // EndStatus is the status a live session records when its idle or maximum lifetime ends it
@@ -30,7 +46,8 @@ func countsTowardResult(participantStatus string) bool {
 // Remove, Block, Reject, Leave and final transfer reports leave it live so the sender can Create new code, and
 // the sender's Close always records CLOSED.
 //
-//   - Counted transfers are those of JOINED and LEFT receivers (countsTowardResult).
+//   - Counted transfers are those of JOINED and LEFT receivers, and of REMOVED or BLOCKED receivers that had
+//     received every file (countsTowardResult).
 //   - COMPLETED when there is at least one counted transfer and every one is COMPLETED.
 //   - PARTIALLY_COMPLETED when at least one is COMPLETED; transfers still running when the lifetime cut them off
 //     count as not completed.
@@ -38,7 +55,7 @@ func countsTowardResult(participantStatus string) bool {
 func EndStatus(receivers []ReceiverState) string {
 	total, completed := 0, 0
 	for _, r := range receivers {
-		if !countsTowardResult(r.Status) {
+		if !countsTowardResult(r) {
 			continue
 		}
 		for _, t := range r.Transfers {

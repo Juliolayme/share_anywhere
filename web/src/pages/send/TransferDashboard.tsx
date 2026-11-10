@@ -107,12 +107,20 @@ export default function TransferDashboard() {
   }, []);
   const windowOpen = !!s.windowEndsAt && Date.parse(s.windowEndsAt) > now + s.serverOffset;
   // A tab that lost its picked files (after a reload) cannot send, so its transfers do not hold the screen.
-  const pill = useKeepAwake((s.hasFiles && active) || (windowOpen && !s.final));
+  // Held on TR-7 too while the window is open: a late receiver may still join (docs/ARCHITECTURE.md §7.1).
+  const holdForWindow = windowOpen && !s.ended;
+  const pill = useKeepAwake((s.hasFiles && active) || holdForWindow);
   const [error, setError] = useState<string | null>(null);
+  const lateReceiver = s.receivers.some((r) => !txEnded(r.status));
+  // Where Close leads: the session screen, or a new transfer (TR-7 "New transfer" closes a finished session).
+  const [closeTo, setCloseTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (s.final && location.pathname.endsWith('/transfers')) navigate(`/send/session/${id}/result`, { replace: true });
-  }, [s.final, location.pathname, navigate, id]);
+    // A receiver joined after the result (Create new code, or a window still open): back to the dashboard.
+    if (!s.final && lateReceiver && location.pathname.endsWith('/result'))
+      navigate(`/send/session/${id}/transfers`, { replace: true });
+  }, [s.final, lateReceiver, location.pathname, navigate, id]);
 
   const total = s.files.reduce((a, f) => a + f.size, 0);
   const count = s.files.length === 1 ? t('product.files_count_one') : t('product.files_count', { n: s.files.length });
@@ -126,19 +134,34 @@ export default function TransferDashboard() {
   );
   const screen = s.final ? (s.final === 'completed' ? 'dashboard-done' : 'dashboard-partial') : 'dashboard';
 
-  const close = async () => {
+  const close = async (to = `/send/session/${id}`) => {
     setClosing(true);
     setError(null);
     try {
       await api.close(id);
       tx.cancelAll();
-      navigate(`/send/session/${id}`);
+      navigate(to);
     } catch {
       setError(t('product.close_failed'));
     } finally {
       setClosing(false);
       setConfirmClose(false);
+      setCloseTo(null);
     }
+  };
+  /**
+   * TR-7 "New transfer": a finished session that is still live is closed first, so it does not hold one of the
+   * device's open-session slots (docs/SECURITY_MODEL.md §5) until its lifetime ends. With the join window still
+   * open the sender confirms, since the code stops working.
+   */
+  const newTransfer = () => {
+    if (s.ended) return navigate('/send');
+    if (windowOpen) {
+      setCloseTo('/send');
+      setConfirmClose(true);
+      return;
+    }
+    void close('/send');
   };
   const [blockTarget, setBlockTarget] = useState<TxReceiver | null>(null);
   const [blocking, setBlocking] = useState(false);
@@ -161,7 +184,7 @@ export default function TransferDashboard() {
 
   return (
     <Screen id={screen}>
-      {!s.final && <KeepOpenBanner state={pill} />}
+      {(!s.final || holdForWindow) && <KeepOpenBanner state={pill} />}
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-[6px]">
@@ -178,7 +201,15 @@ export default function TransferDashboard() {
                 {t('web.stopall')}
               </Button>
             )}
-            <Button onClick={() => setConfirmClose(true)}>{t('web.close')}</Button>
+            {!s.ended && n > 0 && (
+              <Link
+                to={`/send/session/${id}`}
+                className="inline-flex h-[42px] items-center rounded-[10px] px-[14px] text-[14px] font-semibold text-fg no-underline hover:bg-surface-2"
+              >
+                {t('product.back_to_session')}
+              </Link>
+            )}
+            {!s.ended && <Button onClick={() => setConfirmClose(true)}>{t('web.close')}</Button>}
           </div>
         </div>
         {failed && (
@@ -195,7 +226,7 @@ export default function TransferDashboard() {
         )}
         {error && <Banner tone="danger" role="alert" title={error} />}
         {!s.hasFiles && s.loaded && !s.final && <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />}
-        {s.final && <FinalBanner final={s.final} />}
+        {s.final && <FinalBanner final={s.final} onNewTransfer={newTransfer} busy={closing} />}
         <Card className="flex flex-col gap-3 px-[20px] py-[18px]" as="section">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <span className="flex items-baseline gap-[10px]">
@@ -253,6 +284,7 @@ export default function TransferDashboard() {
                 onResume={() => tx.resume(r.participantId)}
                 onRemove={() => remove(r)}
                 onBlock={() => setBlockTarget(r)}
+                live={!s.ended}
               />
             ))}
           </div>
@@ -355,14 +387,25 @@ export default function TransferDashboard() {
         cancelLabel={t('web.cancel')}
         danger
         busy={closing}
-        onConfirm={() => void close()}
-        onCancel={() => setConfirmClose(false)}
+        onConfirm={() => void close(closeTo ?? undefined)}
+        onCancel={() => {
+          setConfirmClose(false);
+          setCloseTo(null);
+        }}
       />
     </Screen>
   );
 }
 
-function FinalBanner({ final }: { final: Exclude<TxFinal, null> }) {
+function FinalBanner({
+  final,
+  onNewTransfer,
+  busy,
+}: {
+  final: Exclude<TxFinal, null>;
+  onNewTransfer: () => void;
+  busy: boolean;
+}) {
   const { t } = useI18n();
   const f = FINAL[final];
   const Icon = f.icon;
@@ -386,12 +429,9 @@ function FinalBanner({ final }: { final: Exclude<TxFinal, null> }) {
       >
         {t('product.view_history')}
       </Link>
-      <Link
-        to="/send"
-        className="inline-flex h-[42px] items-center rounded-[10px] bg-send px-[14px] text-[14px] font-semibold text-on-send no-underline"
-      >
+      <Button variant="send" onClick={onNewTransfer} disabled={busy}>
         {t('product.new_transfer')}
-      </Link>
+      </Button>
     </div>
   );
 }
@@ -402,12 +442,15 @@ function ReceiverCard({
   onResume,
   onRemove,
   onBlock,
+  live,
 }: {
   r: TxReceiver;
   onPause: () => void;
   onResume: () => void;
   onRemove: () => void;
   onBlock: () => void;
+  /** The session is still live: Remove and Block are offered. */
+  live: boolean;
 }) {
   const { t, locale } = useI18n();
   const eta = useEta();
@@ -483,7 +526,7 @@ function ReceiverCard({
           {t('web.details')}
         </Button>
         <span className="flex-1" />
-        {!ended && (
+        {!ended && live && (
           <Button
             size="sm"
             variant="ghost"
@@ -494,7 +537,7 @@ function ReceiverCard({
             {t('web.remove')}
           </Button>
         )}
-        {r.joined && (
+        {r.joined && live && (
           <Button
             size="sm"
             variant="danger-ghost"

@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { closeSenderBrowser, createSession, enterCode, renameDevice, senderPage } from '../pairing/helpers';
+import {
+  apiDevice,
+  apiJoinResult,
+  closeSenderBrowser,
+  createSession,
+  enterCode,
+  renameDevice,
+  senderPage,
+} from '../pairing/helpers';
 import {
   attachDiagnostics,
   closeReceiverBrowsers,
@@ -163,4 +171,45 @@ test('Close session: every receiver sees the session end', async ({ browser, bro
   await sender.getByRole('dialog').getByRole('button', { name: 'Close session' }).click();
   for (const rx of [a, b])
     await expect(rx.getByRole('heading', { name: 'The sender closed this session.' })).toBeVisible({ timeout: 30_000 });
+});
+
+test('a receiver who joins after the result: the dashboard comes back, then New transfer closes the finished session', async ({
+  browser,
+  browserName,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  const f = fixture('8M');
+  const sender = track(await senderPage('granted'));
+  const s = await createSession(sender, { files: [f.path] });
+  const first = await receiver(browser, browserName, 'Receiver First');
+  await joinToSave(first, s.code);
+  await startInBrowser(first);
+  await sender.getByRole('button', { name: 'View transfers' }).click();
+  await expect(result(first)).toHaveAttribute('data-result', 'completed', { timeout: 90_000 });
+  await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 30_000 });
+  // The join window is still open: the sender keeps the screen on, even on the result.
+  await expect(sender.getByTestId('screen-on-pill')).toHaveAttribute('data-state', 'on');
+
+  const late = await receiver(browser, browserName, 'Receiver Late');
+  await joinToSave(late, s.code);
+  await startInBrowser(late);
+  // The provisional result clears while the late receiver transfers.
+  await expect(sender.locator('[data-screen="dashboard"]')).toBeVisible({ timeout: 30_000 });
+  await expect(sender.getByTestId('final-banner')).toHaveCount(0);
+  await expect(result(late)).toHaveAttribute('data-result', 'completed', { timeout: 90_000 });
+  await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 30_000 });
+  await expect(card(sender, 'Receiver Late')).toHaveAttribute('data-status', 'completed');
+
+  // New transfer closes the finished session (the window is open, so the sender confirms).
+  await sender.getByRole('button', { name: 'New transfer' }).click();
+  await sender.getByRole('dialog').getByRole('button', { name: 'Close session' }).click();
+  await expect(sender).toHaveURL(/\/send$/);
+  // The session is closed: its code no longer admits anyone.
+  expect(await apiJoinResult(request, await apiDevice(request), s.code)).toEqual({
+    status: 410,
+    error: 'session_expired',
+  });
+  // Receivers that already have their files keep their result.
+  for (const rx of [first, late]) await expect(result(rx)).toHaveAttribute('data-result', 'completed');
 });

@@ -1,6 +1,6 @@
 # Phase 4 report: multi-receiver, reconnect and resume hardening
 
-Status: implemented; QA round 1 failed (one P0, one P1), both fixed; round 2 pending (`docs/qa/PHASE_4_QA.md`). Everything here is guest-only and Web-only; Android and iOS come in Phases 6 and 7.
+Status: implemented; QA rounds 1 and 2 failed, all P0/P1 findings fixed; round 3 pending (`docs/qa/PHASE_4_QA.md`). Everything here is guest-only and Web-only; Android and iOS come in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -13,8 +13,9 @@ Status: implemented; QA round 1 failed (one P0, one P1), both fixed; round 2 pen
 - **Dashboard (TR-6)**: per-receiver Pause/Resume, Remove and **Block** (confirmation names the receiver; a blocked card shows Blocked), Stop all, Close session, aggregate progress and a **group ETA** that follows the slowest active receiver (PRD §6.5). Ended receivers stay listed once a transfer to them began, so the sender sees what happened.
 - **Session end and result** (`backend/internal/sharing/aggregate.go`, `docs/ARCHITECTURE.md` §4.5).
   - A live session never ends by itself after delivering: after the join window or Stop accepting, the sender can still Create new code and admit late receivers. Only Close (CLOSED) or the idle or maximum lifetime ends it.
-  - When a lifetime ends it, `EndStatus` records the result: COMPLETED (every counted transfer completed), PARTIALLY_COMPLETED (some), or EXPIRED (nothing delivered). JOINED and LEFT receivers count; removed and blocked ones do not.
-  - TR-7 and RX-7 come from each client's own transfers, with the same counting rule on the sender (`finalOf`).
+  - When a lifetime ends it, `EndStatus` records the result: COMPLETED (every counted transfer completed), PARTIALLY_COMPLETED (some), or EXPIRED (nothing delivered). JOINED and LEFT receivers count; removed and blocked ones count only if they had already received every file.
+  - TR-7 and RX-7 come from each client's own transfers, with the same counting rule on the sender (`finalOf`). While the session is live the sender's result is provisional: a late receiver brings back TR-6, and the History entry is rewritten when the result changes.
+  - TR-7 "New transfer" closes the finished session (confirming while the window is open), so finished sessions do not fill a guest's open-session cap; "Back to the session" leads to the code and Create new code.
   - Tests: the rule over every combination of receiver and transfer states (576,601 inputs), and database scenarios: delivery then window expiry (session live, Renew, late receiver completes), idle end completed/partial/expired, removed and blocked excluded, max lifetime mid-transfer, Close, lifetime end racing final reports.
 - **Cleanup**: the maintenance job cancels orphan transfers (ended session or departed receiver) and counts them; purge on the existing 7-day schedule, now tested. Transfer reports lock the session row before the transfer row, serializing them with Remove, Leave, Close and the lifetime end.
 - **Reconnect hardening**: receiver redial backoff with ±25 % jitter (tested); the WebSocket already reconnects with jitter and a fresh one-time ticket; bitmap exchange and duplicate tolerance unchanged from Phase 3.
@@ -33,7 +34,7 @@ Status: implemented; QA round 1 failed (one P0, one P1), both fixed; round 2 pen
 
 ## 2. Usable screens and routes (Web)
 
-TR-4/TR-5 session (Create new code keeps working after a delivery), TR-6 dashboard (several receivers, Block, group ETA), TR-7 result for completed and partially completed sessions, RX-5b/RX-6/RX-7, History HI-1 list and HI-2 detail (`/history`, `/history/:id`).
+TR-4/TR-5 session (reachable from TR-6/TR-7 by "Back to the session"; Create new code after a delivery is covered by backend tests, not by a browser spec), TR-6 dashboard (several receivers, Block, group ETA), TR-7 result for completed and partially completed sessions, RX-5b/RX-6/RX-7, History HI-1 list and HI-2 detail (`/history`, `/history/:id`).
 
 ## 3. End-to-end workflows executed (guest)
 
@@ -42,6 +43,7 @@ TR-4/TR-5 session (Create new code keeps working after a delivery), TR-6 dashboa
 | Two receivers, one slowed; screen held until the last ends | CI and locally: chromium-desktop, firefox-desktop (stock 160), webkit-desktop |
 | Remove and Block mid-transfer; blocked device cannot rejoin; sender result stays completed | Same |
 | Close session ends every receiver | Same |
+| A receiver joins after the result: TR-6 returns, then New transfer closes the session (code refused) and both receivers keep RX-7 | Locally: chromium-desktop, firefox-desktop, webkit-desktop; CI pending |
 | Five receivers (3 Chromium, Firefox, WebKit), sixth join refused with 409 `session_full` | Nightly [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) (06e9211) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410) (546873f, with the strict sixth-join check); locally |
 | History search, filters, detail, delete, clear | CI and locally: all five projects |
 | Phase 3 transfer and pairing specs (including Create new code after expiry) | CI and locally: all five projects |
@@ -52,7 +54,7 @@ TR-4/TR-5 session (Create new code keeps working after a delivery), TR-6 dashboa
 |---|---|
 | `go vet ./...`, `golangci-lint run ./...` | Clean, 0 issues |
 | `go test -race -count=1 ./...` with the test database | All packages pass (sharing 22, transfers 20 top-level tests, none skipped) |
-| `pnpm -C web format:check`, `lint`, `exec tsc -b`, `test --run` | Pass; 164 unit tests |
+| `pnpm -C web format:check`, `lint`, `exec tsc -b`, `test --run` | Pass; 167 unit tests |
 | `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md` | Pass (1,787 keys each) |
 | Playwright, all five projects locally (ac7a284) | 197 passed, 61 skipped (project-specific); the 2 Android screenshot comparisons differ by local fonts (baselines are made on the runner) |
 | CI | [42916941586](https://github.com/Juliolayme/share_anywhere/actions/runs/42916941586) on ac7a284: all 12 jobs green, every e2e project included. Earlier: 42913806193 on 06e9211 (non-e2e green; four e2e jobs cancelled by the next push) |
@@ -77,7 +79,7 @@ Unchanged from Phase 3. New: `VITE_BLOCK_CACHE_MB` (optional, build time, in `.e
 |---|---|
 | P0 | — |
 | P1 | Firefox default-route mode (from Phase 3); retry for failed receivers and per-file re-download (G4/G12) |
-| P2 | Remove/Block/Reject on an ended session are still accepted (harmless, documented); sender notice for auto-declined receivers; History integrity wording for partial sends |
+| P2 | Remove/Block/Reject on an ended session are still accepted (harmless, documented); sender notice for auto-declined receivers; History integrity wording for partial sends; about 150 product keys from Phases 2–3 not listed in the DESIGN_DEVIATIONS E-table; a browser spec for Create new code after a delivery |
 
 ## 8. Local run
 

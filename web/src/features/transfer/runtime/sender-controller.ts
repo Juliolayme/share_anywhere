@@ -43,6 +43,8 @@ export interface TxReceiver {
   platform: string;
   /** Still JOINED (not left, removed or blocked): the sender can still block it, even after it finished. */
   joined: boolean;
+  /** Received every file (possibly before the sender removed or blocked it). */
+  delivered: boolean;
   status: TxStatus;
   /** Verified bytes per file index. */
   perFile: number[];
@@ -71,7 +73,10 @@ export interface TxState {
   receivers: TxReceiver[];
   /** False after a reload: the browser no longer gives this tab the picked files. */
   hasFiles: boolean;
+  /** The session result (TR-7), or null while it is not decided: some receiver is still going, or nobody counts yet. */
   final: TxFinal;
+  /** The session is no longer live (closed, or ended by its lifetime): no new receivers, nothing to close. */
+  ended: boolean;
   /** End of the open join window (server time, ISO), or null when no window is open. */
   windowEndsAt: string | null;
   /** Milliseconds to add to Date.now() to follow the server clock. */
@@ -119,16 +124,35 @@ export const txExcluded = (s: TxStatus) => s === 'removed' || s === 'blocked';
 const ENDED: TxStatus[] = ['completed', 'failed', 'cancelled', 'removed', 'blocked'];
 export const txEnded = (s: TxStatus) => ENDED.includes(s);
 
+type ResultInput = Pick<TxReceiver, 'status' | 'delivered'>;
+
 /**
- * Session result on the sender (docs/ARCHITECTURE.md §4.5): receivers the sender removed or blocked do not
- * count; a receiver that left counts with what it received.
+ * Whether a receiver counts toward the session result (docs/ARCHITECTURE.md §4.5, the same rule as the
+ * server's EndStatus): receivers the sender removed or blocked do not, unless they had already received every
+ * file; a receiver that left counts with what it received.
  */
-export function finalOf(statuses: TxStatus[]): NonNullable<TxFinal> {
-  const counted = statuses.filter((s) => !txExcluded(s));
-  const completed = counted.filter((s) => s === 'completed').length;
+export const txCounts = (r: ResultInput) => !txExcluded(r.status) || r.delivered;
+
+/** Session result on the sender over the receivers that count (txCounts). */
+export function finalOf(rs: ResultInput[]): NonNullable<TxFinal> {
+  const counted = rs.filter(txCounts);
+  const completed = counted.filter((r) => r.status === 'completed' || r.delivered).length;
   if (counted.length && completed === counted.length) return 'completed';
   if (completed > 0) return 'partial';
-  return counted.some((s) => s === 'failed') ? 'failed' : 'cancelled';
+  return counted.some((r) => r.status === 'failed') ? 'failed' : 'cancelled';
+}
+
+/**
+ * The result shown on TR-7, or null while it is not decided. A live session can still take receivers (Create
+ * new code, or a window still open), so its result is only provisional: it is shown once every receiver has
+ * ended and at least one counts, and cleared again when a new receiver joins. Once the session has ended the
+ * result is final.
+ */
+export function resultOf(rs: ResultInput[], ended: boolean): TxFinal {
+  if (!rs.length) return null;
+  if (ended) return finalOf(rs);
+  if (!rs.some(txCounts) || !rs.every((r) => txEnded(r.status))) return null;
+  return finalOf(rs);
 }
 
 /** One route for every receiver, or `mixed` (History). Nothing when no route was ever known. */
@@ -185,7 +209,9 @@ export class SenderController extends Observable<TxState> {
   private list: TransferList | null = null;
   private unsub: (() => void) | null = null;
   private sampler: ReturnType<typeof setInterval> | null = null;
-  private historyWritten = false;
+  /** What the History entry last recorded, so it is rewritten (same id) only when the result changes. */
+  private historyKey = '';
+  private historyCreatedAt = 0;
   /** When the first verified byte reached any receiver (History duration). */
   private startedAt: number | undefined;
   private initialized: Promise<void> | null = null;
@@ -204,6 +230,7 @@ export class SenderController extends Observable<TxState> {
       receivers: [],
       hasFiles: !!d.files,
       final: null,
+      ended: false,
       windowEndsAt: null,
       serverOffset: 0,
     });
@@ -284,6 +311,7 @@ export class SenderController extends Observable<TxState> {
           name: p.display_name,
           platform: p.platform,
           joined: !removed,
+          delivered: mine.length > 0 && mine.every((t) => t.status === 'COMPLETED'),
           status,
           perFile: prev ? prev.perFile.map((n, i) => Math.max(n, perFile[i] ?? 0)) : perFile,
           verified: 0,
@@ -299,6 +327,7 @@ export class SenderController extends Observable<TxState> {
     this.update({
       receivers,
       windowEndsAt: v.join_window?.state === 'OPEN' ? v.join_window.ends_at : null,
+      ended: this.state_.ended || (v.status !== 'WAITING' && v.status !== 'ACTIVE'),
       serverOffset: Date.parse(v.server_time) - Date.now(),
     });
     this.gone = new Set(
@@ -456,7 +485,11 @@ export class SenderController extends Observable<TxState> {
       void this.refresh();
     } else if (e.type === 'SESSION_CLOSED' || e.type === 'SESSION_EXPIRED') {
       for (const pid of [...this.peers.keys()]) this.drop(pid);
-      this.checkFinal(true);
+      // The server cancelled whatever was still running; no TRANSFER_UPDATED follows for it.
+      for (const r of this.state_.receivers)
+        if (!txEnded(r.status)) this.patch(r.participantId, { status: 'cancelled', eta: null, bytesPerSecond: 0 });
+      this.update({ ended: true });
+      this.checkFinal();
     }
   }
 
@@ -648,15 +681,16 @@ export class SenderController extends Observable<TxState> {
     }
   }
 
-  /** Final outcome once every receiver is done (or the session ended); writes one History entry. */
-  private checkFinal(sessionEnded = false): void {
+  /** Session result (resultOf); the History entry follows it (one entry per session, rewritten when it changes). */
+  private checkFinal(): void {
     const rs = this.state_.receivers;
-    if (!rs.length) return;
-    if (!sessionEnded && !rs.every((r) => txEnded(r.status))) return;
-    const final = finalOf(rs.map((r) => r.status));
+    const final = resultOf(rs, this.state_.ended);
     if (this.state_.final !== final) this.update({ final });
-    if (this.historyWritten || !this.d.history) return;
-    this.historyWritten = true;
+    if (!final || !this.d.history) return;
+    const key = JSON.stringify([final, rs.map((r) => [r.participantId, r.status, r.verified])]);
+    if (key === this.historyKey) return;
+    this.historyKey = key;
+    this.historyCreatedAt ||= Date.now();
     const files = this.state_.files;
     const status: HistoryStatus = final;
     void this.d.history.add({
@@ -677,7 +711,7 @@ export class SenderController extends Observable<TxState> {
       ...routeOf(rs.map((r) => r.route)),
       ...(this.startedAt ? { startedAt: this.startedAt } : {}),
       status,
-      createdAt: Date.now(),
+      createdAt: this.historyCreatedAt,
     });
   }
 }

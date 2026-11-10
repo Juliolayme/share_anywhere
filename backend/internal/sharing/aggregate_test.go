@@ -38,7 +38,9 @@ func TestEndStatusTable(t *testing.T) {
 		{"LEFT after completing, other completed", []ReceiverState{rx(PLeft, "COMPLETED"), rx(PJoined, "COMPLETED")}, C},
 		{"removed excluded", []ReceiverState{rx(PJoined, "COMPLETED"), rx(PRemoved, "CANCELLED")}, C},
 		{"blocked excluded", []ReceiverState{rx(PJoined, "COMPLETED"), rx(PBlocked, "CANCELLED")}, C},
-		{"removed receiver had completed", []ReceiverState{rx(PRemoved, "COMPLETED")}, E},
+		{"removed receiver had completed", []ReceiverState{rx(PRemoved, "COMPLETED")}, C},
+		{"blocked after receiving every file", []ReceiverState{rx(PBlocked, "COMPLETED", "COMPLETED"), rx(PJoined, "FAILED")}, PC},
+		{"removed after receiving some files", []ReceiverState{rx(PRemoved, "COMPLETED", "CANCELLED")}, E},
 		{"only removed and blocked", []ReceiverState{rx(PRemoved, "CANCELLED"), rx(PBlocked, "CANCELLED")}, E},
 		{"rejected ignored", []ReceiverState{rx(PJoined, "COMPLETED"), rx(PRejected)}, C},
 		{"requested ignored", []ReceiverState{rx(PJoined, "COMPLETED"), rx(PRequested)}, C},
@@ -67,7 +69,9 @@ func checkEndStatus(t *testing.T, rs []ReceiverState) {
 	got := EndStatus(rs)
 	counted, completed := 0, 0
 	for _, r := range rs {
-		if r.Status != PJoined && r.Status != PLeft {
+		delivered := len(r.Transfers) > 0 && !slices.ContainsFunc(r.Transfers, func(s string) bool { return s != "COMPLETED" })
+		counts := r.Status == PJoined || r.Status == PLeft || ((r.Status == PRemoved || r.Status == PBlocked) && delivered)
+		if !counts {
 			continue
 		}
 		for _, s := range r.Transfers {
@@ -139,11 +143,15 @@ func TestEndStatusEveryCombination(t *testing.T) {
 			}
 		}
 	}
-	// Removed, blocked, rejected and requested receivers never change the result, whatever their transfers say.
+	// Rejected and requested receivers never change the result; removed and blocked ones only as a delivery
+	// (every file received before the sender excluded them), exactly like a joined receiver that completed.
 	for _, out := range []string{PRemoved, PBlocked, PRejected, PRequested} {
 		for _, base := range [][]ReceiverState{nil, {rx(PJoined, "COMPLETED")}, {rx(PJoined, "COMPLETED"), rx(PJoined, "FAILED")}, {rx(PJoined, "PAUSED")}} {
-			want := EndStatus(base)
 			for _, p := range pairs {
+				want := EndStatus(base)
+				if (out == PRemoved || out == PBlocked) && p.a == "COMPLETED" && p.b == "COMPLETED" {
+					want = EndStatus(append(slices.Clone(base), rx(PJoined, "COMPLETED", "COMPLETED")))
+				}
 				if got := EndStatus(append(slices.Clone(base), rx(out, p.a, p.b))); got != want {
 					t.Fatalf("%s receiver with %v changed %v from %s to %s", out, p, base, want, got)
 				}

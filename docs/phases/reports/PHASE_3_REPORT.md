@@ -3,7 +3,7 @@
 Status: **implemented**. All transfers here run between guest devices.
 
 - **Chromium and WebKit:** Web-to-Web transfers work end to end, including the iPhone 14 and Pixel 7 profiles. Verified locally and in the CI `e2e-web` matrix.
-- **Firefox:** transfers pass locally with a stock Firefox 160 receiver. Playwright's own patched Firefox build cannot open WebRTC connections (§6), so CI downloads a pinned stock Firefox for that job, and each Firefox receiver runs in its own fresh browser (stock Firefox under automation stops gathering ICE candidates for later pages in about a third of instances, §6).
+- **Firefox:** transfers pass locally with a stock Firefox 160 receiver. Playwright's own patched Firefox build cannot open WebRTC connections (§6), so CI downloads a pinned stock Firefox for that job, with no proxy for the test browser and a fresh browser per receiver (§6).
 
 Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
 
@@ -142,7 +142,7 @@ The Phase 1 and Phase 2 suites still pass on all four working projects (one Phas
 ## 6. Known limitations and untested behavior
 
 - **Playwright's Firefox build cannot do WebRTC.** Its RTCPeerConnection never gathers a candidate (ICE fails at once, with or without STUN/TURN; CI diagnostics in run 42827720718). The Firefox project therefore drives stock Firefox over WebDriver BiDi. Real Firefox users are unaffected; this is a test-tool limit.
-- **Stock Firefox under automation** stops gathering ICE candidates for every page after the first in about a third of browser instances (reproduced with a bare RTCPeerConnection; prefs do not help). Each Firefox receiver therefore runs in its own fresh browser in the e2e suite. Whether a real Firefox profile can hit this with a second tab is untested.
+- **A system proxy breaks Firefox WebRTC in tests.** With a proxy in the environment, Firefox stops gathering ICE candidates on every page after the first (reproduced outside the app); the Firefox project sets `network.proxy.type = 0`. CI showed the symptom once without a known proxy; whether real Firefox users behind a system proxy are affected is untested.
 - **Off-the-record contexts keep OPFS in memory.** Chromium incognito-like contexts (Playwright's default) are affected, so the nightly run uses a persistent profile. Real incognito windows could hit a storage error on large files. The capability check cannot see this, and the receiver shows "This device ran out of storage space".
 - **Picked files live only in the sender's tab.** A sender reload loses them (the browser gives no persistent access). Both screens explain it and receivers end with "The sender's tab no longer has the files".
 - **Web limits:** no "Open" or "Show in folder" on the Web (G3); Retry for a failed receiver is not built (G4); a whole-file checksum failure ends the receive instead of offering "Download this file again" (G12).
@@ -175,4 +175,5 @@ Same as Phase 2: `docker compose up --build`, then open `https://localhost:8443`
 | 9322f2b | QA round 1 fixes; stock Firefox for WebRTC specs |
 | 11d8150 | Web image copies the shared schemas; sender launch fix for the Firefox project; report and QA record |
 | e29c0a2 | Mobile baselines refreshed (sender name masked, 24 h note) |
-| (this commit) | QA round 2 fixes: reports never pass through or leave PAUSED, pause holds while connecting, fresh browser per Firefox receiver, fixed sender name in snapshots, keep-awake held by the controllers, G12 |
+| (this commit) | QA round 2 fixes: reports never pass through or leave PAUSED, pause holds while connecting, no proxy for the Firefox test browser, fresh browser per Firefox receiver, fixed sender name in snapshots, keep-awake held by the controllers, G12 |
+| (next commit) | No proxy for the Firefox test browser (root cause of the Firefox ICE failures here); receiver suspends on `pagehide`; mobile baselines with the fixed sender name |

@@ -3,7 +3,9 @@ import { defineConfig, devices } from '@playwright/test';
 // Two browser processes on one runner reach each other only through real host addresses: hide-behind-mDNS
 // is a privacy feature for the open web that CI has no resolver for (docs/TESTING_AND_CI.md §3).
 export const chromiumWebRtc = { args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] };
-const firefoxPrefs = { 'media.peerconnection.ice.obfuscate_host_addresses': false };
+// No proxy for the test browser: the suite only talks to localhost, and a system proxy picked up from the
+// environment stops Firefox from gathering ICE candidates on every page after the first (docs/TESTING_AND_CI.md §3).
+const firefoxPrefs = { 'media.peerconnection.ice.obfuscate_host_addresses': false, 'network.proxy.type': 0 };
 // Playwright's patched Firefox never gathers ICE candidates (docs/TESTING_AND_CI.md §3), so when
 // E2E_FIREFOX_BIN points at a stock Firefox the project drives it over WebDriver BiDi instead.
 const firefox = process.env.E2E_FIREFOX_BIN

@@ -97,10 +97,8 @@ export async function receiverPage(
   // PR-sized files but not for the nightly 2 GB run, which asks for a persistent profile.
   const persistent = browserName === 'webkit' || (opts.persistent && browserName === 'chromium');
   const use = test.info().project.use;
-  // Stock Firefox under automation: in roughly a third of browser instances every page after the first one
-  // never gathers an ICE candidate (iceConnectionState goes straight to "failed"), for the rest of that
-  // browser's life (docs/TESTING_AND_CI.md §3; reproduced outside the app with a bare RTCPeerConnection).
-  // The first page of a fresh browser always gathers, so each Firefox receiver gets its own browser.
+  // Each Firefox receiver gets its own browser: a clean process per test, and no state from earlier specs
+  // (docs/TESTING_AND_CI.md §3).
   if (browserName === 'firefox') {
     const own = await firefox.launch({ ...(use.channel ? { channel: use.channel } : {}), ...use.launchOptions });
     ownBrowsers.push(own);

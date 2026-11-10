@@ -298,6 +298,26 @@ export class ReceiverController extends Observable<RxState> {
     };
   }
 
+  /**
+   * The page is going away (reload, tab close, navigation to another site). Close the connection first, so
+   * errors from storage being torn down with the page are never sent to the sender or reported as a failure;
+   * the saved bitmap lets the next load resume.
+   */
+  suspend(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.teardown();
+  }
+
+  /** The page came back from the back-forward cache: reconnect if the transfer was still running. */
+  wake(): void {
+    if (!this.stopped) return;
+    this.stopped = false;
+    if (rxActive(this.state_.phase) || this.state_.phase === 'reconnecting') this.connect();
+  }
+
   dispose(): void {
     this.stopped = true;
     this.unsub?.();
@@ -495,7 +515,7 @@ export class ReceiverController extends Observable<RxState> {
   }
 
   private onConnError(code: ErrorCode | 'closed', fatal: boolean): void {
-    if (rxFinal(this.state_.phase)) return;
+    if (this.stopped || rxFinal(this.state_.phase)) return;
     if (code === 'cancelled') {
       void this.cleanupStaging(false);
       return this.finish('cancelled');

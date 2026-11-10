@@ -82,6 +82,9 @@ export function receiverFor(sessionId: string, d: Deps): ReceiverController {
       history: d.history,
     });
     receivers.set(sessionId, c);
+    const rc = c;
+    window.addEventListener('pagehide', () => rc.suspend());
+    window.addEventListener('pageshow', (e) => e.persisted && rc.wake());
     keepAwake ??= d.keepAwake ?? null;
     holdWhileActive(c, (s) => rxActive(s.phase));
     const h = hooks();

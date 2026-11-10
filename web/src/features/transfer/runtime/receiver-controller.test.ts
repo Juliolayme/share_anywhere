@@ -139,4 +139,18 @@ describe('ReceiverController', () => {
     expect(t.server()).toBe('RECONNECTING');
     t.rx.dispose();
   });
+  it('once the page is going away, a storage error is neither reported nor treated as a failure', async () => {
+    vi.useFakeTimers();
+    const t = setup('TRANSFERRING');
+    await t.rx.init();
+    await vi.advanceTimersByTimeAsync(50);
+    const before = t.dials();
+    t.rx.suspend();
+    (t.rx as unknown as { onConnError(code: string, fatal: boolean): void }).onConnError('storage_error', true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(t.reports).not.toContain('FAILED');
+    expect(t.rx.state.phase).not.toBe('failed');
+    expect(t.dials()).toBe(before);
+    t.rx.dispose();
+  });
 });

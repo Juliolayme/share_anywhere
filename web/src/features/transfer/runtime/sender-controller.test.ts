@@ -138,7 +138,11 @@ describe('SenderController', () => {
       addEventListener: () => undefined,
       close: () => undefined,
     } as unknown as RTCPeerConnection;
-    const t = setup('TRANSFERRING', () => pc);
+    let afterPeer: () => void = () => undefined;
+    const t = setup('TRANSFERRING', () => {
+      queueMicrotask(() => afterPeer()); // peer registered, remote description still pending
+      return pc;
+    });
     await t.tx.init();
     const cand = (n: number) =>
       ({
@@ -152,11 +156,21 @@ describe('SenderController', () => {
       from: 'p1',
       payload: { conn: 'c1', sdp: { type: 'offer', sdp: '' } },
     } as unknown as SocketEvent);
+    afterPeer = () => t.emit(cand(3)); // arrives after the peer exists but before the remote description
     t.emit(cand(1));
     t.emit(cand(2));
-    await vi.waitFor(() => expect(added).toHaveLength(2));
-    t.emit(cand(3)); // after the remote description: added directly
     await vi.waitFor(() => expect(added).toHaveLength(3));
+    expect(added.map((c) => c.split(' ')[0])).toEqual(['candidate:1', 'candidate:2', 'candidate:3']);
+    t.emit(cand(4)); // after the remote description: added directly
+    await vi.waitFor(() => expect(added).toHaveLength(4));
+    // Oversized candidates are ignored.
+    t.emit({
+      type: 'ICE_CANDIDATE',
+      from: 'p1',
+      payload: { conn: 'c1', candidate: { candidate: 'x'.repeat(2000) } },
+    } as unknown as SocketEvent);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(added).toHaveLength(4);
     t.tx.dispose();
   });
 });

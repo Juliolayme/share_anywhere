@@ -106,7 +106,8 @@ export function receiverFor(sessionId: string, d: Deps): ReceiverController {
     });
     receivers.set(sessionId, c);
     const rc = c;
-    if (hooks()) keepDiagAcrossLoads(sessionId, rc.diag);
+    // The literal check lets production builds drop the test-only code entirely.
+    if (import.meta.env.VITE_TEST_HOOKS === 'true' && hooks()) keepDiagAcrossLoads(sessionId, rc.diag);
     window.addEventListener('pagehide', () => rc.suspend());
     window.addEventListener('pageshow', (e) => e.persisted && rc.wake());
     keepAwake ??= d.keepAwake ?? null;

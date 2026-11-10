@@ -5,7 +5,7 @@ How two clients move files peer to peer once a receiver is `JOINED` (PRD §6.1�
 ## 1. Connection
 
 - One `RTCPeerConnection` per receiver. The **receiver offers**: it knows when it is ready (save target chosen) and when it needs to reconnect (reload, dropped link). The sender answers any `OFFER` from a `JOINED` receiver and replaces that receiver's previous connection.
-- Signaling (`OFFER`, `ANSWER`, `ICE_CANDIDATE`) goes over the WebSocket, addressed by participant ID (`docs/API.md` §4). ICE servers come from `POST /v1/turn/credentials` (TURN URIs plus a `stun:` URI on the same host and port).
+- Signaling (`OFFER`, `ANSWER`, `ICE_CANDIDATE`) goes over the WebSocket, addressed by participant ID (`docs/API.md` §4). ICE servers come from `POST /v1/turn/credentials` (TURN URIs plus a `stun:` URI on the same host and port). Every signaling payload carries the connection id (`conn`) of the offer it belongs to. The receiver trickles candidates right after its `OFFER`, so the answering side must keep `ICE_CANDIDATE` messages that arrive before it has applied that offer as its remote description (buffer per receiver and `conn`, bounded; flush in order after `setRemoteDescription`, then add later ones directly) and ignore candidates for any other `conn`. Dropping them loses the host and server-reflexive candidates.
 - The receiver creates one data channel named `sa-transfer/1`: ordered, reliable, `binaryType = "arraybuffer"`. Every message on it is one frame (§2).
 - DTLS authenticates the channel to the two endpoints whose SDP the server relayed; HELLO (§3) then proves the receiver holds its transfer capability. Both happen on **every** connect and reconnect.
 

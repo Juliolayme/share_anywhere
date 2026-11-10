@@ -14,7 +14,15 @@ import { progressKey, type Progress, type ProgressStore, type SaveTarget } from 
 import type { Route, TransferStatus, TransfersApi } from './api';
 import { Observable } from './observable';
 import { Reporter } from './reporter';
-import { CHANNEL_LABEL, rtcConfig, selectedRoute, watchPeer, type CandidatePayload, type SdpPayload } from './rtc';
+import {
+  CHANNEL_LABEL,
+  pushDiag,
+  rtcConfig,
+  selectedRoute,
+  watchPeer,
+  type CandidatePayload,
+  type SdpPayload,
+} from './rtc';
 import { terminal } from './transitions';
 
 export type RxPhase =
@@ -359,7 +367,7 @@ export class ReceiverController extends Observable<RxState> {
     this.pc = pc;
     watchPeer(pc, this.diag);
     const urls = (cfg.iceServers ?? []).flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]));
-    this.diag.push(`dial ${connId.slice(0, 8)} servers ${urls.join(' ')}`);
+    pushDiag(this.diag, `dial ${connId.slice(0, 8)} servers ${urls.join(' ')}`);
     const dc = pc.createDataChannel(CHANNEL_LABEL, { ordered: true });
     pc.onicecandidate = (e) => {
       const payload: CandidatePayload = { conn: connId, candidate: e.candidate ? e.candidate.toJSON() : null };
@@ -383,7 +391,7 @@ export class ReceiverController extends Observable<RxState> {
     };
     this.openTimer = setTimeout(() => this.pc === pc && this.lost(), 20_000);
     await pc.setLocalDescription(await pc.createOffer());
-    this.diag.push(`offer set, gathering ${pc.iceGatheringState}`);
+    pushDiag(this.diag, `offer set, gathering ${pc.iceGatheringState}`);
     const payload: SdpPayload = { conn: connId, sdp: pc.localDescription?.toJSON() ?? { type: 'offer' } };
     if (!this.d.socket.send({ type: 'OFFER', session_id: this.d.sessionId, to: this.senderPid, payload })) this.lost();
   }
@@ -589,15 +597,15 @@ export class ReceiverController extends Observable<RxState> {
   private onSocket(e: SocketEvent): void {
     const payload = e.payload as SdpPayload | CandidatePayload | undefined;
     if (e.type === 'ANSWER' && e.from === this.senderPid && payload?.conn === this.connId && this.pc) {
-      this.diag.push('answer');
+      pushDiag(this.diag, 'answer');
       void this.pc.setRemoteDescription((payload as SdpPayload).sdp).catch((err: unknown) => {
-        this.diag.push(`answer-error ${String(err)}`);
+        pushDiag(this.diag, `answer-error ${String(err)}`);
         this.lost();
       });
     } else if (e.type === 'ICE_CANDIDATE' && e.from === this.senderPid && payload?.conn === this.connId && this.pc) {
       const c = (payload as CandidatePayload).candidate;
-      this.diag.push(`remote ${c ? (c.candidate ?? '').split(' ').slice(4, 8).join(' ') : 'end'}`);
-      if (c) void this.pc.addIceCandidate(c).catch((err: unknown) => this.diag.push(`add-error ${String(err)}`));
+      pushDiag(this.diag, `remote ${c ? (c.candidate ?? '').split(' ').slice(4, 8).join(' ') : 'end'}`);
+      if (c) void this.pc.addIceCandidate(c).catch((err: unknown) => pushDiag(this.diag, `add-error ${String(err)}`));
     } else if (e.type === 'TRANSFER_UPDATED') {
       const t = e.transfer as { id: string; status: TransferStatus; verified_bytes: number } | undefined;
       if (t) this.onServerUpdate(t.id, t.status, t.verified_bytes);

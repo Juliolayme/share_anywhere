@@ -2,6 +2,7 @@ package devices
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func TestPoWRejectsBadInput(t *testing.T) {
 		"empty solution": {tok, ""},
 		"long solution":  {tok, "0123456789012345678901234567890123"},
 		"no signature":   {"abc", sol},
-		"bad signature":  {tok[:len(tok)-2] + "AA", sol},
+		"bad signature":  {tamperSig(tok), sol},
 	} {
 		if err := f.pow.Verify("a", tc[0], tc[1]); !errors.Is(err, ErrPoWInvalid) {
 			t.Errorf("%s: got %v", name, err)
@@ -58,4 +59,15 @@ func TestLeadingZeroBits(t *testing.T) {
 	if got := LeadingZeroBits(h); got != 11 {
 		t.Fatalf("got %d", got)
 	}
+}
+
+// tamperSig changes the first character of the signature segment. Every bit of that character is part of
+// the decoded MAC, unlike the last character of unpadded base64, whose trailing bits a lenient decoder drops.
+func tamperSig(tok string) string {
+	i := strings.LastIndexByte(tok, '.') + 1
+	c := byte('A')
+	if tok[i] == 'A' {
+		c = 'B'
+	}
+	return tok[:i] + string(c) + tok[i+1:]
 }

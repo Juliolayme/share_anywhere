@@ -158,8 +158,30 @@ The backend, web checks (123 unit tests), protocol, i18n, tokens and markdown al
 | Firefox record no longer honest | P1 | Report §4/§6/§7, TESTING_AND_CI §3 and this record state the real rate (3 of 6 recent runs, plus the e29c0a2 first-attempt failure) and withdraw the `pagehide` link |
 | Stale route chip while paused with no connection | P2 | The route is cleared when the connection is lost (receiver and sender) and set again when a channel opens |
 | No test covers the route chip | P2 | `ui.test.tsx`: Direct green, Relay blue at 26 px, nothing while the route is unknown |
-| Found while investigating: the sender dropped every receiver candidate that arrived before its offer handler had registered the peer and applied the remote description (it awaits the session refresh and TURN credentials). Host and srflx candidates, trickled at once, were lost; only the later relay candidate survived, so in CI every connection silently depended on TURN | — | Candidates are buffered per connection id and added once the remote description is applied; unit test. The first Firefox CI run with Firefox ICE logs (31d0a6e, run 42875252812) was green but the logs went to a folder Playwright empties; they now go to `web/moz-log/` |
+| Found while investigating: the sender dropped every receiver candidate that arrived before its offer handler had registered the peer and applied the remote description (it awaits the session refresh and TURN credentials). Host and srflx candidates, trickled at once, were lost; only the later relay candidate survived. Connections still formed through peer-reflexive candidates discovered from the receiver's checks (coturn on the CI host denies private peers, so TURN could not have relayed them) | — | Candidates are buffered per connection id and added once the remote description is applied; unit test. The first Firefox CI run with Firefox ICE logs (31d0a6e, run 42875252812) was green but the logs went to a folder Playwright empties; they now go to `web/moz-log/` |
 
-## Round 8
+## Round 8 — commit 991b5a0 — FAIL
+
+0 P0, 1 P1, 7 P2. Every change since round 7 checked out: candidate buffering, the route chip, the CI diagnostics (the reload diagnostics cannot run in a production build), TURN at `127.0.0.1`, and camera/microphone for Firefox receivers (confirmed: one host address without the permission, every interface with it).
+
+The local checks passed: backend vet, lint and race tests with the database; web format, lint, types, 128 unit tests and the production build; protocol, i18n, tokens and markdown; transfer specs on chromium, firefox and webkit; QA scenarios. The local Docker stack stopped partway through, so the mobile transfer specs were taken from CI.
+
+CI run 42896660474 on 991b5a0 was green on attempts 1, 2 and 3. The Firefox jobs (130111527395, 130120146199, 130126010576) each had 34 passed, 10 skipped, no retries. Nightly 42896660534 was green.
+
+### Resolution of round 8 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Flaky Phase 1 test `TestPoWRejectsBadInput` (2 of 3000): the "bad signature" changed the last base64 character, whose trailing bits a lenient decoder drops | P1 | The test now changes the first character of the signature segment, every bit of which is decoded; 5000 of 5000 runs pass |
+| Early-candidate buffer keyed only by connection id (one receiver could evict another's, about 64 MiB worst case) | P2 | Keyed by receiver and connection: at most 2 connections × 50 candidates per receiver; candidates over 1 KiB ignored; a removed receiver's entries cleared |
+| Diagnostics grow without bound | P2 | One helper (`pushDiag`) truncates each line to 300 characters and keeps the latest 200, on both sides |
+| Unit test missed the "peer registered, remote description pending" window | P2 | The test now delivers a candidate in that window and checks the order; oversized candidates are ignored |
+| Firefox limitation recorded too narrowly; no CI spec exercises Firefox's default-route mode | P2 | Report §6, backlog and TESTING_AND_CI §3 now say the cause of the reload-only probe failure is unknown and that real Firefox receivers who reload may hit it (untested); a Firefox spec without the permission is a backlog item |
+| "Every connection depended on TURN" contradicted by the coturn config | P2 | Reworded: connections relied on peer-reflexive discovery |
+| Report and QA record stale | P2 | CI runs since b898abe, 128 unit tests, the confirmation moved to done |
+| Candidate buffering missing from the protocol document | P2 | TRANSFER_PROTOCOL §1 states the rule for the answering side |
+| Test-only diagnostics code in the production bundle | P2 | The call is guarded by the literal `VITE_TEST_HOOKS` check, so production builds drop it (checked: absent from the production build, present in the test build) |
+
+## Round 9
 
 Pending.

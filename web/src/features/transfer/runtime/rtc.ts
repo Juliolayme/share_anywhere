@@ -76,15 +76,18 @@ export interface CandidatePayload {
 
 export const CHANNEL_LABEL = 'sa-transfer/1';
 
+/** Appends one diagnostics line: truncated, and the list keeps only the latest 200 (memory only). */
+export function pushDiag(out: string[], line: string): void {
+  out.push(line.length > 300 ? `${line.slice(0, 300)}…` : line);
+  if (out.length > 200) out.splice(0, out.length - 200);
+}
+
 /**
  * Records ICE and connection progress for diagnostics (kept in memory, shown nowhere, read by test builds and
  * useful in a debugger): gathering and connection states, local candidate types, and ICE errors.
  */
 export function watchPeer(pc: RTCPeerConnection, out: string[]): void {
-  const push = (s: string) => {
-    out.push(`${Math.round(performance.now())} ${s}`);
-    if (out.length > 200) out.shift();
-  };
+  const push = (s: string) => pushDiag(out, `${Math.round(performance.now())} ${s}`);
   pc.addEventListener('icegatheringstatechange', () => push(`gather ${pc.iceGatheringState}`));
   pc.addEventListener('iceconnectionstatechange', () => push(`ice ${pc.iceConnectionState}`));
   pc.addEventListener('connectionstatechange', () => push(`conn ${pc.connectionState}`));

@@ -8,7 +8,7 @@ import { sha256Hex } from '../engine/hash';
 import { FileHash, SenderConnection, fileSource, type SenderFile } from '../engine/sender';
 import type { Route, Transfer, TransferList, TransferStatus, TransfersApi } from './api';
 import { Observable } from './observable';
-import { CHANNEL_LABEL, rtcConfig, selectedRoute, type CandidatePayload, type SdpPayload } from './rtc';
+import { CHANNEL_LABEL, rtcConfig, selectedRoute, watchPeer, type CandidatePayload, type SdpPayload } from './rtc';
 import { terminal } from './transitions';
 import type { LogLine } from './receiver-controller';
 
@@ -107,6 +107,8 @@ export class SenderController extends Observable<TxState> {
   readonly corrupt = { blocks: 0 };
   /** Test hook: delay before each block in ms (VITE_TEST_HOOKS builds only). */
   readonly pace = { ms: 0 };
+  /** ICE and connection diagnostics (memory only). */
+  readonly diag: string[] = [];
 
   constructor(private readonly d: SenderDeps) {
     super({ loaded: false, files: [], receivers: [], hasFiles: !!d.files, final: null });
@@ -269,7 +271,10 @@ export class SenderController extends Observable<TxState> {
     else if (e.type === 'ICE_CANDIDATE' && from) {
       const p = this.peers.get(from);
       const c = e.payload as CandidatePayload;
-      if (p && c.conn === p.connId && c.candidate) void p.pc.addIceCandidate(c.candidate).catch(() => undefined);
+      if (p && c.conn === p.connId && c.candidate) {
+        this.diag.push(`remote ${(c.candidate.candidate ?? '').split(' ').slice(4, 8).join(' ')}`);
+        void p.pc.addIceCandidate(c.candidate).catch((err: unknown) => this.diag.push(`add-error ${String(err)}`));
+      }
     } else if (e.type === 'TRANSFER_UPDATED') {
       const t = e.transfer as Transfer | undefined;
       if (!t) return;
@@ -297,6 +302,8 @@ export class SenderController extends Observable<TxState> {
     this.drop(pid);
     const cfg = await rtcConfig(this.d.api, this.d.sessionId);
     const pc = this.d.createPeer ? this.d.createPeer(cfg) : new RTCPeerConnection(cfg);
+    watchPeer(pc, this.diag);
+    this.diag.push(`offer from ${pid.slice(0, 8)} conn ${payload.conn.slice(0, 8)}`);
     const peer: Peer = { pc, conn: null, connId: payload.conn, throughput: new Throughput() };
     this.peers.set(pid, peer);
     pc.onicecandidate = (e) => {

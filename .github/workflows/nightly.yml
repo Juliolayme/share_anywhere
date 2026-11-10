@@ -9,15 +9,54 @@ permissions:
   contents: read
 
 jobs:
+  large-file:
+    # docs/TESTING_AND_CI.md §2.2: 2 GB Web-to-Web transfer with a receiver reload, final SHA-256, memory ceiling.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install chromium
+        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium
+      - name: Free disk check
+        run: df -h /tmp .
+      - name: 2 GB transfer
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_LARGE: '1'
+          E2E_FIXTURE_DIR: ${{ runner.temp }}/fixtures
+        run: pnpm --filter @share-anywhere/web exec playwright test e2e/nightly --project=chromium-desktop --retries=0 --trace retain-on-failure
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-large-file
+          if-no-files-found: ignore
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 14
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   plan:
     runs-on: ubuntu-latest
     steps:
-      - name: Nightly jobs land with their phases
+      - name: Remaining nightly jobs land with their phases
         run: |
           cat <<'TXT'
-          This workflow is a stub in Phase 0. Jobs are added by the phases that need them
-          (docs/TESTING_AND_CI.md section 2.2):
-            Phase 3  large-file          2 GB Web-to-Web transfer with receiver reload and memory ceiling
+          Jobs still to be added by later phases (docs/TESTING_AND_CI.md section 2.2):
             Phase 4  five-receivers      one sender, five receivers, one throttled, sixth rejected
             Phase 6  android-matrix      emulator API 29 / 34 / 35, FGS time-budget simulation
             Phase 6  android-web-interop guest Android <-> Playwright transfers

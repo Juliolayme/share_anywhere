@@ -60,9 +60,9 @@ flowchart LR
 | RX-3 | Web join page | `/j/:token` (share link and QR payload; also the Universal Link / App Link path) | Opens the app when installed and verified; otherwise the Web flow | Same | — |
 | RX-4 | Join preview | `/join/preview` | Sender display name, Guest/Signed in badge, file names, sizes, count; browser capability check (Web); "Join within m:ss" in the last minute of the join window; expired message if the window ends before Receive; security words shown after joining | Same | Receive (Web: choose save target first) |
 | RX-5 | Waiting for approval | `/receive/:sessionId` (state REQUESTED) | Only when approval is on or protected mode applies; security words; keep-open banner and screen-on pill | Same | Cancel |
-| RX-5b | Save location | `/receive/:sessionId/save` | Web: choose a folder (File System Access) or download, large-file warning for browsers without it; Android SAF folder (default Download); iOS Files location (default On My iPhone); storage-full error | Same | Start receiving |
+| RX-5b | Save location | `/receive/:sessionId/save` | Web (Phase 3): the detected browser capability row (PRD §6.8) and warnings, security words, then Save to a folder (File System Access, Chromium), Keep in this browser then download (OPFS), or Keep in memory (only without OPFS, ≤ 256 MB); after a reload, a prompt to allow the remembered folder again; Android SAF folder (default Download); iOS Files location (default On My iPhone); storage-full error | Same | Start receiving |
 | RX-6 | Receiving | `/receive/:sessionId` | Destination, per-file progress, verification, pause/resume/retry, keep-open banner and screen-on pill, iOS hint "Locking your iPhone pauses the transfer" | Same | Pause |
-| RX-7 | Receive result | `/receive/:sessionId` (ended states; Phase 3 adds completion) | Completed, partial, failed; open, share, or locate files where the platform allows; removed/blocked/code-expired/session-expired/session-full outcomes; entry written to local history | Same, plus cloud history when on | Open / Done |
+| RX-7 | Receive result | `/receive/:sessionId` (ended states) | Completed (SHA-256 verified), partial, failed, cancelled; Web: Download per file or "Saved in folder"; Android/iOS: open, share, or locate files; removed/blocked/code-expired/session-expired/session-full outcomes; entry written to local history | Same, plus cloud history when on | Open / Done |
 
 ## 6. History
 
@@ -143,7 +143,6 @@ Web IDs come from `Web App.dc.html`, Android IDs from `Android App.dc.html`, iOS
 | RX-3 Web join page | `receive-preview` from a link | App Link | Universal Link | — | — |
 | RX-4 Join preview | `receive-preview` | `rx-preview` | `rx-preview` | Sender card, File row list, total | default, join window under one minute, expired |
 | RX-5 Waiting for approval | `receive-wait` (also the declined outcome) | `rx-wait` | `rx-wait` | Security words, Keep-open banner, Screen-on pill | `receiveOutcome`: `approved`, `rejected`, `expired` |
-| RX-4b Joined, waiting for transfers (Web addition until Phase 3) | `receive-joined` | — | — | Status banner, Security words, File list with Queued chips, Leave | joined |
 | TR-4b Session ended (Web addition) | `session-ended` | — | — | Heading, New session | closed, expired |
 | RX-5b Save location | `receive-save` | `rx-save` | `rx-preview` (Save to Files) | Folder picker, large-file warning | default, `rxIssue`: `storage` |
 | RX-6 Receiving | `receive-progress` | `rx-progress` | `rx-progress` | Progress, Status chip, Keep-open banner, Screen-on pill | receiving, reconnecting, verifying, paused in background (iOS) |

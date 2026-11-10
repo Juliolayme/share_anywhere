@@ -14,7 +14,7 @@ import { progressKey, type Progress, type ProgressStore, type SaveTarget } from 
 import type { Route, TransferStatus, TransfersApi } from './api';
 import { Observable } from './observable';
 import { Reporter } from './reporter';
-import { CHANNEL_LABEL, rtcConfig, selectedRoute, type CandidatePayload, type SdpPayload } from './rtc';
+import { CHANNEL_LABEL, rtcConfig, selectedRoute, watchPeer, type CandidatePayload, type SdpPayload } from './rtc';
 import { terminal } from './transitions';
 
 export type RxPhase =
@@ -120,6 +120,8 @@ export class ReceiverController extends Observable<RxState> {
   private historyWritten = false;
   private initialized: Promise<void> | null = null;
   private participantId = '';
+  /** ICE and connection diagnostics (memory only). */
+  readonly diag: string[] = [];
   /** Per-file completion work (folder copy, records), serialized so completion sees every file. */
   private fileWork: Promise<void> = Promise.resolve();
 
@@ -295,6 +297,8 @@ export class ReceiverController extends Observable<RxState> {
     if (this.connId !== connId || this.stopped) return;
     const pc = this.d.createPeer ? this.d.createPeer(cfg) : new RTCPeerConnection(cfg);
     this.pc = pc;
+    watchPeer(pc, this.diag);
+    this.diag.push(`dial ${connId.slice(0, 8)} servers ${cfg.iceServers?.length ?? 0}`);
     const dc = pc.createDataChannel(CHANNEL_LABEL, { ordered: true });
     pc.onicecandidate = (e) => {
       const payload: CandidatePayload = { conn: connId, candidate: e.candidate ? e.candidate.toJSON() : null };
@@ -511,10 +515,15 @@ export class ReceiverController extends Observable<RxState> {
   private onSocket(e: SocketEvent): void {
     const payload = e.payload as SdpPayload | CandidatePayload | undefined;
     if (e.type === 'ANSWER' && e.from === this.senderPid && payload?.conn === this.connId && this.pc) {
-      void this.pc.setRemoteDescription((payload as SdpPayload).sdp).catch(() => this.lost());
+      this.diag.push('answer');
+      void this.pc.setRemoteDescription((payload as SdpPayload).sdp).catch((err: unknown) => {
+        this.diag.push(`answer-error ${String(err)}`);
+        this.lost();
+      });
     } else if (e.type === 'ICE_CANDIDATE' && e.from === this.senderPid && payload?.conn === this.connId && this.pc) {
       const c = (payload as CandidatePayload).candidate;
-      if (c) void this.pc.addIceCandidate(c).catch(() => undefined);
+      this.diag.push(`remote ${c ? (c.candidate ?? '').split(' ').slice(4, 8).join(' ') : 'end'}`);
+      if (c) void this.pc.addIceCandidate(c).catch((err: unknown) => this.diag.push(`add-error ${String(err)}`));
     } else if (e.type === 'TRANSFER_UPDATED') {
       const t = e.transfer as { id: string; status: TransferStatus; verified_bytes: number } | undefined;
       if (t) this.onServerUpdate(t.id, t.status, t.verified_bytes);

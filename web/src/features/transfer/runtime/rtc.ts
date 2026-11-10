@@ -75,3 +75,25 @@ export interface CandidatePayload {
 }
 
 export const CHANNEL_LABEL = 'sa-transfer/1';
+
+/**
+ * Records ICE and connection progress for diagnostics (kept in memory, shown nowhere, read by test builds and
+ * useful in a debugger): gathering and connection states, local candidate types, and ICE errors.
+ */
+export function watchPeer(pc: RTCPeerConnection, out: string[]): void {
+  const push = (s: string) => {
+    out.push(`${Math.round(performance.now())} ${s}`);
+    if (out.length > 200) out.shift();
+  };
+  pc.addEventListener('icegatheringstatechange', () => push(`gather ${pc.iceGatheringState}`));
+  pc.addEventListener('iceconnectionstatechange', () => push(`ice ${pc.iceConnectionState}`));
+  pc.addEventListener('connectionstatechange', () => push(`conn ${pc.connectionState}`));
+  pc.addEventListener('icecandidate', (e) => {
+    const c = (e as RTCPeerConnectionIceEvent).candidate;
+    push(c ? `local ${c.type ?? '?'} ${c.protocol ?? ''} ${c.address ?? ''}` : 'local end');
+  });
+  pc.addEventListener('icecandidateerror', (e) => {
+    const x = e as RTCPeerConnectionIceErrorEvent;
+    push(`ice-error ${x.errorCode} ${x.url ?? ''} ${x.errorText ?? ''}`);
+  });
+}

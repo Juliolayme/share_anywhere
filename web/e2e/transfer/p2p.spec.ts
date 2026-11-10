@@ -6,6 +6,7 @@ import {
   fixture,
   joinToSave,
   receiverCounters,
+  attachDiagnostics,
   receiverPage,
   rxVerified,
   senderHook,
@@ -16,8 +17,14 @@ import {
 
 // Web ↔ Web transfers (docs/phases/PHASE_3_WEB_P2P_TRANSFER.md): Chromium sender, receiver in this project.
 test.afterAll(closeSenderBrowser);
+const opened: Page[] = [];
+test.afterEach(async () => {
+  await attachDiagnostics(opened);
+  opened.length = 0;
+});
 test.skip(({ isMobile }) => isMobile, 'mobile projects run e2e/mobile/transfer.spec.ts');
 
+const track = (p: Page) => (opened.push(p), p);
 const nameOf = (path: string) => path.split('/').pop() ?? '';
 const result = (rx: Page) => rx.getByTestId('receive-result');
 
@@ -27,9 +34,9 @@ test('transfer: a 64 MB file arrives intact; History on both sides survives a re
 }) => {
   test.setTimeout(180_000);
   const f = fixture('64M');
-  const sender = await senderPage();
+  const sender = track(await senderPage());
   const s = await createSession(sender, { files: [f.path] });
-  const rx = await receiverPage(browser, browserName);
+  const rx = track(await receiverPage(browser, browserName));
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
   await expect(result(rx)).toHaveAttribute('data-result', 'completed', { timeout: 150_000 });
@@ -52,10 +59,10 @@ test('transfer: a 64 MB file arrives intact; History on both sides survives a re
 test('transfer: pause and resume; the screen-on lock follows on both sides', async ({ browser, browserName }) => {
   test.setTimeout(180_000);
   const f = fixture('64M');
-  const sender = await senderPage('granted');
+  const sender = track(await senderPage('granted'));
   const s = await createSession(sender, { files: [f.path] });
   await senderHook(sender, s.id, { pace: 250 });
-  const rx = await receiverPage(browser, browserName, 'granted');
+  const rx = track(await receiverPage(browser, browserName, 'granted'));
   await joinToSave(rx, s.code);
   // End the join window so the sender holds the screen only for the transfer.
   await sender.getByRole('button', { name: 'Stop accepting' }).last().click();
@@ -106,10 +113,10 @@ test('transfer: pause and resume; the screen-on lock follows on both sides', asy
 test('transfer: cancel releases the lock and ends both sides', async ({ browser, browserName }) => {
   test.setTimeout(120_000);
   const f = fixture('64M');
-  const sender = await senderPage('granted');
+  const sender = track(await senderPage('granted'));
   const s = await createSession(sender, { files: [f.path] });
   await senderHook(sender, s.id, { pace: 300 });
-  const rx = await receiverPage(browser, browserName, 'granted');
+  const rx = track(await receiverPage(browser, browserName, 'granted'));
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
   await expect.poll(() => rxVerified(rx, s.id)).toBeGreaterThan(0);
@@ -135,10 +142,10 @@ test('transfer: a receiver reload resumes from the saved bitmap with zero re-sen
   test.setTimeout(180_000);
   const f = fixture('64M');
   const blocks = Math.ceil(f.size / (4 * MiB));
-  const sender = await senderPage();
+  const sender = track(await senderPage());
   const s = await createSession(sender, { files: [f.path] });
   await senderHook(sender, s.id, { pace: 300 });
-  const rx = await receiverPage(browser, browserName);
+  const rx = track(await receiverPage(browser, browserName));
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
   await expect.poll(() => rxVerified(rx, s.id), { timeout: 60_000 }).toBeGreaterThanOrEqual(4 * 4 * MiB);
@@ -158,10 +165,10 @@ test('transfer: a receiver reload resumes from the saved bitmap with zero re-sen
 test('transfer: a corrupted block is NACKed and re-sent; the file still matches', async ({ browser, browserName }) => {
   test.setTimeout(120_000);
   const f = fixture('16M');
-  const sender = await senderPage();
+  const sender = track(await senderPage());
   const s = await createSession(sender, { files: [f.path] });
   await senderHook(sender, s.id, { corrupt: 1 });
-  const rx = await receiverPage(browser, browserName);
+  const rx = track(await receiverPage(browser, browserName));
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
   await expect(result(rx)).toHaveAttribute('data-result', 'completed', { timeout: 60_000 });
@@ -177,10 +184,10 @@ test('transfer: when the sender drops off, the receiver shows reconnecting and r
 }) => {
   test.setTimeout(180_000);
   const f = fixture('64M');
-  const sender = await senderPage();
+  const sender = track(await senderPage());
   const s = await createSession(sender, { files: [f.path] });
   await senderHook(sender, s.id, { pace: 250 });
-  const rx = await receiverPage(browser, browserName);
+  const rx = track(await receiverPage(browser, browserName));
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
   await expect.poll(() => rxVerified(rx, s.id)).toBeGreaterThan(0);
@@ -202,9 +209,9 @@ test('transfer: Save to a folder writes the verified file into the chosen folder
   test.skip(browserName !== 'chromium', 'File System Access is Chromium-only');
   test.setTimeout(120_000);
   const f = fixture('8M');
-  const sender = await senderPage();
+  const sender = track(await senderPage());
   const s = await createSession(sender, { files: [f.path] });
-  const rx = await guestPage(browser);
+  const rx = track(await guestPage(browser));
   // The native picker cannot be driven; it returns a real directory handle (an OPFS folder).
   await rx.addInitScript(() => {
     (window as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker =
@@ -234,9 +241,9 @@ test('transfer: in a private window (no browser storage) a small file is kept in
   test.skip(browserName !== 'webkit', 'WebKit contexts are private windows without OPFS; others have storage');
   test.setTimeout(120_000);
   const f = fixture('8M');
-  const sender = await senderPage();
+  const sender = track(await senderPage());
   const s = await createSession(sender, { files: [f.path] });
-  const rx = await guestPage(browser); // ephemeral WebKit context = Safari private browsing
+  const rx = track(await guestPage(browser)); // ephemeral WebKit context = Safari private browsing
   await joinToSave(rx, s.code);
   await expect(rx.getByTestId('capability-row')).toHaveAttribute('data-opfs', 'false');
   await expect(

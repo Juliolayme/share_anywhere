@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test, webkit, type Browser, type Download, type Page } from '@playwright/test';
+import { chromium, expect, test, webkit, type Browser, type Download, type Page } from '@playwright/test';
 import { BASE, enterCode, guestPage, stubWakeLock, type WakeMode } from '../pairing/helpers';
 
 const DIR = process.env.E2E_FIXTURE_DIR ?? join(tmpdir(), 'sa-fixtures');
@@ -80,10 +80,20 @@ export function receiverCounters(rx: Page, sessionId: string): Promise<Counters>
  * browsing, which has no Origin Private File System), so WebKit receivers run in a persistent context, like a
  * normal Safari window (docs/TESTING_AND_CI.md §3).
  */
-export async function receiverPage(browser: Browser, browserName: string, wake?: WakeMode): Promise<Page> {
-  if (browserName !== 'webkit') return guestPage(browser, wake ? { wake } : {});
+export async function receiverPage(
+  browser: Browser,
+  browserName: string,
+  wake?: WakeMode,
+  opts: { persistent?: boolean } = {},
+): Promise<Page> {
+  // Chromium's default test contexts are off-the-record too: their OPFS lives in memory, which is fine for
+  // PR-sized files but not for the nightly 2 GB run, which asks for a persistent profile.
+  const persistent = browserName === 'webkit' || (opts.persistent && browserName === 'chromium');
+  if (!persistent) return guestPage(browser, wake ? { wake } : {});
   const use = test.info().project.use;
-  const ctx = await webkit.launchPersistentContext(mkdtempSync(join(tmpdir(), 'sa-webkit-')), {
+  const type = browserName === 'webkit' ? webkit : chromium;
+  const ctx = await type.launchPersistentContext(mkdtempSync(join(tmpdir(), `sa-${browserName}-`)), {
+    ...(browserName === 'chromium' ? { args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] } : {}),
     baseURL: BASE,
     locale: 'en-US',
     ...(use.viewport ? { viewport: use.viewport } : {}),
@@ -140,3 +150,33 @@ export const wl = (page: Page) =>
   page.evaluate(() => (window as unknown as { __wl: { requests: number; releases: number } }).__wl);
 
 export const MiB = 1024 * 1024;
+
+/** On failure, attach every controller's ICE diagnostics from the open pages (test builds only). */
+export async function attachDiagnostics(pages: Page[]) {
+  const info = test.info();
+  if (info.status === info.expectedStatus) return;
+  for (const [i, p] of pages.entries()) {
+    const d = await p
+      .evaluate(() => {
+        const h = (
+          window as unknown as {
+            __saTest?: {
+              receivers: Record<string, { diag: string[]; state: unknown }>;
+              senders: Record<string, { diag: string[] }>;
+            };
+          }
+        ).__saTest;
+        if (!h) return 'no hooks';
+        return JSON.stringify(
+          {
+            receivers: Object.fromEntries(Object.entries(h.receivers).map(([k, v]) => [k, v.diag])),
+            senders: Object.fromEntries(Object.entries(h.senders).map(([k, v]) => [k, v.diag])),
+          },
+          null,
+          1,
+        );
+      })
+      .catch((e: unknown) => `unavailable: ${String(e)}`);
+    await info.attach(`diagnostics-${i}`, { body: d, contentType: 'application/json' });
+  }
+}

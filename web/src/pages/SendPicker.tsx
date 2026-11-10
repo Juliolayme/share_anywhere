@@ -14,6 +14,7 @@ import {
 import { useRef, useState, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Banner, Button, Card, Screen, Switch } from '../components/ui';
+import { putOutbox } from '../features/transfer/runtime/outbox';
 import { useSharing } from '../features/sharing/SharingContext';
 import { useIdentity } from '../lib/identity/identity';
 import { ApiError } from '../lib/api/errors';
@@ -97,6 +98,10 @@ export default function SendPicker() {
       const v = await api.create(
         files.map(({ file }) => ({ name: file.name, size: file.size, mime: file.type })),
         approval,
+      );
+      putOutbox(
+        v.id,
+        files.map(({ file }) => file),
       );
       navigate(`/send/session/${v.id}`);
     } catch (e) {

@@ -27,7 +27,7 @@ test('receive-preview: link in a fresh context joins immediately; both sides see
   await expect(rx.getByText('holiday.mp4')).toBeVisible();
   await rx.getByRole('button', { name: 'Receive' }).click();
   await expect(rx.getByTestId('joined-title')).toContainText('You joined');
-  await expect(rx.locator('[data-screen="receive-joined"]')).toHaveCount(1);
+  await expect(rx.locator('[data-screen="receive-save"]')).toHaveCount(1);
   await expect(sender.locator('[data-screen="session"]')).toHaveCount(1);
   const rxWords = await rx.getByTestId('security-words').textContent();
   // Sender: join toast, card with Guest badge, same words.

@@ -51,6 +51,8 @@ services:
     build:
       context: .
       dockerfile: web/Dockerfile
+      args:
+        VITE_TEST_HOOKS: "true"
 
   coturn:
     image: coturn/coturn:4.6

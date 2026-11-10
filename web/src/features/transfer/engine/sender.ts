@@ -103,8 +103,12 @@ export interface SenderOptions {
   highWater?: number;
   lowWater?: number;
   maxRetries?: number;
+  /** The sender no longer holds the files (tab reloaded): authorize, then end with file_unreadable. */
+  unavailable?: boolean;
   /** Block size; protocol default 4 MiB (tests use smaller blocks). */
   blockSize?: number;
+  /** Test hook: wait this long before each block (slows a transfer so tests can act mid-way). */
+  pace?: { ms: number } | undefined;
   /** Test hook: corrupt the data of this many upcoming blocks after hashing them. */
   corrupt?: { blocks: number } | undefined;
 }
@@ -253,6 +257,10 @@ export class SenderConnection {
       return;
     }
     this.participantId = h.participant_id;
+    if (this.o.unavailable) {
+      this.fail('file_unreadable', true, 'The sender no longer has these files.');
+      return;
+    }
     this.o.events?.onAuthorized?.(h.participant_id);
     const hello: HelloSender = { v: 1, role: 'sender', session_id: this.o.sessionId };
     this.send(jsonFrame(FrameType.HELLO, hello));
@@ -327,6 +335,11 @@ export class SenderConnection {
       while (!this.closed && !this.paused && this.inflight.size < this.window) {
         const job = this.queue.shift();
         if (!job) break;
+        if (this.o.pace?.ms) await new Promise((r) => setTimeout(r, this.o.pace?.ms));
+        if (this.closed || this.paused) {
+          this.queue.unshift(job);
+          break;
+        }
         if (this.bitmaps.get(job.file)?.has(job.block)) {
           this.counters.verifiedResent++; // never expected: the receiver's bitmap said it was missing
           continue;

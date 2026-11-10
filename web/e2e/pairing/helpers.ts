@@ -94,7 +94,7 @@ export async function open(page: Page, path: string) {
 let senderBrowser: Browser | null = null;
 /** The sender always runs in Chromium (docs/phases/PHASE_2_PAIRING_SIGNALING.md), whatever the project. */
 export async function senderPage(wake: WakeMode = 'granted'): Promise<Page> {
-  senderBrowser ??= await chromium.launch();
+  senderBrowser ??= await chromium.launch({ args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] });
   return guestPage(senderBrowser, { wake });
 }
 
@@ -110,11 +110,11 @@ export interface Created {
 }
 
 /** Sender creates a session through the UI and returns its code, link and id. */
-export async function createSession(page: Page, opts: { approval?: boolean } = {}): Promise<Created> {
+export async function createSession(page: Page, opts: { approval?: boolean; files?: string[] } = {}): Promise<Created> {
   await open(page, '/send');
   await page
     .getByTestId('file-input')
-    .setInputFiles({ name: 'holiday.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2048, 1) });
+    .setInputFiles(opts.files ?? { name: 'holiday.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2048, 1) });
   if (opts.approval) await page.getByRole('switch', { name: 'Require approval' }).click();
   await page.getByRole('button', { name: /Create share session/ }).click();
   await page.waitForURL(/\/send\/session\//);

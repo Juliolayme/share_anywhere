@@ -8,6 +8,9 @@ COPY web/package.json web/package.json
 RUN pnpm install --frozen-lockfile --filter @share-anywhere/web...
 COPY shared/i18n shared/i18n
 COPY web web
+# Test stacks only: exposes engine counters and fault injection (docs/TESTING_AND_CI.md §3). Off by default.
+ARG VITE_TEST_HOOKS=false
+ENV VITE_TEST_HOOKS=$VITE_TEST_HOOKS
 RUN pnpm --filter @share-anywhere/web build
 
 FROM caddy:2-alpine

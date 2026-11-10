@@ -1,17 +1,19 @@
-import { CircleCheck, CircleX, File as FileIcon, Hourglass, TimerOff } from 'lucide-react';
+import { CircleX, Hourglass, TimerOff } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Banner, Button, Card, Screen } from '../../components/ui';
+import { Banner, Button, Screen } from '../../components/ui';
 import { KeepOpenBanner } from '../../components/KeepOpenBanner';
 import { useI18n } from '../../i18n/i18n';
 import { ApiError } from '../../lib/api/errors';
-import { formatBytes } from '../../lib/format';
 import { useKeepAwake } from '../../lib/keepAwake/KeepAwakeContext';
 import { useIdentity } from '../../lib/identity/identity';
 import { platformLabel } from '../../lib/api/device-client';
 import type { SessionView } from '../../features/sharing/api';
 import { SecurityWords } from '../../features/sharing/ParticipantCard';
 import { useSharing, useSocketEvents } from '../../features/sharing/SharingContext';
+import { useReceiver } from '../../features/transfer/TransferContext';
+import { rxActive } from '../../features/transfer/runtime/receiver-controller';
+import { ReceiveTransfer } from './ReceiveTransfer';
 
 type Outcome = 'removed' | 'blocked' | 'rejected' | 'left' | 'closed' | 'ended';
 
@@ -44,12 +46,13 @@ function outcomeOf(v: SessionView | null, gone: boolean): Outcome | null {
 }
 
 /**
- * Receiver side of a session: RX-5 waiting for approval (`receive-wait`), joined and waiting for transfers to
- * start (Phase 3), and RX-7 outcomes (removed, blocked, declined, closed, expired).
+ * Receiver side of a session: RX-5 waiting for approval (`receive-wait`), then the transfer itself
+ * (RX-5b save location, RX-6 receiving, RX-7 result, in ReceiveTransfer), and the RX-7 outcomes (removed,
+ * blocked, declined, closed, expired).
  */
 export default function ReceiveSessionPage() {
   const { sessionId = '' } = useParams();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { api } = useSharing();
   const { device } = useIdentity();
@@ -77,6 +80,13 @@ export default function ReceiveSessionPage() {
   });
 
   const outcome = outcomeOf(view, gone);
+  const [rx, rxState] = useReceiver(sessionId, view?.me?.status === 'JOINED');
+  const finishedFiles = rxState.phase === 'completed' || rxState.phase === 'partial';
+  useEffect(() => {
+    // Removed, blocked, left, or the session ended: stop receiving and discard unfinished files.
+    if (outcome && outcome !== 'rejected' && (rxActive(rxState.phase) || rxState.phase === 'paused'))
+      rx.endedElsewhere();
+  }, [outcome, rx, rxState.phase, rxState.files.length]);
   const waiting = !outcome && view?.me?.status === 'REQUESTED';
   // RX-5: keep the screen on while waiting for the sender's approval (docs/ARCHITECTURE.md §7.1).
   const pill = useKeepAwake(!!waiting);
@@ -95,6 +105,15 @@ export default function ReceiveSessionPage() {
     }
   };
 
+  if (outcome && finishedFiles && (outcome === 'closed' || outcome === 'ended')) {
+    return (
+      <ReceiveTransfer
+        sessionId={sessionId}
+        senderName={view?.sender?.display_name ?? ''}
+        words={view?.me?.security_words}
+      />
+    );
+  }
   if (outcome) {
     const o = OUTCOME[outcome];
     const Icon = outcome === 'closed' || outcome === 'ended' ? TimerOff : CircleX;
@@ -165,36 +184,7 @@ export default function ReceiveSessionPage() {
       </Screen>
     );
   }
-  return (
-    <Screen id="receive-joined">
-      <div className="mx-auto flex w-full max-w-[560px] flex-col gap-4">
-        <div className="flex items-start gap-3 rounded-[12px] bg-receive-soft p-4 text-receive-ink">
-          <CircleCheck aria-hidden size={22} className="flex-none" />
-          <div>
-            <b data-testid="joined-title">{t('product.joined_session', { name: senderName })}</b>
-            <div className="text-caption">{t('product.files_pending')}</div>
-          </div>
-        </div>
-        <SecurityWords words={view.me?.security_words} label={t('web_xx.secw_r')} />
-        <Card className="flex flex-col gap-2 p-[18px]">
-          {(view.files ?? []).map((f) => (
-            <div key={f.id} className="flex items-center gap-3 text-[14px]">
-              <FileIcon aria-hidden size={16} className="flex-none text-fg-2" />
-              <span className="min-w-0 flex-1 truncate">{f.name}</span>
-              <span className="font-mono text-[12px] text-fg-2">{formatBytes(f.size, locale)}</span>
-              <span className="rounded-[7px] bg-surface-2 px-2 text-[12px] font-semibold text-fg-2">
-                {t('common.queued')}
-              </span>
-            </div>
-          ))}
-        </Card>
-        {leaveError && <Banner tone="danger" role="alert" title={t('product.leave_failed')} />}
-        <Button variant="ghost" busy={leaving} onClick={() => void leave()}>
-          {t('product.leave')}
-        </Button>
-      </div>
-    </Screen>
-  );
+  return <ReceiveTransfer sessionId={sessionId} senderName={senderName} words={view.me?.security_words} />;
 }
 
 const NAME_SLOT = '\u0000';

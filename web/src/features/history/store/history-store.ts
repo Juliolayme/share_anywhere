@@ -11,6 +11,8 @@ export interface HistoryEntry {
   title: string;
   fileCount: number;
   totalBytes: number;
+  /** Bytes that arrived (or were verified by the receiver) when the transfer ended short of totalBytes. */
+  transferredBytes?: number;
   /** The other side's display name (receiver or sender). */
   peer: string;
   status: HistoryStatus;

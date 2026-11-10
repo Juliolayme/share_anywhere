@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Check, Hourglass, Laptop, ShieldCheck, Smartphone, UserX, Ban, User } from 'lucide-react';
 import { Button } from '../../components/ui';
 import { useI18n } from '../../i18n/i18n';
@@ -46,8 +47,10 @@ export function ParticipantCard({
   onReject,
   onRemove,
   onBlock,
+  children,
 }: {
   p: Participant;
+  children?: ReactNode;
   busy: boolean;
   onApprove: () => void;
   onReject: () => void;
@@ -93,6 +96,7 @@ export function ParticipantCard({
         </span>
       </div>
       <SecurityWords words={p.security_words} label={t('web_xx.secw_s')} />
+      {children}
       <div className="flex flex-wrap gap-2">
         {requested && (
           <>

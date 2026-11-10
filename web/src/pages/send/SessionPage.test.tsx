@@ -8,6 +8,7 @@ import { IdentityProvider } from '../../lib/identity/identity';
 import { SharingProvider } from '../../features/sharing/SharingContext';
 import { KeepAwakeProvider } from '../../lib/keepAwake/KeepAwakeContext';
 import { ToastProvider } from '../../components/Toast';
+import { HistoryProvider } from '../../features/history/HistoryContext';
 import { fakeClient, noWakeLock } from '../../test/render';
 import { mmss, secondsUntil, serverOffset, type SessionView } from '../../features/sharing/api';
 
@@ -47,13 +48,15 @@ function renderSession(api: Record<string, unknown>) {
       <IdentityProvider client={fakeClient()}>
         <SharingProvider api={api as never} socket={socket}>
           <KeepAwakeProvider env={noWakeLock}>
-            <ToastProvider>
-              <MemoryRouter initialEntries={['/send/session/s1']}>
-                <Routes>
-                  <Route path="/send/session/:id" element={<SessionPage />} />
-                </Routes>
-              </MemoryRouter>
-            </ToastProvider>
+            <HistoryProvider store={null}>
+              <ToastProvider>
+                <MemoryRouter initialEntries={['/send/session/s1']}>
+                  <Routes>
+                    <Route path="/send/session/:id" element={<SessionPage />} />
+                  </Routes>
+                </MemoryRouter>
+              </ToastProvider>
+            </HistoryProvider>
           </KeepAwakeProvider>
         </SharingProvider>
       </IdentityProvider>

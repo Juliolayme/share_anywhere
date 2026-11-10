@@ -13,6 +13,9 @@ import { mmss, secondsUntil, serverOffset, type Participant, type SessionView } 
 import { ParticipantCard } from '../../features/sharing/ParticipantCard';
 import { ExpiryAnnouncer } from '../../features/sharing/ExpiryAnnouncer';
 import { useSharing, useSocketEvents } from '../../features/sharing/SharingContext';
+import { useSender } from '../../features/transfer/TransferContext';
+import { txActive, type TxReceiver } from '../../features/transfer/runtime/sender-controller';
+import { ProgressBar, TransferChip, percent, type ChipState } from '../../features/transfer/ui';
 
 const LIVE = new Set(['WAITING', 'ACTIVE']);
 
@@ -89,8 +92,11 @@ export default function SessionPage() {
     }
   }, [live, win?.state, left, load]);
 
-  // Phase 2: the screen stays on while the join window is open (docs/ARCHITECTURE.md §7.1).
-  const pill = useKeepAwake(windowOpen);
+  // The sender's engine answers receivers' offers while this screen (or the dashboard) is open.
+  const [, txState] = useSender(id, live && view?.role === 'sender');
+  const transferring = txState.receivers.some((r) => txActive(r.status));
+  // The screen stays on while the join window is open or transfers run (docs/ARCHITECTURE.md §7.1).
+  const pill = useKeepAwake(windowOpen || transferring);
 
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -188,6 +194,7 @@ export default function SessionPage() {
   return (
     <Screen id={screenId}>
       <KeepOpenBanner state={pill} />
+      {txState.loaded && !txState.hasFiles && <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <span className="text-caption font-semibold text-fg-2">
@@ -371,7 +378,9 @@ export default function SessionPage() {
               onReject={() => void act(p.id, () => api.decide(p.id, 'reject'))}
               onRemove={() => void act(p.id, () => api.remove(p.id))}
               onBlock={() => setBlockTarget(p)}
-            />
+            >
+              {p.status === 'JOINED' && <TransferLine r={txState.receivers.find((r) => r.participantId === p.id)} />}
+            </ParticipantCard>
           ))}
           {receivers.length === 0 && (
             <div
@@ -384,7 +393,11 @@ export default function SessionPage() {
               </span>
             </div>
           )}
-          {joined.length > 0 && <p className="m-0 text-caption text-fg-2">{t('product.files_pending')}</p>}
+          {joined.length > 0 && (
+            <Button variant="send" onClick={() => navigate(`/send/session/${id}/transfers`)}>
+              {t('product.view_transfers')}
+            </Button>
+          )}
         </Card>
       </div>
       <ConfirmDialog
@@ -418,5 +431,27 @@ export default function SessionPage() {
         }}
       />
     </Screen>
+  );
+}
+
+/** A joined receiver's transfer at a glance (full detail on the dashboard). */
+function TransferLine({ r }: { r: TxReceiver | undefined }) {
+  const { t } = useI18n();
+  if (!r) return null;
+  return (
+    <div className="flex flex-col gap-1" data-testid="participant-transfer">
+      <div className="flex items-center justify-between gap-2 text-[12px]">
+        <TransferChip state={r.status as ChipState} />
+        <span className="font-mono text-fg-2">
+          {r.status === 'waiting' ? t('product.transfer_waiting') : percent(r.verified, r.total)}
+        </span>
+      </div>
+      <ProgressBar
+        value={r.total ? r.verified / r.total : 0}
+        label={r.name}
+        height={4}
+        tone={r.status === 'completed' ? 'receive' : 'send'}
+      />
+    </div>
   );
 }

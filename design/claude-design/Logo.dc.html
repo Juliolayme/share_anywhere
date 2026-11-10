@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="display:inline-flex;align-items:center;gap:{{ gap }}px;line-height:1">
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 48 48" role="img" aria-label="Share Anywhere"><rect x="4" y="10" width="31" height="13" rx="6.5" fill="{{ c1 }}"></rect><rect x="13" y="25" width="31" height="13" rx="6.5" fill="{{ c2 }}"></rect><circle cx="28.5" cy="16.5" r="2.7" fill="{{ dot }}"></circle><circle cx="19.5" cy="31.5" r="2.7" fill="{{ dot }}"></circle></svg>
+<sc-if value="{{ lockup }}"><span style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:700;font-size:{{ fs }}px;letter-spacing:-0.025em;color:{{ tc }};white-space:nowrap">Share Anywhere</span></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:320,&quot;height&quot;:80},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:40,&quot;tsType&quot;:&quot;number&quot;},&quot;mode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;color&quot;,&quot;dark&quot;,&quot;mono-dark&quot;,&quot;mono-light&quot;],&quot;default&quot;:&quot;color&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;lockup&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;dot&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#FFFFFF&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;textColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#102A56&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props, size = p.size ?? 40, mode = p.mode ?? 'color';
+    const M = {
+      color: ['#0878E8', '#16C75A', '#FFFFFF', '#102A56'],
+      dark: ['#2D8DF2', '#22D468', '#102A56', '#FFFFFF'],
+      'mono-dark': ['#102A56', '#102A56', '#FFFFFF', '#102A56'],
+      'mono-light': ['#FFFFFF', '#FFFFFF', '#102A56', '#FFFFFF'],
+    }[mode] || ['#0878E8', '#16C75A', '#FFFFFF', '#102A56'];
+    return { size, c1: M[0], c2: M[1], dot: p.dot ?? M[2], tc: p.textColor ?? M[3], lockup: !!p.lockup, fs: Math.round(size * 0.52), gap: Math.round(size * 0.24) };
+  }
+}
+</script>
+</body>
+</html>

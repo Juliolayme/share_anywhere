@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link rel="stylesheet" href="https://unpkg.com/lucide-static@0.454.0/font/lucide.css"><style>body{margin:0;background:#EEF2F7;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#102A56}a{color:#0A6FD6}a:hover{color:#102A56}@keyframes sa-spin{to{transform:rotate(360deg)}}@keyframes sa-shimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}</style></helmet>
+<section style="padding:48px 56px;max-width:1400px;display:flex;flex-direction:column;gap:44px">
+<div style="display:flex;flex-direction:column;gap:8px">
+<span style="font:500 12px 'JetBrains Mono',monospace;letter-spacing:.08em;color:#4A5B78">02 · DESIGN SYSTEM</span>
+<h1 style="margin:0;font-size:40px;letter-spacing:-0.03em">Share Anywhere UI — tokens & components</h1>
+<p style="margin:0;max-width:760px;color:#4A5B78;font-size:16px;line-height:1.6">Type: Plus Jakarta Sans (UI), JetBrains Mono (codes, hashes, sizes). Icons: Lucide (Web, 1.75 stroke) · Material Symbols Rounded (Android). Grid: 4/8. Token names map 1:1 to Tailwind theme keys and Compose <span style="font-family:'JetBrains Mono',monospace">SaTheme</span>.</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:16px">
+<h2 style="margin:0;font-size:22px">Color tokens</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:6px">
+<div style="font-weight:700;margin-bottom:6px">Light</div>
+<sc-for list="{{ colors }}" as="c" hint-placeholder-count="12"><div style="display:grid;grid-template-columns:36px 1fr 90px;gap:12px;align-items:center;font-size:13px"><span style="width:36px;height:28px;border-radius:8px;border:1px solid rgba(16,42,86,.12);background:{{ c.light }}"></span><span style="font-family:'JetBrains Mono',monospace;font-size:12px">{{ c.name }} <span style="color:#6B7A93">· {{ c.use }}</span></span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#4A5B78">{{ c.light }}</span></div></sc-for>
+</div>
+<div style="background:#0B1A33;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:6px;color:#EAF1FA">
+<div style="font-weight:700;margin-bottom:6px">Dark</div>
+<sc-for list="{{ colors }}" as="c" hint-placeholder-count="12"><div style="display:grid;grid-template-columns:36px 1fr 90px;gap:12px;align-items:center;font-size:13px"><span style="width:36px;height:28px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:{{ c.dark }}"></span><span style="font-family:'JetBrains Mono',monospace;font-size:12px">{{ c.name }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#A9B8CF">{{ c.dark }}</span></div></sc-for>
+</div>
+</div>
+<p style="margin:0;font-size:13px;color:#4A5B78">Status is never color-only: every semantic color ships with an icon + label (see Status chip). All text tokens ≥ 4.5:1 on their surface.</p>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px">
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px">Typography</h2>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span style="font-size:40px;font-weight:700;letter-spacing:-0.03em">Send files</span><span style="font:12px 'JetBrains Mono',monospace;color:#6B7A93">display · 40/48 700</span></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span style="font-size:28px;font-weight:700;letter-spacing:-0.02em">Receiving files</span><span style="font:12px 'JetBrains Mono',monospace;color:#6B7A93">headline · 28/36 700</span></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span style="font-size:20px;font-weight:600">Active transfers</span><span style="font:12px 'JetBrains Mono',monospace;color:#6B7A93">title · 20/28 600</span></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span style="font-size:16px;font-weight:600">Project_Final_4K.mov</span><span style="font:12px 'JetBrains Mono',monospace;color:#6B7A93">label-lg · 16/24 600</span></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span style="font-size:15px">Your clipboard content is encrypted before sync.</span><span style="font:12px 'JetBrains Mono',monospace;color:#6B7A93">body · 15/24 400</span></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span style="font-size:13px;color:#4A5B78">Last online 2 min ago</span><span style="font:12px 'JetBrains Mono',monospace;color:#6B7A93">caption · 13/18 500</span></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span style="font:500 28px 'JetBrains Mono',monospace;letter-spacing:.12em">482 913</span><span style="font:12px 'JetBrains Mono',monospace;color:#6B7A93">code · mono 28 500</span></div>
+<p style="margin:0;font-size:12px;color:#6B7A93">Android maps to sp, respects font scale up to 200% — rows wrap, never truncate the action.</p>
+</div>
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:18px">Spacing · Radius · Elevation</h2>
+<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap"><sc-for list="{{ space }}" as="s" hint-placeholder-count="8"><div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:{{ s }}px;height:{{ s }}px;background:#0878E8;border-radius:2px"></span><span style="font:11px 'JetBrains Mono',monospace;color:#4A5B78">{{ s }}</span></div></sc-for></div>
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:56px;height:40px;border:2px solid #0878E8;border-radius:6px"></span><span style="font:11px 'JetBrains Mono',monospace">sm 6</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:56px;height:40px;border:2px solid #0878E8;border-radius:10px"></span><span style="font:11px 'JetBrains Mono',monospace">md 10</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:56px;height:40px;border:2px solid #0878E8;border-radius:14px"></span><span style="font:11px 'JetBrains Mono',monospace">lg 14</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:56px;height:40px;border:2px solid #0878E8;border-radius:20px"></span><span style="font:11px 'JetBrains Mono',monospace">xl 20</span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:56px;height:40px;border:2px solid #0878E8;border-radius:999px"></span><span style="font:11px 'JetBrains Mono',monospace">full</span></div>
+</div>
+<div style="display:flex;gap:16px;flex-wrap:wrap;padding:8px;background:#F7FAFD;border-radius:12px">
+<div style="width:90px;height:56px;background:#fff;border:1px solid #DDE5EF;border-radius:10px;display:flex;align-items:center;justify-content:center;font:11px 'JetBrains Mono',monospace">e0 border</div>
+<div style="width:90px;height:56px;background:#fff;border-radius:10px;box-shadow:0 1px 2px rgba(16,42,86,.08),0 1px 3px rgba(16,42,86,.06);display:flex;align-items:center;justify-content:center;font:11px 'JetBrains Mono',monospace">e1 card</div>
+<div style="width:90px;height:56px;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(16,42,86,.12);display:flex;align-items:center;justify-content:center;font:11px 'JetBrains Mono',monospace">e2 overlay</div>
+</div>
+<p style="margin:0;font-size:12px;color:#6B7A93">Dark mode: elevation = lighter surface step (surface → surface-2), no shadows. Border 1px <span style="font-family:'JetBrains Mono',monospace">border</span>, focus ring 2px <span style="font-family:'JetBrains Mono',monospace">focus</span> + 2px offset.</p>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:16px">
+<h2 style="margin:0;font-size:22px">Button</h2>
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;overflow:auto">
+<div style="display:grid;grid-template-columns:110px repeat(7,minmax(120px,1fr));gap:14px;align-items:center;font-size:12px;min-width:1040px">
+<span></span><sc-for list="{{ states }}" as="st" hint-placeholder-count="7"><span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93;text-transform:uppercase">{{ st }}</span></sc-for>
+<span style="font-weight:600">Primary</span>
+<button style="height:44px;border:0;border-radius:10px;background:#0A6FD6;color:#fff;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px"><i class="icon-upload"></i>Send files</button>
+<button style="height:44px;border:0;border-radius:10px;background:#085DB4;color:#fff;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px"><i class="icon-upload"></i>Send files</button>
+<button style="height:44px;border:0;border-radius:10px;background:#064D96;color:#fff;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px;transform:scale(.98)"><i class="icon-upload"></i>Send files</button>
+<button style="height:44px;border:0;border-radius:10px;background:#0A6FD6;color:#fff;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px;outline:2px solid #0878E8;outline-offset:2px"><i class="icon-upload"></i>Send files</button>
+<button style="height:44px;border:0;border-radius:10px;background:#E3E9F1;color:#8A97AC;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px"><i class="icon-upload"></i>Send files</button>
+<button style="height:44px;border:0;border-radius:10px;background:#0A6FD6;color:#fff;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px"><span style="width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sa-spin .8s linear infinite"></span>Creating…</button>
+<button style="height:44px;border:0;border-radius:10px;background:#C62828;color:#fff;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px"><i class="icon-rotate-ccw"></i>Retry</button>
+<span style="font-weight:600">Secondary</span>
+<button style="height:44px;border:1px solid #C9D5E4;border-radius:10px;background:#fff;color:#102A56;font:600 14px 'Plus Jakarta Sans'">Receive files</button>
+<button style="height:44px;border:1px solid #AFC0D6;border-radius:10px;background:#F1F5FA;color:#102A56;font:600 14px 'Plus Jakarta Sans'">Receive files</button>
+<button style="height:44px;border:1px solid #AFC0D6;border-radius:10px;background:#E5ECF5;color:#102A56;font:600 14px 'Plus Jakarta Sans'">Receive files</button>
+<button style="height:44px;border:1px solid #C9D5E4;border-radius:10px;background:#fff;color:#102A56;font:600 14px 'Plus Jakarta Sans';outline:2px solid #0878E8;outline-offset:2px">Receive files</button>
+<button style="height:44px;border:1px solid #E3E9F1;border-radius:10px;background:#fff;color:#A3AFC2;font:600 14px 'Plus Jakarta Sans'">Receive files</button>
+<button style="height:44px;border:1px solid #C9D5E4;border-radius:10px;background:#fff;color:#102A56;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px"><span style="width:14px;height:14px;border:2px solid #C9D5E4;border-top-color:#0878E8;border-radius:50%;animation:sa-spin .8s linear infinite"></span>Joining…</button>
+<button style="height:44px;border:1px solid #C62828;border-radius:10px;background:#fff;color:#C62828;font:600 14px 'Plus Jakarta Sans'">Receive files</button>
+<span style="font-weight:600">Ghost</span>
+<button style="height:44px;border:0;border-radius:10px;background:transparent;color:#0A6FD6;font:600 14px 'Plus Jakarta Sans'">Copy link</button>
+<button style="height:44px;border:0;border-radius:10px;background:#EAF3FE;color:#0A6FD6;font:600 14px 'Plus Jakarta Sans'">Copy link</button>
+<button style="height:44px;border:0;border-radius:10px;background:#D6E8FD;color:#085DB4;font:600 14px 'Plus Jakarta Sans'">Copy link</button>
+<button style="height:44px;border:0;border-radius:10px;background:transparent;color:#0A6FD6;font:600 14px 'Plus Jakarta Sans';outline:2px solid #0878E8;outline-offset:2px">Copy link</button>
+<button style="height:44px;border:0;border-radius:10px;background:transparent;color:#A3AFC2;font:600 14px 'Plus Jakarta Sans'">Copy link</button>
+<button style="height:44px;border:0;border-radius:10px;background:transparent;color:#0A6FD6;font:600 14px 'Plus Jakarta Sans'">Copying…</button>
+<button style="height:44px;border:0;border-radius:10px;background:transparent;color:#C62828;font:600 14px 'Plus Jakarta Sans'">Copy failed</button>
+<span style="font-weight:600">Destructive</span>
+<button style="height:44px;border:0;border-radius:10px;background:#C62828;color:#fff;font:600 14px 'Plus Jakarta Sans'">Revoke device</button>
+<button style="height:44px;border:0;border-radius:10px;background:#A82020;color:#fff;font:600 14px 'Plus Jakarta Sans'">Revoke device</button>
+<button style="height:44px;border:0;border-radius:10px;background:#8E1B1B;color:#fff;font:600 14px 'Plus Jakarta Sans'">Revoke device</button>
+<button style="height:44px;border:0;border-radius:10px;background:#C62828;color:#fff;font:600 14px 'Plus Jakarta Sans';outline:2px solid #C62828;outline-offset:2px">Revoke device</button>
+<button style="height:44px;border:0;border-radius:10px;background:#F0E3E3;color:#B79A9A;font:600 14px 'Plus Jakarta Sans'">Revoke device</button>
+<button style="height:44px;border:0;border-radius:10px;background:#C62828;color:#fff;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px"><span style="width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sa-spin .8s linear infinite"></span>Revoking…</button>
+<span style="font:12px 'Plus Jakarta Sans';color:#6B7A93">—</span>
+</div>
+<p style="margin:14px 0 0;font-size:12px;color:#6B7A93">Heights: Web 44 (md) · 52 (lg hero) · 36 (sm). Android 48dp min / 56dp hero. Hero “Send files”/“Receive files” use lg with leading icon.</p>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:20px">
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:18px">Input</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+<label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Email · default<input placeholder="you@example.com" style="height:44px;border:1px solid #C9D5E4;border-radius:10px;padding:0 12px;font:15px 'Plus Jakarta Sans';color:#102A56"></label>
+<label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Email · focus<input value="minh@" style="height:44px;border:1px solid #0878E8;border-radius:10px;padding:0 12px;font:15px 'Plus Jakarta Sans';color:#102A56;outline:3px solid rgba(8,120,232,.22)"></label>
+<label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Email · error<input value="minh@" style="height:44px;border:1px solid #C62828;border-radius:10px;padding:0 12px;font:15px 'Plus Jakarta Sans';color:#102A56"><span style="font-weight:500;color:#C62828;display:flex;gap:6px;align-items:center"><i class="icon-circle-alert"></i>Enter a valid email address</span></label>
+<label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:#8A97AC">Device name · disabled<input value="Minh’s laptop" disabled style="height:44px;border:1px solid #E3E9F1;background:#F3F6FA;border-radius:10px;padding:0 12px;font:15px 'Plus Jakarta Sans';color:#8A97AC"></label>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px"><span style="font-size:13px;font-weight:600">OTP · 6-digit code (default · filled · focus · error)</span>
+<div style="display:flex;gap:24px;flex-wrap:wrap">
+<div style="display:flex;gap:6px"><sc-for list="{{ six }}" as="d" hint-placeholder-count="6"><span style="width:38px;height:48px;border:1px solid #C9D5E4;border-radius:10px"></span></sc-for></div>
+<div style="display:flex;gap:6px;align-items:center"><span style="width:38px;height:48px;border:1px solid #C9D5E4;border-radius:10px;display:flex;align-items:center;justify-content:center;font:500 22px 'JetBrains Mono'">4</span><span style="width:38px;height:48px;border:1px solid #C9D5E4;border-radius:10px;display:flex;align-items:center;justify-content:center;font:500 22px 'JetBrains Mono'">8</span><span style="width:38px;height:48px;border:2px solid #0878E8;border-radius:10px;outline:3px solid rgba(8,120,232,.2)"></span><span style="width:8px"></span><span style="width:38px;height:48px;border:1px solid #C9D5E4;border-radius:10px"></span><span style="width:38px;height:48px;border:1px solid #C9D5E4;border-radius:10px"></span><span style="width:38px;height:48px;border:1px solid #C9D5E4;border-radius:10px"></span></div>
+<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;gap:6px"><sc-for list="{{ errDigits }}" as="d" hint-placeholder-count="6"><span style="width:38px;height:48px;border:1px solid #C62828;background:#FDECEC;border-radius:10px;display:flex;align-items:center;justify-content:center;font:500 22px 'JetBrains Mono'">{{ d }}</span></sc-for></div><span style="font-size:13px;color:#C62828;display:flex;gap:6px;align-items:center"><i class="icon-circle-alert"></i>Code not found or expired</span></div>
+</div></div>
+</div>
+
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:18px">Route badge · Status chip · Capacity</h2>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;background:#E7F8EE;color:#0B6B34;font-size:12px;font-weight:600"><i class="icon-zap"></i>Direct P2P</span>
+<span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;background:#EAF3FE;color:#0A5FB8;font-size:12px;font-weight:600"><i class="icon-radio-tower"></i>Relay</span>
+<span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;background:#F1EDFD;color:#5B3CC4;font-size:12px;font-weight:600"><i class="icon-cloud"></i>Cloud</span>
+<span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;background:#EEF3F9;color:#4A5B78;font-size:12px;font-weight:600"><i class="icon-search"></i>Finding route…</span>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<sc-for list="{{ statuses }}" as="s" hint-placeholder-count="8"><span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:8px;background:{{ s.bg }};color:{{ s.fg }};font-size:12px;font-weight:600"><i class="{{ s.icon }}"></i>{{ s.label }}</span></sc-for>
+</div>
+<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+<div style="display:flex;flex-direction:column;gap:6px;min-width:200px"><div style="display:flex;justify-content:space-between;font-size:13px"><b>2/5 receivers</b><span style="color:#4A5B78">3 slots left</span></div><div style="display:flex;gap:4px"><span style="flex:1;height:8px;border-radius:4px;background:#16C75A"></span><span style="flex:1;height:8px;border-radius:4px;background:#16C75A"></span><span style="flex:1;height:8px;border-radius:4px;background:#E3E9F1"></span><span style="flex:1;height:8px;border-radius:4px;background:#E3E9F1"></span><span style="flex:1;height:8px;border-radius:4px;background:#E3E9F1"></span></div></div>
+<div style="display:flex;flex-direction:column;gap:6px;min-width:200px"><div style="display:flex;justify-content:space-between;font-size:13px"><b>5/5 receivers</b><span style="color:#B25E00;display:flex;gap:4px;align-items:center"><i class="icon-lock"></i>Session full</span></div><div style="display:flex;gap:4px"><span style="flex:1;height:8px;border-radius:4px;background:#F59E0B"></span><span style="flex:1;height:8px;border-radius:4px;background:#F59E0B"></span><span style="flex:1;height:8px;border-radius:4px;background:#F59E0B"></span><span style="flex:1;height:8px;border-radius:4px;background:#F59E0B"></span><span style="flex:1;height:8px;border-radius:4px;background:#F59E0B"></span></div></div>
+</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:20px">
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:18px">Progress bar · ring</h2>
+<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between;font-size:13px"><b>62%</b><span style="font-family:'JetBrains Mono',monospace;color:#4A5B78">5.22 / 8.42 GB · 48.6 MB/s · 1 min 6 s left</span></div><div style="height:8px;background:#E3E9F1;border-radius:4px;overflow:hidden"><div style="width:62%;height:100%;background:#0878E8;border-radius:4px"></div></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between;font-size:13px"><b>3%</b><span style="font-family:'JetBrains Mono',monospace;color:#4A5B78">0.25 / 8.42 GB · Estimating time…</span></div><div style="height:8px;background:#E3E9F1;border-radius:4px;overflow:hidden"><div style="width:3%;height:100%;background:#0878E8"></div></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between;font-size:13px"><b style="display:flex;gap:6px;align-items:center"><i class="icon-pause"></i>Paused · 41%</b><span style="font-family:'JetBrains Mono',monospace;color:#4A5B78">3.45 / 8.42 GB</span></div><div style="height:8px;background:#E3E9F1;border-radius:4px;overflow:hidden"><div style="width:41%;height:100%;background:#8A97AC"></div></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between;font-size:13px"><b style="display:flex;gap:6px;align-items:center"><i class="icon-shield-check"></i>Verifying SHA-256</b><span style="font-family:'JetBrains Mono',monospace;color:#4A5B78">checking 2 of 3 files</span></div><div style="height:8px;border-radius:4px;background:linear-gradient(90deg,#E7F8EE 0,#BDEFD0 50%,#E7F8EE 100%);background-size:200px 8px;animation:sa-shimmer 1.4s linear infinite"></div></div>
+<div style="display:flex;gap:20px;align-items:center">
+<div style="width:64px;height:64px;border-radius:50%;background:conic-gradient(#0878E8 0 62%,#E3E9F1 62% 100%);display:flex;align-items:center;justify-content:center"><span style="width:52px;height:52px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">62%</span></div>
+<div style="width:64px;height:64px;border-radius:50%;background:conic-gradient(#16C75A 0 100%);display:flex;align-items:center;justify-content:center"><span style="width:52px;height:52px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;color:#0B7A3B;font-size:22px"><i class="icon-check"></i></span></div>
+<div style="width:40px;height:40px;border-radius:50%;background:conic-gradient(#0878E8 0 30%,#E3E9F1 30% 100%);display:flex;align-items:center;justify-content:center"><span style="width:32px;height:32px;border-radius:50%;background:#fff"></span></div>
+<span style="font-size:12px;color:#6B7A93;max-width:200px">Reduced motion: shimmer and ring sweep disabled; values update stepwise.</span>
+</div>
+</div>
+
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:18px">File row · Participant card</h2>
+<div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #DDE5EF;border-radius:12px"><span style="width:40px;height:40px;border-radius:10px;background:#EAF3FE;color:#0A6FD6;display:flex;align-items:center;justify-content:center;font-size:20px"><i class="icon-film"></i></span><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Project_Final_4K.mov</div><div style="font:12px 'JetBrains Mono',monospace;color:#4A5B78">MOV · 8.42 GB</div></div><button aria-label="Remove" style="width:36px;height:36px;border:0;border-radius:8px;background:transparent;color:#4A5B78;font-size:18px" style-hover="background:#EEF3F9"><i class="icon-x"></i></button></div>
+<div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #DDE5EF;border-radius:12px;background:#F7FAFD"><span style="width:40px;height:40px;border-radius:10px;background:#E3E9F1;animation:sa-shimmer 1.4s linear infinite;background-image:linear-gradient(90deg,#E3E9F1,#F1F5FA,#E3E9F1);background-size:200px 40px"></span><div style="flex:1"><div style="font-weight:600;font-size:14px">RAW_shoot_day2.zip</div><div style="font:12px 'JetBrains Mono',monospace;color:#4A5B78">ZIP · 12.80 GB · reading metadata…</div></div></div>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93">DEFAULT · AUTO-JOINED RECEIVER</span>
+<div style="padding:12px;border:1px solid #DDE5EF;border-radius:12px;display:flex;flex-direction:column;gap:10px"><div style="display:flex;gap:12px;align-items:center"><span style="width:40px;height:40px;border-radius:10px;background:#E7F8EE;color:#0B7A3B;display:flex;align-items:center;justify-content:center;font-size:19px"><i class="icon-laptop"></i></span><div style="flex:1"><b style="font-size:14px">Lan’s MacBook</b><div style="font-size:12px;color:#4A5B78">Chrome on macOS · joined with code</div></div><span style="display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:7px;background:#EAF3FE;color:#0A5FB8;font-size:12px;font-weight:600"><i class="icon-arrow-up-right"></i>Transferring</span><button aria-label="Remove from session" style="width:40px;height:40px;border:0;border-radius:10px;background:#FDECEC;color:#A11F1F;font-size:18px"><i class="icon-user-x"></i></button></div><div style="height:6px;background:#E3E9F1;border-radius:3px;overflow:hidden"><div style="width:38%;height:100%;background:#0878E8"></div></div><span style="font:12px 'JetBrains Mono',monospace;color:#4A5B78">38% · 4.39 / 11.54 GB · 24.1 MB/s</span></div>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93">JOIN REQUEST — ONLY IF REQUIRE APPROVAL IS ON</span>
+<div style="padding:16px;border:1px solid #0878E8;border-radius:14px;display:flex;flex-direction:column;gap:12px;background:#F5F9FF">
+<div style="display:flex;gap:12px;align-items:center"><span style="width:44px;height:44px;border-radius:12px;background:#E7F8EE;color:#0B7A3B;display:flex;align-items:center;justify-content:center;font-size:22px"><i class="icon-smartphone"></i></span><div style="flex:1"><div style="font-weight:700;font-size:15px">Minh’s Pixel 7</div><div style="font-size:13px;color:#4A5B78">Android 14 · wants to join · 0:12 ago</div></div><span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:8px;background:#FFF4E0;color:#8A4A00;font-size:12px;font-weight:600"><i class="icon-hourglass"></i>Pending</span></div>
+<div style="display:flex;gap:8px"><button style="flex:1;height:44px;border:0;border-radius:10px;background:#0A6FD6;color:#fff;font:600 14px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;gap:8px"><i class="icon-check"></i>Approve</button><button style="flex:1;height:44px;border:1px solid #C9D5E4;border-radius:10px;background:#fff;color:#102A56;font:600 14px 'Plus Jakarta Sans'">Reject</button></div>
+</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px">
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px">Toast · Banner</h2>
+<div style="display:flex;align-items:center;gap:12px;background:#102A56;color:#fff;padding:12px 14px;border-radius:12px;font-size:14px"><i class="icon-circle-check" style="color:#3DDC84"></i><span style="flex:1">Copied to clipboard</span><button style="border:0;background:transparent;color:#8EC3FF;font:600 13px 'Plus Jakarta Sans'">Undo</button></div>
+<div style="display:flex;gap:12px;background:#FFF4E0;color:#6B3A00;padding:12px 14px;border-radius:12px;font-size:14px;line-height:1.45"><i class="icon-bell-off" style="font-size:18px;margin-top:1px"></i><div style="flex:1"><b>Notifications are off</b><br>Turn them on to see transfer progress and join requests.</div><button style="border:0;background:transparent;color:#8A4A00;font:700 13px 'Plus Jakarta Sans';align-self:center">Allow</button></div>
+<div role="status" style="display:flex;gap:12px;align-items:center;background:#EAF3FE;border:1px solid #DDE5EF;color:#102A56;padding:12px 14px;border-radius:12px;font-size:14px;line-height:1.45"><i class="icon-monitor-check" style="font-size:18px;color:#0A5FB8"></i><div style="flex:1"><b>Keep Share Anywhere open — don’t close it so the transfer continues.</b><br><span style="font-size:13px;color:#4A5B78">Keep-open banner · sticky on sending / receiving / waiting screens. VI: “Giữ ứng dụng mở — không thoát để việc truyền không bị gián đoạn.”</span></div></div>
+<div style="display:flex;gap:12px;background:#EEF3F9;color:#102A56;padding:12px 14px;border-radius:12px;font-size:14px;line-height:1.45"><i class="icon-wifi-off" style="font-size:18px;margin-top:1px"></i><div style="flex:1"><b>You’re offline</b><br>Transfers will resume automatically when you reconnect.</div></div>
+<div style="display:flex;gap:12px;background:#FDECEC;color:#8E1B1B;padding:12px 14px;border-radius:12px;font-size:14px;line-height:1.45"><i class="icon-circle-alert" style="font-size:18px;margin-top:1px"></i><div style="flex:1"><b>Clipboard permission denied</b><br>You can still use Sync Clipboard to paste manually.</div></div>
+</div>
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px">Dialog · Bottom sheet</h2>
+<div style="background:#F7FAFD;border-radius:14px;padding:16px;display:flex;justify-content:center"><div style="background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(16,42,86,.14);padding:20px;max-width:300px;display:flex;flex-direction:column;gap:10px"><b style="font-size:17px">Close this session?</b><span style="font-size:14px;color:#4A5B78;line-height:1.5">2 receivers are still transferring. They will stop and keep partial files.</span><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px"><button style="height:40px;padding:0 14px;border:0;border-radius:10px;background:transparent;color:#0A6FD6;font:600 14px 'Plus Jakarta Sans'">Keep open</button><button style="height:40px;padding:0 14px;border:0;border-radius:10px;background:#C62828;color:#fff;font:600 14px 'Plus Jakarta Sans'">Close session</button></div></div></div>
+<div style="background:#F7FAFD;border-radius:14px;padding:16px 16px 0;display:flex;justify-content:center"><div style="background:#fff;border-radius:20px 20px 0 0;box-shadow:0 -4px 16px rgba(16,42,86,.08);padding:10px 18px 18px;width:260px;display:flex;flex-direction:column;gap:10px"><span style="width:32px;height:4px;border-radius:2px;background:#C9D5E4;align-self:center"></span><b style="font-size:15px">Share session link</b><div style="display:flex;gap:8px;font-size:13px;color:#4A5B78"><i class="icon-link"></i>sa.link/j/482913</div></div></div>
+</div>
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px">Empty · Skeleton · Tabs · Search</h2>
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px;border:1px dashed #C9D5E4;border-radius:14px;text-align:center"><span style="width:44px;height:44px;border-radius:12px;background:#EEF3F9;display:flex;align-items:center;justify-content:center;font-size:20px;color:#4A5B78"><i class="icon-inbox"></i></span><b style="font-size:14px">No transfers yet</b><span style="font-size:13px;color:#4A5B78">Files you send or receive show up here.</span></div>
+<div style="display:flex;flex-direction:column;gap:8px"><span style="height:12px;width:60%;border-radius:6px;background-image:linear-gradient(90deg,#E3E9F1,#F1F5FA,#E3E9F1);background-size:200px 12px;animation:sa-shimmer 1.4s linear infinite"></span><span style="height:12px;width:85%;border-radius:6px;background:#E3E9F1"></span></div>
+<div style="display:flex;gap:4px;background:#EEF3F9;padding:4px;border-radius:10px;width:fit-content;font-size:13px;font-weight:600"><span style="padding:6px 12px;background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(16,42,86,.08)">All</span><span style="padding:6px 12px;color:#4A5B78">Sent</span><span style="padding:6px 12px;color:#4A5B78">Received</span></div>
+<div style="display:flex;align-items:center;gap:8px;height:40px;border:1px solid #C9D5E4;border-radius:10px;padding:0 12px;color:#6B7A93;font-size:14px"><i class="icon-search"></i>Search clipboard</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:20px">
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:18px">Keep-open banner + Screen-on indicator</h2>
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#EAF3FE;border:1px solid #DDE5EF;padding:12px 16px;border-radius:12px;font-size:14px"><i class="icon-monitor-check" style="font-size:20px;color:#0A5FB8"></i><span style="flex:1;min-width:200px"><b>Keep Share Anywhere open — don’t close it so the transfer continues.</b></span><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid #0878E8;border-radius:16px;background:#fff;color:#0A5FB8;font-size:13px;font-weight:600"><i class="icon-sun"></i>Screen stays on</span></div>
+<div style="display:grid;grid-template-columns:150px 1fr;gap:10px 14px;align-items:center;font-size:13px">
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93">ON (default)</span><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid #0878E8;border-radius:16px;background:#fff;color:#0A5FB8;font-size:13px;font-weight:600"><i class="icon-sun"></i>Screen stays on</span><span style="color:#4A5B78">sending · receiving · waiting for receivers</span></span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93">OFF · TEMPORARY</span><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid #6B7A93;border-radius:16px;background:transparent;color:#4A5B78;font-size:13px;font-weight:600"><i class="icon-sun-dim"></i>Screen can sleep</span><span style="color:#4A5B78">tapped off for this transfer; resets next session</span></span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93">PAUSED / DONE</span><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid #6B7A93;border-radius:16px;background:transparent;color:#4A5B78;font-size:13px;font-weight:600"><i class="icon-sun-dim"></i>Screen can sleep — paused</span><span style="color:#4A5B78">auto-released on pause, finish, cancel, close</span></span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93">OFF IN SETTINGS</span><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid #6B7A93;border-radius:16px;background:transparent;color:#4A5B78;font-size:13px;font-weight:600"><i class="icon-sun-dim"></i>Screen-on is off in Settings</span><span style="color:#4A5B78">tap = turn back on</span></span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93">WEB · UNSUPPORTED</span><span style="display:inline-flex;gap:8px;align-items:center;font-size:12px;font-weight:600;color:#8A4A00;background:#FFF4E0;padding:8px 10px;border-radius:10px"><i class="icon-eye"></i>Your browser can’t keep the screen on — keep this tab visible</span>
+<span style="font:500 11px 'JetBrains Mono',monospace;color:#6B7A93">FOCUS</span><span><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid #0878E8;border-radius:16px;background:#fff;color:#0A5FB8;font-size:13px;font-weight:600;outline:2px solid #0878E8;outline-offset:2px"><i class="icon-sun"></i>Screen stays on</span></span>
+</div>
+<p style="margin:0;font-size:12px;color:#6B7A93;line-height:1.5">Toggle button, aria-pressed. Visual pill 28–36px; hit area ≥44pt/48dp via padding. Never colour-only: icon (sun / sun-dim) + label. Settings: “Keep screen on during transfers” (default ON).</p>
+</div>
+<div style="background:#fff;border-radius:16px;border:1px solid #DDE5EF;padding:20px;display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px">Transfer safety states</h2><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;background:#EEF3F9;border-radius:10px;font-size:13px"><i class="icon-clock"></i>Valid for 10 minutes to join · <b style="font-family:'JetBrains Mono',monospace">09:41</b><span style="color:#6B7A93">→ under 1:00 stays calm, no red</span></div><div style="border:2px solid #F59E0B;border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center"><i class="icon-timer-off" style="font-size:26px;color:#8A4A00"></i><b style="font-size:14px">Code expired — Create new code</b><span style="font-size:12px;color:#4A5B78">QR / code / link stop working; joined receivers keep transferring. Button adds a new code valid 10 min.</span></div><div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#A11F1F"><i class="icon-circle-alert"></i>Receiver: Code expired — ask the sender for a new code</div>
+<div style="display:flex;gap:8px;align-items:center;font-size:13px;color:#4A5B78;flex-wrap:wrap"><i class="icon-shield-check"></i>Security words — receivers see the same: <b style="font-family:'JetBrains Mono',monospace;color:#102A56">maple · river · seven</b></div>
+<div style="display:flex;gap:10px;background:#FDECEC;color:#A11F1F;padding:12px 14px;border-radius:12px;font-size:13px;line-height:1.45"><i class="icon-hard-drive" style="font-size:18px"></i><span><b>Not enough space on this device</b><br>Needs 11.6 GB, only 3.2 GB free. Free up space or choose another location.</span></div>
+<div style="display:flex;gap:10px;background:#FDECEC;color:#A11F1F;padding:12px 14px;border-radius:12px;font-size:13px;line-height:1.45"><i class="icon-file-x" style="font-size:18px"></i><span><b>1 file failed the integrity check</b><br>Not saved; other files fine · action “Download this file again”.</span></div>
+<div style="display:flex;gap:10px;background:#FFF4E0;color:#8A4A00;padding:12px 14px;border-radius:12px;font-size:13px;line-height:1.45"><i class="icon-wallet" style="font-size:18px"></i><span><b>Budget reached</b> — status chip + note on the receiver card; “Try Cloud” re-opens consent.</span></div>
+<div style="display:flex;gap:10px;background:#FFF4E0;color:#8A4A00;padding:12px 14px;border-radius:12px;font-size:13px;line-height:1.45"><i class="icon-moon" style="font-size:18px"></i><span><b>iOS · Transfer paused — reopen the app to resume</b> — banner + local notification.</span></div>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:16px">
+<h2 style="margin:0;font-size:22px">Handoff — token naming</h2>
+<div style="background:#102A56;color:#EAF1FA;border-radius:16px;padding:24px;font:13px/1.7 'JetBrains Mono',monospace;display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:24px">
+<div><div style="color:#8EC3FF;margin-bottom:6px">// tailwind.config.ts (CSS vars, class dark)</div>colors: {<br>&nbsp;bg: 'var(--sa-bg)', surface: 'var(--sa-surface)',<br>&nbsp;'surface-2': 'var(--sa-surface-2)', border: 'var(--sa-border)',<br>&nbsp;fg: 'var(--sa-fg)', 'fg-2': 'var(--sa-fg-2)', 'fg-3': 'var(--sa-fg-3)',<br>&nbsp;send: { DEFAULT:'var(--sa-send)', soft:'var(--sa-send-soft)', ink:'var(--sa-send-ink)' },<br>&nbsp;receive: { DEFAULT:'var(--sa-receive)', soft:..., ink:... },<br>&nbsp;success, warning, danger, info, focus<br>}<br>borderRadius: { sm:'6px', md:'10px', lg:'14px', xl:'20px' }<br>spacing: 4px base (1=4 … 16=64)<br><span style="color:#8EC3FF">// components → React</span><br>&lt;Button variant="primary|secondary|ghost|destructive" size="sm|md|lg" loading/&gt;<br>&lt;RouteBadge route="p2p|relay|cloud|probing"/&gt;<br>&lt;ScreenOnToggle active supported onToggle/&gt; → navigator.wakeLock.request('screen'); re-request on visibilitychange<br>&lt;StatusChip status="connecting|transferring|paused|reconnecting|completed|failed"/&gt;</div>
+<div><div style="color:#8EC3FF;margin-bottom:6px">// Jetpack Compose</div>object SaColors { val Blue = Color(0xFF0878E8); val Green = Color(0xFF16C75A); val Navy = Color(0xFF102A56) }<br>val SaLight = lightColorScheme(<br>&nbsp;primary = Color(0xFF0A6FD6), secondary = Color(0xFF0B7A3B),<br>&nbsp;background = Color(0xFFF7FAFD), surface = Color.White,<br>&nbsp;surfaceVariant = Color(0xFFEEF3F9), outline = Color(0xFFC9D5E4),<br>&nbsp;onSurface = Color(0xFF102A56), error = Color(0xFFC62828))<br>val SaDark = darkColorScheme(primary = Color(0xFF5AA9FF),<br>&nbsp;background = Color(0xFF0B1A33), surface = Color(0xFF11223F), …)<br>data class SaExtendedColors(sendSoft, receive, receiveSoft, warning, routeP2p, routeRelay, routeCloud)<br>Shapes(small=6.dp, medium=10.dp, large=14.dp, extraLarge=20.dp)<br>Min touch: 48.dp · progress anim respects ANIMATOR_DURATION_SCALE<br>Keep screen on: window.addFlags(FLAG_KEEP_SCREEN_ON) / Compose view.keepScreenOn = true; clear on pause/finish</div>
+<div><div style="color:#8EC3FF;margin-bottom:6px">// SwiftUI (iOS 17+)</div>extension Color {<br>&nbsp;static let saBlue = Color("Blue") // #0878E8 · action #0A6FD6 / dark #5AA9FF<br>&nbsp;static let saGreen = Color("Green") // #16C75A / dark #3DDC84<br>&nbsp;static let saNavy = Color(hex: 0x102A56)<br>&nbsp;static let saBg = Color("Bg") // #F2F5FA / #0B1A33 (grouped)<br>&nbsp;static let saSurface = Color("Surface") // #FFFFFF / #11223F<br>}<br>// Asset catalog: Any + Dark appearances per token<br>.font(.largeTitle) → Plus Jakarta Sans 800, relativeTo: .largeTitle<br>body/controls: SF Pro via .body/.subheadline (Dynamic Type)<br>RoundedRectangle(cornerRadius: 12/14/20, style: .continuous)<br>Tap targets ≥ 44pt · .sheet + .presentationDetents([.medium,.large])<br>PasteButton for paste without prompt; UIPasteboard read only on tap<br>UIApplication.shared.isIdleTimerDisabled = true while transferring (false on pause/finish/background)<br>BGProcessingTask can’t keep P2P alive → show “Transfer paused — reopen the app to resume” + UNNotification on scenePhase == .background</div>
+<div><div style="color:#8EC3FF;margin-bottom:6px">// Icons: Lucide (web) → SF Symbols (iOS) → Material (Android)</div>arrow-up-right → arrow.up.right → north_east<br>arrow-down-left → arrow.down.left → south_west<br>clipboard → doc.on.clipboard → content_paste<br>clock → clock → history<br>monitor-smartphone → laptopcomputer.and.iphone → devices<br>settings → gearshape → settings<br>zap → bolt.fill → bolt<br>radio-tower → antenna.radiowaves.left.and.right → cell_tower<br>shield-check → checkmark.shield → verified_user<br>user-x → person.badge.minus → person_remove<br>moon (paused in bg) → moon.zzz → bedtime<br>folder → folder → folder_open · share → square.and.arrow.up → share</div>
+</div>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      colors: [
+        { name: 'bg', use: 'canvas', light: '#F7FAFD', dark: '#0B1A33' },
+        { name: 'surface', use: 'cards', light: '#FFFFFF', dark: '#11223F' },
+        { name: 'surface-2', use: 'raised / hover', light: '#EEF3F9', dark: '#172C4D' },
+        { name: 'border', use: 'dividers', light: '#DDE5EF', dark: '#233B60' },
+        { name: 'fg', use: 'primary text', light: '#102A56', dark: '#EAF1FA' },
+        { name: 'fg-2', use: 'secondary text', light: '#4A5B78', dark: '#A9B8CF' },
+        { name: 'send', use: 'brand blue / action', light: '#0A6FD6', dark: '#5AA9FF' },
+        { name: 'send-soft', use: 'tint', light: '#EAF3FE', dark: '#15345E' },
+        { name: 'receive', use: 'brand green', light: '#16C75A', dark: '#3DDC84' },
+        { name: 'receive-ink', use: 'green text', light: '#0B7A3B', dark: '#5BE39A' },
+        { name: 'warning', use: '+ icon', light: '#B25E00', dark: '#FFB547' },
+        { name: 'danger', use: '+ icon', light: '#C62828', dark: '#FF7A7A' },
+        { name: 'focus', use: 'ring', light: '#0878E8', dark: '#8EC3FF' },
+      ],
+      space: [4, 8, 12, 16, 24, 32, 48, 64],
+      states: ['default', 'hover', 'pressed', 'focus', 'disabled', 'loading', 'error'],
+      six: [1, 2, 3, 4, 5, 6], errDigits: ['1', '2', '3', '4', '5', '6'],
+      statuses: [
+        { label: 'Connecting', icon: 'icon-loader', bg: '#EEF3F9', fg: '#4A5B78' },
+        { label: 'Transferring', icon: 'icon-arrow-up-right', bg: '#EAF3FE', fg: '#0A5FB8' },
+        { label: 'Paused', icon: 'icon-pause', bg: '#EEF3F9', fg: '#4A5B78' },
+        { label: 'Reconnecting', icon: 'icon-refresh-cw', bg: '#FFF4E0', fg: '#8A4A00' },
+        { label: 'Verifying', icon: 'icon-shield-check', bg: '#EAF3FE', fg: '#0A5FB8' },
+        { label: 'Completed', icon: 'icon-circle-check', bg: '#E7F8EE', fg: '#0B6B34' },
+        { label: 'Partial', icon: 'icon-circle-dashed', bg: '#FFF4E0', fg: '#8A4A00' },
+        { label: 'Failed', icon: 'icon-circle-x', bg: '#FDECEC', fg: '#A11F1F' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

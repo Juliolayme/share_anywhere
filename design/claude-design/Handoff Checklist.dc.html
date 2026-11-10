@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><style>body{margin:0;background:#EEF2F7;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#102A56}a{color:#0A6FD6;font-weight:600}a:hover{color:#102A56}</style></helmet>
+<section style="padding:48px 56px;max-width:1400px;display:flex;flex-direction:column;gap:36px">
+<div style="display:flex;flex-direction:column;gap:8px"><span style="font:500 12px 'JetBrains Mono',monospace;letter-spacing:.08em;color:#4A5B78">07 · HANDOFF CHECKLIST · 10 NOV 2026</span><h1 style="margin:0;font-size:40px;letter-spacing:-0.03em">What’s designed, what’s left</h1><p style="margin:0;max-width:780px;color:#4A5B78;font-size:15px;line-height:1.6">Screens A–K from the brief plus later changes (guest-first, no approval by default, iOS, keep screen on). Status refers to the clickable prototypes. Prototype URLs accept <span style="font-family:'JetBrains Mono',monospace">?screen= &amp;theme=dark &amp;lang=vi &amp;signedIn=1 &amp;approval=1 &amp;issue=storage|checksum|partial &amp;home=new|loading|offline &amp;notif=denied &amp;wake=unsupported</span>.</p>
+<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px"><a href="Brand.dc.html">Brand</a><a href="Design System.dc.html">Design system</a><a href="Screen Map.dc.html">Screen map</a><a href="Web App.dc.html">Web</a><a href="Android App.dc.html">Android</a><a href="iOS App.dc.html">iOS</a></div></div>
+
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<sc-for list="{{ totals }}" as="c" hint-placeholder-count="3"><div style="background:#fff;border:1px solid #DDE5EF;border-radius:14px;padding:14px 18px;display:flex;flex-direction:column;gap:6px;min-width:200px"><b style="font-size:15px">{{ c.p }}</b><div style="display:flex;gap:12px;font-size:13px"><span style="color:#0B6B34;font-weight:600">✓ {{ c.y }} done</span><span style="color:#8A4A00;font-weight:600">◐ {{ c.pa }} partial</span><span style="color:#A11F1F;font-weight:600">✕ {{ c.n }} missing</span></div></div></sc-for>
+<div style="display:flex;gap:14px;align-items:center;font-size:12px;color:#4A5B78;padding:0 6px"><span><b style="color:#0B6B34">✓</b> designed & clickable</span><span><b style="color:#8A4A00">◐</b> static, demo-only or partial</span><span><b style="color:#A11F1F">✕</b> not designed</span><span><b>—</b> not applicable</span></div>
+</div>
+
+<div style="background:#fff;border:1px solid #DDE5EF;border-radius:16px;overflow:auto">
+<div style="min-width:900px">
+<div style="display:grid;grid-template-columns:70px minmax(260px,2.2fr) 90px 90px 90px minmax(220px,2fr);gap:12px;padding:12px 18px;border-bottom:1px solid #DDE5EF;font-size:12px;font-weight:700;color:#4A5B78;position:sticky;top:0;background:#fff"><span>Area</span><span>Screen / state</span><span>Web</span><span>Android</span><span>iOS</span><span>Note</span></div>
+<sc-for list="{{ rows }}" as="r" hint-placeholder-count="20"><div style="display:grid;grid-template-columns:70px minmax(260px,2.2fr) 90px 90px 90px minmax(220px,2fr);gap:12px;padding:9px 18px;border-bottom:1px solid #EEF3F9;font-size:13px;align-items:center;background:{{ r.bg }}"><b style="font:600 12px 'JetBrains Mono',monospace;color:#4A5B78">{{ r.a }}</b><span>{{ r.s }}</span><sc-for list="{{ r.c }}" as="c" hint-placeholder-count="3"><span style="display:inline-flex;align-items:center;justify-content:center;width:58px;height:24px;border-radius:7px;background:{{ c.bg }};color:{{ c.fg }};font-weight:700;font-size:12px">{{ c.l }}</span></sc-for><span style="color:#4A5B78;font-size:12px;line-height:1.4">{{ r.n }}</span></div></sc-for>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px;align-items:start">
+<div style="background:#fff;border:1px solid #DDE5EF;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px">
+<h2 style="margin:0;font-size:18px">Tokens</h2>
+<sc-for list="{{ tokens }}" as="t" hint-placeholder-count="14"><div style="display:grid;grid-template-columns:24px 1fr 80px 80px;gap:10px;align-items:center;font-size:12px"><span style="width:20px;height:20px;border-radius:6px;border:1px solid rgba(16,42,86,.15);background:{{ t.l }}"></span><span style="font-family:'JetBrains Mono',monospace">{{ t.k }}</span><span style="font-family:'JetBrains Mono',monospace;color:#4A5B78">{{ t.l }}</span><span style="font-family:'JetBrains Mono',monospace;color:#4A5B78">{{ t.d }}</span></div></sc-for>
+<p style="margin:4px 0 0;font-size:12px;color:#6B7A93;line-height:1.5">Also: radius sm 6 · md 10 · lg 14 · xl 20 · full; spacing 4-based; type Plus Jakarta Sans (brand/headings), SF Pro / Roboto body on native, JetBrains Mono for codes & sizes. Mapping: Tailwind theme (CSS vars), Compose SaTheme, SwiftUI asset catalog — see Design System.</p>
+</div>
+<div style="background:#fff;border:1px solid #DDE5EF;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px">
+<h2 style="margin:0;font-size:18px">Components</h2>
+<div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ comps }}" as="c" hint-placeholder-count="20"><span style="font-size:12px;padding:5px 9px;border-radius:7px;background:#EEF3F9;font-weight:600">{{ c }}</span></sc-for></div>
+<p style="margin:4px 0 0;font-size:12px;color:#6B7A93;line-height:1.5">Each with default · hover · pressed · focus · disabled · loading · error where relevant (Design System page). Native equivalents: M3 components on Android, UIKit/SwiftUI system controls on iOS.</p>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DDE5EF;border-radius:16px;overflow:auto">
+<div style="padding:14px 18px;border-bottom:1px solid #DDE5EF"><h2 style="margin:0;font-size:18px">Key microcopy · EN / VI</h2></div>
+<div style="min-width:760px"><sc-for list="{{ copy }}" as="c" hint-placeholder-count="20"><div style="display:grid;grid-template-columns:150px 1fr 1fr;gap:14px;padding:8px 18px;border-bottom:1px solid #EEF3F9;font-size:13px;line-height:1.45"><span style="font:11px 'JetBrains Mono',monospace;color:#6B7A93">{{ c.k }}</span><span>{{ c.en }}</span><span>{{ c.vi }}</span></div></sc-for></div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px;align-items:start">
+<div style="background:#102A56;color:#EAF1FA;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px">
+<h2 style="margin:0;font-size:18px">Open questions for dev / product</h2>
+<ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.5"><sc-for list="{{ open }}" as="o" hint-placeholder-count="10"><li>{{ o }}</li></sc-for></ol>
+</div>
+<div style="background:#fff;border:1px solid #DDE5EF;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px">
+<h2 style="margin:0;font-size:18px">Not done yet</h2>
+<ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.5;color:#4A5B78"><sc-for list="{{ todo }}" as="o" hint-placeholder-count="10"><li>{{ o }}</li></sc-for></ul>
+</div>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const S = { y: ['✓', '#E7F8EE', '#0B6B34'], p: ['◐', '#FFF4E0', '#8A4A00'], n: ['✕', '#FDECEC', '#A11F1F'], '-': ['—', '#F3F6FA', '#6B7A93'] };
+    const R = [
+      ['A', 'Welcome → straight to Transfer home (guest-first)', 'yyy', ''],
+      ['A', 'Sign in', 'yyy', 'iOS adds Sign in with Apple'],
+      ['A', 'Create account', 'yyy', ''],
+      ['A', 'Forgot password (form + sent state)', 'yyy', ''],
+      ['A', 'Email verification (6-digit code)', 'yyy', ''],
+      ['A', 'Guest mode — Clipboard gate explains sign-in', 'yyy', ''],
+      ['A', 'Trust / register device', 'yyy', 'Mobile: confirmed on the verify step'],
+      ['A', 'Permissions & privacy (+ system notification prompt)', 'yyy', 'Android POST_NOTIFICATIONS · iOS alert'],
+      ['A', 'First-run checklist', 'yyy', ''],
+      ['B', 'Transfer home: Send / Receive', 'yyy', ''],
+      ['B', 'Home: active transfer card', 'yyy', ''],
+      ['B', 'Home: empty · loading skeleton · offline', 'yyy', 'homeState tweak or ?home='],
+      ['C', 'Pick files, instant name + size, remove', 'yyy', 'Android SAF sheet · iOS Photos/Files'],
+      ['C', 'Session: QR + 6-digit code + link', 'yyy', ''],
+      ['C', 'Code valid 10 min to join · countdown 10:00', 'yyy', 'New · no rotating codes'],
+      ['C', 'Code expired — Create new code (+10 min, joined receivers continue)', 'yyy', 'New · ?screen=session-expired'],
+      ['C', 'Security words on sender & receiver', 'yyy', ''],
+      ['C', 'Receivers join automatically (approval off)', 'yyy', ''],
+      ['C', 'Require approval ON: Approve / Reject cards', 'yyy', 'Optional, off by default'],
+      ['C', 'Capacity x/5 · 6th receiver auto-declined', 'yyy', ''],
+      ['C', 'Remove a receiver · Close session dialog', 'yyy', ''],
+      ['D', 'Overall + per-receiver progress, speed, ETA, route badge', 'yyy', '“Estimating time…” until >3%'],
+      ['D', 'Statuses: connecting → transferring / paused / reconnecting → verifying → done', 'yyy', ''],
+      ['D', 'Slow / dropped receiver doesn’t block others', 'yyy', ''],
+      ['D', 'Pause / Resume / Remove', 'yyy', ''],
+      ['D', 'Retry failed receiver', 'yyy', 'Mobile new'],
+      ['D', 'Files × receivers matrix', 'yyy', 'Mobile new'],
+      ['D', 'Error detail drawer (connection log)', 'yyy', 'Mobile new (sheet)'],
+      ['D', 'End states completed / partial / failed / cancelled', 'yyy', 'Mobile: direct jumps added'],
+      ['D', 'iOS: Transfer paused — reopen the app to resume + local notification', '--y', ''],
+      ['E', 'Scan QR (camera)', '-yy', 'Web receiver uses code/link'],
+      ['E', 'Enter 6-digit code · not found error', 'yyy', '000000'],
+      ['E', 'Code expired — ask the sender for a new code', 'yyy', 'New · 111111'],
+      ['E', 'Open link (Join page / App Link / Universal Link)', 'yyy', 'Android App Link new'],
+      ['E', 'Preview: sender, files, total', 'yyy', ''],
+      ['E', 'Waiting for approval → Approved / Rejected / Expired', 'yyy', 'Only if Require approval is on'],
+      ['E', 'Save location (Web folder + large-file warning / SAF / Files app)', 'yyy', ''],
+      ['E', 'Storage full', 'yyy', '?issue=storage'],
+      ['E', 'Receiving · reconnecting · verifying', 'yyy', ''],
+      ['E', 'Completed (Open / Share / Show in folder)', 'yyy', ''],
+      ['E', 'Checksum failed', 'yyy', '?issue=checksum'],
+      ['E', 'Partially received', 'yyy', 'New · ?issue=partial'],
+      ['F', 'Cloud consent dialog (size, bandwidth, retention, cost, budget)', 'yyy', ''],
+      ['F', 'Budget reached → paused, retry', 'yyy', ''],
+      ['F', 'Budget limit setting', 'yyy', 'Mobile new'],
+      ['G', 'Sync Clipboard button + honest status', 'yyy', 'Never “Always syncing”'],
+      ['G', 'Timeline + Copy (writes only on tap)', 'yyy', ''],
+      ['G', 'Item detail · search / filter · clear history (confirm)', 'yyy', 'Mobile new'],
+      ['G', 'States: empty / offline queue / paused / denied / unsupported', 'yyy', 'Tweak clipboardStatus'],
+      ['G', 'Android notification “Open Share Anywhere to sync clipboard”', '-y-', ''],
+      ['G', 'iOS paste prompt (Allow / Don’t Allow Paste)', '--y', ''],
+      ['G', 'Sensitive item skipped', 'yyy', ''],
+      ['H', 'History list, local-only label', 'yyy', ''],
+      ['H', 'Search & filters', 'yyy', 'Mobile now working'],
+      ['H', 'History detail', 'yyy', ''],
+      ['H', 'Clear history (confirm) + empty state', 'yyy', 'Mobile new'],
+      ['I', 'Device list · This device · last online', 'yyy', ''],
+      ['I', 'Rename device (list updates)', 'yyy', ''],
+      ['I', 'Revoke device (consequences dialog, row removed)', 'yyy', ''],
+      ['J', 'Account / Guest + Sign in', 'yyy', ''],
+      ['J', 'Theme · Language pickers', 'yyy', 'Mobile: picker sheets, live switch'],
+      ['J', 'Notifications · Data/battery', 'yyy', ''],
+      ['J', 'Transfer strategy picker', 'yyy', ''],
+      ['J', 'Require approval · Keep screen on', 'yyy', ''],
+      ['J', 'Clipboard retention · history retention · About', 'yyy', ''],
+      ['J', 'Change password · Two-step verification', 'yyy', 'New sheets / dialogs'],
+      ['J', 'Deeper sub-pages (licenses, notification categories)', 'ppp', 'Rows only'],
+      ['K', 'Keep-open banner on send / receive / waiting', 'yyy', 'Web beforeunload · Android FGS notification'],
+      ['K', 'Screen stays on indicator + toggle', 'yyy', ''],
+      ['K', 'Web: browser can’t keep screen on', 'y--', '?wake=unsupported'],
+      ['K', 'Loading skeletons', 'yyy', ''],
+      ['K', 'Offline', 'yyy', 'Home + clipboard queue'],
+      ['K', 'Permission denied', 'yyy', 'Clipboard (Web/iOS) · notifications (Android/iOS)'],
+      ['K', 'Light + dark', 'yyy', ''],
+      ['K', 'Vietnamese — screens, auth, permissions, settings', 'yyy', ''],
+      ['K', 'Vietnamese — toasts, status cards, generated text', 'yyy', 'Dictionary + patterns (i18n-strings.json)'],
+      ['K', 'Vietnamese — demo-only labels, a few header strings', 'ppp', 'e.g. “Online · ready to share”, “Step 2 of 3”'],
+      ['K', 'Responsive web 1440 / 1024 / 768 / 390', 'y--', ''],
+      ['K', 'Device sizes 360×800 · 412×915 / SE · 15 Pro', '-yy', ''],
+    ];
+    const rows = R.map(([a, s, c, n], i) => ({ a, s, n, bg: i % 2 ? '#FBFCFE' : '#FFFFFF', c: c.split('').map(k => ({ l: S[k][0], bg: S[k][1], fg: S[k][2] })) }));
+    const totals = ['Web', 'Android', 'iOS'].map((p, j) => { const v = R.map(r => r[2][j]); return { p, y: v.filter(x => x === 'y').length, pa: v.filter(x => x === 'p').length, n: v.filter(x => x === 'n').length }; });
+    return {
+      rows, totals,
+      tokens: [['bg', '#F7FAFD', '#0B1A33'], ['surface', '#FFFFFF', '#11223F'], ['surface-2', '#EEF3F9', '#172C4D'], ['border', '#DDE5EF', '#233B60'], ['fg', '#102A56', '#EAF1FA'], ['fg-2', '#4A5B78', '#A9B8CF'], ['send (action)', '#0A6FD6', '#5AA9FF'], ['send-soft', '#EAF3FE', '#15345E'], ['brand.blue', '#0878E8', '#0878E8'], ['receive', '#16C75A', '#3DDC84'], ['receive-ink', '#0B7A3B', '#5BE39A'], ['warning', '#B25E00', '#FFB547'], ['danger', '#C62828', '#FF7A7A'], ['focus', '#0878E8', '#8EC3FF']].map(([k, l, d]) => ({ k, l, d })),
+      comps: ['Button ×4 variants', 'Input', 'OTP 6-digit', 'Card', 'File row', 'Progress bar', 'Progress ring', 'Route badge', 'Status chip', 'Participant card', 'Capacity 5-segment', 'QR panel', 'Security words', 'Keep-open banner', 'Screen-on toggle', 'Toast / Snackbar', 'Dialog / Alert', 'Bottom sheet', 'Empty state', 'Skeleton', 'Permission banner', 'Tabs / Segmented', 'Search & filter bar', 'Sidebar / Rail', 'Bottom nav / Tab bar', 'Switch', 'Cloud consent', 'Lock-screen notification'],
+      copy: [['send', 'Send files', 'Gửi tệp'], ['receive', 'Receive files', 'Nhận tệp'], ['keep', 'Keep Share Anywhere open — don’t close it so the transfer continues.', 'Giữ ứng dụng mở — không thoát để việc truyền không bị gián đoạn.'], ['wake_on', 'Screen stays on', 'Màn hình luôn sáng'], ['wake_unsup', 'Your browser can’t keep the screen on — keep this tab visible', 'Trình duyệt không giữ được màn hình sáng — hãy để tab này luôn hiển thị'], ['wake_set', 'Keep screen on during transfers', 'Giữ màn hình sáng khi truyền'], ['code_exp', 'Code expired — Create new code', 'Mã đã hết hạn — Tạo mã mới'], ['code_exp_rx', 'Code expired — ask the sender for a new code', 'Mã đã hết hạn — hãy xin người gửi mã mới'], ['code_valid', 'Valid for 10 minutes to join', 'Hiệu lực 10 phút để vào phiên'], ['slots', '2 of 5 receiver slots left', 'Còn 2/5 chỗ nhận'], ['full', 'Session full — extra devices are declined automatically.', 'Phiên đã đủ — thiết bị thêm sẽ tự bị từ chối.'], ['p2p', 'Connected directly', 'Kết nối trực tiếp'], ['relay', 'Using relay', 'Đang dùng relay'], ['eta', 'Estimating time…', 'Đang ước tính…'], ['cloud', 'Cloud transfer requires your approval', 'Truyền qua Cloud cần bạn đồng ý'], ['waiting', 'Waiting for approval', 'Đang chờ duyệt'], ['secw', 'Security words — check the sender sees the same', 'Từ xác minh — kiểm tra người gửi thấy giống hệt'], ['storage', 'Not enough space on this device', 'Không đủ dung lượng trên thiết bị'], ['checksum', '1 file failed the integrity check', '1 tệp không qua kiểm tra toàn vẹn'], ['ios_susp', 'Transfer paused — reopen the app to resume', 'Đã tạm dừng — mở lại ứng dụng để tiếp tục'], ['sync', 'Sync Clipboard', 'Đồng bộ Clipboard'], ['cb_auto', 'Automatic capture is available when your browser permits it', 'Tự động ghi nhận khi trình duyệt cho phép'], ['cb_e2e', 'Your clipboard content is encrypted before sync', 'Nội dung clipboard được mã hoá trước khi đồng bộ'], ['cb_notif', 'Open Share Anywhere to sync clipboard', 'Mở Share Anywhere để đồng bộ clipboard'], ['guest', 'Guest', 'Khách'], ['revoke', 'It loses access to your clipboard immediately.', 'Thiết bị mất quyền truy cập clipboard ngay lập tức.']].map(([k, en, vi]) => ({ k, en, vi })),
+      open: [
+        'Security words: derived from the session key (SAS) or display-only? Same English word list on both ends, or localized lists mapped to the same index?',
+        'No approval by default: rely on 6-digit code + 10-min expiry + rate limiting, or add “Lock session” for senders?',
+        'Keep screen on: release on tab hidden / app background and re-acquire on return — confirm product wants auto re-acquire.',
+        'iOS background: evaluate BGContinuedProcessingTask / URLSession background for cloud route; P2P will still suspend.',
+        'Android: foreground service type (dataSync) and runtime limits on Android 15+ for multi-hour transfers.',
+        'Web saving >4 GB: File System Access is Chromium-only — fallback policy for Safari/Firefox (stream download, cap, or recommend app).',
+        'Cloud: pricing source, who pays (account vs. session), budget period, currency (USD vs VND).',
+        'Clipboard retention 7 days / 100 items: enforced server-side, client-side, or both?',
+        'History stores locally only (IndexedDB / Room / SwiftData) — sync to account later?',
+        'Sign in with Apple required on iOS if any third-party sign-in is offered.',
+        'Reconnect window: how long a receiver may stay Reconnecting before Failed.',
+        'Code expiry: can a sender end joining early (“Stop accepting receivers”) before 10 min? Can an expired code value be reused later?',
+        'Session lifetime after the code expires: does the session close automatically when the last receiver finishes?',
+      ],
+      todo: [
+        'A few strings stay English in Vietnamese mode: demo buttons, side-panel jump lists, Web header status (“Online · ready to share”) and step labels.',
+        'Deeper settings sub-pages (licenses, notification categories) are rows only.',
+        'QR codes are decorative stand-ins — generate real codes from the session URL.',
+        'Prototype state (renamed / revoked devices, cleared history) resets on “Jump to screen”.',
+        'Optional: iOS Live Activity / Dynamic Island progress, Android home-screen widget — not designed.',
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

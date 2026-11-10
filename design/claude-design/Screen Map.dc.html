@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><style>body{margin:0;background:#EEF2F7;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#102A56}a{color:#0A6FD6;font-weight:600}a:hover{color:#102A56}</style></helmet>
+<section style="padding:48px 56px;display:flex;flex-direction:column;gap:40px;max-width:1800px">
+<div style="display:flex;flex-direction:column;gap:8px"><span style="font:500 12px 'JetBrains Mono',monospace;letter-spacing:.08em;color:#4A5B78">03 · NAVIGATION & SCREEN MAP</span><h1 style="margin:0;font-size:40px;letter-spacing:-0.03em">Share Anywhere — how it fits together</h1>
+<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px"><a href="Brand.dc.html">01 Brand</a><a href="Design System.dc.html">02 Design system</a><a href="Web App.dc.html">04 Web prototype</a><a href="Android App.dc.html">05 Android prototype</a><a href="iOS App.dc.html">06 iOS prototype</a><a href="Handoff Checklist.dc.html">07 Handoff checklist</a></div></div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:20px">
+<div style="background:#fff;border:1px solid #DDE5EF;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:18px">Access model — guest-first</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;line-height:1.5">
+<div style="background:#E7F8EE;border-radius:12px;padding:12px"><b style="color:#0B6B34">No account needed</b><br>Send · Receive · QR / code / link (instant join) · remove receivers · optional approval · dashboard · local History · Settings · this device</div>
+<div style="background:#EAF3FE;border-radius:12px;padding:12px"><b style="color:#0A5FB8">Needs sign-in</b><br>Clipboard Sync · synced device list, trust & revoke · account & security</div>
+</div>
+<p style="margin:0;font-size:13px;color:#4A5B78;line-height:1.55">Welcome → “Start sharing” goes straight to Transfer home. Sign-in is offered only at gated surfaces (Clipboard tab, Devices, Settings › Account) and returns the user to where they were.</p>
+</div>
+<div style="background:#fff;border:1px solid #DDE5EF;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px">Navigation (Web sidebar · Android bottom nav)</h2>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;font-size:12px">
+<div style="display:flex;flex-direction:column;gap:6px"><b style="background:#0A6FD6;color:#fff;padding:8px;border-radius:8px;text-align:center">Transfer</b><span style="background:#F7FAFD;padding:6px;border-radius:6px">Send → pick → session (receivers auto-join &amp; start) → dashboard</span><span style="background:#F7FAFD;padding:6px;border-radius:6px">Receive → code/QR/link → preview → save location (Android SAF / Web folder) → receiving → verify → done</span><span style="background:#FFF4E0;padding:6px;border-radius:6px">Only if Require approval is ON: preview → Request access → Waiting for approval → Approved/Rejected/Expired · sender sees Approve/Reject cards</span></div>
+<div style="display:flex;flex-direction:column;gap:6px"><b style="background:#102A56;color:#fff;padding:8px;border-radius:8px;text-align:center">Clipboard</b><span style="background:#F7FAFD;padding:6px;border-radius:6px">Guest gate → Sign in / Create</span><span style="background:#F7FAFD;padding:6px;border-radius:6px">Sync · timeline · item detail · clear</span></div>
+<div style="display:flex;flex-direction:column;gap:6px"><b style="background:#102A56;color:#fff;padding:8px;border-radius:8px;text-align:center">History</b><span style="background:#F7FAFD;padding:6px;border-radius:6px">List · filter · detail · clear (local)</span></div>
+<div style="display:flex;flex-direction:column;gap:6px"><b style="background:#102A56;color:#fff;padding:8px;border-radius:8px;text-align:center">Devices</b><span style="background:#F7FAFD;padding:6px;border-radius:6px">This device · (signed in) others · rename · trust · revoke</span></div>
+<div style="display:flex;flex-direction:column;gap:6px"><b style="background:#102A56;color:#fff;padding:8px;border-radius:8px;text-align:center">Settings</b><span style="background:#F7FAFD;padding:6px;border-radius:6px">Guest + Sign in / Account · theme · language · transfer · cloud · data · clipboard · privacy · about</span></div>
+</div>
+<div style="display:grid;grid-template-columns:90px repeat(3,1fr);gap:6px;font-size:12px;line-height:1.4;margin-top:4px"><b></b><b>Web</b><b>Android</b><b>iOS</b><b style="color:#4A5B78">Nav</b><span>Sidebar / rail / bottom bar</span><span>M3 bottom navigation</span><span>Tab bar + large titles</span><b style="color:#4A5B78">Pick files</b><span>Drag-drop + file input</span><span>Document picker (SAF)</span><span>Photos + Files pickers</span><b style="color:#4A5B78">Save</b><span>Folder (File System Access) or download</span><span>SAF folder, default Download/</span><span>Files app location, default On My iPhone</span><b style="color:#4A5B78">Join by link</b><span>Join page</span><span>App Link</span><span>Universal Link</span><b style="color:#4A5B78">Background</b><span>beforeunload confirm</span><span>Foreground service notification</span><span>Suspended → “Transfer paused — reopen the app to resume” + local notification</span><b style="color:#4A5B78">Join code</b><span>6 digits · QR · link valid 10 min; expired → Create new code</span><span>same</span><span>same</span><b style="color:#4A5B78">Screen on</b><span>Screen Wake Lock API · fallback “keep this tab visible”</span><span>FLAG_KEEP_SCREEN_ON</span><span>isIdleTimerDisabled</span><b style="color:#4A5B78">Clipboard</b><span>Auto when permitted + Sync</span><span>Foreground capture + Sync</span><span>Only on tap: Sync (paste prompt) or PasteButton</span></div>
+<p style="margin:0;font-size:12px;color:#4A5B78">Web ≥1100 sidebar · 760–1099 icon rail · &lt;760 bottom bar. Account menu (Profile / Security / Sign out) in sidebar footer when signed in.</p>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:22px">Web — breakpoints, themes, languages</h2>
+<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+<sc-for list="{{ web }}" as="f" hint-placeholder-count="10"><figure style="margin:0;display:flex;flex-direction:column;gap:8px"><figcaption style="font:12px 'JetBrains Mono',monospace;color:#4A5B78">{{ f.label }}</figcaption><div style="width:{{ f.sw }}px;height:{{ f.sh }}px;overflow:hidden;border-radius:12px;border:1px solid #C9D5E4;background:#fff;box-shadow:0 2px 8px rgba(16,42,86,.08)"><iframe src="{{ f.src }}" title="{{ f.label }}" loading="lazy" style="width:{{ f.w }}px;height:{{ f.h }}px;border:0;transform:scale({{ f.k }});transform-origin:0 0"></iframe></div></figure></sc-for>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:22px">Android — 360×800 & 412×915, light / dark</h2>
+<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+<sc-for list="{{ droid }}" as="f" hint-placeholder-count="10"><figure style="margin:0;display:flex;flex-direction:column;gap:8px"><figcaption style="font:12px 'JetBrains Mono',monospace;color:#4A5B78">{{ f.label }}</figcaption><div style="width:{{ f.sw }}px;height:{{ f.sh }}px;overflow:hidden"><iframe src="{{ f.src }}" title="{{ f.label }}" loading="lazy" style="width:{{ f.w }}px;height:{{ f.h }}px;border:0;transform:scale({{ f.k }});transform-origin:0 0;background:transparent"></iframe></div></figure></sc-for>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:22px">iOS — iPhone 15/16 Pro 393×852 & iPhone SE 375×667, light / dark</h2>
+<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+<sc-for list="{{ ios }}" as="f" hint-placeholder-count="10"><figure style="margin:0;display:flex;flex-direction:column;gap:8px"><figcaption style="font:12px 'JetBrains Mono',monospace;color:#4A5B78">{{ f.label }}</figcaption><div style="width:{{ f.sw }}px;height:{{ f.sh }}px;overflow:hidden"><iframe src="{{ f.src }}" title="{{ f.label }}" loading="lazy" style="width:{{ f.w }}px;height:{{ f.h }}px;border:0;transform:scale({{ f.k }});transform-origin:0 0;background:transparent"></iframe></div></figure></sc-for>
+</div>
+</div>
+
+<div style="background:#102A56;color:#EAF1FA;border-radius:16px;padding:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;font-size:13px;line-height:1.6">
+<div><b style="font-size:16px">Dev handoff — behaviour</b><ul style="margin:8px 0 0;padding-left:18px"><li>File pick renders name + size from metadata only; never hash or read the file on the UI thread.</li><li>Per-receiver state machine: connecting → transferring ⇄ paused / reconnecting → verifying → completed | failed | removed | cancelled. One receiver never blocks another.</li><li>Route per receiver: probe P2P → TURN relay → Cloud only after consent dialog; budget hit → status “budget”.</li><li>ETA shows “Estimating time…” until &gt;3% and while reconnecting.</li><li>Default: a valid code / QR / link joins the session and starts receiving immediately — no Request access, no Approve. Sender sees receivers appear, can Remove (kick) each, or Close session.</li><li>“Require approval” (off by default) on the create-session screen, session screen and Settings › Transfer restores the approve/reject flow.</li><li>Session max 5 receivers; 6th join auto-declined with sender notice.</li><li>While sending, receiving or waiting: persistent “Keep Share Anywhere open — don’t close it so the transfer continues.” Web adds a beforeunload confirm; Android shows the same text in the ongoing foreground notification.</li></ul></div>
+<div><b style="font-size:16px">Dev handoff — clipboard</b><ul style="margin:8px 0 0;padding-left:18px"><li>Requires account + trusted device key. Guests see the intro gate.</li><li>Incoming items never auto-write to the OS clipboard — only on Copy.</li><li>Web status: auto · best-effort · denied · unsupported · offline (queue) · paused. Never “Always syncing”.</li><li>Android: capture in foreground only; background → notification “Open Share Anywhere to sync clipboard”.</li><li>Sensitive heuristics (OTP, password fields, card numbers) → “skipped” item, not synced.</li></ul></div>
+<div><b style="font-size:16px">Dev handoff — keep screen on</b><ul style="margin:8px 0 0;padding-left:18px"><li>Active while: session open & waiting, any receiver transferring, receiving, waiting for approval.</li><li>Released on: finish, all paused, cancel, close, app/tab hidden; re-acquire on return.</li><li>Web: navigator.wakeLock.request('screen'); if missing/denied show “keep this tab visible”.</li><li>Android: FLAG_KEEP_SCREEN_ON on the transfer window (no WAKE_LOCK permission needed).</li><li>iOS: isIdleTimerDisabled; still suspended if user leaves the app.</li><li>Setting “Keep screen on during transfers” default ON; banner pill toggles for current transfer only.</li></ul></div>
+<div><b style="font-size:16px">Tokens & components</b><ul style="margin:8px 0 0;padding-left:18px"><li>CSS vars <span style="font-family:'JetBrains Mono',monospace">--sa-*</span> → Tailwind theme; Compose <span style="font-family:'JetBrains Mono',monospace">SaTheme</span> (see Design System page).</li><li>Prototype props: startScreen, signedIn, theme, lang, homeState, clipboardStatus, receiveOutcome — also via URL (?screen=…&amp;theme=dark&amp;lang=vi&amp;signedIn=1).</li><li>Icons: Lucide (web) · Material Symbols Rounded (Android).</li></ul></div>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const W = (label, q, w, h, k) => ({ label, src: 'Web%20App.dc.html?' + q, w, h, k, sw: Math.round(w * k), sh: Math.round(h * k) });
+    const A = (label, q, big, k) => { const w = big ? 432 : 380, h = big ? 935 : 820; return { label, src: 'Android%20App.dc.html?frameOnly=1&' + q + (big ? '&device=412x915' : ''), w: w + 80, h: h + 80, k, sw: Math.round((w + 80) * k), sh: Math.round((h + 80) * k) }; };
+    const I = (label, q, se) => { const w = (se ? 375 : 393) + 24 + 80, h = se ? 667 + 128 + 80 : 852 + 24 + 80, k = 0.6; return { label, src: 'iOS%20App.dc.html?frameOnly=1&' + q, w, h, k, sw: Math.round(w * k), sh: Math.round(h * k) }; };
+    return {
+      web: [
+        W('1440 · Transfer home · guest', 'screen=home', 1440, 900, 0.42),
+        W('1440 · Session · auto-join', 'screen=session', 1440, 1000, 0.42),
+        W('1440 · Session · approval on · dark', 'screen=session-approved&theme=dark', 1440, 1000, 0.42),
+        W('1440 · Dashboard · 2 receivers', 'screen=dashboard', 1440, 1100, 0.42),
+        W('1440 · Dashboard completed · dark', 'screen=dashboard-done&theme=dark', 1440, 1000, 0.42),
+        W('1024 · Clipboard · signed in', 'screen=clipboard&signedIn=1', 1024, 900, 0.5),
+        W('1024 · Clipboard · guest gate · VI', 'screen=clipboard&lang=vi', 1024, 800, 0.5),
+        W('768 · Choose files · VI', 'screen=send-review&lang=vi', 768, 900, 0.55),
+        W('768 · History · dark', 'screen=history&theme=dark', 768, 900, 0.55),
+        W('390 · Receive · 6-digit code', 'screen=receive', 390, 844, 0.7),
+        W('390 · Session · QR · auto-join', 'screen=session', 390, 1500, 0.7),
+        W('390 · Receiving · dark', 'screen=receive-progress&theme=dark', 390, 844, 0.7),
+        W('390 · Settings · guest · VI', 'screen=settings&lang=vi', 390, 1400, 0.7),
+      ],
+      ios: [
+        I('Home · guest', 'screen=home', false), I('Pick files', 'screen=send', false), I('Session · auto-join · dark', 'screen=session&theme=dark', false), I('Dashboard', 'screen=dashboard', false),
+        I('Paused · lock screen notification', 'screen=suspended', false), I('Receive · scan', 'screen=receive', false), I('Preview · Save to Files · VI', 'screen=rx-preview&lang=vi', false), I('Receiving · dark', 'screen=rx-progress&theme=dark', false),
+        I('Clipboard · signed in', 'screen=clipboard&signedIn=1', false), I('SE · Home', 'screen=home&device=se', true), I('SE · Settings · dark', 'screen=settings&device=se&theme=dark', true),
+      ],
+      droid: [
+        A('Home · guest', 'screen=home', false, 0.62), A('Pick files', 'screen=send', false, 0.62), A('Session · auto-join · dark', 'screen=session&theme=dark', false, 0.62), A('Session · approval on', 'screen=session&approval=1', false, 0.62),
+        A('Dashboard', 'screen=dashboard', false, 0.62), A('Receive · scan', 'screen=receive', false, 0.62), A('Enter code · VI', 'screen=receive-code&lang=vi', false, 0.62),
+        A('Receiving · dark', 'screen=rx-progress&theme=dark', false, 0.62), A('Clipboard · guest', 'screen=clipboard', false, 0.62), A('Clipboard · signed in · dark', 'screen=clipboard&signedIn=1&theme=dark', false, 0.62),
+        A('Settings · 412×915', 'screen=settings', true, 0.56), A('History · 412×915 · dark', 'screen=history&theme=dark', true, 0.56),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

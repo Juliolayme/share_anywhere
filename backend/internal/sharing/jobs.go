@@ -10,10 +10,14 @@ import (
 // TickResult summarizes one maintenance pass (for logs and tests).
 type TickResult struct {
 	WindowsExpired, SessionsExpired, Purged int
+	// OrphansCancelled counts unfinished transfers cancelled because their session had ended or their receiver
+	// was no longer JOINED; SessionsCompleted and SessionsPartial count sessions the aggregate rule ended.
+	OrphansCancelled, SessionsCompleted, SessionsPartial int
 }
 
-// Tick expires join windows, ends idle and over-age sessions, purges old records, and announces protected
-// mode turning off. It is safe to run concurrently with requests.
+// Tick expires join windows, cancels orphan transfers, ends finished sessions (docs/ARCHITECTURE.md §4.5),
+// ends idle and over-age sessions, purges old records, and announces protected mode turning off. It is safe
+// to run concurrently with requests.
 func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 	now := s.now()
 	var res TickResult
@@ -31,6 +35,14 @@ func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 	res.WindowsExpired = len(expiredWindows)
 	for _, id := range expiredWindows {
 		s.emitSessionUpdated(ctx, id)
+	}
+
+	// 1b. Orphan transfers, then sessions whose transfers are all finished now that their window has ended.
+	if err := s.cancelOrphans(ctx, now, &res); err != nil {
+		return res, err
+	}
+	if err := s.settleDue(ctx, now, &res); err != nil {
+		return res, err
 	}
 
 	// 2. Live sessions: refresh activity while any participant is connected; expire idle or over-age ones.
@@ -130,6 +142,64 @@ func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 	return res, nil
 }
 
+// cancelOrphans cancels transfers left unfinished although their session ended (CLOSED, EXPIRED, COMPLETED,
+// PARTIALLY_COMPLETED, CANCELLED) or their receiver is no longer JOINED (LEFT, REMOVED, BLOCKED, or back in
+// REQUESTED/REJECTED after a rejoin). Every request path already cancels them in the transaction that ends the
+// session or the participant, so this only repairs records an interrupted or older code path left behind.
+// They become CANCELLED, not FAILED: the transfer was stopped by the session or participant lifecycle, the same
+// outcome those paths record, not by a transfer error. Each session is handled under its row lock, taken before
+// any transfer row, the lock order every other path uses.
+func (s *Service) cancelOrphans(ctx context.Context, now time.Time, res *TickResult) error {
+	const orphan = `t.status NOT IN ('COMPLETED','FAILED','CANCELLED') AND (s.status NOT IN ('WAITING','ACTIVE') OR p.status <> 'JOINED')`
+	rows, err := s.cfg.Pool.Query(ctx, `SELECT DISTINCT t.session_id::text FROM transfers t
+		JOIN share_sessions s ON s.id = t.session_id JOIN session_participants p ON p.id = t.participant_id WHERE `+orphan)
+	if err != nil {
+		return err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		var n int64
+		var settled string
+		ended := false
+		err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+			if _, err := lockSession(ctx, tx, id); err != nil {
+				return err
+			}
+			tag, err := tx.Exec(ctx, `UPDATE transfers t SET status = 'CANCELLED', updated_at = $2
+				FROM share_sessions s, session_participants p
+				WHERE t.session_id = $1::uuid AND s.id = t.session_id AND p.id = t.participant_id AND `+orphan, id, now)
+			if err != nil {
+				return err
+			}
+			n = tag.RowsAffected()
+			// Cancelling a departed receiver's transfers can leave the session's remaining receivers all done.
+			settled, ended, err = s.settle(ctx, tx, id, now)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		res.OrphansCancelled += int(n)
+		s.m.orphansCancelled.Add(n)
+		if ended {
+			res.countSettled(settled)
+			s.Settled(ctx, id, settled)
+		}
+	}
+	return nil
+}
+
+func (r *TickResult) countSettled(status string) {
+	if status == StatusCompleted {
+		r.SessionsCompleted++
+	} else {
+		r.SessionsPartial++
+	}
+}
+
 // SetProtected forces protected mode on or off (nil returns to automatic) and announces the state. Used only
 // by the test-build admin hook.
 func (s *Service) SetProtected(on *bool) (bool, time.Time) {
@@ -163,8 +233,10 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 		case <-t.C:
 			if res, err := s.Tick(ctx); err != nil {
 				s.cfg.Log.Error("sharing maintenance failed", "error", err.Error())
-			} else if res.SessionsExpired+res.Purged > 0 {
-				s.cfg.Log.Info("sharing maintenance", "windows_expired", res.WindowsExpired, "sessions_expired", res.SessionsExpired, "purged", res.Purged)
+			} else if res.SessionsExpired+res.Purged+res.OrphansCancelled+res.SessionsCompleted+res.SessionsPartial > 0 {
+				s.cfg.Log.Info("sharing maintenance", "windows_expired", res.WindowsExpired, "sessions_expired", res.SessionsExpired,
+					"sessions_completed", res.SessionsCompleted, "sessions_partially_completed", res.SessionsPartial,
+					"orphan_transfers_cancelled", res.OrphansCancelled, "purged", res.Purged)
 			}
 		}
 	}

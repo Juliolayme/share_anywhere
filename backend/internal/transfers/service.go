@@ -15,10 +15,15 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/sharing"
 )
 
-// Sessions answers membership questions (implemented by sharing.Service).
+// Sessions answers membership questions and keeps the session aggregate (implemented by sharing.Service).
 type Sessions interface {
 	Member(ctx context.Context, deviceID, sessionID string) (sharing.Member, error)
+	MemberTx(ctx context.Context, tx pgx.Tx, deviceID, sessionID string) (sharing.Member, error)
 	Peers(ctx context.Context, sessionID string) ([]sharing.Peer, error)
+	// Settle applies the session aggregate rule (docs/ARCHITECTURE.md §4.5) inside tx after a transfer ended;
+	// Settled announces a session it ended, after commit.
+	Settle(ctx context.Context, tx pgx.Tx, sessionID string) (string, bool, error)
+	Settled(ctx context.Context, sessionID, status string)
 }
 
 // Notifier delivers WebSocket events (implemented by the ws hub).
@@ -141,22 +146,29 @@ func (s *Service) Files(ctx context.Context, deviceID, sessionID string) ([]shar
 	return out, rows.Err()
 }
 
-// access loads a transfer and checks the caller is its sender or its JOINED receiver.
-func (s *Service) access(ctx context.Context, q interface {
-	QueryRow(context.Context, string, ...any) pgx.Row
-}, deviceID, transferID string, lock bool) (Transfer, sharing.Member, error) {
+// access loads a transfer and checks the caller is its sender or its JOINED receiver. With tx it locks the
+// transfer row and reads everything inside tx (never a second pool connection while holding locks).
+func (s *Service) access(ctx context.Context, tx pgx.Tx, deviceID, transferID string) (Transfer, sharing.Member, error) {
 	if !sharing.ValidID(transferID) {
 		return Transfer{}, sharing.Member{}, errNotFound
 	}
 	sql := `SELECT ` + cols + ` FROM transfers t JOIN shared_files f ON f.id = t.file_id WHERE t.id = $1::uuid`
-	if lock {
-		sql += ` FOR UPDATE OF t`
+	var row pgx.Row
+	if tx != nil {
+		row = tx.QueryRow(ctx, sql+` FOR UPDATE OF t`, transferID)
+	} else {
+		row = s.cfg.Pool.QueryRow(ctx, sql, transferID)
 	}
-	t, err := scan(q.QueryRow(ctx, sql, transferID))
+	t, err := scan(row)
 	if err != nil {
 		return t, sharing.Member{}, err
 	}
-	m, err := s.cfg.Sessions.Member(ctx, deviceID, t.SessionID)
+	var m sharing.Member
+	if tx != nil {
+		m, err = s.cfg.Sessions.MemberTx(ctx, tx, deviceID, t.SessionID)
+	} else {
+		m, err = s.cfg.Sessions.Member(ctx, deviceID, t.SessionID)
+	}
 	if err != nil {
 		return t, m, errNotFound
 	}
@@ -168,7 +180,7 @@ func (s *Service) access(ctx context.Context, q interface {
 
 // Get returns one transfer.
 func (s *Service) Get(ctx context.Context, deviceID, transferID string) (Transfer, error) {
-	t, _, err := s.access(ctx, s.cfg.Pool, deviceID, transferID, false)
+	t, _, err := s.access(ctx, nil, deviceID, transferID)
 	return t, err
 }
 
@@ -234,14 +246,32 @@ func (s *Service) Action(ctx context.Context, deviceID, transferID, action, capa
 	})
 }
 
-// move applies change under a row lock, validates the transition, stores it, notifies both sides and counts.
+// move applies change under a row lock, validates the transition, stores it, settles the session aggregate
+// when the transfer ended, notifies both sides and counts.
+//
+// Lock order: the session row first, then the transfer row. Sender controls, Leave and session end lock the
+// session and then update transfers, so taking the transfer first here could deadlock with them; holding the
+// session row also serializes the final transfers of different receivers, so exactly one of them settles the
+// session.
 func (s *Service) move(ctx context.Context, deviceID, transferID string, change func(Transfer, sharing.Member) (Transfer, error)) (Transfer, error) {
+	if !sharing.ValidID(transferID) {
+		return Transfer{}, errNotFound
+	}
 	tx, err := s.cfg.Pool.Begin(ctx)
 	if err != nil {
 		return Transfer{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	cur, m, err := s.access(ctx, tx, deviceID, transferID, true)
+	var sessionID string
+	err = tx.QueryRow(ctx, `SELECT s.id::text FROM transfers t JOIN share_sessions s ON s.id = t.session_id
+		WHERE t.id = $1::uuid FOR UPDATE OF s`, transferID).Scan(&sessionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Transfer{}, errNotFound
+	}
+	if err != nil {
+		return Transfer{}, err
+	}
+	cur, m, err := s.access(ctx, tx, deviceID, transferID)
 	if err != nil {
 		return Transfer{}, err
 	}
@@ -275,6 +305,12 @@ func (s *Service) move(ctx context.Context, deviceID, transferID string, change 
 	if _, err := tx.Exec(ctx, `UPDATE share_sessions SET last_activity_at = $2 WHERE id = $1::uuid`, upd.SessionID, upd.UpdatedAt); err != nil {
 		return Transfer{}, err
 	}
+	settled, ended := "", false
+	if upd.Status != cur.Status && Terminal(upd.Status) {
+		if settled, ended, err = s.cfg.Sessions.Settle(ctx, tx, upd.SessionID); err != nil {
+			return Transfer{}, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Transfer{}, err
 	}
@@ -282,6 +318,9 @@ func (s *Service) move(ctx context.Context, deviceID, transferID string, change 
 		s.count(upd)
 	}
 	s.notify(ctx, upd)
+	if ended {
+		s.cfg.Sessions.Settled(ctx, upd.SessionID, settled) // after TRANSFER_UPDATED, so clients see the last transfer first
+	}
 	return upd, nil
 }
 

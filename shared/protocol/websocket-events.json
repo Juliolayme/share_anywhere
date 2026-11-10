@@ -305,7 +305,16 @@
           "format": "uuid"
         },
         "status": {
-          "type": "string"
+          "description": "Session status. COMPLETED and PARTIALLY_COMPLETED are derived from transfers (docs/ARCHITECTURE.md §4.5) and end the session.",
+          "enum": [
+            "WAITING",
+            "ACTIVE",
+            "COMPLETED",
+            "PARTIALLY_COMPLETED",
+            "CLOSED",
+            "EXPIRED",
+            "CANCELLED"
+          ]
         },
         "require_approval": {
           "type": "boolean"

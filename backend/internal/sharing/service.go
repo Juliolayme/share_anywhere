@@ -75,6 +75,7 @@ type Config struct {
 // counters are the aggregate metrics this package reports (never per person).
 type counters struct {
 	sessionsCreated, joins, requests, blocks, lookupsFailed, lockouts, protectedOn, protectedSeconds *metrics.Counter
+	sessionsCompleted, sessionsPartial, orphansCancelled                                             *metrics.Counter
 }
 
 func newCounters(r *metrics.Registry, p *ProtectedMode) counters {
@@ -88,14 +89,17 @@ func newCounters(r *metrics.Registry, p *ProtectedMode) counters {
 		return 0
 	})
 	return counters{
-		sessionsCreated:  r.Counter("sa_sessions_created_total", "Share sessions created."),
-		joins:            r.Counter("sa_joins_total", "Receivers admitted as JOINED."),
-		requests:         r.Counter("sa_join_requests_total", "Joins that landed in REQUESTED (approval or protected mode)."),
-		blocks:           r.Counter("sa_blocks_total", "Receivers blocked by senders."),
-		lookupsFailed:    r.Counter("sa_code_lookups_failed_total", "Failed six-digit code lookups (unknown or expired codes)."),
-		lockouts:         r.Counter("sa_code_lookup_lockouts_total", "30-minute lockouts started for an address or a device."),
-		protectedOn:      r.Counter("sa_protected_mode_activations_total", "Times protected mode switched on."),
-		protectedSeconds: r.Counter("sa_protected_mode_seconds_total", "Seconds spent in protected mode (approximate, from maintenance ticks)."),
+		sessionsCreated:   r.Counter("sa_sessions_created_total", "Share sessions created."),
+		joins:             r.Counter("sa_joins_total", "Receivers admitted as JOINED."),
+		requests:          r.Counter("sa_join_requests_total", "Joins that landed in REQUESTED (approval or protected mode)."),
+		blocks:            r.Counter("sa_blocks_total", "Receivers blocked by senders."),
+		lookupsFailed:     r.Counter("sa_code_lookups_failed_total", "Failed six-digit code lookups (unknown or expired codes)."),
+		lockouts:          r.Counter("sa_code_lookup_lockouts_total", "30-minute lockouts started for an address or a device."),
+		protectedOn:       r.Counter("sa_protected_mode_activations_total", "Times protected mode switched on."),
+		protectedSeconds:  r.Counter("sa_protected_mode_seconds_total", "Seconds spent in protected mode (approximate, from maintenance ticks)."),
+		sessionsCompleted: r.Counter("sa_sessions_completed_total", "Sessions that ended COMPLETED (every counted transfer completed)."),
+		sessionsPartial:   r.Counter("sa_sessions_partially_completed_total", "Sessions that ended PARTIALLY_COMPLETED."),
+		orphansCancelled:  r.Counter("sa_orphan_transfers_cancelled_total", "Unfinished transfers the maintenance job cancelled because their session ended or their receiver was no longer JOINED."),
 	}
 }
 

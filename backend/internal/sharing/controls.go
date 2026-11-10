@@ -28,8 +28,8 @@ func (s *Service) participantAction(ctx context.Context, tx pgx.Tx, participantI
 func (s *Service) Decide(ctx context.Context, c Caller, participantID, action string) (Participant, error) {
 	now := s.now()
 	var out participantRow
-	var deviceToNotify, event string
-	windowChanged := false
+	var deviceToNotify, event, settled string
+	windowChanged, ended := false, false
 	err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		p, r, err := s.participantAction(ctx, tx, participantID)
 		if err != nil {
@@ -99,6 +99,10 @@ func (s *Service) Decide(ctx context.Context, c Caller, participantID, action st
 			if _, err := tx.Exec(ctx, `UPDATE transfers SET status = 'CANCELLED', updated_at = $2 WHERE participant_id = $1::uuid AND status NOT IN ('COMPLETED','FAILED','CANCELLED')`, p.ID, now); err != nil {
 				return err
 			}
+			// The receivers left may all be finished now (docs/ARCHITECTURE.md §4.5).
+			if settled, ended, err = s.settle(ctx, tx, r.ID, now); err != nil {
+				return err
+			}
 		}
 		windowChanged = true
 		deviceToNotify = p.DeviceID
@@ -117,7 +121,10 @@ func (s *Service) Decide(ctx context.Context, c Caller, participantID, action st
 	ev := ParticipantEvent{Type: event, SessionID: out.SessionID, Participant: out.view()}
 	s.notifySender(ctx, out.SessionID, ev)
 	s.notifyDevices([]string{deviceToNotify}, ev)
-	if windowChanged {
+	switch {
+	case ended:
+		s.Settled(ctx, out.SessionID, settled)
+	case windowChanged:
 		s.emitSessionUpdated(ctx, out.SessionID)
 	}
 	return out.view(), nil
@@ -127,6 +134,8 @@ func (s *Service) Decide(ctx context.Context, c Caller, participantID, action st
 func (s *Service) Leave(ctx context.Context, c Caller, participantID string) (Participant, error) {
 	now := s.now()
 	var out participantRow
+	var settled string
+	ended := false
 	err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		p, _, err := s.participantAction(ctx, tx, participantID)
 		if err != nil {
@@ -142,14 +151,21 @@ func (s *Service) Leave(ctx context.Context, c Caller, participantID string) (Pa
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE transfers SET status = 'CANCELLED', updated_at = $2 WHERE participant_id = $1::uuid AND status NOT IN ('COMPLETED','FAILED','CANCELLED')`, p.ID, now)
+		if _, err := tx.Exec(ctx, `UPDATE transfers SET status = 'CANCELLED', updated_at = $2 WHERE participant_id = $1::uuid AND status NOT IN ('COMPLETED','FAILED','CANCELLED')`, p.ID, now); err != nil {
+			return err
+		}
+		settled, ended, err = s.settle(ctx, tx, p.SessionID, now)
 		return err
 	})
 	if err != nil {
 		return Participant{}, err
 	}
 	s.notifySender(ctx, out.SessionID, ParticipantEvent{Type: "PARTICIPANT_LEFT", SessionID: out.SessionID, Participant: out.view()})
-	s.emitSessionUpdated(ctx, out.SessionID)
+	if ended {
+		s.Settled(ctx, out.SessionID, settled)
+	} else {
+		s.emitSessionUpdated(ctx, out.SessionID)
+	}
 	return out.view(), nil
 }
 
@@ -170,6 +186,8 @@ func (s *Service) Update(ctx context.Context, c Caller, sessionID string, in Upd
 	if in.AcceptingReceivers != nil && *in.AcceptingReceivers {
 		return SessionView{}, errf(400, "invalid_request", "Use Create new code to accept receivers again.")
 	}
+	var settled string
+	ended := false
 	err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		r, err := requireSender(ctx, tx, sessionID, c.DeviceID)
 		if err != nil {
@@ -190,13 +208,20 @@ func (s *Service) Update(ctx context.Context, c Caller, sessionID string, in Upd
 			if _, err := tx.Exec(ctx, `UPDATE capability_tokens SET revoked_at = $2 WHERE session_id = $1::uuid AND purpose IN ('join','join_ticket') AND revoked_at IS NULL`, sessionID, s.now()); err != nil {
 				return err
 			}
+			// With the window ended, a session whose transfers are all finished is done (§4.5).
+			settled, ended, err = s.settle(ctx, tx, sessionID, s.now())
+			return err
 		}
 		return nil
 	})
 	if err != nil {
 		return SessionView{}, err
 	}
-	s.emitSessionUpdated(ctx, sessionID)
+	if ended {
+		s.Settled(ctx, sessionID, settled)
+	} else {
+		s.emitSessionUpdated(ctx, sessionID)
+	}
 	return s.View(ctx, c.DeviceID, sessionID)
 }
 
@@ -293,11 +318,17 @@ func (s *Service) Close(ctx context.Context, c Caller, sessionID string) error {
 	return nil
 }
 
-// end moves a session to a terminal status and schedules its purge.
+// end moves a session to a terminal status and schedules its purge (docs/SECURITY_MODEL.md §6). A session
+// completes only after its join window ended (Derive), so a window still marked OPEN there is past its end and
+// is recorded as EXPIRED; Close and the lifetimes end an open window as ENDED_BY_SENDER, as before.
 func (s *Service) end(ctx context.Context, tx pgx.Tx, sessionID, status string, now time.Time) error {
+	window := WindowEndedBySender
+	if status == StatusCompleted || status == StatusPartiallyCompleted {
+		window = WindowExpired
+	}
 	if _, err := tx.Exec(ctx, `UPDATE share_sessions SET status = $2, ended_at = $3, purge_after = $4,
-		join_window_state = CASE WHEN join_window_state = 'OPEN' THEN 'ENDED_BY_SENDER' ELSE join_window_state END
-		WHERE id = $1::uuid`, sessionID, status, now, now.Add(PurgeAfterEnd)); err != nil {
+		join_window_state = CASE WHEN join_window_state = 'OPEN' THEN $5 ELSE join_window_state END
+		WHERE id = $1::uuid`, sessionID, status, now, now.Add(PurgeAfterEnd), window); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE capability_tokens SET revoked_at = $2 WHERE session_id = $1::uuid AND revoked_at IS NULL`, sessionID, now); err != nil {

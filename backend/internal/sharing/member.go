@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Member is the calling device's place in a session, for packages that build on sessions (transfers).
@@ -39,14 +41,25 @@ type Peer struct {
 
 // Member returns the caller's membership. Devices that are not participants get ErrNotFound (existence hidden).
 func (s *Service) Member(ctx context.Context, deviceID, sessionID string) (Member, error) {
+	return s.member(ctx, s.cfg.Pool, deviceID, sessionID)
+}
+
+// MemberTx is Member read inside tx. A caller holding locks in a transaction must use it rather than Member:
+// taking a second pool connection while holding the session row lock can exhaust the pool while every other
+// connection waits for that lock.
+func (s *Service) MemberTx(ctx context.Context, tx pgx.Tx, deviceID, sessionID string) (Member, error) {
+	return s.member(ctx, tx, deviceID, sessionID)
+}
+
+func (s *Service) member(ctx context.Context, q querier, deviceID, sessionID string) (Member, error) {
 	if !ValidID(sessionID) {
 		return Member{}, ErrNotFound
 	}
-	r, err := scanSession(s.cfg.Pool.QueryRow(ctx, `SELECT `+sessionCols+` FROM share_sessions WHERE id = $1::uuid`, sessionID))
+	r, err := scanSession(q.QueryRow(ctx, `SELECT `+sessionCols+` FROM share_sessions WHERE id = $1::uuid`, sessionID))
 	if err != nil {
 		return Member{}, ErrNotFound
 	}
-	p, err := participantFor(ctx, s.cfg.Pool, sessionID, deviceID)
+	p, err := participantFor(ctx, q, sessionID, deviceID)
 	if err != nil {
 		return Member{}, ErrNotFound
 	}

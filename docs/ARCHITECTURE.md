@@ -132,6 +132,14 @@ Remove (revoke capabilities, close the peer connection, free the slot), Block (r
 
 All transitions are idempotent on the server and validated against the caller's role.
 
+**Session aggregate (as built, Phase 4; `backend/internal/sharing/aggregate.go`, `Derive`).** Only an `ACTIVE` session changes; `WAITING` and every ended status stay as they are, so Close always yields `CLOSED` and the idle and maximum lifetimes yield `EXPIRED`.
+
+- The session stays `ACTIVE` while its join window is open (someone may still join), while any receiver is `REQUESTED` (the sender may still approve), and while any counted transfer is not terminal.
+- Counted transfers belong to `JOINED` receivers and to receivers that `LEFT` on their own (one that left early did not get the files). `REMOVED` and `BLOCKED` receivers were excluded by the sender, so their `CANCELLED` transfers do not count; `REJECTED` receivers never had live transfers.
+- Once every counted transfer is terminal: `COMPLETED` when all are `COMPLETED`, `PARTIALLY_COMPLETED` when some are. When none completed (all `FAILED` or `CANCELLED`, or every receiver was removed) the session stays `ACTIVE`: it never ends by itself without delivering something, so the sender can Create new code or close it.
+- `COMPLETED` and `PARTIALLY_COMPLETED` end the session like Close (`ended_at`, purge after 7 days, join and link tokens revoked, window recorded `EXPIRED`); transfer records stay readable to the sender and joined receivers.
+- The rule runs in the transaction that records the change: a transfer reaching a terminal state (`transfers` report and controls), Remove, Block, Reject, Leave, and Stop accepting. The maintenance job applies it after a window expires and cancels orphan transfers (unfinished although their session ended or their receiver is no longer `JOINED`) as `CANCELLED`. Every path locks the session row before any transfer row, so concurrent final transfers settle the session exactly once. A change sends `SESSION_UPDATED` with the new status after commit.
+
 ## 5. Transfer engine
 
 Specified in `docs/TRANSFER_PROTOCOL.md` (Phase 3). Summary: 4 MiB blocks, 64 KiB frames, `bufferedAmountLowThreshold` backpressure, SHA-256 per block and per file, ACK after write and verify, persisted missing-block bitmap, resume by bitmap exchange, re-authentication with the transfer capability on every connect. One PeerConnection per receiver; a sender-side scheduler with a bounded block cache keeps a slow receiver from stalling the others (Phase 4).

@@ -100,7 +100,7 @@ func newEnv(t *testing.T, reportLimit int) *env {
 	reg := metrics.New()
 	share := sharing.NewService(sharing.Config{Pool: pool, Clock: clk, Secret: []byte("0123456789abcdef0123456789abcdef"), Notify: note,
 		Limits: sharing.ScaledLimits(clk, 10), Protected: sharing.NewProtectedMode(clk, 50), PublicURL: "https://app.example",
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Metrics: reg})
 	svc := New(Config{Pool: pool, Clock: clk, Sessions: share, Notify: note, Metrics: reg,
 		ReportLimit: ratelimit.New(ratelimit.Rule{Limit: reportLimit, Window: time.Minute}, clk)})
 	return &env{t: t, pool: pool, share: share, svc: svc, note: note, reg: reg, clk: clk}

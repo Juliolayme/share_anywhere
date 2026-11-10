@@ -14,7 +14,7 @@ Share Anywhere ships a Go backend, a React web app, a native Android app, and a 
 
 | Tool | Pinned | Where |
 |---|---|---|
-| Go | 1.24 (environment: go1.24.7) | `backend/go.mod`, CI `setup-go` reads it |
+| Go | 1.25 (required by pgx v5.12; environment go1.24.7 auto-downloads the 1.25 toolchain) | `backend/go.mod`, CI `setup-go` reads it, `golang:1.25-alpine` build image |
 | golangci-lint | v2.5.0 | CI |
 | Node | 22 LTS (environment: v22.23.4) | `.nvmrc`, `engines` |
 | pnpm | 10.28.0 | `packageManager` |
@@ -28,7 +28,7 @@ Share Anywhere ships a Go backend, a React web app, a native Android app, and a 
 | Android SDK | not available in the environment; CI installs it | Phase 6 |
 | Xcode | not available in the environment; macOS runner | Phase 7 |
 
-- Backend container images are built from `golang:1.24-alpine` into `distroless/static:nonroot`; the binary has a `-healthcheck` flag because distroless has no shell or curl.
+- Backend container images are built from `golang:1.25-alpine` into `distroless/static:nonroot`; the binary has a `-healthcheck` flag because distroless has no shell or curl.
 
 ## Consequences
 

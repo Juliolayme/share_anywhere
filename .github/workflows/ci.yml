@@ -98,12 +98,9 @@ jobs:
       - name: Build backend image for scanning
         run: docker build -t share-anywhere-backend:ci backend
       - name: Image scan (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: share-anywhere-backend:ci
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
+        run: >-
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.1
+          image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress share-anywhere-backend:ci
 
   backend:
     needs: changes

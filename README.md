@@ -33,7 +33,7 @@ Then open <https://localhost:8443> and accept the local certificate (Caddy's int
 
 ## Local development without Docker
 
-Requirements: Go 1.24, Node 22, pnpm 10.28 (`npm install -g pnpm@10.28.0`), and optionally PostgreSQL 16.
+Requirements: Go 1.25, Node 22, pnpm 10.28 (`npm install -g pnpm@10.28.0`), and optionally PostgreSQL 16.
 
 ```bash
 pnpm install

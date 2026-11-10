@@ -27,7 +27,8 @@ Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
   - Limits on creation, open sessions, lookups, joins, renewals, and TURN.
   - Lifetimes: idle 30 minutes, maximum 24 hours for guests, purge after 7 days.
 - **`internal/signaling`.** Relays `OFFER`/`ANSWER`/`ICE_CANDIDATE` over the WebSocket only between the sender and a `JOINED` receiver of a live session. Payloads are capped at 32 KiB. Errors return as `ERROR` events.
-- **`internal/turncreds`.** coturn `use-auth-secret` credentials for the sender or a `JOINED` receiver of an `ACTIVE` session: guest TTL 30 minutes, account 60 minutes, 20 or 60 credentials per hour.
+- **`internal/turncreds`.** coturn `use-auth-secret` credentials (an automated test allocates a relay on the stack's coturn with an issued credential and checks that wrong-secret and expired credentials are refused) for the sender or a `JOINED` receiver of an `ACTIVE` session: guest TTL 30 minutes, account 60 minutes, 20 or 60 credentials per hour.
+- **Privacy and metrics.** Participants and blocks store only a keyed hash of the address (migration 0004). Aggregate counters (sessions, joins, requests, blocks, failed lookups, lockouts, protected-mode activations and seconds) are served on an internal `/metrics` listener (`SA_METRICS_ADDR`).
 - **WebSocket hub.** Connection registry, a writer goroutine per socket, message dispatch, and sockets closed when a device is revoked (resolves the Phase 1 backlog item P2-7).
 - **Access router.** 405 fallbacks are registered per method after all routes, so literal and wildcard paths coexist.
 - **Test builds** (`-tags testhooks`, used only by the CI Compose stack) add an adjustable clock and a protected-mode switch.
@@ -62,7 +63,6 @@ Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
 
 ### Implemented but untested
 
-- **TURN against coturn.** The credential algorithm is unit-tested against the coturn REST scheme, but a credential has not been used against a running coturn. That is planned with the first relayed transfer in Phase 3/4.
 - **WebSocket signaling between two browsers.** The relay is unit-tested and the server routes are covered by integration tests. Clients start sending SDP in Phase 3.
 - **Real Screen Wake Lock.** Headless Chromium refuses it, so the UI shows the Refused state. That is the expected behavior and is asserted with the stub; the granted path is asserted with the stub only.
 - **Mobile QR legibility.** Asserted by size (QR ≥ 160 px, code ≥ 28 px) rather than by a visual snapshot (see §6).
@@ -100,12 +100,14 @@ Local runs used the CI Compose stack, with a backend built with `-tags testhooks
 | Stop accepting → code and link refused with the right message | Passed locally | Passed locally | CI |
 | Sixth receiver sees "session full"; sender sees 5/5 | Passed locally | Passed locally | CI |
 | Unknown code, expired link page | Passed locally | Passed locally | CI |
+| Locked-out device sees the wait time (test hook) | Passed locally | Passed locally | CI |
+| Mobile waiting screen with Refused pill fits 390 px | skipped (desktop) | Passed locally | ios-safari in CI |
 | Clock +10 min: expired state, old code and link refused, early receiver still in, Create new code at 10:00, new code joins | Passed locally | Passed locally | CI |
 | Protected mode (hook) → code join waits with the explanation → approve | Passed locally | Passed locally | CI |
 | Keep-awake stub: granted (On, release after Close), refused, unsupported, hidden→visible re-request, pill off, setting off → no request | Passed locally | Passed locally | CI |
 | Mobile: QR and code size, no horizontal scroll | skipped (desktop) | Passed locally | ios-safari in CI |
 
-The full suite (Phase 1 and Phase 2 specs) passed twice in a row locally: 51 passed and 3 skipped (mobile-only specs on desktop).
+After the QA round 1 fixes the full suite passed twice in a row locally: 53 passed and 3 skipped (mobile-only specs on desktop), plus 4 of 4 mobile specs on android-chrome.
 
 ## 4. Commands and results
 
@@ -116,14 +118,14 @@ The full suite (Phase 1 and Phase 2 specs) passed twice in a row locally: 51 pas
 | Sharing integration tests | Open join by code and link with signaling scope; approval and toggle; protected mode with an injected clock; 20 concurrent joins with exactly 5 successes under `-race`; Remove and Block (device and /64); join window at 9:59, 10:00, the 9:58 ticket, full, Stop accepting, renew; renew while full; approval after expiry; lockouts; creation and open-session limits; TURN authorization; idle, 24 h, purge |
 | `govulncheck ./...` | No vulnerabilities |
 | `pnpm protocol:check` | 24 operations agree with `docs/API.md`; WebSocket schema valid |
-| `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 52 unit tests (keep-awake controller, countdown with server offset, expired, full and renew states, words and badges) |
+| `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 55 unit tests (keep-awake controller, countdown with server offset, expired, full and renew states, words and badges) |
 | `pnpm --filter web build` | Main JS 104.6 kB gzip (budget 120 kB) |
 | `playwright test --project=chromium-desktop --project=android-chrome` | 51 passed, 3 skipped; repeated with the same result |
 | CI | Recorded in `docs/qa/PHASE_2_QA.md` |
 
 ## 5. Environment variables and external services
 
-New: `SA_PUBLIC_URL`, `SA_TURN_SECRET` (required in production, shared with coturn), `SA_TURN_URIS`, `SA_CODE_GUESS_ALARM_PER_MIN`. The backend now always requires `DATABASE_URL`. The CI image is built with `GO_TAGS=testhooks`. coturn is in both Compose stacks.
+New: `SA_PUBLIC_URL`, `SA_METRICS_ADDR` (internal metrics listener), `SA_TURN_SECRET` (required in production, shared with coturn), `SA_TURN_URIS`, `SA_CODE_GUESS_ALARM_PER_MIN`. The backend now always requires `DATABASE_URL`. The CI image is built with `GO_TAGS=testhooks`. coturn is in both Compose stacks.
 
 ## 6. Known limitations
 
@@ -151,4 +153,6 @@ Same as Phase 1: `docker compose up --build`, then open `https://localhost:8443`
 | b99fd76 | Phase 1 closed (QA PASS) |
 | bd34779 | Backend: sessions, open join, signaling relay, TURN credentials, test hooks, migration 0003 |
 | 6a4af87 | Web: session, receive, approval, keep screen on, Playwright pairing and keep-awake specs |
-| (this commit) | Docs and report |
+| e9b1195 | Docs and report |
+| 49efca8 | Deterministic participant order; regenerated Go types |
+| (this commit) | QA round 1 fixes |

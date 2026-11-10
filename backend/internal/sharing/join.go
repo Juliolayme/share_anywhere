@@ -33,15 +33,23 @@ func (s *Service) lockedFor(c Caller) (time.Duration, bool) {
 // failedLookup counts a failed code lookup per address, per device, and service-wide.
 func (s *Service) failedLookup(c Caller) {
 	now := s.cfg.Clock.Now()
+	s.m.lookupsFailed.Inc()
 	s.mu.Lock()
 	if ok, _ := s.cfg.Limits.FailedIP.Allow(c.IPKey); !ok {
+		if _, locked := s.lockout["ip:"+c.IPKey]; !locked {
+			s.m.lockouts.Inc()
+		}
 		s.lockout["ip:"+c.IPKey] = now.Add(LockoutDuration)
 	}
 	if ok, _ := s.cfg.Limits.FailedDevice.Allow(c.DeviceID); !ok {
+		if _, locked := s.lockout["dev:"+c.DeviceID]; !locked {
+			s.m.lockouts.Inc()
+		}
 		s.lockout["dev:"+c.DeviceID] = now.Add(LockoutDuration)
 	}
 	s.mu.Unlock()
 	if s.cfg.Protected.RecordFailure() {
+		s.m.protectedOn.Inc()
 		_, until := s.cfg.Protected.Active()
 		s.cfg.Log.Warn("protected mode on: failed code lookups above the alarm threshold")
 		if s.cfg.Notify != nil {
@@ -50,10 +58,10 @@ func (s *Service) failedLookup(c Caller) {
 	}
 }
 
-func isBlocked(ctx context.Context, q querier, sessionID string, c Caller) (bool, error) {
+func (s *Service) isBlocked(ctx context.Context, q querier, sessionID string, c Caller) (bool, error) {
 	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM session_blocks WHERE session_id = $1::uuid AND (device_id = $2::uuid OR ip_key = $3)`,
-		sessionID, c.DeviceID, c.IPKey).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM session_blocks WHERE session_id = $1::uuid AND (device_id = $2::uuid OR (ip_hash IS NOT NULL AND ip_hash = $3))`,
+		sessionID, c.DeviceID, s.keys.ipHash(c.IPKey)).Scan(&n)
 	return n > 0, err
 }
 
@@ -125,17 +133,20 @@ func (s *Service) ResolveLink(ctx context.Context, c Caller, token string) (Prev
 	if !r.live() {
 		return Preview{}, ErrSessionExpired
 	}
-	if revoked != nil || seq != r.WindowSeq || !s.now().Before(expires) {
-		return Preview{}, ErrWindowExpired
+	if seq != r.WindowSeq {
+		return Preview{}, ErrWindowExpired // replaced by Create new code
 	}
 	if st := r.effectiveWindow(s.now()); st != WindowOpen {
-		return Preview{}, windowError(st)
+		return Preview{}, windowError(st) // full, not accepting, or expired
+	}
+	if revoked != nil || !s.now().Before(expires) {
+		return Preview{}, ErrWindowExpired
 	}
 	return s.preview(ctx, c, r, "link")
 }
 
 func (s *Service) preview(ctx context.Context, c Caller, r sessionRow, via string) (Preview, error) {
-	if blocked, err := isBlocked(ctx, s.cfg.Pool, r.ID, c); err != nil {
+	if blocked, err := s.isBlocked(ctx, s.cfg.Pool, r.ID, c); err != nil {
 		return Preview{}, err
 	} else if blocked {
 		return Preview{}, ErrBlocked
@@ -193,6 +204,9 @@ func (s *Service) Join(ctx context.Context, c Caller, sessionID, ticket string) 
 	if ok, wait := s.cfg.Limits.Join.Allow(c.DeviceID); !ok {
 		return JoinResult{}, rateLimited("rate_limited", wait)
 	}
+	if ok, wait := s.cfg.Limits.JoinIP.Allow(c.IPKey); !ok {
+		return JoinResult{}, rateLimited("rate_limited", wait)
+	}
 	now := s.now()
 	var out participantRow
 	var event string
@@ -234,7 +248,7 @@ func (s *Service) Join(ctx context.Context, c Caller, sessionID, ticket string) 
 		if st := r.effectiveWindow(now); st != WindowOpen {
 			return windowError(st)
 		}
-		if blocked, err := isBlocked(ctx, tx, sessionID, c); err != nil {
+		if blocked, err := s.isBlocked(ctx, tx, sessionID, c); err != nil {
 			return err
 		} else if blocked {
 			return ErrBlocked
@@ -254,9 +268,6 @@ func (s *Service) Join(ctx context.Context, c Caller, sessionID, ticket string) 
 		case via == "code" && s.protected():
 			status, reason = PRequested, "protected_mode"
 		}
-		if status == PRequested && cp.Requested >= MaxPendingRequests {
-			return ErrTooManyPending
-		}
 		words := strings.Join(s.keys.securityWords(sessionID, c.DeviceID), " ")
 		var joinedAt *time.Time
 		if status == PJoined {
@@ -271,14 +282,14 @@ func (s *Service) Join(ctx context.Context, c Caller, sessionID, ticket string) 
 			id = existing.ID // a removed, left or rejected receiver may join again with a new ticket
 		}
 		out, err = scanParticipant(tx.QueryRow(ctx, `INSERT INTO session_participants
-			(id, session_id, device_id, role, status, display_name, platform, signed_in, security_words, joined_via, request_reason, ip_key, created_at, joined_at)
+			(id, session_id, device_id, role, status, display_name, platform, signed_in, security_words, joined_via, request_reason, ip_hash, created_at, joined_at)
 			VALUES ($1::uuid, $2::uuid, $3::uuid, 'receiver', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			ON CONFLICT (session_id, device_id) DO UPDATE SET status = EXCLUDED.status, display_name = EXCLUDED.display_name,
 				platform = EXCLUDED.platform, signed_in = EXCLUDED.signed_in, security_words = EXCLUDED.security_words,
-				joined_via = EXCLUDED.joined_via, request_reason = EXCLUDED.request_reason, ip_key = EXCLUDED.ip_key,
+				joined_via = EXCLUDED.joined_via, request_reason = EXCLUDED.request_reason, ip_hash = EXCLUDED.ip_hash,
 				joined_at = EXCLUDED.joined_at, decided_at = NULL
 			RETURNING `+participantCols,
-			id, sessionID, c.DeviceID, status, c.DisplayName, c.Platform, c.SignedIn, words, via, reasonPtr, c.IPKey, now, joinedAt))
+			id, sessionID, c.DeviceID, status, c.DisplayName, c.Platform, c.SignedIn, words, via, reasonPtr, nullable(s.keys.ipHash(c.IPKey)), now, joinedAt))
 		if err != nil {
 			return err
 		}
@@ -309,6 +320,12 @@ func (s *Service) Join(ctx context.Context, c Caller, sessionID, ticket string) 
 	if err != nil {
 		return JoinResult{}, err
 	}
+	switch event {
+	case "PARTICIPANT_JOINED":
+		s.m.joins.Inc()
+	case "PARTICIPANT_REQUESTED":
+		s.m.requests.Inc()
+	}
 	if event != "" {
 		s.notifySender(ctx, sessionID, ParticipantEvent{Type: event, SessionID: sessionID, Participant: out.view()})
 	}
@@ -331,4 +348,11 @@ func (s *Service) notifySender(ctx context.Context, sessionID string, v any) {
 	if err := s.cfg.Pool.QueryRow(ctx, `SELECT device_id::text FROM session_participants WHERE session_id = $1::uuid AND role = 'sender'`, sessionID).Scan(&dev); err == nil {
 		s.notifyDevices([]string{dev}, v)
 	}
+}
+
+func nullable(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

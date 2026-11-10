@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clock"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/metrics"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/ratelimit"
 )
 
@@ -31,9 +32,10 @@ type Limits struct {
 	LookupIP, LookupDevice *ratelimit.Limiter
 	FailedIP, FailedDevice *ratelimit.Limiter
 	LinkIP, LinkDevice     *ratelimit.Limiter
-	Join                   *ratelimit.Limiter
+	Join, JoinIP           *ratelimit.Limiter
 	Renew                  *ratelimit.Limiter
 	TurnGuest, TurnAccount *ratelimit.Limiter
+	TurnIP                 *ratelimit.Limiter
 }
 
 // ScaledLimits returns the defaults multiplied by m (m > 1 only on test stacks, see config).
@@ -49,9 +51,9 @@ func ScaledLimits(c clock.Clock, m int) Limits {
 		LookupIP: r(10, time.Minute), LookupDevice: r(5, time.Minute),
 		FailedIP: r(10, time.Hour), FailedDevice: r(5, 10*time.Minute),
 		LinkIP: r(30, time.Minute), LinkDevice: r(10, time.Minute),
-		Join:      r(10, time.Minute),
+		Join: r(10, time.Minute), JoinIP: r(30, time.Minute),
 		Renew:     r(20, time.Hour),
-		TurnGuest: r(20, time.Hour), TurnAccount: r(60, time.Hour),
+		TurnGuest: r(20, time.Hour), TurnAccount: r(60, time.Hour), TurnIP: r(120, time.Hour),
 	}
 }
 
@@ -65,6 +67,34 @@ type Config struct {
 	Protected *ProtectedMode
 	PublicURL string // base for join links, e.g. https://share.example
 	Log       *slog.Logger
+	Metrics   *metrics.Registry // optional
+}
+
+// counters are the aggregate metrics this package reports (never per person).
+type counters struct {
+	sessionsCreated, joins, requests, blocks, lookupsFailed, lockouts, protectedOn, protectedSeconds *metrics.Counter
+}
+
+func newCounters(r *metrics.Registry, p *ProtectedMode) counters {
+	if r == nil {
+		r = metrics.New()
+	}
+	r.Gauge("sa_protected_mode_active", "1 while protected mode is on (code joins need approval).", func() float64 {
+		if on, _ := p.Active(); on {
+			return 1
+		}
+		return 0
+	})
+	return counters{
+		sessionsCreated:  r.Counter("sa_sessions_created_total", "Share sessions created."),
+		joins:            r.Counter("sa_joins_total", "Receivers admitted as JOINED."),
+		requests:         r.Counter("sa_join_requests_total", "Joins that landed in REQUESTED (approval or protected mode)."),
+		blocks:           r.Counter("sa_blocks_total", "Receivers blocked by senders."),
+		lookupsFailed:    r.Counter("sa_code_lookups_failed_total", "Failed six-digit code lookups (unknown or expired codes)."),
+		lockouts:         r.Counter("sa_code_lookup_lockouts_total", "30-minute lockouts started for an address or a device."),
+		protectedOn:      r.Counter("sa_protected_mode_activations_total", "Times protected mode switched on."),
+		protectedSeconds: r.Counter("sa_protected_mode_seconds_total", "Seconds spent in protected mode (approximate, from maintenance ticks)."),
+	}
 }
 
 // Service implements share sessions.
@@ -75,11 +105,13 @@ type Service struct {
 	mu             sync.Mutex
 	lockout        map[string]time.Time // "ip:<key>" / "dev:<id>" → locked until
 	protectedWasOn bool
+	lastTick       time.Time
+	m              counters
 }
 
 // NewService returns the sharing service.
 func NewService(cfg Config) *Service {
-	return &Service{cfg: cfg, keys: deriveKeys(cfg.Secret), lockout: map[string]time.Time{}}
+	return &Service{cfg: cfg, keys: deriveKeys(cfg.Secret), lockout: map[string]time.Time{}, m: newCounters(cfg.Metrics, cfg.Protected)}
 }
 
 func (s *Service) now() time.Time { return s.cfg.Clock.Now().UTC() }
@@ -167,17 +199,17 @@ func windowError(state string) *Error {
 type participantRow struct {
 	ID, SessionID, DeviceID, Role, Status, DisplayName, Platform string
 	SignedIn                                                     bool
-	Words, JoinedVia, RequestReason, IPKey                       *string
+	Words, JoinedVia, RequestReason, IPHash                      *string
 	JoinedAt                                                     *time.Time
 }
 
 const participantCols = `id::text, session_id::text, device_id::text, role, status, display_name, platform, signed_in,
-	security_words, joined_via, request_reason, ip_key, joined_at`
+	security_words, joined_via, request_reason, ip_hash, joined_at`
 
 func scanParticipant(row pgx.Row) (participantRow, error) {
 	var p participantRow
 	err := row.Scan(&p.ID, &p.SessionID, &p.DeviceID, &p.Role, &p.Status, &p.DisplayName, &p.Platform, &p.SignedIn,
-		&p.Words, &p.JoinedVia, &p.RequestReason, &p.IPKey, &p.JoinedAt)
+		&p.Words, &p.JoinedVia, &p.RequestReason, &p.IPHash, &p.JoinedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}

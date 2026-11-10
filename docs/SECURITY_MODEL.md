@@ -2,7 +2,7 @@
 
 Source of truth for identity security, join modes, session lifetimes, rate limits, the threat model, and privacy rules. Product decisions live in `docs/PRODUCT_REQUIREMENTS.md` §2; the API access matrix lives in `docs/API.md`; component and flow diagrams live in `docs/ARCHITECTURE.md`. Phases extend this document (Phase 1 identity, Phase 2 join and sessions, Phase 5A accounts, Phase 5B clipboard, Phase 8 TURN and Cloud) and Phase 9 reviews it end to end.
 
-Status: **planned**. Nothing here is implemented yet; each section names the phase that implements it.
+Status: **partly built**. §3, §4 (device identity), §5 (device creation, refresh, sessions, codes, joins, TURN, WebSocket), §6 and §8 are implemented in Phases 1–2; account, clipboard and Cloud rows name the phase that implements them.
 
 ---
 
@@ -117,8 +117,8 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 | Create new code | Device: 20 / hour. **Built in Phase 2** |
 | Failed code lookups | IP: 10 / hour → 30-min lockout; device: 5 / 10 min → 30-min lockout; global: protected mode above `CODE_GUESS_ALARM_PER_MIN` (§3.1). **Built in Phase 2** |
 | Link / QR resolution | IP: 30 / min; device: 10 / min. **Built in Phase 2** |
-| Joins | Device: 10 / min; per session at most 10 pending requests when approval is on. **Built in Phase 2** |
-| TURN credentials | Guest device: 20 / hour; account device: 60 / hour |
+| Joins | Device: 10 / min; IP: 30 / min. Pending requests count toward the five receiver slots, so at most 5 people can be waiting. **Built in Phase 2** |
+| TURN credentials | Guest device: 20 / hour; account device: 60 / hour; IP: 120 / hour. **Built in Phase 2** |
 | WebSocket | IP: 20 concurrent; device: 3 concurrent; 50 messages / s per socket; tickets: 30 / min per device. **Built in Phase 1** |
 | Sign-in | IP + email: 5 / 15 min; IP: 30 / hour |
 | Sign-up | IP: 5 / hour |
@@ -152,7 +152,7 @@ Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests dr
 | Removed or blocked receiver keeps receiving | Capabilities revoked, sender closes the peer connection, block covers device ID and IP /64, transfer protocol re-authenticates on every reconnect | TURN allocation stays valid until its credential expires but carries no new data |
 | Block evasion by resetting device identity | Block also covers IP /64 for the session; device creation is rate-limited | Attacker with many IPs |
 | Mass creation of anonymous devices (Sybil) | IP-keyed creation limit, proof-of-work, IP keys on every sensitive limit | Large botnets; CAPTCHA adapter available |
-| Join-request flooding when approval is on | Per-device join limit, 10 pending requests per session, Block, Stop accepting | Annoyance until the sender stops accepting |
+| Join-request flooding when approval is on | Per-device and per-IP join limits, pending requests count toward the 5 slots, Block, Stop accepting | Annoyance until the sender stops accepting |
 | Impersonation through display names | Guest / Signed in badge, security words, names labeled as self-chosen | Social engineering of inattentive users |
 | TURN as a free relay or proxy | Credentials only for joined participants of active sessions, short TTL, issue limits, coturn quotas, relay byte caps per session | Abuse within caps |
 | Hosting abuse via Cloud Distribution | Signed-in sender only, budget cap, TTL, deletion after completion | Abuse by registered accounts; suspension tooling is backlog |
@@ -171,7 +171,7 @@ Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests dr
 
 - No file content, clipboard plaintext, or history plaintext in logs, metrics, or analytics.
 - Tokens, refresh secrets, capabilities, codes, emails, and security words are redacted from logs.
-- IP addresses are used for rate limiting in memory only; logs keep a keyed hash of the IP truncated to /24 (IPv4) or /48 (IPv6) for 7 days. **As built (Phase 1):** request logs carry `ip_hash` (HMAC-SHA-256 with `SA_SERVER_SECRET`, first 8 bytes) and never the address or the query string; the log redactor also drops token, secret, cookie, authorization, and security-word fields. Log retention is set by the deployment (Phase 9).
+- IP addresses are used for rate limiting in memory only (Block stores a keyed hash of the IPv4 address or IPv6 /64, never the address, and it is purged with the session); logs keep a keyed hash of the IP truncated to /24 (IPv4) or /48 (IPv6) for 7 days. **As built (Phase 1):** request logs carry `ip_hash` (HMAC-SHA-256 with `SA_SERVER_SECRET`, first 8 bytes) and never the address or the query string; the log redactor also drops token, secret, cookie, authorization, and security-word fields. Log retention is set by the deployment (Phase 9).
 - Metrics are aggregates, never per person. No third-party analytics without an ADR.
 
 ## 9. Controls checklist

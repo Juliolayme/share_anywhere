@@ -26,6 +26,8 @@ test('receive-preview: link in a fresh context joins immediately; both sides see
   await expect(rx.getByText('holiday.mp4')).toBeVisible();
   await rx.getByRole('button', { name: 'Receive' }).click();
   await expect(rx.getByTestId('joined-title')).toContainText('You joined');
+  await expect(rx.locator('[data-screen="receive-joined"]')).toHaveCount(1);
+  await expect(sender.locator('[data-screen="session"]')).toHaveCount(1);
   const rxWords = await rx.getByTestId('security-words').textContent();
   // Sender: join toast, card with Guest badge, same words.
   await expect(sender.getByRole('status').filter({ hasText: 'joined' }).first()).toBeVisible();
@@ -50,6 +52,7 @@ test('receive: six-digit code joins immediately', async ({ browser }) => {
 test('receive-wait: approval on → receiver waits → approve; and reject', async ({ browser }) => {
   const sender = await senderPage();
   const s = await createSession(sender, { approval: true });
+  await expect(sender.locator('[data-screen="session-approved"]')).toHaveCount(1);
   const rx = await guestPage(browser);
   await enterCode(rx, s.code);
   await rx.getByRole('button', { name: 'Receive' }).click();
@@ -66,6 +69,7 @@ test('receive-wait: approval on → receiver waits → approve; and reject', asy
   await expect(rx2.getByRole('heading', { name: 'Waiting for approval' })).toBeVisible();
   await sender.getByRole('button', { name: /^Reject / }).click();
   await expect(rx2.getByTestId('receive-outcome')).toHaveAttribute('data-outcome', 'rejected');
+  await expect(rx2.locator('[data-screen="receive-wait"]')).toHaveCount(1);
   await sender.context().close();
 });
 
@@ -78,6 +82,7 @@ test('session: Remove and Block; a blocked receiver cannot rejoin', async ({ bro
   await expect(rx.getByTestId('joined-title')).toBeVisible();
   await sender.getByRole('button', { name: /^Remove / }).click();
   await expect(rx.getByTestId('receive-outcome')).toHaveAttribute('data-outcome', 'removed');
+  await expect(rx.locator('[data-screen="receive-done"]')).toHaveCount(1);
   // Rejoin after a remove is allowed with a valid code; then Block.
   await enterCode(rx, s.code);
   await rx.getByRole('button', { name: 'Receive' }).click();
@@ -99,7 +104,7 @@ test('session: Stop accepting refuses the code and the link with the right messa
   await enterCode(rx, s.code);
   await expect(rx.getByRole('alert')).toHaveText('The sender is no longer accepting receivers.');
   await rx.goto(linkPath(s.link));
-  await expect(rx.getByRole('alert')).toContainText('Code expired — ask the sender for a new code');
+  await expect(rx.getByRole('alert')).toContainText('The sender is no longer accepting receivers.');
   await sender.context().close();
 });
 
@@ -121,4 +126,29 @@ test('receive: an unknown code says so, and an expired link page explains', asyn
   await expect(rx.getByRole('alert')).toHaveText(/Code not found|Code expired/);
   await rx.goto('/j/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
   await expect(rx.getByRole('alert')).toContainText('This link has expired');
+});
+
+test('receive: a locked-out device sees the wait time', async ({ browser }) => {
+  const sender = await senderPage();
+  const s = await createSession(sender);
+  const rx = await guestPage(browser);
+  await rx.goto('/receive');
+  // Lock this device through the test-only hook (the real trigger is 5 failed lookups in 10 minutes).
+  await rx.waitForLoadState('networkidle'); // the app's own identity bootstrap has finished
+  // Refresh under the app's own Web Lock so the cookie rotation never races the app (reuse would revoke).
+  const res = await rx.evaluate(() =>
+    navigator.locks.request('sa-device-refresh', async () => {
+      const r = await fetch('/v1/devices/token', { method: 'POST', headers: { 'X-SA-Refresh': '1' } });
+      const { access_token } = await r.json();
+      const lock = await fetch('/v1/_test/lockout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      return lock.status;
+    }),
+  );
+  expect(res).toBe(200);
+  await enterCode(rx, s.code);
+  await expect(rx.getByRole('alert')).toHaveText(/^Too many attempts\. Try again in (30:00|29:5\d)\.$/);
+  await sender.context().close();
 });

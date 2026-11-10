@@ -25,6 +25,7 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/db"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/httpserver"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/logging"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/metrics"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/ws"
 	"github.com/juliolayme/share_anywhere/backend/internal/sharing"
 	"github.com/juliolayme/share_anywhere/backend/internal/signaling"
@@ -124,6 +125,18 @@ func run() error {
 	}
 	go a.devices.RunPurger(ctx, time.Hour)
 	go a.sharing.Run(ctx, 5*time.Second)
+	if cfg.MetricsAddr != "" {
+		// Internal listener only (not routed through Caddy); aggregates, never per person.
+		mmux := http.NewServeMux()
+		mmux.Handle("GET /metrics", a.metrics.Handler())
+		msrv := &http.Server{Addr: cfg.MetricsAddr, Handler: mmux, ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			if err := msrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("metrics listener failed", "error", err.Error())
+			}
+		}()
+		defer func() { _ = msrv.Close() }()
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -165,6 +178,7 @@ type app struct {
 	devices *devices.Service
 	sharing *sharing.Service
 	hub     *ws.Hub
+	metrics *metrics.Registry
 }
 
 // newApp wires every module onto one router; the route-table test builds the server the same way (with a
@@ -181,9 +195,10 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 
 	limits := sharing.ScaledLimits(clk, cfg.RateLimitMultiplier)
 	protected := sharing.NewProtectedMode(clk, cfg.CodeGuessAlarmPerMin)
+	reg := metrics.New()
 	shareSvc := sharing.NewService(sharing.Config{
 		Pool: pool, Clock: clk, Secret: cfg.ServerSecret, Notify: hub, Limits: limits,
-		Protected: protected, PublicURL: cfg.PublicURL, Log: log,
+		Protected: protected, PublicURL: cfg.PublicURL, Log: log, Metrics: reg,
 	})
 	signaling.Register(hub, shareSvc)
 	lookup := func(ctx context.Context, id string) (string, string, error) {
@@ -193,6 +208,7 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 	turn := turncreds.New(turncreds.Config{
 		Secret: cfg.TURNSecret, URIs: cfg.TURNURIs, Clock: clk, Auth: shareSvc,
 		GuestLimit: limits.TurnGuest, AcctLimit: limits.TurnAccount, Log: log,
+		IPLimit: limits.TurnIP, IPKey: func(r *http.Request) string { return clientip.Key(ips.FromRequest(r)) },
 	})
 	modules := []func(*access.Router){
 		devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure).Register,
@@ -206,5 +222,5 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 		ClientIP: ips.FromRequest, LogKey: cfg.ServerSecret,
 		Modules: modules,
 	})
-	return &app{handler: h, router: router, devices: deviceSvc, sharing: shareSvc, hub: hub}, nil
+	return &app{handler: h, router: router, devices: deviceSvc, sharing: shareSvc, hub: hub, metrics: reg}, nil
 }

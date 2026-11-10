@@ -120,6 +120,7 @@ describe('session (TR-4/TR-5)', () => {
     renderSession({ get, renew });
     expect(await screen.findByTestId('code-expired')).toHaveTextContent('Code expired — Create new code');
     expect(screen.queryByTestId('session-code')).toBeNull();
+    expect(document.querySelector('[data-screen="session-expired"]')).not.toBeNull();
     await act(async () => {
       await userEvent.click(screen.getByRole('button', { name: 'Create new code' }));
     });

@@ -134,7 +134,11 @@
     "not_accepting_s": "Not accepting new receivers",
     "rx_sender_line": "{platform} · expires in {time}",
     "error_generic": "Something went wrong. Try again.",
-    "reconnecting": "Reconnecting…"
+    "reconnecting": "Reconnecting…",
+    "wants_to_join": "{name} wants to join",
+    "too_many_open": "Close one of your open sessions before starting another.",
+    "own_session": "This is your own session. Open the code on another device.",
+    "leave_failed": "Couldn’t leave the session. Try again."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -270,6 +274,10 @@
     "not_accepting_s": "Không nhận thêm người nhận",
     "rx_sender_line": "{platform} · hết hạn sau {time}",
     "error_generic": "Đã xảy ra lỗi. Hãy thử lại.",
-    "reconnecting": "Đang kết nối lại…"
+    "reconnecting": "Đang kết nối lại…",
+    "wants_to_join": "{name} muốn vào phiên",
+    "too_many_open": "Hãy đóng một phiên đang mở trước khi tạo phiên mới.",
+    "own_session": "Đây là phiên của bạn. Hãy mở mã trên thiết bị khác.",
+    "leave_failed": "Không rời phiên được. Hãy thử lại."
   }
 }

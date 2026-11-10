@@ -109,9 +109,18 @@ func (s *Service) Tick(ctx context.Context) (TickResult, error) {
 		return res, err
 	}
 
-	// 4. Protected mode switching off.
+	// 4. Prune expired lockouts; account protected-mode time; announce protected mode switching off.
 	s.mu.Lock()
+	for k, until := range s.lockout {
+		if !now.Before(until) {
+			delete(s.lockout, k)
+		}
+	}
 	on, until := s.cfg.Protected.Active()
+	if on && !s.lastTick.IsZero() && now.After(s.lastTick) {
+		s.m.protectedSeconds.Add(int64(now.Sub(s.lastTick).Seconds()))
+	}
+	s.lastTick = now
 	announce := s.protectedWasOn && !on
 	s.protectedWasOn = on
 	s.mu.Unlock()
@@ -133,6 +142,14 @@ func (s *Service) SetProtected(on *bool) (bool, time.Time) {
 		s.cfg.Notify.Broadcast(ProtectedModeEvent{Type: "PROTECTED_MODE", Active: active, Until: until})
 	}
 	return active, until
+}
+
+// LockDeviceForTest locks a device out of code lookups (test-build admin hook only), so end-to-end specs can
+// check the locked-out message without hundreds of failed lookups from the shared test address.
+func (s *Service) LockDeviceForTest(deviceID string, d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lockout["dev:"+deviceID] = s.cfg.Clock.Now().Add(d)
 }
 
 // Run ticks every interval until ctx ends.

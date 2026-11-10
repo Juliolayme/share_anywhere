@@ -67,10 +67,10 @@ func (s *Service) Decide(ctx context.Context, c Caller, participantID, action st
 			}
 			next, event = PBlocked, "PARTICIPANT_BLOCKED"
 			ip := ""
-			if p.IPKey != nil {
-				ip = *p.IPKey
+			if p.IPHash != nil {
+				ip = *p.IPHash
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO session_blocks (session_id, device_id, ip_key, created_at) VALUES ($1::uuid, $2::uuid, NULLIF($3, ''), $4)`,
+			if _, err := tx.Exec(ctx, `INSERT INTO session_blocks (session_id, device_id, ip_hash, created_at) VALUES ($1::uuid, $2::uuid, NULLIF($3, ''), $4)`,
 				r.ID, p.DeviceID, ip, now); err != nil {
 				return err
 			}
@@ -107,6 +107,12 @@ func (s *Service) Decide(ctx context.Context, c Caller, participantID, action st
 	})
 	if err != nil {
 		return Participant{}, err
+	}
+	switch event {
+	case "PARTICIPANT_BLOCKED":
+		s.m.blocks.Inc()
+	case "PARTICIPANT_APPROVED":
+		s.m.joins.Inc()
 	}
 	ev := ParticipantEvent{Type: event, SessionID: out.SessionID, Participant: out.view()}
 	s.notifySender(ctx, out.SessionID, ev)

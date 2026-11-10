@@ -71,7 +71,7 @@ export default function SessionPage() {
     }
     if (e.type === 'PARTICIPANT_REQUESTED') {
       const p = e.participant as Participant;
-      toast.show(`${p.display_name} ${t('web.wants')}`);
+      toast.show(t('product.wants_to_join', { name: p.display_name }));
     }
     void load();
   });
@@ -153,10 +153,11 @@ export default function SessionPage() {
   const receivers = (view.participants ?? []).filter((p) => p.status === 'JOINED' || p.status === 'REQUESTED');
   const requests = receivers.filter((p) => p.status === 'REQUESTED');
   const joined = receivers.filter((p) => p.status === 'JOINED');
-  const screenId = !live
-    ? 'session-expired'
-    : full
-      ? 'session-full'
+  // Design screen IDs (docs/UX_SCREEN_MAP.md §12): full, code expired or not accepting, approval on, open.
+  const screenId = full
+    ? 'session-full'
+    : !windowOpen
+      ? 'session-expired'
       : view.require_approval
         ? 'session-approved'
         : 'session';
@@ -185,6 +186,7 @@ export default function SessionPage() {
 
   return (
     <Screen id={screenId}>
+      <KeepOpenBanner state={pill} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <span className="text-caption font-semibold text-fg-2">
@@ -196,7 +198,6 @@ export default function SessionPage() {
           {t('web.close')}
         </Button>
       </div>
-      <KeepOpenBanner state={pill} />
       {view.protected_mode && <Banner tone="warning" title={t('product.protected_mode_sender')} />}
       {windowOpen && cap.joined > 0 && (
         <Banner
@@ -237,7 +238,7 @@ export default function SessionPage() {
                       type="button"
                       onClick={() => void copy('code', view.code ?? '')}
                       aria-label={t('product.copy_code')}
-                      className="flex h-[44px] w-[44px] items-center justify-center rounded-md text-fg-2 hover:bg-surface-2"
+                      className="flex h-[44px] w-[44px] items-center justify-center rounded-md bg-surface-2 text-fg hover:bg-border"
                     >
                       {copied === 'code' ? <Check aria-hidden size={18} /> : <Copy aria-hidden size={18} />}
                     </button>
@@ -270,7 +271,7 @@ export default function SessionPage() {
                 )}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-caption text-fg-2">
-                <span className="inline-flex items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full bg-surface-2 px-3 py-1">
                   <Clock aria-hidden size={14} />
                   {t('common.cx_valid')} ·{' '}
                   <b

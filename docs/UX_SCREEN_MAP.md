@@ -22,7 +22,7 @@ flowchart LR
   L[Launch] -->|first launch| W[ON-1 Welcome] -->|Start sharing| H[TR-1 Transfer home]
   L -->|later launches| H
   J[Join link opened] -->|app installed + verified link| P[RX-4 Join preview]
-  J -->|no app| WP[Web /join/:token] --> P
+  J -->|no app| WP[Web /j/:token] --> P
   P -->|Receive| G[RX-6 Receiving]
 ```
 
@@ -56,13 +56,13 @@ flowchart LR
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
 | RX-1 | Receive entry | `/receive` | Scan QR (camera permission asked just in time; simulator and desktop show code entry), enter code | Same | Scan / Enter code |
-| RX-2 | Code entry | `/join` | Six digits, validation, lockout message with wait time, "Code expired — ask the sender for a new code" (`common.cx_rx`) | Same | Continue |
-| RX-3 | Web join page | `/join/:token` | Opens the app when installed and verified; otherwise the Web flow | Same | — |
+| RX-2 | Code entry | `/receive` (same Web screen as RX-1) | Six digits, validation, lockout message with wait time, "Code expired — ask the sender for a new code" (`common.cx_rx`) | Same | Continue |
+| RX-3 | Web join page | `/j/:token` (share link and QR payload; also the Universal Link / App Link path) | Opens the app when installed and verified; otherwise the Web flow | Same | — |
 | RX-4 | Join preview | `/join/preview` | Sender display name, Guest/Signed in badge, file names, sizes, count; browser capability check (Web); "Join within m:ss" in the last minute of the join window; expired message if the window ends before Receive; security words shown after joining | Same | Receive (Web: choose save target first) |
-| RX-5 | Waiting for approval | `/join/waiting` | Only when approval is on or protected mode applies; security words; keep-open banner and screen-on pill | Same | Cancel |
+| RX-5 | Waiting for approval | `/receive/:sessionId` (state REQUESTED) | Only when approval is on or protected mode applies; security words; keep-open banner and screen-on pill | Same | Cancel |
 | RX-5b | Save location | `/receive/:sessionId/save` | Web: choose a folder (File System Access) or download, large-file warning for browsers without it; Android SAF folder (default Download); iOS Files location (default On My iPhone); storage-full error | Same | Start receiving |
 | RX-6 | Receiving | `/receive/:sessionId` | Destination, per-file progress, verification, pause/resume/retry, keep-open banner and screen-on pill, iOS hint "Locking your iPhone pauses the transfer" | Same | Pause |
-| RX-7 | Receive result | `/receive/:sessionId/result` | Completed, partial, failed; open, share, or locate files where the platform allows; removed/blocked/code-expired/session-expired/session-full outcomes; entry written to local history | Same, plus cloud history when on | Open / Done |
+| RX-7 | Receive result | `/receive/:sessionId` (ended states; Phase 3 adds completion) | Completed, partial, failed; open, share, or locate files where the platform allows; removed/blocked/code-expired/session-expired/session-full outcomes; entry written to local history | Same, plus cloud history when on | Open / Done |
 
 ## 6. History
 
@@ -142,10 +142,12 @@ Web IDs come from `Web App.dc.html`, Android IDs from `Android App.dc.html`, iOS
 | RX-2 Code entry | `receive` | `receive-code` | `receive-code` | OTP six-digit input | default, error not found, code expired, locked out |
 | RX-3 Web join page | `receive-preview` from a link | App Link | Universal Link | — | — |
 | RX-4 Join preview | `receive-preview` | `rx-preview` | `rx-preview` | Sender card, File row list, total | default, join window under one minute, expired |
-| RX-5 Waiting for approval | `receive-wait` | `rx-wait` | `rx-wait` | Security words, Keep-open banner, Screen-on pill | `receiveOutcome`: `approved`, `rejected`, `expired` |
+| RX-5 Waiting for approval | `receive-wait` (also the declined outcome) | `rx-wait` | `rx-wait` | Security words, Keep-open banner, Screen-on pill | `receiveOutcome`: `approved`, `rejected`, `expired` |
+| RX-4b Joined, waiting for transfers (Web addition until Phase 3) | `receive-joined` | — | — | Status banner, Security words, File list with Queued chips, Leave | joined |
+| TR-4b Session ended (Web addition) | `session-ended` | — | — | Heading, New session | closed, expired |
 | RX-5b Save location | `receive-save` | `rx-save` | `rx-preview` (Save to Files) | Folder picker, large-file warning | default, `rxIssue`: `storage` |
 | RX-6 Receiving | `receive-progress` | `rx-progress` | `rx-progress` | Progress, Status chip, Keep-open banner, Screen-on pill | receiving, reconnecting, verifying, paused in background (iOS) |
-| RX-7 Receive result | `receive-done` | `rx-done` | `rx-done` | Status chip, Open / Share / Show in folder | completed, `rxIssue`: `checksum`, `partial` |
+| RX-7 Receive result | `receive-done` (also removed, blocked, left, closed, expired outcomes) | `rx-done` | `rx-done` | Status chip, Open / Share / Show in folder | completed, `rxIssue`: `checksum`, `partial` |
 | HI-1, HI-2 History | `history` | `history` | `history` | Tabs, search and filter bar, list, empty state, clear dialog | empty, populated, no match, cleared |
 | DV-1, DV-2 Devices | `devices` | `devices` | `devices` | This device card, device list, rename sheet, revoke dialog | guest, signed in |
 | ST-1 Settings | `settings` | `settings` | `settings` | Grouped list, pickers, Switch | guest, signed in |

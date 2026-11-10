@@ -25,12 +25,15 @@ export default function JoinLinkPage() {
     api
       .resolveLink(token)
       .then((preview) =>
-        navigate('/join/preview', { replace: true, state: { preview, offset: serverOffset(preview.server_time) } }),
+        navigate('/join/preview', {
+          replace: true,
+          state: { preview, offset: serverOffset(preview.server_time), source: { token } },
+        }),
       )
       .catch((e: unknown) => setError(joinErrorMessage(t, e)));
   }, [status.kind, api, token, navigate, t]);
   return (
-    <Screen id="receive-link">
+    <Screen id="receive-preview">
       <div className="mx-auto flex w-full max-w-[560px] flex-col gap-4">
         <IdentityNotice />
         {error ? (

@@ -104,7 +104,7 @@ export default function SendPicker() {
         e instanceof ApiError && e.status === 429
           ? t('product.rate_limited', { time: formatWait(e.retryAfterS ?? 60) })
           : e instanceof ApiError && e.code === 'too_many_open_sessions'
-            ? e.message
+            ? t('product.too_many_open')
             : t('product.error_generic'),
       );
       setCreating(false);

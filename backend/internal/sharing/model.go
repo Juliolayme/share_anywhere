@@ -12,20 +12,19 @@ import (
 
 // Limits and lifetimes (docs/SECURITY_MODEL.md §3, §5, §6).
 const (
-	JoinWindow         = 10 * time.Minute
-	JoinTicketTTL      = 5 * time.Minute
-	MaxReceivers       = 5
-	MaxPendingRequests = 10
-	IdleTimeout        = 30 * time.Minute
-	GuestLifetime      = 24 * time.Hour
-	AccountLifetime    = 72 * time.Hour
-	PurgeAfterEnd      = 7 * 24 * time.Hour
-	ProtectedDuration  = 30 * time.Minute
-	LockoutDuration    = 30 * time.Minute
-	MaxFiles           = 1000
-	MaxSessionBytes    = int64(20e9)
-	GuestOpenSessions  = 2
-	AcctOpenSessions   = 5
+	JoinWindow        = 10 * time.Minute
+	JoinTicketTTL     = 5 * time.Minute
+	MaxReceivers      = 5
+	IdleTimeout       = 30 * time.Minute
+	GuestLifetime     = 24 * time.Hour
+	AccountLifetime   = 72 * time.Hour
+	PurgeAfterEnd     = 7 * 24 * time.Hour
+	ProtectedDuration = 30 * time.Minute
+	LockoutDuration   = 30 * time.Minute
+	MaxFiles          = 1000
+	MaxSessionBytes   = int64(20e9)
+	GuestOpenSessions = 2
+	AcctOpenSessions  = 5
 )
 
 // Session statuses, join window states, participant statuses.
@@ -72,7 +71,6 @@ var (
 	ErrBlocked        = errf(http.StatusForbidden, "blocked", "You can't join this session.")
 	ErrForbidden      = errf(http.StatusForbidden, "forbidden", "Only the sender can do that.")
 	ErrConflict       = errf(http.StatusConflict, "invalid_state", "That action doesn't apply right now.")
-	ErrTooManyPending = errf(http.StatusConflict, "too_many_requests", "Too many people are waiting for approval.")
 )
 
 func rateLimited(code string, wait time.Duration) *Error {

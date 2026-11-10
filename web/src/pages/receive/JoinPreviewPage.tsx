@@ -12,6 +12,8 @@ import { joinErrorMessage } from '../../features/sharing/errors';
 export interface PreviewState {
   preview: JoinPreview;
   offset: number;
+  /** How the preview was opened, so an expired 5-minute ticket can be renewed while the window is open. */
+  source?: { code: string } | { token: string };
 }
 
 /**
@@ -35,7 +37,8 @@ export default function JoinPreviewPage() {
   const { preview, offset } = state;
   const left = secondsUntil(preview.join_window_ends_at, offset, now);
   const ticketLeft = secondsUntil(preview.join_ticket_expires_at, offset, now);
-  const expired = left === 0 || ticketLeft === 0;
+  // The join window decides expiry; a lapsed 5-minute ticket is renewed on Receive while the window is open.
+  const expired = left === 0 || (ticketLeft === 0 && !state.source);
   const sender = preview.sender;
   const Icon = /android|iphone|ios|mobile/i.test(sender.platform) ? Smartphone : Laptop;
   const title =
@@ -47,7 +50,13 @@ export default function JoinPreviewPage() {
     setJoining(true);
     setError(null);
     try {
-      const res = await api.join(preview.session_id, preview.join_ticket);
+      let ticket = preview.join_ticket;
+      if (secondsUntil(preview.join_ticket_expires_at, offset) === 0 && state.source) {
+        const fresh =
+          'code' in state.source ? await api.resolveCode(state.source.code) : await api.resolveLink(state.source.token);
+        ticket = fresh.join_ticket;
+      }
+      const res = await api.join(preview.session_id, ticket);
       navigate(`/receive/${preview.session_id}`, { replace: true, state: { participant: res.participant } });
     } catch (e) {
       setError(joinErrorMessage(t, e));
@@ -118,7 +127,7 @@ export default function JoinPreviewPage() {
             </Button>
             {left <= 60 && (
               <span className="text-center text-caption text-fg-2" data-testid="join-within">
-                {t('product.join_within', { time: mmss(Math.min(left, ticketLeft)) })}
+                {t('product.join_within', { time: mmss(left) })}
               </span>
             )}
           </>

@@ -29,20 +29,19 @@ test('session-expired: 10:00 window ends, old code refused, Create new code rest
   );
 
   await advanceClock(request, 600);
-  await sender.reload();
+  // No reload: SESSION_UPDATED from the server switches the screen and the controller releases the lock.
+  await expect(sender.locator('[data-screen="session-expired"]')).toHaveCount(1);
   await expect(sender.getByTestId('code-expired')).toContainText('Code expired — Create new code');
   await expect(sender.getByTestId('session-code')).toHaveCount(0);
   await expect(sender.getByRole('img', { name: 'QR code to join this session' })).toHaveCount(0);
-  // Window ended with nobody transferring: the pill shows paused (and any lock was released).
   await expect(sender.getByTestId('screen-on-pill')).toHaveAttribute('data-state', 'paused');
-  const releasesAfter = await sender.evaluate(
-    () => (window as unknown as { __wl: { releases: number } }).__wl.releases,
-  );
-  expect(releasesAfter).toBeGreaterThanOrEqual(releasesBefore);
+  await expect
+    .poll(() => sender.evaluate(() => (window as unknown as { __wl: { releases: number } }).__wl.releases))
+    .toBe(releasesBefore + 1);
 
   const late = await guestPage(browser);
   await enterCode(late, s.code);
-  await expect(late.getByRole('alert')).toHaveText(/Code expired — ask the sender for a new code|Code not found/);
+  await expect(late.getByRole('alert')).toHaveText('Code expired — ask the sender for a new code');
   await late.goto(linkPath(s.link));
   await expect(late.getByRole('alert')).toContainText('Code expired — ask the sender for a new code');
   // The receiver who joined before expiry is still in.
@@ -50,6 +49,7 @@ test('session-expired: 10:00 window ends, old code refused, Create new code rest
   await expect(early.getByTestId('joined-title')).toBeVisible();
 
   await sender.getByRole('button', { name: 'Create new code' }).click();
+  await expect(sender.locator('[data-screen="session"]')).toHaveCount(1);
   await expect(sender.getByTestId('countdown')).toHaveText(/^(10:00|9:5\d)$/);
   const fresh = (await sender.getByTestId('session-code').textContent())?.replace(/\D/g, '') ?? '';
   await enterCode(late, fresh);

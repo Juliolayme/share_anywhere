@@ -45,7 +45,7 @@ export function KeepOpenBanner({ state }: { state: PillState }) {
           if (!interactive) return;
           if (controller.tap() === 'setting') navigate('/settings');
         }}
-        className={`inline-flex min-h-touch flex-none items-center gap-[6px] rounded-full border px-3 text-caption font-semibold ${
+        className={`inline-flex min-h-touch max-w-full items-center gap-[6px] rounded-full border px-3 py-1 text-left text-caption font-semibold ${
           warn
             ? 'border-transparent bg-warning-soft text-warning-ink'
             : state === 'on'

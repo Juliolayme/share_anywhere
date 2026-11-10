@@ -14,12 +14,13 @@ import { useSharing, useSocketEvents } from '../../features/sharing/SharingConte
 type Outcome = 'removed' | 'blocked' | 'rejected' | 'left' | 'closed' | 'ended';
 
 const OUTCOME: Record<Outcome, { screen: string; title: string; body?: string }> = {
-  removed: { screen: 'receive-removed', title: 'product.removed_rx' },
-  blocked: { screen: 'receive-blocked', title: 'product.blocked_rx' },
+  // RX-5 `receive-wait` covers the declined outcome; every other ending is RX-7 `receive-done` (UX_SCREEN_MAP §12).
+  removed: { screen: 'receive-done', title: 'product.removed_rx' },
+  blocked: { screen: 'receive-done', title: 'product.blocked_rx' },
   rejected: { screen: 'receive-wait', title: 'product.declined_h', body: 'product.declined_p' },
-  left: { screen: 'receive-left', title: 'product.left_rx' },
-  closed: { screen: 'session-expired', title: 'product.closed_rx' },
-  ended: { screen: 'session-expired', title: 'product.session_ended_rx' },
+  left: { screen: 'receive-done', title: 'product.left_rx' },
+  closed: { screen: 'receive-done', title: 'product.closed_rx' },
+  ended: { screen: 'receive-done', title: 'product.session_ended_rx' },
 };
 
 function outcomeOf(v: SessionView | null, gone: boolean): Outcome | null {
@@ -77,13 +78,17 @@ export default function ReceiveSessionPage() {
   // RX-5: keep the screen on while waiting for the sender's approval (docs/ARCHITECTURE.md §7.1).
   const pill = useKeepAwake(!!waiting);
 
+  const [leaveError, setLeaveError] = useState(false);
   const leave = async () => {
     if (!view?.me) return;
     setLeaving(true);
+    setLeaveError(false);
     try {
       await api.decide(view.me.id, 'leave');
-    } finally {
       navigate('/receive', { replace: true });
+    } catch {
+      setLeaveError(true);
+      setLeaving(false);
     }
   };
 
@@ -135,7 +140,7 @@ export default function ReceiveSessionPage() {
           <div className="flex flex-col items-center gap-3 text-center">
             <span
               aria-hidden
-              className="flex h-[56px] w-[56px] items-center justify-center rounded-[16px] bg-warning-soft text-warning-ink"
+              className="flex h-[56px] w-[56px] items-center justify-center rounded-[16px] bg-send-soft text-send-ink"
             >
               <Hourglass size={26} />
             </span>
@@ -145,6 +150,7 @@ export default function ReceiveSessionPage() {
               <Banner tone="warning" title={t('product.protected_mode')} />
             )}
             <SecurityWords words={view.me?.security_words} label={t('web_xx.secw_r')} />
+            {leaveError && <Banner tone="danger" role="alert" title={t('product.leave_failed')} />}
             <Button variant="secondary" busy={leaving} onClick={() => void leave()}>
               {t('web.cancel')}
             </Button>
@@ -176,6 +182,7 @@ export default function ReceiveSessionPage() {
             </div>
           ))}
         </Card>
+        {leaveError && <Banner tone="danger" role="alert" title={t('product.leave_failed')} />}
         <Button variant="ghost" busy={leaving} onClick={() => void leave()}>
           {t('product.leave')}
         </Button>

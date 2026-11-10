@@ -42,6 +42,11 @@ func testHooks(cfg config.Config, clk clock.Clock, svc *sharing.Service, _ *shar
 			_, _ = svc.Tick(req.Context())
 			httpx.JSON(w, http.StatusOK, map[string]any{"server_time": off.Now().UTC()})
 		})
+		r.Handle(http.MethodPost, "/v1/_test/lockout", access.Device, func(w http.ResponseWriter, req *http.Request) {
+			id, _ := access.FromContext(req.Context())
+			svc.LockDeviceForTest(id.DeviceID, sharing.LockoutDuration)
+			httpx.JSON(w, http.StatusOK, map[string]any{"locked_for_s": int(sharing.LockoutDuration.Seconds())})
+		})
 		r.Handle(http.MethodPost, "/v1/_test/protected-mode", access.Public, func(w http.ResponseWriter, req *http.Request) {
 			var in struct {
 				Active *bool `json:"active"`

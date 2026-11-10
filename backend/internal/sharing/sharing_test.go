@@ -473,7 +473,7 @@ func TestJoinWindowLifecycle(t *testing.T) {
 	_, err = e.svc.ResolveCode(ctx, e.device("x"), n.Code)
 	wantCode(t, err, "session_not_accepting")
 	_, err = e.svc.ResolveLink(ctx, e.device("y"), n.LinkToken)
-	wantCode(t, err, "join_window_expired")
+	wantCode(t, err, "session_not_accepting")
 }
 
 func TestRenewWhileFullAndApprovalAfterExpiry(t *testing.T) {
@@ -644,4 +644,144 @@ func TestLifetimesIdleAndPurge(t *testing.T) {
 	if res.Purged < 2 || n != 0 {
 		t.Fatalf("purge: %+v remaining %d", res, n)
 	}
+}
+
+func TestRenewRateLimitAndRevokedTickets(t *testing.T) {
+	e := newEnv(t)
+	sender := e.device("S")
+	s := e.create(sender, false)
+	// A ticket from the old window fails after Create new code, and after Stop accepting.
+	rx := e.device("rx")
+	p, _ := e.svc.ResolveCode(ctx, rx, s.Code)
+	if _, err := e.svc.Renew(ctx, sender, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err := e.svc.Join(ctx, rx, p.SessionID, p.JoinTicket)
+	wantCode(t, err, "join_ticket_invalid")
+	v, _ := e.svc.View(ctx, sender.DeviceID, s.ID)
+	p2, _ := e.svc.ResolveCode(ctx, rx, v.Code)
+	f := false
+	_, _ = e.svc.Update(ctx, sender, s.ID, UpdateInput{AcceptingReceivers: &f})
+	_, err = e.svc.Join(ctx, rx, p2.SessionID, p2.JoinTicket)
+	wantCode(t, err, "join_ticket_invalid")
+	// After Stop accepting, the current link says "not accepting", not "expired".
+	_, err = e.svc.ResolveLink(ctx, e.device("l"), v.LinkToken)
+	wantCode(t, err, "session_not_accepting")
+	// Create new code: 20 per hour per device (one used above).
+	for i := 0; i < 19; i++ {
+		if _, err := e.svc.Renew(ctx, sender, s.ID); err != nil {
+			t.Fatalf("renew %d: %v", i, err)
+		}
+	}
+	_, err = e.svc.Renew(ctx, sender, s.ID)
+	wantCode(t, err, "rate_limited")
+}
+
+func TestLinkAt959RenewAfterRemoveSignalingAfterExpiry(t *testing.T) {
+	e := newEnv(t)
+	sender := e.device("S")
+	s := e.create(sender, false)
+	var joined []JoinResult
+	for i := 0; i < 4; i++ {
+		r, err := e.joinCode(e.device(fmt.Sprintf("r%d", i)), s.Code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		joined = append(joined, r)
+	}
+	e.clk.Advance(9*time.Minute + 59*time.Second)
+	viaLink := e.device("link")
+	r5, err := e.joinLink(viaLink, s.LinkToken)
+	if err != nil || r5.Participant.Status != PJoined {
+		t.Fatalf("link at 9:59: %v", err)
+	}
+	_, err = e.svc.Renew(ctx, sender, s.ID)
+	wantCode(t, err, "session_full")
+	if _, err := e.svc.Decide(ctx, sender, joined[0].Participant.ID, "remove"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Renew(ctx, sender, s.ID); err != nil {
+		t.Fatalf("renew after Remove: %v", err)
+	}
+	// Past the (new) window, joined receivers still signal with the sender.
+	e.clk.Advance(JoinWindow + time.Minute)
+	_, _ = e.svc.Tick(ctx)
+	sv, _ := e.svc.View(ctx, sender.DeviceID, s.ID)
+	if sv.JoinWindow.State != WindowExpired {
+		t.Fatalf("window %s", sv.JoinWindow.State)
+	}
+	rv, _ := e.svc.View(ctx, viaLink.DeviceID, s.ID)
+	if _, to, err := e.svc.SignalRoute(ctx, viaLink.DeviceID, s.ID, rv.Sender.ParticipantID); err != nil || to != sender.DeviceID {
+		t.Fatalf("signaling after expiry: %v", err)
+	}
+}
+
+func TestCreationIPLimitAndSignedInLifetime(t *testing.T) {
+	e := newEnv(t)
+	ip := "192.0.2.77"
+	var err error
+	for i := 0; i < 31; i++ {
+		c := e.device(fmt.Sprintf("d%d", i))
+		c.IPKey = ip
+		_, err = e.svc.Create(ctx, c, CreateInput{Files: []FileInput{{Name: "a", Size: 1}}})
+		if i < 30 && err != nil {
+			t.Fatalf("create %d: %v", i, err)
+		}
+	}
+	wantCode(t, err, "rate_limited")
+	// A signed-in sender gets 72 hours and up to 5 open sessions (accounts arrive in Phase 5A).
+	acct := e.device("acct")
+	acct.SignedIn = true
+	var last SessionView
+	for i := 0; i < 5; i++ {
+		if last, err = e.svc.Create(ctx, acct, CreateInput{Files: []FileInput{{Name: "a", Size: 1}}}); err != nil {
+			t.Fatalf("signed-in session %d: %v", i, err)
+		}
+	}
+	if got := last.ExpiresAt.Sub(last.JoinWindow.OpenedAt); got != AccountLifetime {
+		t.Fatalf("signed-in lifetime %v", got)
+	}
+	_, err = e.svc.Create(ctx, acct, CreateInput{Files: []FileInput{{Name: "a", Size: 1}}})
+	wantCode(t, err, "too_many_open_sessions")
+	e.note.connected[acct.DeviceID] = true
+	e.clk.Advance(48 * time.Hour)
+	_, _ = e.svc.Tick(ctx)
+	if v, _ := e.svc.View(ctx, acct.DeviceID, last.ID); v.Status != StatusWaiting {
+		t.Fatalf("still alive at 48 h: %s", v.Status)
+	}
+	e.clk.Advance(25 * time.Hour)
+	_, _ = e.svc.Tick(ctx)
+	if v, _ := e.svc.View(ctx, acct.DeviceID, last.ID); v.Status != StatusExpired {
+		t.Fatalf("expired after 72 h: %s", v.Status)
+	}
+}
+
+func TestStoredAddressesAreHashedAndMetricsCount(t *testing.T) {
+	e := newEnv(t)
+	sender := e.device("S")
+	s := e.create(sender, false)
+	rx := e.device("rx")
+	r, _ := e.joinCode(rx, s.Code)
+	if _, err := e.svc.Decide(ctx, sender, r.Participant.ID, "block"); err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err := e.pool.QueryRow(ctx, `SELECT ip_hash FROM session_blocks WHERE session_id = $1::uuid`, s.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == "" || stored == rx.IPKey || len(stored) != 32 {
+		t.Fatalf("block must store a keyed hash, got %q (raw %q)", stored, rx.IPKey)
+	}
+	var raw int
+	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM session_participants WHERE ip_hash = $1`, rx.IPKey).Scan(&raw)
+	if raw != 0 {
+		t.Fatal("participants must not store raw address keys")
+	}
+	_, _ = e.svc.ResolveCode(ctx, e.device("x"), "999997")
+	if e.svc.m.sessionsCreated.Value() != 1 || e.svc.m.joins.Value() != 1 || e.svc.m.blocks.Value() != 1 || e.svc.m.lookupsFailed.Value() != 1 {
+		t.Fatalf("metrics: created %d joins %d blocks %d failed %d", e.svc.m.sessionsCreated.Value(), e.svc.m.joins.Value(), e.svc.m.blocks.Value(), e.svc.m.lookupsFailed.Value())
+	}
+	e.svc.LockDeviceForTest(rx.DeviceID, LockoutDuration)
+	_, err := e.svc.ResolveCode(ctx, rx, s.Code)
+	wantCode(t, err, "locked_out")
 }

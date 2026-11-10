@@ -37,6 +37,8 @@ type Config struct {
 	Auth       Authorizer
 	GuestLimit *ratelimit.Limiter
 	AcctLimit  *ratelimit.Limiter
+	IPLimit    *ratelimit.Limiter // optional, keyed by address key
+	IPKey      func(*http.Request) string
 	Log        interface{ Error(string, ...any) }
 }
 
@@ -90,6 +92,12 @@ func (i *Issuer) issue(w http.ResponseWriter, r *http.Request) {
 	if ok, wait := limit.Allow(id.DeviceID); !ok {
 		httpx.RateLimited(w, "rate_limited", wait)
 		return
+	}
+	if i.cfg.IPLimit != nil && i.cfg.IPKey != nil {
+		if ok, wait := i.cfg.IPLimit.Allow(i.cfg.IPKey(r)); !ok {
+			httpx.RateLimited(w, "rate_limited", wait)
+			return
+		}
 	}
 	exp := i.cfg.Clock.Now().Add(ttl)
 	user, cred := Sign(i.cfg.Secret, pid, exp)

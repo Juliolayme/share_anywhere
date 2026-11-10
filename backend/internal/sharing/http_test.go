@@ -125,3 +125,39 @@ func TestSessionHTTPFlow(t *testing.T) {
 		t.Fatalf("rate limited: %d %v", rec.Code, rec.Header())
 	}
 }
+
+func TestSessionHTTPIDOR(t *testing.T) {
+	e := newEnv(t)
+	mux := e.mux()
+	snd, rx, stranger := e.device("Sender"), e.device("Receiver"), e.device("Stranger")
+	rec := call(mux, "POST", "/v1/sessions", snd.DeviceID, `{"files":[{"name":"a","size":1}]}`)
+	var s SessionView
+	_ = json.Unmarshal(rec.Body.Bytes(), &s)
+	rec = call(mux, "POST", "/v1/sessions/resolve-code", rx.DeviceID, `{"code":"`+s.Code+`"}`)
+	var p Preview
+	_ = json.Unmarshal(rec.Body.Bytes(), &p)
+	rec = call(mux, "POST", "/v1/sessions/"+s.ID+"/join", rx.DeviceID, `{"ticket":"`+p.JoinTicket+`"}`)
+	var jr JoinResult
+	_ = json.Unmarshal(rec.Body.Bytes(), &jr)
+	for _, tc := range []struct {
+		method, path, who string
+		want              int
+	}{
+		{"POST", "/v1/sessions/" + s.ID + "/close", stranger.DeviceID, 404},
+		{"POST", "/v1/sessions/" + s.ID + "/renew", stranger.DeviceID, 404},
+		{"PATCH", "/v1/sessions/" + s.ID, stranger.DeviceID, 404},
+		{"POST", "/v1/sessions/" + s.ID + "/close", rx.DeviceID, 403},
+		{"POST", "/v1/sessions/" + s.ID + "/renew", rx.DeviceID, 403},
+		{"POST", "/v1/participants/" + jr.Participant.ID + "/leave", stranger.DeviceID, 404},
+		{"DELETE", "/v1/participants/" + jr.Participant.ID, stranger.DeviceID, 404},
+		{"POST", "/v1/participants/" + jr.Participant.ID + "/approve", rx.DeviceID, 403},
+	} {
+		body := ""
+		if tc.method == "PATCH" {
+			body = `{"require_approval":true}`
+		}
+		if rec := call(mux, tc.method, tc.path, tc.who, body); rec.Code != tc.want {
+			t.Errorf("%s %s: got %d want %d", tc.method, tc.path, rec.Code, tc.want)
+		}
+	}
+}

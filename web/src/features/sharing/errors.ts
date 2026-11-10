@@ -21,6 +21,8 @@ export function joinErrorMessage(t: Translate, err: unknown): string {
       return t('product.blocked_rx');
     case 'session_expired':
       return t('product.session_ended_rx');
+    case 'own_session':
+      return t('product.own_session');
     case 'locked_out':
     case 'rate_limited':
       return t('product.rate_limited', { time: mmss(err.retryAfterS ?? 60) });

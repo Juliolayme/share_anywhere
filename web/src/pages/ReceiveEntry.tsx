@@ -77,7 +77,9 @@ export default function ReceiveEntry() {
     setJoining(true);
     try {
       const preview = await api.resolveCode(digits.join(''));
-      navigate('/join/preview', { state: { preview, offset: serverOffset(preview.server_time) } });
+      navigate('/join/preview', {
+        state: { preview, offset: serverOffset(preview.server_time), source: { code: digits.join('') } },
+      });
     } catch (e) {
       setError(joinErrorMessage(t, e));
     } finally {

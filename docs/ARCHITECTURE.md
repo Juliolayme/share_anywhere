@@ -190,7 +190,7 @@ Core (guest and account):
 - `device_refresh_secrets(secret_hash PK, device_id → devices ON DELETE CASCADE, generation, created_at, used_at)`: every issued refresh secret as a SHA-256 hash. A used secret keeps its row so reuse is detected; reuse revokes the device and deletes its rows. **Built in Phase 1.** Rotation locks the secret and the device rows (`SELECT … FOR UPDATE`) so two concurrent refreshes cannot both win.
 - `share_sessions(id, owner_device_id NOT NULL, owner_user_id NULL, status, require_approval DEFAULT false, join_window_state OPEN|EXPIRED|ENDED_FULL|ENDED_BY_SENDER, join_window_seq, join_window_opened_at, join_window_ends_at, code_hmac, code_enc, link_enc, created_at, last_activity_at, expires_at, ended_at, purge_after)`. **Built in Phase 2** (`backend/migrations/0003_sharing.sql`), with a partial unique index on `code_hmac` where the window is open. `owner_user_id` is set only when the sender was signed in at creation and is used for Cloud and per-account limits, never required.
 - `session_participants(id, session_id, device_id NOT NULL, user_id NULL, role sender|receiver, status, security_words, joined_via code|link, joined_at, decided_at)` with `UNIQUE (session_id, device_id)`.
-- `session_blocks(session_id, device_id, ip_key)` (`ip_key` is the IPv4 address or IPv6 /64). Built in Phase 2, as are `session_participants` (plus `display_name`, `platform`, `signed_in`, `request_reason`, `ip_key`), `shared_files`, `transfers` (created `PENDING` when a receiver becomes `JOINED`), `session_events`, and `capability_tokens` (purposes `join`, `join_ticket`, `transfer`; `window_seq`, `via`, `device_id`, `used_at`).
+- `session_blocks(session_id, device_id, ip_hash)` (`ip_hash` is an HMAC of the IPv4 address or IPv6 /64 with the server secret; addresses are never stored, migration 0004). Built in Phase 2, as are `session_participants` (plus `display_name`, `platform`, `signed_in`, `request_reason`, `ip_hash`), `shared_files`, `transfers` (created `PENDING` when a receiver becomes `JOINED`), `session_events`, and `capability_tokens` (purposes `join`, `join_ticket`, `transfer`; `window_seq`, `via`, `device_id`, `used_at`).
 - `shared_files`, `transfers(participant_id, file_id, status, verified_bytes, route, …)`, `session_events`.
 - `capability_tokens(id, session_id, participant_id NULL, purpose join|transfer, token_hash, expires_at, revoked_at)`.
 - `protected_mode(active_until)` (single row) or an equivalent in-memory flag mirrored to metrics.
@@ -202,7 +202,7 @@ Account-only:
 Constraints:
 
 - Atomic five-receiver cap: `SELECT … FOR UPDATE` on the session row, count `REQUESTED` + `JOINED` receivers, then insert.
-- At most 10 `REQUESTED` participants per session.
+- `REQUESTED` participants count toward the five receiver slots (so at most 5 can be waiting; the earlier "10 pending" figure could never apply).
 - Six-digit code stored as an HMAC with a server pepper, unique among open join windows; link and QR join tokens are `capability_tokens` with `purpose = join` and `expires_at = join_window_ends_at`, revoked by `renew`.
 - Capability tokens hashed at rest, single-purpose, expiring, revocable.
 - Per-user `seq` for clipboard and history assigned under `pg_advisory_xact_lock(hashtext(user_id))` so `seq` order equals commit order.

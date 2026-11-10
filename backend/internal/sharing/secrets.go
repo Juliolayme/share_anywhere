@@ -9,6 +9,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -27,6 +28,7 @@ type keys struct {
 	code []byte // HMAC for six-digit codes
 	enc  []byte // AES-256-GCM for the sender's copy of code and link
 	word []byte // HMAC for security words
+	ip   []byte // HMAC for stored address keys (blocks)
 }
 
 func deriveKeys(secret []byte) keys {
@@ -35,7 +37,7 @@ func deriveKeys(secret []byte) keys {
 		m.Write([]byte("sharing:" + label))
 		return m.Sum(nil)
 	}
-	return keys{code: d("code"), enc: d("enc"), word: d("words")}
+	return keys{code: d("code"), enc: d("enc"), word: d("words"), ip: d("ip")}
 }
 
 // newCode returns a uniformly random six-digit code.
@@ -58,6 +60,16 @@ func ValidCode(s string) bool {
 		}
 	}
 	return true
+}
+
+// ipHash is what is stored instead of an address key: participants and blocks never hold raw addresses.
+func (k keys) ipHash(ipKey string) string {
+	if ipKey == "" {
+		return ""
+	}
+	m := hmac.New(sha256.New, k.ip)
+	m.Write([]byte(ipKey))
+	return hex.EncodeToString(m.Sum(nil)[:16])
 }
 
 func (k keys) codeHMAC(code string) []byte {

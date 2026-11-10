@@ -111,6 +111,7 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (Session
 	if err != nil {
 		return SessionView{}, err
 	}
+	s.m.sessionsCreated.Inc()
 	return s.View(ctx, c.DeviceID, id)
 }
 

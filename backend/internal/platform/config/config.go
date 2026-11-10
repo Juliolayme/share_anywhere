@@ -46,6 +46,8 @@ type Config struct {
 	TURNURIs   []string
 	// PublicURL is the Web origin used in join links and QR codes (defaults to the first allowed origin).
 	PublicURL string
+	// MetricsAddr serves Prometheus metrics on a separate internal listener; empty disables it.
+	MetricsAddr string
 	// CodeGuessAlarmPerMin trips protected mode (docs/SECURITY_MODEL.md §3.1).
 	CodeGuessAlarmPerMin int
 	// RateLimitMultiplier scales rate limits for test stacks (SA_ENV=test only; 1 elsewhere).
@@ -186,6 +188,7 @@ func LoadFrom(lookup Lookup) (Config, error) {
 		errs = append(errs, errors.New("SA_CODE_GUESS_ALARM_PER_MIN must be an integer between 10 and 100000"))
 	}
 	cfg.CodeGuessAlarmPerMin = alarm
+	cfg.MetricsAddr = get("SA_METRICS_ADDR", "")
 
 	if cfg.Env == EnvProduction {
 		if len(cfg.TokenKeys) == 0 || cfg.TokenActiveKID == "" {

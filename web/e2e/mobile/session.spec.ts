@@ -19,3 +19,19 @@ test('session (mobile): QR and code are legible at phone size; receiver flow fit
   await sender.context().close();
   await rx.context().close();
 });
+
+test('receive-wait (mobile): the waiting screen with a refused screen-on pill fits without horizontal scroll', async ({
+  browser,
+}) => {
+  const sender = await senderPage();
+  const s = await createSession(sender, { approval: true });
+  const rx = await guestPage(browser, { wake: 'refused' });
+  await enterCode(rx, s.code);
+  await rx.getByRole('button', { name: 'Receive' }).click();
+  await expect(rx.locator('[data-screen="receive-wait"]')).toHaveCount(1);
+  await expect(rx.getByTestId('screen-on-pill')).toHaveAttribute('data-state', 'refused');
+  const overflow = await rx.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await sender.context().close();
+  await rx.context().close();
+});

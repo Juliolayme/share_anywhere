@@ -37,7 +37,7 @@ A backend test generated from `openapi.yaml` calls every operation with no token
 
 | Endpoint | Level | Notes |
 |---|---|---|
-| `POST /v1/sessions` | device | Body includes file metadata and `require_approval` (default `false`). Returns code, link token, QR payload, `join_window_ends_at` (now + 10 min), and `server_time` |
+| `POST /v1/sessions` | device | Body includes file metadata and `require_approval` (default `false`). Returns code, link token, QR payload (`join_url`), `join_window` (`state`, `opened_at`, `ends_at` = now + 10 min, `seq`), and `server_time` |
 | `GET /v1/sessions/{id}` | participant | Sender: full view. Joined receiver: full view. Requested receiver: preview and own status |
 | `PATCH /v1/sessions/{id}` | participant (sender) | `require_approval` (future joins only); `accepting_receivers: false` = Stop accepting, which ends the join window now. Reopening is done only with `renew` |
 | `POST /v1/sessions/{id}/close` | participant (sender) | |
@@ -115,7 +115,7 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 405 | `method_not_allowed` | Known path, wrong method; `Allow` header lists the methods |
 | 409 | `session_full` | Five receivers already joined or requested |
 | 409 | `too_many_open_sessions` | Guest device already has 2 open sessions (signed in: 5) |
-| 409 | `invalid_state`, `own_session`, `too_many_requests`, `session_not_active` | Action does not apply to the current state; resolving your own code; 10 pending requests; TURN before a receiver joined |
+| 409 | `invalid_state`, `own_session`, `session_not_active` | Action does not apply to the current state; resolving your own code; TURN before a receiver joined |
 | 410 | `join_window_expired` | The 10-minute join window for this code, link, or QR has ended or was replaced by Create new code |
 | 410 | `session_not_accepting`, `session_expired` | Sender tapped Stop accepting, or the session lifetime ended |
 | 410 | `join_ticket_invalid` | Join ticket unknown, used, revoked, or for another device |
@@ -134,7 +134,7 @@ Connect to `/v1/ws?ticket=<one-time ticket>`. The server checks `Origin`, consum
 | `ERROR` (`code`, `ref`) | The socket whose message could not be handled: `bad_message`, `unknown_type`, `not_found` (not a joined participant or not a sender–receiver pair), `peer_offline`, `payload_too_large`, `internal` |
 | `OFFER`, `ANSWER`, `ICE_CANDIDATE` | The two participants of a sender–receiver pair, only after the receiver is `JOINED`. Client sends `{type, ref?, session_id, to: participant_id, payload}`; the target gets `{type, session_id, from: participant_id, payload}` |
 | `PARTICIPANT_JOINED`, `PARTICIPANT_REQUESTED`, `PARTICIPANT_APPROVED`, `PARTICIPANT_REJECTED`, `PARTICIPANT_REMOVED`, `PARTICIPANT_BLOCKED`, `PARTICIPANT_LEFT` | Sender; the affected receiver gets its own status changes |
-| `SESSION_UPDATED` (require approval; join window state and `join_window_ends_at`, including expiry and Create new code), `SESSION_CLOSED`, `SESSION_EXPIRED`, `PROTECTED_MODE` | All participants of the session |
+| `SESSION_UPDATED` (require approval; `join_window.state` and `join_window.ends_at`, including expiry and Create new code), `SESSION_CLOSED`, `SESSION_EXPIRED`, `PROTECTED_MODE` | All participants of the session |
 | `CLIPBOARD_EVENT_CREATED`, `CLIPBOARD_EVENT_DELETED`, `CLIPBOARD_HISTORY_CLEARED`, `CLIPBOARD_SETTINGS_UPDATED` | `account+device` sockets of that account |
 | `HISTORY_ENTRY_CREATED`, `HISTORY_ENTRY_DELETED`, `DEVICE_CONNECTED`, `DEVICE_DISCONNECTED` | `account+device` sockets of that account |
 

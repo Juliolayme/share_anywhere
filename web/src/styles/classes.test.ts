@@ -1,13 +1,28 @@
 // @vitest-environment node
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { space } from './tokens';
 
-// Tailwind's spacing scale is replaced by the design tokens (tailwind.config.ts), so a utility such as
-// `gap-5` or `p-5` silently generates no CSS. Fail on any numeric spacing utility outside the token keys.
-const SPACING =
-  /(?<![\w-])-?(?:p[xytblr]?|m[xytblr]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|bottom|left|right|w|h|min-w|min-h|max-w|max-h|translate-[xy]|scroll-[mp][xytblr]?)-(\d+(?:\.\d+)?)(?![\w./[-])/g;
+// Every Tailwind theme scale (spacing, colors, font sizes, radius, shadows, breakpoints) is replaced by the
+// design tokens in tailwind.config.ts, so a stock utility such as `gap-5`, `h-px`, `md:flex` or an opacity
+// modifier on a CSS-variable color silently generates no CSS. Ask Tailwind itself: any candidate whose
+// utility root exists but that Tailwind cannot order (no rule generated) is a bug.
+const WEB = new URL('../..', import.meta.url).pathname;
+const SRC = join(WEB, 'src');
+const req = createRequire(join(WEB, 'package.json'));
+
+const { loadConfig } = req('tailwindcss/lib/lib/load-config');
+const resolveConfig = req('tailwindcss/resolveConfig');
+const { createContext } = req('tailwindcss/lib/lib/setupContextUtils');
+const { defaultExtractor } = req('tailwindcss/lib/lib/defaultExtractor');
+
+interface TwContext {
+  candidateRuleMap: Map<string, unknown>;
+  getClassOrder(classes: string[]): [string, bigint | null][];
+}
+// Token names, not class strings.
+const SKIP = new Set(['styles/tokens.ts', 'lib/api/schema.gen.ts']);
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -16,15 +31,40 @@ function files(dir: string): string[] {
   });
 }
 
-describe('Tailwind spacing utilities', () => {
-  it('only use spacing keys defined by the design tokens', () => {
-    const allowed = new Set(['0', 'px', ...Object.keys(space)]);
+describe('Tailwind utilities', () => {
+  const ctx = createContext(resolveConfig(loadConfig(join(WEB, 'tailwind.config.ts')))) as TwContext;
+
+  const extract = defaultExtractor(ctx) as (src: string) => string[];
+  const roots = new Set(ctx.candidateRuleMap.keys());
+  const utilityRoot = (c: string) => {
+    const base = (c.split(':').pop() ?? '').replace(/^[!-]+/, '');
+    const parts = base.split('-');
+    for (let i = parts.length; i > 0; i--) if (roots.has(parts.slice(0, i).join('-'))) return true;
+    return false;
+  };
+
+  it('every class-like candidate generates CSS with the token-only theme', () => {
     const bad: string[] = [];
-    for (const f of files(new URL('..', import.meta.url).pathname)) {
-      for (const m of readFileSync(f, 'utf8').matchAll(SPACING)) {
-        if (!allowed.has(m[1] ?? '')) bad.push(`${f.split('/src/')[1]}: ${m[0]}`);
-      }
+    for (const f of files(SRC)) {
+      const rel = relative(SRC, f);
+      if (SKIP.has(rel)) continue;
+      const candidates = [...new Set(extract(readFileSync(f, 'utf8')))].filter(
+        (c) => /[-/]/.test(c) && !/[-/:]$/.test(c) && /^[!a-z0-9-][\w\-:/.[\]#%(),]*$/i.test(c) && utilityRoot(c),
+      );
+      for (const [c, order] of ctx.getClassOrder(candidates)) if (order === null) bad.push(`${rel}: ${c}`);
     }
     expect(bad).toEqual([]);
+  });
+
+  it('the check catches undefined utilities', () => {
+    const order = ctx.getClassOrder(['gap-5', 'h-px', 'bg-warning-soft/40', 'md:flex', 'gap-4', 'p-[20px]']);
+    expect(order.map(([c, o]) => [c, o !== null])).toEqual([
+      ['gap-5', false],
+      ['h-px', false],
+      ['bg-warning-soft/40', false],
+      ['md:flex', false],
+      ['gap-4', true],
+      ['p-[20px]', true],
+    ]);
   });
 });

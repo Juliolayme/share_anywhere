@@ -154,7 +154,7 @@ export default function SendPicker() {
             add(e.target.files);
             e.target.value = '';
           }}
-          className="absolute h-px w-px opacity-0"
+          className="absolute h-[1px] w-[1px] opacity-0"
         />
         <span
           aria-hidden

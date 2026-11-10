@@ -137,7 +137,7 @@ export default function ReceiveSessionPage() {
       <Screen id="receive-wait">
         <KeepOpenBanner state={pill} />
         <div className="mx-auto flex w-full max-w-[560px] flex-col gap-4">
-          <div className="flex flex-col items-center gap-3 text-center">
+          <div className="flex flex-col items-center gap-3 pt-8 text-center">
             <span
               aria-hidden
               className="flex h-[72px] w-[72px] animate-pulse items-center justify-center rounded-full bg-send-soft text-send-ink motion-reduce:animate-none"
@@ -145,7 +145,9 @@ export default function ReceiveSessionPage() {
               <Hourglass size={30} />
             </span>
             <h1 className="m-0 text-[clamp(22px,3vw,28px)]">{t('web.waiting')}</h1>
-            <p className="m-0 text-fg-2">{t('product.waiting_body', { name: senderName })}</p>
+            <p className="m-0 text-fg-2">
+              <NameIn text={t('product.waiting_body', { name: NAME_SLOT })} name={senderName} />
+            </p>
             {view.me?.request_reason === 'protected_mode' && (
               <Banner tone="warning" title={t('product.protected_mode')} />
             )}
@@ -188,5 +190,18 @@ export default function ReceiveSessionPage() {
         </Button>
       </div>
     </Screen>
+  );
+}
+
+const NAME_SLOT = '\u0000';
+/** Renders a translated sentence with the device name in bold, as in the design. */
+function NameIn({ text, name }: { text: string; name: string }) {
+  const [before = '', after = ''] = text.split(NAME_SLOT);
+  return (
+    <>
+      {before}
+      <b className="text-fg">{name}</b>
+      {after}
+    </>
   );
 }

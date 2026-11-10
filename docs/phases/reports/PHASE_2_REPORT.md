@@ -107,7 +107,7 @@ Local runs used the CI Compose stack, with a backend built with `-tags testhooks
 | Keep-awake stub: granted (On, release after Close), refused, unsupported, hidden→visible re-request, pill off, setting off → no request | Passed locally | Passed locally | CI |
 | Mobile: QR and code size, no horizontal scroll | skipped (desktop) | Passed locally | ios-safari in CI |
 
-After the QA fixes the full suite passes locally on chromium-desktop and android-chrome: 54 passed and 4 skipped (mobile-only specs on desktop).
+After the QA fixes the full suite passes locally on chromium-desktop and android-chrome: 58 passed and 4 skipped (mobile-only specs on desktop). `e2e/pairing/layout.spec.ts` checks that the session code stays on one line from 360 px to 1920 px and that a join request card uses the design request style.
 
 ## 4. Commands and results
 
@@ -118,9 +118,9 @@ After the QA fixes the full suite passes locally on chromium-desktop and android
 | Sharing integration tests | Open join by code and link with signaling scope; approval and toggle; protected mode with an injected clock; 20 concurrent joins with exactly 5 successes under `-race`; Remove and Block (device and /64); join window at 9:59, 10:00, the 9:58 ticket, full, Stop accepting, renew; renew while full; approval after expiry; lockouts; creation and open-session limits; TURN authorization; idle, 24 h, purge |
 | `govulncheck ./...` | No vulnerabilities |
 | `pnpm protocol:check` | 24 operations agree with `docs/API.md`; WebSocket schema valid |
-| `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 55 unit tests (keep-awake controller, countdown with server offset, expired, full and renew states, words and badges) |
+| `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 59 unit tests (Tailwind-backed class guard, expiry announcer, keep-awake controller, countdown with server offset, expired, full and renew states, words and badges) |
 | `pnpm --filter web build` | Main JS 104.6 kB gzip (budget 120 kB) |
-| `playwright test --project=chromium-desktop --project=android-chrome` | 54 passed, 4 skipped (mobile-only specs on desktop) |
+| `playwright test --project=chromium-desktop --project=android-chrome` | 58 passed, 4 skipped (mobile-only specs on desktop) |
 | CI | Run 42797239669 (49efca8) and run 42800623094 (8356a0a): all 12 jobs green, including `e2e-web` on all five projects and the coturn allocation test in `compose` (Firefox needed retries on 8356a0a). Later runs in `docs/qa/PHASE_2_QA.md` |
 
 ## 5. Environment variables and external services
@@ -139,7 +139,7 @@ New: `SA_PUBLIC_URL`, `SA_METRICS_ADDR` (internal metrics listener), `SA_TURN_SE
 | Priority | Item |
 |---|---|
 | P0 | Phase 3: DataChannel transfers, save location, dashboard, history entries |
-| P1 | Access matrix generated per level including expired and revoked tokens (Phase 1 backlog P2-5); diagnose Firefox page-load retries in CI (traces are now uploaded on every run) |
+| P1 | Access matrix generated per level including expired and revoked tokens (Phase 1 backlog P2-5); confirm the Firefox navigation workaround (`open()` helper) leaves CI with zero flaky tests over several runs |
 | P2 | Sender notice for auto-declined receivers (F13); mobile visual snapshot baselines (Phase 3); lazy-load the session screens |
 
 ## 8. Local run
@@ -156,4 +156,5 @@ Same as Phase 1: `docker compose up --build`, then open `https://localhost:8443`
 | e9b1195 | Docs and report |
 | 49efca8 | Deterministic participant order; regenerated Go types |
 | 8356a0a | QA round 1 fixes |
-| (this commit) | QA round 2 fixes and QA record |
+| c6e1fd2 | QA round 2 fixes and QA record |
+| (this commit) | QA round 3 fixes and QA record |

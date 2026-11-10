@@ -60,6 +60,21 @@ export async function guestPage(browser: Browser, opts: { wake?: WakeMode; mobil
   return ctx.newPage();
 }
 
+/**
+ * Navigates to an app path and waits for the app shell. Playwright's Firefox driver sometimes never reports
+ * the lifecycle events of a fresh page's first navigation although the document, assets and API calls all
+ * completed (CI trace of run 42802588370: /receive 200 in 2 ms, app rendered, goto still waiting at 30 s).
+ * So wait only for the commit, with a short bound, and then assert on the rendered app instead.
+ */
+export async function open(page: Page, path: string) {
+  try {
+    await page.goto(path, { waitUntil: 'commit', timeout: 10_000 });
+  } catch (e) {
+    if (!page.url().startsWith(new URL(path, BASE).origin)) throw e; // really did not navigate
+  }
+  await expect(page.locator('#main')).toBeVisible();
+}
+
 let senderBrowser: Browser | null = null;
 /** The sender always runs in Chromium (docs/phases/PHASE_2_PAIRING_SIGNALING.md), whatever the project. */
 export async function senderPage(wake: WakeMode = 'granted'): Promise<Page> {
@@ -80,9 +95,7 @@ export interface Created {
 
 /** Sender creates a session through the UI and returns its code, link and id. */
 export async function createSession(page: Page, opts: { approval?: boolean } = {}): Promise<Created> {
-  // The app is a single-page app: wait for the DOM, then for elements (waiting for every subresource
-  // 'load' was flaky in Firefox on fresh contexts).
-  await page.goto('/send', { waitUntil: 'domcontentloaded' });
+  await open(page, '/send');
   await page
     .getByTestId('file-input')
     .setInputFiles({ name: 'holiday.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2048, 1) });
@@ -98,7 +111,7 @@ export async function createSession(page: Page, opts: { approval?: boolean } = {
 
 /** Receiver enters a code on /receive and continues to the preview. */
 export async function enterCode(page: Page, code: string) {
-  await page.goto('/receive', { waitUntil: 'domcontentloaded' });
+  await open(page, '/receive');
   await page.getByRole('textbox', { name: 'Digit 1 of 6' }).fill(code);
   await page.getByRole('button', { name: 'Continue' }).click();
 }

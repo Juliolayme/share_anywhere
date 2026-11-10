@@ -46,6 +46,22 @@ No P0, one P1, seven P2. All seven round-1 P1s were verified fixed, including at
 | F15 filed as a design deviation | P2 | Moved to `docs/TESTING_AND_CI.md` §3 and the phase file, target Phase 3 |
 | `session-ended` never asserted | P2 | Keep-awake granted spec asserts it |
 
-## Round 3
+## Round 3 — commit c6e1fd2 — FAIL
+
+No P0, two P1, five P2. Backend, protocol and CI were clean (run 42802588370 on c6e1fd2: 12/12 jobs green, Firefox with 2 flaky tests). The round-2 spacing fix was verified, but a Tailwind-backed scan of `web/src` found more classes that generate no CSS, and real spacing narrowed the code column enough to expose a line-height bug.
+
+### Resolution of round 3 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Session code wraps to two overlapping lines at about 1100 px and 1280 px (40 px font on the inherited 24 px line-height) | P1 | Design values `text-[clamp(30px,4vw,38px)]` with `leading-[1.2]` and `whitespace-nowrap`. `e2e/pairing/layout.spec.ts` asserts one line, line-height ≥ font size and no horizontal scroll at 360, 390, 760, 1099, 1280, 1440 and 1920 px |
+| Join request card: `bg-warning-soft/40` generates no CSS, and the card did not match the design (blue border, blue-soft fill, 16 px padding, 14 px radius) | P1 | Card uses `border-send bg-send-soft p-4 rounded-lg` as in the design; the layout spec compares its computed colors with the tokens. The regex guard is replaced by a test that asks Tailwind itself (`getClassOrder` with `tailwind.config.ts`) whether each class-like candidate in `web/src` generates CSS. It covers every scale (spacing, colors and opacity modifiers, font size, radius, shadow, breakpoints), and a self-test proves it rejects `gap-5`, `h-px`, `bg-warning-soft/40` and `md:flex` |
+| `h-px w-px` on the hidden file input generate no CSS | P2 | `h-[1px] w-[1px]`; the `px` allow-list is gone with the old guard |
+| Firefox flakiness not resolved | P2 | Root cause from the uploaded trace: `/receive` returned 200 in 2 ms, all assets and API calls completed and the app rendered, but Playwright's Firefox driver never reported `domcontentloaded`, so `goto` waited 30 s. The specs now navigate with an `open()` helper that waits for the commit (bounded at 10 s) and then asserts the app shell. Documented in `docs/TESTING_AND_CI.md` §3; zero-flake confirmation across several CI runs is in the backlog |
+| QR frame used `rounded-[14px]` instead of the `rounded-lg` token | P2 | Reverted to `rounded-lg` |
+| receive-wait: device name not bold, less space above the icon | P2 | Name in bold (`<b>` inside the translated sentence) and 32 px top padding |
+| Countdown announcement used exact-second equality | P2 | `ExpiryAnnouncer` announces when the countdown crosses 1:00 or 0:30, even when ticks are skipped, and clears for a new window; unit and component tests added |
+
+## Round 4
 
 Pending.

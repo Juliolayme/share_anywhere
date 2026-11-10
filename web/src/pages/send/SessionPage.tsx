@@ -11,6 +11,7 @@ import { formatBytes } from '../../lib/format';
 import { useKeepAwake } from '../../lib/keepAwake/KeepAwakeContext';
 import { mmss, secondsUntil, serverOffset, type Participant, type SessionView } from '../../features/sharing/api';
 import { ParticipantCard } from '../../features/sharing/ParticipantCard';
+import { ExpiryAnnouncer } from '../../features/sharing/ExpiryAnnouncer';
 import { useSharing, useSocketEvents } from '../../features/sharing/SharingContext';
 
 const LIVE = new Set(['WAITING', 'ACTIVE']);
@@ -228,7 +229,7 @@ export default function SessionPage() {
                     <span
                       data-testid="session-code"
                       aria-label={t('product.code_aria', { code: view.code.split('').join(' ') })}
-                      className="font-mono text-[clamp(30px,6vw,40px)] font-medium tracking-[0.08em]"
+                      className="whitespace-nowrap font-mono text-[clamp(30px,4vw,38px)] font-medium leading-[1.2] tracking-[0.08em]"
                     >
                       {view.code.slice(0, 3)}
                       <span aria-hidden className="inline-block w-3" />
@@ -282,9 +283,7 @@ export default function SessionPage() {
                   >
                     {mmss(left)}
                   </b>
-                  <span className="sr-only" aria-live="polite">
-                    {left === 60 || left === 30 ? t('product.code_expires_in', { time: mmss(left) }) : ''}
-                  </span>
+                  <ExpiryAnnouncer left={left} />
                 </span>
                 <Button
                   size="sm"

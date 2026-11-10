@@ -54,7 +54,7 @@ export function ParticipantCard({
       role="group"
       aria-label={p.display_name}
       data-testid={requested ? 'request-card' : 'participant-card'}
-      className={`flex flex-col gap-3 rounded-[12px] border p-3 ${requested ? 'border-warning bg-warning-soft/40' : 'border-border bg-surface'}`}
+      className={`flex flex-col gap-3 border ${requested ? 'rounded-lg border-send bg-send-soft p-4' : 'rounded-[12px] border-border bg-surface p-3'}`}
     >
       <div className="flex flex-wrap items-center gap-3">
         <span

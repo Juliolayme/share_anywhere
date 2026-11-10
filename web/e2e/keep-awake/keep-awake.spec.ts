@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { closeSenderBrowser, createSession, guestPage, type WakeMode } from '../pairing/helpers';
+import { closeSenderBrowser, createSession, guestPage, open, type WakeMode } from '../pairing/helpers';
 
 // Keep screen on with navigator.wakeLock stubbed (docs/TESTING_AND_CI.md §3). Runs in this project's browser.
 test.afterAll(closeSenderBrowser);
@@ -50,7 +50,7 @@ test('session: hidden → visible re-requests the lock; tapping the pill turns i
 
 test('settings: with Keep screen on off, nothing is requested and the pill says so', async ({ browser }) => {
   const page = await guestPage(browser, { wake: 'granted' });
-  await page.goto('/settings');
+  await open(page, '/settings');
   await page.getByRole('switch', { name: 'Keep screen on during transfers' }).click();
   await createSession(page);
   await expect(page.getByTestId('screen-on-pill')).toHaveAttribute('data-state', 'setoff');

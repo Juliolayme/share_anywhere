@@ -8,6 +8,7 @@ import {
   guestPage,
   linkPath,
   senderPage,
+  open,
 } from './helpers';
 
 // First vertical slice, all guests: sender on Chromium, receiver on this project's browser.
@@ -20,7 +21,7 @@ test('receive-preview: link in a fresh context joins immediately; both sides see
   const s = await createSession(sender);
   await expect(sender.getByTestId('countdown')).toHaveText(/^(10:00|9:5\d)$/);
   const rx = await guestPage(browser);
-  await rx.goto(linkPath(s.link));
+  await open(rx, linkPath(s.link));
   await expect(rx.locator('[data-screen="receive-preview"]')).toBeVisible();
   await expect(rx.getByRole('heading', { level: 1 })).toContainText('wants to send you 1 file');
   await expect(rx.getByText('holiday.mp4')).toBeVisible();
@@ -103,7 +104,7 @@ test('session: Stop accepting refuses the code and the link with the right messa
   const rx = await guestPage(browser);
   await enterCode(rx, s.code);
   await expect(rx.getByRole('alert')).toHaveText('The sender is no longer accepting receivers.');
-  await rx.goto(linkPath(s.link));
+  await open(rx, linkPath(s.link));
   await expect(rx.getByRole('alert')).toContainText('The sender is no longer accepting receivers.');
   await sender.context().close();
 });
@@ -124,7 +125,7 @@ test('receive: an unknown code says so, and an expired link page explains', asyn
   const rx = await guestPage(browser);
   await enterCode(rx, '000001');
   await expect(rx.getByRole('alert')).toHaveText(/Code not found|Code expired/);
-  await rx.goto('/j/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+  await open(rx, '/j/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
   await expect(rx.getByRole('alert')).toContainText('This link has expired');
 });
 
@@ -132,7 +133,7 @@ test('receive: a locked-out device sees the wait time', async ({ browser }) => {
   const sender = await senderPage();
   const s = await createSession(sender);
   const rx = await guestPage(browser);
-  await rx.goto('/receive');
+  await open(rx, '/receive');
   // Lock this device through the test-only hook (the real trigger is 5 failed lookups in 10 minutes).
   await rx.waitForLoadState('networkidle'); // the app's own identity bootstrap has finished
   // Refresh under the app's own Web Lock so the cookie rotation never races the app (reuse would revoke).

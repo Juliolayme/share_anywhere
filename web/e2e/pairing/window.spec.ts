@@ -8,6 +8,7 @@ import {
   linkPath,
   senderPage,
   setProtectedMode,
+  open,
 } from './helpers';
 
 // These specs move the test server's clock and toggle protected mode (test-only hooks, single worker).
@@ -42,7 +43,7 @@ test('session-expired: 10:00 window ends, old code refused, Create new code rest
   const late = await guestPage(browser);
   await enterCode(late, s.code);
   await expect(late.getByRole('alert')).toHaveText('Code expired — ask the sender for a new code');
-  await late.goto(linkPath(s.link));
+  await open(late, linkPath(s.link));
   await expect(late.getByRole('alert')).toContainText('Code expired — ask the sender for a new code');
   // The receiver who joined before expiry is still in.
   await early.reload();

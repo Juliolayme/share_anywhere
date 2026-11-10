@@ -41,6 +41,13 @@ type Config struct {
 	CookieSecure bool
 	// PoWDifficulty is the leading-zero bits required by the anonymous-device proof-of-work.
 	PoWDifficulty int
+	// TURNSecret is coturn's static-auth-secret; TURNURIs are the ICE server URIs given to clients.
+	TURNSecret []byte
+	TURNURIs   []string
+	// PublicURL is the Web origin used in join links and QR codes (defaults to the first allowed origin).
+	PublicURL string
+	// CodeGuessAlarmPerMin trips protected mode (docs/SECURITY_MODEL.md §3.1).
+	CodeGuessAlarmPerMin int
 	// RateLimitMultiplier scales rate limits for test stacks (SA_ENV=test only; 1 elsewhere).
 	RateLimitMultiplier int
 	// MigrateOnStart applies pending migrations at startup.
@@ -154,6 +161,32 @@ func LoadFrom(lookup Lookup) (Config, error) {
 	}
 	cfg.RateLimitMultiplier = mult
 
+	if v := get("SA_TURN_SECRET", ""); v != "" {
+		cfg.TURNSecret = []byte(v)
+	}
+	for _, u := range strings.Split(get("SA_TURN_URIS", "turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp"), ",") {
+		if u = strings.TrimSpace(u); u == "" {
+			continue
+		}
+		if !strings.HasPrefix(u, "turn:") && !strings.HasPrefix(u, "turns:") && !strings.HasPrefix(u, "stun:") {
+			errs = append(errs, fmt.Errorf("SA_TURN_URIS entry %q must use the turn, turns or stun scheme", u))
+			continue
+		}
+		cfg.TURNURIs = append(cfg.TURNURIs, u)
+	}
+	cfg.PublicURL = strings.TrimRight(get("SA_PUBLIC_URL", ""), "/")
+	if cfg.PublicURL == "" && len(cfg.AllowedOrigins) > 0 {
+		cfg.PublicURL = cfg.AllowedOrigins[0]
+	}
+	if cfg.PublicURL != "" && !strings.HasPrefix(cfg.PublicURL, "https://") && !strings.HasPrefix(cfg.PublicURL, "http://") {
+		errs = append(errs, errors.New("SA_PUBLIC_URL must start with http:// or https://"))
+	}
+	alarm, err := strconv.Atoi(get("SA_CODE_GUESS_ALARM_PER_MIN", "300"))
+	if err != nil || alarm < 10 || alarm > 100000 {
+		errs = append(errs, errors.New("SA_CODE_GUESS_ALARM_PER_MIN must be an integer between 10 and 100000"))
+	}
+	cfg.CodeGuessAlarmPerMin = alarm
+
 	if cfg.Env == EnvProduction {
 		if len(cfg.TokenKeys) == 0 || cfg.TokenActiveKID == "" {
 			errs = append(errs, errors.New("SA_TOKEN_KEYS and SA_TOKEN_ACTIVE_KID are required in production"))
@@ -163,6 +196,12 @@ func LoadFrom(lookup Lookup) (Config, error) {
 		}
 		if !cfg.CookieSecure {
 			errs = append(errs, errors.New("SA_COOKIE_SECURE cannot be false in production"))
+		}
+		if len(cfg.TURNSecret) < 16 {
+			errs = append(errs, errors.New("SA_TURN_SECRET (at least 16 characters, shared with coturn) is required in production"))
+		}
+		if !strings.HasPrefix(cfg.PublicURL, "https://") {
+			errs = append(errs, errors.New("SA_PUBLIC_URL (or the first SA_ALLOWED_ORIGINS entry) must be https in production"))
 		}
 	} else {
 		// Development and test get ephemeral secrets so the stack starts with no setup; tokens do not
@@ -175,6 +214,10 @@ func LoadFrom(lookup Lookup) (Config, error) {
 			cfg.TokenKeys["dev"] = key
 			cfg.TokenActiveKID = "dev"
 			cfg.Generated = append(cfg.Generated, "SA_TOKEN_KEYS")
+		}
+		if len(cfg.TURNSecret) == 0 {
+			cfg.TURNSecret = []byte("dev-turn-secret-change-me")
+			cfg.Generated = append(cfg.Generated, "SA_TURN_SECRET")
 		}
 		if len(cfg.ServerSecret) == 0 {
 			cfg.ServerSecret = make([]byte, 32)

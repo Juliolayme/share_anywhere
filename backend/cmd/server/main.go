@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/juliolayme/share_anywhere/backend/internal/devices"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clientip"
@@ -24,6 +26,9 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/httpserver"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/logging"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/ws"
+	"github.com/juliolayme/share_anywhere/backend/internal/sharing"
+	"github.com/juliolayme/share_anywhere/backend/internal/signaling"
+	"github.com/juliolayme/share_anywhere/backend/internal/turncreds"
 	"github.com/juliolayme/share_anywhere/backend/migrations"
 )
 
@@ -95,37 +100,30 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	clk := clock.Real{}
-	var checks []httpserver.Check
-	var store devices.Store
-	if cfg.DatabaseURL != "" {
-		pool, err := db.Open(ctx, cfg.DatabaseURL)
+	clk := newClock(cfg)
+	if cfg.DatabaseURL == "" {
+		return errors.New("DATABASE_URL is required (share sessions and device identities live in PostgreSQL)")
+	}
+	pool, err := db.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if cfg.MigrateOnStart {
+		applied, err := db.Migrate(ctx, pool, migrations.FS)
 		if err != nil {
 			return err
 		}
-		defer pool.Close()
-		if cfg.MigrateOnStart {
-			applied, err := db.Migrate(ctx, pool, migrations.FS)
-			if err != nil {
-				return err
-			}
-			log.Info("migrations applied", "count", len(applied))
-		}
-		checks = append(checks, httpserver.Check{Name: "database", Fn: pool.Ping})
-		store = devices.NewPGStore(pool)
-	} else {
-		if cfg.Env == config.EnvProduction {
-			return errors.New("DATABASE_URL is required in production")
-		}
-		log.Warn("DATABASE_URL not set; device identities are kept in memory and lost on restart (development only)")
-		store = devices.NewMemStore()
+		log.Info("migrations applied", "count", len(applied))
 	}
+	checks := []httpserver.Check{{Name: "database", Fn: pool.Ping}}
 
-	a, err := newApp(cfg, store, clk, log, checks)
+	a, err := newApp(cfg, pool, devices.NewPGStore(pool), clk, log, checks)
 	if err != nil {
 		return err
 	}
 	go a.devices.RunPurger(ctx, time.Hour)
+	go a.sharing.Run(ctx, 5*time.Second)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -165,10 +163,13 @@ type app struct {
 	handler http.Handler
 	router  *access.Router
 	devices *devices.Service
+	sharing *sharing.Service
+	hub     *ws.Hub
 }
 
-// newApp wires every module onto one router; the route-table test builds the server the same way.
-func newApp(cfg config.Config, store devices.Store, clk clock.Clock, log *slog.Logger, checks []httpserver.Check) (*app, error) {
+// newApp wires every module onto one router; the route-table test builds the server the same way (with a
+// nil pool, since it never reaches a handler that queries).
+func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk clock.Clock, log *slog.Logger, checks []httpserver.Check) (*app, error) {
 	tokens, err := devices.NewTokens(cfg.TokenKeys, cfg.TokenActiveKID, clk)
 	if err != nil {
 		return nil, err
@@ -176,13 +177,34 @@ func newApp(cfg config.Config, store devices.Store, clk clock.Clock, log *slog.L
 	ips := clientip.New(cfg.TrustedProxies)
 	deviceSvc := devices.NewService(store, tokens, devices.NewPoW(cfg.ServerSecret, cfg.PoWDifficulty, clk), clk, devices.ScaledLimits(clk, cfg.RateLimitMultiplier), log)
 	hub := ws.NewHub(ws.Config{AllowedOrigins: cfg.AllowedOrigins, Clock: clk, IPs: ips, Log: log})
+	deviceSvc.OnRevoke(hub.DisconnectDevice)
+
+	limits := sharing.ScaledLimits(clk, cfg.RateLimitMultiplier)
+	protected := sharing.NewProtectedMode(clk, cfg.CodeGuessAlarmPerMin)
+	shareSvc := sharing.NewService(sharing.Config{
+		Pool: pool, Clock: clk, Secret: cfg.ServerSecret, Notify: hub, Limits: limits,
+		Protected: protected, PublicURL: cfg.PublicURL, Log: log,
+	})
+	signaling.Register(hub, shareSvc)
+	lookup := func(ctx context.Context, id string) (string, string, error) {
+		d, err := deviceSvc.Get(ctx, id)
+		return d.DisplayName, d.Platform, err
+	}
+	turn := turncreds.New(turncreds.Config{
+		Secret: cfg.TURNSecret, URIs: cfg.TURNURIs, Clock: clk, Auth: shareSvc,
+		GuestLimit: limits.TurnGuest, AcctLimit: limits.TurnAccount, Log: log,
+	})
+	modules := []func(*access.Router){
+		devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure).Register,
+		hub.Register,
+		sharing.NewHTTP(shareSvc, ips, lookup).Register,
+		turn.Register,
+	}
+	modules = append(modules, testHooks(cfg, clk, shareSvc, protected)...)
 	h, router := httpserver.New(httpserver.Options{
 		Logger: log, Version: version, Checks: checks, Verifier: deviceSvc,
 		ClientIP: ips.FromRequest, LogKey: cfg.ServerSecret,
-		Modules: []func(*access.Router){
-			devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure).Register,
-			hub.Register,
-		},
+		Modules: modules,
 	})
-	return &app{handler: h, router: router, devices: deviceSvc}, nil
+	return &app{handler: h, router: router, devices: deviceSvc, sharing: shareSvc, hub: hub}, nil
 }

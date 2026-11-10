@@ -20,6 +20,8 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        GO_TAGS: testhooks
     environment:
       SA_ENV: test
       SA_HTTP_ADDR: ":8080"
@@ -33,6 +35,9 @@ services:
       # All Playwright projects share one address; scale limits (test config, never off; SA_ENV=test only).
       SA_RATE_LIMIT_MULTIPLIER: "100"
       SA_POW_DIFFICULTY: "8"
+      SA_PUBLIC_URL: http://localhost:8080
+      SA_TURN_SECRET: ci-turn-secret
+      SA_TURN_URIS: turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp
     depends_on:
       postgres:
         condition: service_healthy

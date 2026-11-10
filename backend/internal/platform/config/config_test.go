@@ -51,7 +51,7 @@ func TestDevGeneratesEphemeralSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.TokenKeys) != 1 || cfg.TokenActiveKID != "dev" || len(cfg.ServerSecret) != 32 || len(cfg.Generated) != 2 {
+	if len(cfg.TokenKeys) != 1 || cfg.TokenActiveKID != "dev" || len(cfg.ServerSecret) != 32 || len(cfg.Generated) != 3 {
 		t.Fatalf("unexpected generated config: kid=%q secret=%d generated=%v", cfg.TokenActiveKID, len(cfg.ServerSecret), cfg.Generated)
 	}
 	if !cfg.CookieSecure || cfg.PoWDifficulty != 16 || cfg.MigrateOnStart {
@@ -63,6 +63,7 @@ func TestExplicitKeysAndProxies(t *testing.T) {
 	cfg, err := LoadFrom(lookupFrom(map[string]string{
 		"SA_TOKEN_KEYS": "k1:" + seed32 + ",k2:" + seed32, "SA_TOKEN_ACTIVE_KID": "k2",
 		"SA_SERVER_SECRET": seed32, "SA_TRUSTED_PROXIES": "172.16.0.0/12, 10.0.0.0/8", "SA_COOKIE_SECURE": "false",
+		"SA_TURN_SECRET": "explicit-turn-secret",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +99,26 @@ func TestRateLimitMultiplierOnlyInTest(t *testing.T) {
 		{"SA_ENV": "test", "SA_RATE_LIMIT_MULTIPLIER": "x"},
 	} {
 		if _, err := load(env); err == nil {
+			t.Errorf("%v should fail", env)
+		}
+	}
+}
+
+func TestSharingSettings(t *testing.T) {
+	cfg, err := LoadFrom(lookupFrom(map[string]string{"SA_ALLOWED_ORIGINS": "https://app.example/", "SA_TURN_URIS": "turn:t.example:3478, turns:t.example:443?transport=tcp"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PublicURL != "https://app.example" || len(cfg.TURNURIs) != 2 || cfg.CodeGuessAlarmPerMin != 300 {
+		t.Fatalf("defaults: %q %v %d", cfg.PublicURL, cfg.TURNURIs, cfg.CodeGuessAlarmPerMin)
+	}
+	for _, env := range []map[string]string{
+		{"SA_TURN_URIS": "http://nope"},
+		{"SA_PUBLIC_URL": "ftp://x"},
+		{"SA_CODE_GUESS_ALARM_PER_MIN": "1"},
+		{"SA_ENV": "production", "DATABASE_URL": "postgres://x", "SA_ALLOWED_ORIGINS": "https://a.example", "SA_TOKEN_KEYS": "k:" + seed32, "SA_TOKEN_ACTIVE_KID": "k", "SA_SERVER_SECRET": seed32},
+	} {
+		if _, err := LoadFrom(lookupFrom(env)); err == nil {
 			t.Errorf("%v should fail", env)
 		}
 	}

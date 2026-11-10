@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Share Anywhere API
   version: 0.1.0
-  x-sa-api-sections: ['2.1']
+  x-sa-api-sections: ['2.1', '2.2']
   description: |
     Machine-readable contract. Every operation declares `x-sa-access` (public, device, participant,
     account, account+device), which must match docs/API.md and is enforced by the backend
@@ -179,6 +179,288 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/sessions:
+    post:
+      operationId: createSession
+      x-sa-access: device
+      summary: Create a share session (guest or signed in) with a six-digit code, link and QR sharing one 10-minute join window.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSessionRequest' }
+      responses:
+        '201':
+          description: Session created; the sender view includes the code, link token and join URL.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/sessions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getSession
+      x-sa-access: participant
+      summary: The session as the caller may see it (sender, joined receiver, requested receiver, ended participant).
+      responses:
+        '200':
+          description: Session view.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateSession
+      x-sa-access: participant
+      summary: Sender only. Toggle Require approval (future joins) or Stop accepting (accepting_receivers false).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSessionRequest' }
+      responses:
+        '200':
+          description: Updated sender view.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+  /v1/sessions/{id}/close:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: closeSession
+      x-sa-access: participant
+      summary: Sender only. End the session; receivers get SESSION_CLOSED.
+      responses:
+        '200': { description: Closed (idempotent). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/sessions/{id}/renew:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: renewSession
+      x-sa-access: participant
+      summary: Sender only. Create new code - new code, link and QR, fresh 10-minute window; the old ones stop working.
+      responses:
+        '200':
+          description: Sender view with the new code.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/sessions/resolve-code:
+    post:
+      operationId: resolveCode
+      x-sa-access: device
+      summary: Look up a six-digit code. Counts toward code lookup and failed-lookup limits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              additionalProperties: false
+              properties:
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: Preview and a single-use join ticket.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JoinPreview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/sessions/resolve-link:
+    post:
+      operationId: resolveLink
+      x-sa-access: device
+      summary: Look up a link or QR token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              additionalProperties: false
+              properties:
+                token: { type: string, minLength: 22, maxLength: 128 }
+      responses:
+        '200':
+          description: Preview and a single-use join ticket.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JoinPreview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/sessions/{id}/join:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: joinSession
+      x-sa-access: device
+      summary: Join with a ticket. JOINED in open-join sessions; REQUESTED when approval is on or protected mode applies to a code join.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket]
+              additionalProperties: false
+              properties:
+                ticket: { type: string }
+      responses:
+        '200':
+          description: The caller's participant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JoinResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/participants/{id}/approve:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: approveParticipant
+      x-sa-access: participant
+      summary: Sender only, REQUESTED participants.
+      responses:
+        '200':
+          description: The updated participant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Participant' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/participants/{id}/reject:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: rejectParticipant
+      x-sa-access: participant
+      summary: Sender only, REQUESTED participants.
+      responses:
+        '200':
+          description: The updated participant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Participant' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/participants/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      operationId: removeParticipant
+      x-sa-access: participant
+      summary: Sender only. Remove a receiver; revokes its access and frees the slot.
+      responses:
+        '200':
+          description: The updated participant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Participant' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/participants/{id}/block:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: blockParticipant
+      x-sa-access: participant
+      summary: Sender only. Remove and refuse rejoin from that device and IP /64 for the session.
+      responses:
+        '200':
+          description: The updated participant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Participant' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/participants/{id}/leave:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: leaveSession
+      x-sa-access: participant
+      summary: That receiver only.
+      responses:
+        '200':
+          description: The updated participant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Participant' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/turn/credentials:
+    post:
+      operationId: createTurnCredentials
+      x-sa-access: participant
+      summary: Time-limited coturn credentials for the sender or a JOINED receiver of an ACTIVE session (guest 30 min, account 60 min).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              additionalProperties: false
+              properties:
+                session_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: ICE server credentials.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TurnCredentials' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 components:
   securitySchemes:
     deviceToken:
@@ -201,6 +483,26 @@ components:
       headers:
         Retry-After:
           schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: The caller may not do this (for example not the sender, or blocked).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Unknown resource or no access (existence hidden).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: The action conflicts with the current state (session_full, too_many_open_sessions, invalid_state).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Gone:
+      description: join_window_expired, session_not_accepting, session_expired, join_ticket_invalid.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -294,3 +596,124 @@ components:
       properties:
         ticket: { type: string }
         expires_in: { type: integer }
+    FileInput:
+      type: object
+      required: [name, size]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        size: { type: integer, format: int64, minimum: 0 }
+        mime: { type: string, maxLength: 255 }
+    CreateSessionRequest:
+      type: object
+      required: [files]
+      additionalProperties: false
+      properties:
+        files: { type: array, minItems: 1, maxItems: 1000, items: { $ref: '#/components/schemas/FileInput' } }
+        require_approval: { type: boolean, default: false }
+    UpdateSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        require_approval: { type: boolean }
+        accepting_receivers: { type: boolean, enum: [false], description: false = Stop accepting. Reopening uses renew. }
+    SharedFile:
+      type: object
+      required: [id, name, size, mime]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        size: { type: integer, format: int64 }
+        mime: { type: string }
+    JoinWindow:
+      type: object
+      required: [state, opened_at, ends_at, seq]
+      properties:
+        state: { type: string, enum: [OPEN, EXPIRED, ENDED_FULL, ENDED_BY_SENDER] }
+        opened_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        seq: { type: integer }
+    Capacity:
+      type: object
+      required: [joined, requested, max]
+      properties:
+        joined: { type: integer }
+        requested: { type: integer }
+        max: { type: integer }
+    Participant:
+      type: object
+      required: [id, role, status, display_name, platform, signed_in]
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [sender, receiver] }
+        status: { type: string, enum: [REQUESTED, JOINED, LEFT, REMOVED, BLOCKED, REJECTED] }
+        display_name: { type: string }
+        platform: { type: string }
+        signed_in: { type: boolean }
+        security_words: { type: array, items: { type: string }, minItems: 3, maxItems: 3 }
+        joined_via: { type: string, enum: [code, link] }
+        request_reason: { type: string, enum: [approval, protected_mode] }
+        joined_at: { type: string, format: date-time }
+    PeerSummary:
+      type: object
+      required: [participant_id, display_name, platform, signed_in]
+      properties:
+        participant_id: { type: string, format: uuid }
+        display_name: { type: string }
+        platform: { type: string }
+        signed_in: { type: boolean }
+    SessionView:
+      type: object
+      required: [id, role, status, require_approval, total_bytes, file_count, protected_mode, expires_at, server_time]
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [sender, receiver] }
+        status: { type: string, enum: [WAITING, ACTIVE, COMPLETED, PARTIALLY_COMPLETED, CLOSED, EXPIRED, CANCELLED] }
+        require_approval: { type: boolean }
+        join_window: { $ref: '#/components/schemas/JoinWindow' }
+        code: { type: string, description: 'Sender only, while the join window is open.' }
+        link_token: { type: string, description: 'Sender only, while the join window is open.' }
+        join_url: { type: string, description: Sender only; also the QR payload. }
+        capacity: { $ref: '#/components/schemas/Capacity' }
+        participants: { type: array, items: { $ref: '#/components/schemas/Participant' }, description: Sender only (receivers). }
+        sender: { $ref: '#/components/schemas/PeerSummary' }
+        me: { $ref: '#/components/schemas/Participant' }
+        files: { type: array, items: { $ref: '#/components/schemas/SharedFile' } }
+        total_bytes: { type: integer, format: int64 }
+        file_count: { type: integer }
+        protected_mode: { type: boolean }
+        expires_at: { type: string, format: date-time }
+        server_time: { type: string, format: date-time }
+    JoinPreview:
+      type: object
+      required: [session_id, sender, files, total_bytes, file_count, require_approval, protected_mode, join_window_ends_at, join_ticket, join_ticket_expires_at, via, server_time]
+      properties:
+        session_id: { type: string, format: uuid }
+        sender: { $ref: '#/components/schemas/PeerSummary' }
+        files: { type: array, items: { $ref: '#/components/schemas/SharedFile' } }
+        total_bytes: { type: integer, format: int64 }
+        file_count: { type: integer }
+        require_approval: { type: boolean }
+        protected_mode: { type: boolean, description: True when this code join will wait for approval because of protected mode. }
+        join_window_ends_at: { type: string, format: date-time }
+        join_ticket: { type: string }
+        join_ticket_expires_at: { type: string, format: date-time }
+        via: { type: string, enum: [code, link] }
+        existing_status: { type: string, description: Set when the caller already has a participant in this session. }
+        server_time: { type: string, format: date-time }
+    JoinResult:
+      type: object
+      required: [session_id, participant, server_time]
+      properties:
+        session_id: { type: string, format: uuid }
+        participant: { $ref: '#/components/schemas/Participant' }
+        server_time: { type: string, format: date-time }
+    TurnCredentials:
+      type: object
+      required: [username, credential, uris, ttl, expires_at]
+      properties:
+        username: { type: string }
+        credential: { type: string }
+        uris: { type: array, items: { type: string } }
+        ttl: { type: integer }
+        expires_at: { type: string, format: date-time }

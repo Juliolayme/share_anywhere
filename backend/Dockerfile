@@ -5,7 +5,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/server ./cmd/server
+# GO_TAGS=testhooks only for the CI stack (adjustable clock and admin hooks; docs/TESTING_AND_CI.md §3).
+ARG GO_TAGS=
+RUN CGO_ENABLED=0 go build -trimpath -tags "${GO_TAGS}" -ldflags "-s -w -X main.version=${VERSION}" -o /out/server ./cmd/server
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/server /server

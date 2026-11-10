@@ -97,6 +97,7 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | HTTP | Code | When |
 |---|---|---|
 | 400 | `invalid_request` | Malformed body, unknown field, or a non-empty body without `Content-Type: application/json` |
+| 400 | `over_limit` | Session over 20 GB or 1,000 files |
 | 401 | `device_token_invalid`, `device_token_expired` | Missing, malformed, wrong `alg`/`kid`, tampered, or expired token |
 | 401 | `refresh_invalid`, `refresh_reused` | Unknown, expired or revoked refresh secret; a consumed secret presented again (the device is revoked) |
 | 401 | `ticket_invalid` | WebSocket ticket missing, used, or expired |
@@ -106,11 +107,16 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 403 | `cloud_requires_account`, `cloud_consent_required` | Cloud Distribution preconditions |
 | 403 | `csrf_header_missing` | Cookie refresh without `X-SA-Refresh: 1` |
 | 403 | `origin_not_allowed` | WebSocket upgrade from an origin outside `SA_ALLOWED_ORIGINS` |
+| 403 | `forbidden` | Only the sender may take this action |
 | 404 | `not_found` | Unknown resource or no access (existence hidden) |
+| 404 | `code_not_found`, `link_not_found` | Unknown code or link token (counts as a failed lookup for codes) |
 | 405 | `method_not_allowed` | Known path, wrong method; `Allow` header lists the methods |
 | 409 | `session_full` | Five receivers already joined or requested |
+| 409 | `too_many_open_sessions` | Guest device already has 2 open sessions (signed in: 5) |
+| 409 | `invalid_state`, `own_session`, `too_many_requests`, `session_not_active` | Action does not apply to the current state; resolving your own code; 10 pending requests; TURN before a receiver joined |
 | 410 | `join_window_expired` | The 10-minute join window for this code, link, or QR has ended or was replaced by Create new code |
 | 410 | `session_not_accepting`, `session_expired` | Sender tapped Stop accepting, or the session lifetime ended |
+| 410 | `join_ticket_invalid` | Join ticket unknown, used, revoked, or for another device |
 | 428 | `pow_required` | Device creation above the soft limit; body carries the proof-of-work challenge |
 | 429 | `rate_limited`, `locked_out` | With `Retry-After` header and `retry_after_s` |
 | 429 | `too_many_connections` | WebSocket cap per device or address reached |
@@ -123,7 +129,8 @@ Connect to `/v1/ws?ticket=<one-time ticket>`. The server checks `Origin`, consum
 | Event | Delivered to |
 |---|---|
 | `WELCOME` (device ID, `server_time`) | Every socket, first message after the ticket is consumed (Phase 1) |
-| `OFFER`, `ANSWER`, `ICE_CANDIDATE` | The two participants of a sender–receiver pair, only after the receiver is `JOINED` |
+| `ERROR` (`code`, `ref`) | The socket whose message could not be handled: `bad_message`, `unknown_type`, `not_found` (not a joined participant or not a sender–receiver pair), `peer_offline`, `payload_too_large`, `internal` |
+| `OFFER`, `ANSWER`, `ICE_CANDIDATE` | The two participants of a sender–receiver pair, only after the receiver is `JOINED`. Client sends `{type, ref?, session_id, to: participant_id, payload}`; the target gets `{type, session_id, from: participant_id, payload}` |
 | `PARTICIPANT_JOINED`, `PARTICIPANT_REQUESTED`, `PARTICIPANT_APPROVED`, `PARTICIPANT_REJECTED`, `PARTICIPANT_REMOVED`, `PARTICIPANT_BLOCKED`, `PARTICIPANT_LEFT` | Sender; the affected receiver gets its own status changes |
 | `SESSION_UPDATED` (require approval; join window state and `join_window_ends_at`, including expiry and Create new code), `SESSION_CLOSED`, `SESSION_EXPIRED`, `PROTECTED_MODE` | All participants of the session |
 | `CLIPBOARD_EVENT_CREATED`, `CLIPBOARD_EVENT_DELETED`, `CLIPBOARD_HISTORY_CLEARED`, `CLIPBOARD_SETTINGS_UPDATED` | `account+device` sockets of that account |

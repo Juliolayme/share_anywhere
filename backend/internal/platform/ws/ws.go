@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -57,7 +58,29 @@ type Hub struct {
 	tickets   map[string]ticket
 	byDevice  map[string]int
 	byAddress map[string]int
+	conns     map[string]map[*conn]struct{}
+	handlers  map[string]Handler
 }
+
+// Handler processes one client message of a registered type for the authenticated device. A returned
+// *Error is sent back to that socket as an ERROR event; other errors close nothing and are logged.
+type Handler func(ctx context.Context, deviceID string, raw json.RawMessage) error
+
+// Error is a client-visible error reply to a message (`ERROR` event).
+type Error struct {
+	Code string `json:"code"`
+}
+
+func (e *Error) Error() string { return e.Code }
+
+// conn is one live socket with its own writer goroutine, so writes never race.
+type conn struct {
+	deviceID string
+	out      chan []byte
+	cancel   context.CancelFunc
+}
+
+const sendQueue = 64
 
 // NewHub returns a hub.
 func NewHub(cfg Config) *Hub {
@@ -67,6 +90,87 @@ func NewHub(cfg Config) *Hub {
 		tickets:    map[string]ticket{},
 		byDevice:   map[string]int{},
 		byAddress:  map[string]int{},
+		conns:      map[string]map[*conn]struct{}{},
+		handlers:   map[string]Handler{},
+	}
+}
+
+// Handle registers the handler for client messages of type t (e.g. OFFER, ANSWER, ICE_CANDIDATE).
+func (h *Hub) Handle(t string, fn Handler) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.handlers[t] = fn
+}
+
+func (h *Hub) add(c *conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.conns[c.deviceID] == nil {
+		h.conns[c.deviceID] = map[*conn]struct{}{}
+	}
+	h.conns[c.deviceID][c] = struct{}{}
+}
+
+func (h *Hub) remove(c *conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.conns[c.deviceID], c)
+	if len(h.conns[c.deviceID]) == 0 {
+		delete(h.conns, c.deviceID)
+	}
+}
+
+// enqueue queues a frame; a socket that cannot keep up is closed rather than blocking the sender.
+func (c *conn) enqueue(b []byte) {
+	select {
+	case c.out <- b:
+	default:
+		c.cancel()
+	}
+}
+
+// SendToDevice delivers an event to every open socket of a device. It reports whether any socket was open.
+func (h *Hub) SendToDevice(deviceID string, v any) bool {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c := range h.conns[deviceID] {
+		c.enqueue(b)
+	}
+	return len(h.conns[deviceID]) > 0
+}
+
+// Broadcast delivers an event to every open socket.
+func (h *Hub) Broadcast(v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, set := range h.conns {
+		for c := range set {
+			c.enqueue(b)
+		}
+	}
+}
+
+// Connected reports whether the device has at least one open socket.
+func (h *Hub) Connected(deviceID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.conns[deviceID]) > 0
+}
+
+// DisconnectDevice closes every socket of a device, e.g. when its identity is revoked or reset.
+func (h *Hub) DisconnectDevice(deviceID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c := range h.conns[deviceID] {
+		c.cancel()
 	}
 }
 
@@ -180,41 +284,88 @@ func (h *Hub) upgrade(w http.ResponseWriter, r *http.Request) {
 	defer h.release(deviceID, addr)
 
 	// Origin was checked above against the configured list, so the library's same-host check is skipped.
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
 	}
-	defer func() { _ = c.CloseNow() }()
-	c.SetReadLimit(maxMessageBytes)
+	defer func() { _ = ws.CloseNow() }()
+	ws.SetReadLimit(maxMessageBytes)
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	if err := h.write(ctx, c, Welcome{Type: "WELCOME", DeviceID: deviceID, ServerTime: h.cfg.Clock.Now().UTC()}); err != nil {
-		return
-	}
-	go h.heartbeat(ctx, c, cancel)
+	c := &conn{deviceID: deviceID, out: make(chan []byte, sendQueue), cancel: cancel}
+	h.add(c)
+	defer h.remove(c)
+	go h.writer(ctx, ws, c)
+	welcome, _ := json.Marshal(Welcome{Type: "WELCOME", DeviceID: deviceID, ServerTime: h.cfg.Clock.Now().UTC()})
+	c.enqueue(welcome)
+	go h.heartbeat(ctx, ws, cancel)
 
 	limiter := ratelimit.New(ratelimit.Rule{Limit: MessagesPerSec, Window: time.Second}, h.cfg.Clock)
 	for {
-		if _, _, err := c.Read(ctx); err != nil {
+		_, data, err := ws.Read(ctx)
+		if err != nil {
 			return
 		}
 		if ok, _ := limiter.Allow("conn"); !ok {
-			_ = c.Close(websocket.StatusPolicyViolation, "message rate exceeded")
+			_ = ws.Close(websocket.StatusPolicyViolation, "message rate exceeded")
 			return
 		}
-		// Phase 1 defines no client-to-server messages; signaling arrives in Phase 2.
+		h.dispatch(ctx, c, data)
 	}
 }
 
-func (h *Hub) write(ctx context.Context, c *websocket.Conn, v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
+type envelope struct {
+	Type string `json:"type"`
+	Ref  string `json:"ref,omitempty"`
+}
+
+// dispatch routes a client message to its handler; unknown types and handler errors get an ERROR reply.
+func (h *Hub) dispatch(ctx context.Context, c *conn, data []byte) {
+	var env envelope
+	if json.Unmarshal(data, &env) != nil || env.Type == "" {
+		h.reply(c, "", "bad_message")
+		return
 	}
-	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
-	defer cancel()
-	return c.Write(wctx, websocket.MessageText, b)
+	h.mu.Lock()
+	fn := h.handlers[env.Type]
+	h.mu.Unlock()
+	if fn == nil {
+		h.reply(c, env.Ref, "unknown_type")
+		return
+	}
+	if err := fn(ctx, c.deviceID, data); err != nil {
+		var e *Error
+		if errors.As(err, &e) {
+			h.reply(c, env.Ref, e.Code)
+			return
+		}
+		h.cfg.Log.Error("websocket handler failed", "type", env.Type, "error", err.Error())
+		h.reply(c, env.Ref, "internal")
+	}
+}
+
+func (h *Hub) reply(c *conn, ref, code string) {
+	b, _ := json.Marshal(map[string]string{"type": "ERROR", "code": code, "ref": ref})
+	c.enqueue(b)
+}
+
+func (h *Hub) writer(ctx context.Context, ws *websocket.Conn, c *conn) {
+	for {
+		select {
+		case <-ctx.Done():
+			_ = ws.Close(websocket.StatusNormalClosure, "")
+			return
+		case b := <-c.out:
+			wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+			err := ws.Write(wctx, websocket.MessageText, b)
+			cancel()
+			if err != nil {
+				c.cancel()
+				return
+			}
+		}
+	}
 }
 
 func (h *Hub) heartbeat(ctx context.Context, c *websocket.Conn, stop context.CancelFunc) {

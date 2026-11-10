@@ -89,6 +89,7 @@ func New(opts Options) (http.Handler, *access.Router) {
 	for _, register := range opts.Modules {
 		register(router)
 	}
+	router.Finalize()
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "message": "No such endpoint."})
 	})

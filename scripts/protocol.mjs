@@ -99,6 +99,7 @@ function checkWsSchema(schema, md) {
     problems.push(`websocket-events.json is not a valid JSON Schema: ${e.message}`);
   }
   for (const [name, def] of Object.entries(schema.$defs ?? {})) {
+    if (def['x-sa-direction'] === 'shared') continue; // building blocks such as Participant, not messages
     const type = def.properties?.type?.const;
     if (!type) problems.push(`websocket-events.json $defs.${name} has no type const`);
     else if (!md.includes(`\`${type}\``)) problems.push(`WebSocket event ${type} is not listed in docs/API.md §4`);

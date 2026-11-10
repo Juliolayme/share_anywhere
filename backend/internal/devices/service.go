@@ -89,8 +89,20 @@ type Service struct {
 	limits Limits
 	log    *slog.Logger
 
-	mu     sync.Mutex
-	active map[string]activeEntry
+	mu       sync.Mutex
+	active   map[string]activeEntry
+	onRevoke []func(deviceID string)
+}
+
+// OnRevoke registers a callback run after a device is revoked (reset or refresh reuse), e.g. to close its
+// WebSockets.
+func (s *Service) OnRevoke(fn func(deviceID string)) { s.onRevoke = append(s.onRevoke, fn) }
+
+func (s *Service) revoked(id string) {
+	s.forget(id)
+	for _, fn := range s.onRevoke {
+		fn(id)
+	}
 }
 
 type activeEntry struct {
@@ -225,7 +237,7 @@ func (s *Service) Refresh(ctx context.Context, secret string) (Session, error) {
 	next, hash := newSecret()
 	d, err := s.store.RotateSecret(ctx, old, hash, s.clock.Now(), AnonymousLifetime)
 	if errors.Is(err, ErrSecretReused) {
-		s.forget(deviceID)
+		s.revoked(deviceID)
 		s.log.Warn("refresh secret reuse detected; device revoked", "device", deviceID)
 	}
 	if err != nil {
@@ -268,7 +280,7 @@ func (s *Service) Reset(ctx context.Context, id, addrKey string) (Session, error
 	if err := s.store.RevokeDevice(ctx, id, s.clock.Now()); err != nil {
 		return Session{}, err
 	}
-	s.forget(id)
+	s.revoked(id)
 	return s.createDevice(ctx, old.Platform, GenerateName(old.Platform), old.Transport)
 }
 

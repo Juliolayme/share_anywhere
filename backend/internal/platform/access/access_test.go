@@ -37,6 +37,7 @@ func setup() *http.ServeMux {
 	r.Handle("GET", "/dev", Device, ok)
 	r.Handle("GET", "/acct", Account, ok)
 	r.Handle("GET", "/keys", AccountDevice, ok)
+	r.Finalize()
 	return mux
 }
 

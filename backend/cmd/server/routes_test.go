@@ -28,7 +28,7 @@ func testApp(t *testing.T) *app {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := newApp(cfg, devices.NewMemStore(), clock.Real{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	a, err := newApp(cfg, nil, devices.NewMemStore(), clock.Real{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,9 +36,7 @@ func testApp(t *testing.T) *app {
 }
 
 type spec struct {
-	Paths map[string]map[string]struct {
-		Access string `yaml:"x-sa-access"`
-	} `yaml:"paths"`
+	Paths map[string]map[string]yaml.Node `yaml:"paths"`
 }
 
 func loadSpec(t *testing.T) map[string]string {
@@ -53,11 +51,17 @@ func loadSpec(t *testing.T) map[string]string {
 	}
 	out := map[string]string{}
 	for path, ops := range s.Paths {
-		for method, op := range ops {
+		for method, node := range ops {
 			switch method {
 			case "get", "post", "put", "patch", "delete":
 			default:
 				continue
+			}
+			var op struct {
+				Access string `yaml:"x-sa-access"`
+			}
+			if err := node.Decode(&op); err != nil {
+				t.Fatal(err)
 			}
 			if op.Access == "" {
 				t.Errorf("%s %s has no x-sa-access", strings.ToUpper(method), path)

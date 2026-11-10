@@ -45,6 +45,132 @@ func (e DeviceKind) Valid() bool {
 	}
 }
 
+// Defines values for JoinPreviewVia.
+const (
+	JoinPreviewViaCode JoinPreviewVia = "code"
+	JoinPreviewViaLink JoinPreviewVia = "link"
+)
+
+// Valid indicates whether the value is a known member of the JoinPreviewVia enum.
+func (e JoinPreviewVia) Valid() bool {
+	switch e {
+	case JoinPreviewViaCode:
+		return true
+	case JoinPreviewViaLink:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JoinWindowState.
+const (
+	JoinWindowStateENDEDBYSENDER JoinWindowState = "ENDED_BY_SENDER"
+	JoinWindowStateENDEDFULL     JoinWindowState = "ENDED_FULL"
+	JoinWindowStateEXPIRED       JoinWindowState = "EXPIRED"
+	JoinWindowStateOPEN          JoinWindowState = "OPEN"
+)
+
+// Valid indicates whether the value is a known member of the JoinWindowState enum.
+func (e JoinWindowState) Valid() bool {
+	switch e {
+	case JoinWindowStateENDEDBYSENDER:
+		return true
+	case JoinWindowStateENDEDFULL:
+		return true
+	case JoinWindowStateEXPIRED:
+		return true
+	case JoinWindowStateOPEN:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ParticipantJoinedVia.
+const (
+	ParticipantJoinedViaCode ParticipantJoinedVia = "code"
+	ParticipantJoinedViaLink ParticipantJoinedVia = "link"
+)
+
+// Valid indicates whether the value is a known member of the ParticipantJoinedVia enum.
+func (e ParticipantJoinedVia) Valid() bool {
+	switch e {
+	case ParticipantJoinedViaCode:
+		return true
+	case ParticipantJoinedViaLink:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ParticipantRequestReason.
+const (
+	Approval      ParticipantRequestReason = "approval"
+	ProtectedMode ParticipantRequestReason = "protected_mode"
+)
+
+// Valid indicates whether the value is a known member of the ParticipantRequestReason enum.
+func (e ParticipantRequestReason) Valid() bool {
+	switch e {
+	case Approval:
+		return true
+	case ProtectedMode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ParticipantRole.
+const (
+	ParticipantRoleReceiver ParticipantRole = "receiver"
+	ParticipantRoleSender   ParticipantRole = "sender"
+)
+
+// Valid indicates whether the value is a known member of the ParticipantRole enum.
+func (e ParticipantRole) Valid() bool {
+	switch e {
+	case ParticipantRoleReceiver:
+		return true
+	case ParticipantRoleSender:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ParticipantStatus.
+const (
+	BLOCKED   ParticipantStatus = "BLOCKED"
+	JOINED    ParticipantStatus = "JOINED"
+	LEFT      ParticipantStatus = "LEFT"
+	REJECTED  ParticipantStatus = "REJECTED"
+	REMOVED   ParticipantStatus = "REMOVED"
+	REQUESTED ParticipantStatus = "REQUESTED"
+)
+
+// Valid indicates whether the value is a known member of the ParticipantStatus enum.
+func (e ParticipantStatus) Valid() bool {
+	switch e {
+	case BLOCKED:
+		return true
+	case JOINED:
+		return true
+	case LEFT:
+		return true
+	case REJECTED:
+		return true
+	case REMOVED:
+		return true
+	case REQUESTED:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadyChecks.
 const (
 	ReadyChecksOk          ReadyChecks = "ok"
@@ -81,6 +207,72 @@ func (e ReadyStatus) Valid() bool {
 	}
 }
 
+// Defines values for SessionViewRole.
+const (
+	SessionViewRoleReceiver SessionViewRole = "receiver"
+	SessionViewRoleSender   SessionViewRole = "sender"
+)
+
+// Valid indicates whether the value is a known member of the SessionViewRole enum.
+func (e SessionViewRole) Valid() bool {
+	switch e {
+	case SessionViewRoleReceiver:
+		return true
+	case SessionViewRoleSender:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SessionViewStatus.
+const (
+	SessionViewStatusACTIVE             SessionViewStatus = "ACTIVE"
+	SessionViewStatusCANCELLED          SessionViewStatus = "CANCELLED"
+	SessionViewStatusCLOSED             SessionViewStatus = "CLOSED"
+	SessionViewStatusCOMPLETED          SessionViewStatus = "COMPLETED"
+	SessionViewStatusEXPIRED            SessionViewStatus = "EXPIRED"
+	SessionViewStatusPARTIALLYCOMPLETED SessionViewStatus = "PARTIALLY_COMPLETED"
+	SessionViewStatusWAITING            SessionViewStatus = "WAITING"
+)
+
+// Valid indicates whether the value is a known member of the SessionViewStatus enum.
+func (e SessionViewStatus) Valid() bool {
+	switch e {
+	case SessionViewStatusACTIVE:
+		return true
+	case SessionViewStatusCANCELLED:
+		return true
+	case SessionViewStatusCLOSED:
+		return true
+	case SessionViewStatusCOMPLETED:
+		return true
+	case SessionViewStatusEXPIRED:
+		return true
+	case SessionViewStatusPARTIALLYCOMPLETED:
+		return true
+	case SessionViewStatusWAITING:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateSessionRequestAcceptingReceivers.
+const (
+	False UpdateSessionRequestAcceptingReceivers = false
+)
+
+// Valid indicates whether the value is a known member of the UpdateSessionRequestAcceptingReceivers enum.
+func (e UpdateSessionRequestAcceptingReceivers) Valid() bool {
+	switch e {
+	case False:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RefreshDeviceTokenParamsXSARefresh.
 const (
 	N1 RefreshDeviceTokenParamsXSARefresh = "1"
@@ -94,6 +286,13 @@ func (e RefreshDeviceTokenParamsXSARefresh) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// Capacity defines model for Capacity.
+type Capacity struct {
+	Joined    int `json:"joined"`
+	Max       int `json:"max"`
+	Requested int `json:"requested"`
 }
 
 // CreateDeviceRequest defines model for CreateDeviceRequest.
@@ -110,6 +309,12 @@ type CreateDeviceRequest struct {
 
 // CreateDeviceRequestTransport Fixed for the device's lifetime. Refresh and reset answer the same way; "cookie" secrets never appear in a response body.
 type CreateDeviceRequestTransport string
+
+// CreateSessionRequest defines model for CreateSessionRequest.
+type CreateSessionRequest struct {
+	Files           []FileInput `json:"files"`
+	RequireApproval *bool       `json:"require_approval,omitempty"`
+}
 
 // Device defines model for Device.
 type Device struct {
@@ -145,10 +350,92 @@ type Error struct {
 	RetryAfterS *int   `json:"retry_after_s,omitempty"`
 }
 
+// FileInput defines model for FileInput.
+type FileInput struct {
+	Mime *string `json:"mime,omitempty"`
+	Name string  `json:"name"`
+	Size int64   `json:"size"`
+}
+
 // Health defines model for Health.
 type Health struct {
 	Status  string `json:"status"`
 	Version string `json:"version"`
+}
+
+// JoinPreview defines model for JoinPreview.
+type JoinPreview struct {
+	// ExistingStatus Set when the caller already has a participant in this session.
+	ExistingStatus      *string      `json:"existing_status,omitempty"`
+	FileCount           int          `json:"file_count"`
+	Files               []SharedFile `json:"files"`
+	JoinTicket          string       `json:"join_ticket"`
+	JoinTicketExpiresAt time.Time    `json:"join_ticket_expires_at"`
+	JoinWindowEndsAt    time.Time    `json:"join_window_ends_at"`
+
+	// ProtectedMode True when this code join will wait for approval because of protected mode.
+	ProtectedMode   bool               `json:"protected_mode"`
+	RequireApproval bool               `json:"require_approval"`
+	Sender          PeerSummary        `json:"sender"`
+	ServerTime      time.Time          `json:"server_time"`
+	SessionId       openapi_types.UUID `json:"session_id"`
+	TotalBytes      int64              `json:"total_bytes"`
+	Via             JoinPreviewVia     `json:"via"`
+}
+
+// JoinPreviewVia defines model for JoinPreview.Via.
+type JoinPreviewVia string
+
+// JoinResult defines model for JoinResult.
+type JoinResult struct {
+	Participant Participant        `json:"participant"`
+	ServerTime  time.Time          `json:"server_time"`
+	SessionId   openapi_types.UUID `json:"session_id"`
+}
+
+// JoinWindow defines model for JoinWindow.
+type JoinWindow struct {
+	EndsAt   time.Time       `json:"ends_at"`
+	OpenedAt time.Time       `json:"opened_at"`
+	Seq      int             `json:"seq"`
+	State    JoinWindowState `json:"state"`
+}
+
+// JoinWindowState defines model for JoinWindow.State.
+type JoinWindowState string
+
+// Participant defines model for Participant.
+type Participant struct {
+	DisplayName   string                    `json:"display_name"`
+	Id            openapi_types.UUID        `json:"id"`
+	JoinedAt      *time.Time                `json:"joined_at,omitempty"`
+	JoinedVia     *ParticipantJoinedVia     `json:"joined_via,omitempty"`
+	Platform      string                    `json:"platform"`
+	RequestReason *ParticipantRequestReason `json:"request_reason,omitempty"`
+	Role          ParticipantRole           `json:"role"`
+	SecurityWords *[]string                 `json:"security_words,omitempty"`
+	SignedIn      bool                      `json:"signed_in"`
+	Status        ParticipantStatus         `json:"status"`
+}
+
+// ParticipantJoinedVia defines model for Participant.JoinedVia.
+type ParticipantJoinedVia string
+
+// ParticipantRequestReason defines model for Participant.RequestReason.
+type ParticipantRequestReason string
+
+// ParticipantRole defines model for Participant.Role.
+type ParticipantRole string
+
+// ParticipantStatus defines model for Participant.Status.
+type ParticipantStatus string
+
+// PeerSummary defines model for PeerSummary.
+type PeerSummary struct {
+	DisplayName   string             `json:"display_name"`
+	ParticipantId openapi_types.UUID `json:"participant_id"`
+	Platform      string             `json:"platform"`
+	SignedIn      bool               `json:"signed_in"`
 }
 
 // PowChallenge defines model for PowChallenge.
@@ -193,10 +480,73 @@ type RefreshRequest struct {
 	RefreshSecret *string `json:"refresh_secret,omitempty"`
 }
 
+// SessionView defines model for SessionView.
+type SessionView struct {
+	Capacity *Capacity `json:"capacity,omitempty"`
+
+	// Code Sender only
+	Code      *string            `json:"code,omitempty"`
+	ExpiresAt time.Time          `json:"expires_at"`
+	FileCount int                `json:"file_count"`
+	Files     *[]SharedFile      `json:"files,omitempty"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// JoinUrl Sender only; also the QR payload.
+	JoinUrl    *string     `json:"join_url,omitempty"`
+	JoinWindow *JoinWindow `json:"join_window,omitempty"`
+
+	// LinkToken Sender only
+	LinkToken *string      `json:"link_token,omitempty"`
+	Me        *Participant `json:"me,omitempty"`
+
+	// Participants Sender only (receivers).
+	Participants    *[]Participant    `json:"participants,omitempty"`
+	ProtectedMode   bool              `json:"protected_mode"`
+	RequireApproval bool              `json:"require_approval"`
+	Role            SessionViewRole   `json:"role"`
+	Sender          *PeerSummary      `json:"sender,omitempty"`
+	ServerTime      time.Time         `json:"server_time"`
+	Status          SessionViewStatus `json:"status"`
+	TotalBytes      int64             `json:"total_bytes"`
+}
+
+// SessionViewRole defines model for SessionView.Role.
+type SessionViewRole string
+
+// SessionViewStatus defines model for SessionView.Status.
+type SessionViewStatus string
+
+// SharedFile defines model for SharedFile.
+type SharedFile struct {
+	Id   openapi_types.UUID `json:"id"`
+	Mime string             `json:"mime"`
+	Name string             `json:"name"`
+	Size int64              `json:"size"`
+}
+
+// TurnCredentials defines model for TurnCredentials.
+type TurnCredentials struct {
+	Credential string    `json:"credential"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Ttl        int       `json:"ttl"`
+	Uris       []string  `json:"uris"`
+	Username   string    `json:"username"`
+}
+
 // UpdateDeviceRequest defines model for UpdateDeviceRequest.
 type UpdateDeviceRequest struct {
 	DisplayName string `json:"display_name"`
 }
+
+// UpdateSessionRequest defines model for UpdateSessionRequest.
+type UpdateSessionRequest struct {
+	// AcceptingReceivers false = Stop accepting. Reopening uses renew.
+	AcceptingReceivers *UpdateSessionRequestAcceptingReceivers `json:"accepting_receivers,omitempty"`
+	RequireApproval    *bool                                   `json:"require_approval,omitempty"`
+}
+
+// UpdateSessionRequestAcceptingReceivers false = Stop accepting. Reopening uses renew.
+type UpdateSessionRequestAcceptingReceivers bool
 
 // WsTicket defines model for WsTicket.
 type WsTicket struct {
@@ -206,6 +556,18 @@ type WsTicket struct {
 
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
+
+// Conflict defines model for Conflict.
+type Conflict = Error
+
+// Forbidden defines model for Forbidden.
+type Forbidden = Error
+
+// Gone defines model for Gone.
+type Gone = Error
+
+// NotFound defines model for NotFound.
+type NotFound = Error
 
 // RateLimited defines model for RateLimited.
 type RateLimited = Error
@@ -221,6 +583,26 @@ type RefreshDeviceTokenParams struct {
 // RefreshDeviceTokenParamsXSARefresh defines parameters for RefreshDeviceToken.
 type RefreshDeviceTokenParamsXSARefresh string
 
+// ResolveCodeJSONBody defines parameters for ResolveCode.
+type ResolveCodeJSONBody struct {
+	Code string `json:"code"`
+}
+
+// ResolveLinkJSONBody defines parameters for ResolveLink.
+type ResolveLinkJSONBody struct {
+	Token string `json:"token"`
+}
+
+// JoinSessionJSONBody defines parameters for JoinSession.
+type JoinSessionJSONBody struct {
+	Ticket string `json:"ticket"`
+}
+
+// CreateTurnCredentialsJSONBody defines parameters for CreateTurnCredentials.
+type CreateTurnCredentialsJSONBody struct {
+	SessionId openapi_types.UUID `json:"session_id"`
+}
+
 // ConnectWebSocketParams defines parameters for ConnectWebSocket.
 type ConnectWebSocketParams struct {
 	Ticket string `form:"ticket" json:"ticket"`
@@ -234,3 +616,21 @@ type UpdateCurrentDeviceJSONRequestBody = UpdateDeviceRequest
 
 // RefreshDeviceTokenJSONRequestBody defines body for RefreshDeviceToken for application/json ContentType.
 type RefreshDeviceTokenJSONRequestBody = RefreshRequest
+
+// CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
+type CreateSessionJSONRequestBody = CreateSessionRequest
+
+// ResolveCodeJSONRequestBody defines body for ResolveCode for application/json ContentType.
+type ResolveCodeJSONRequestBody ResolveCodeJSONBody
+
+// ResolveLinkJSONRequestBody defines body for ResolveLink for application/json ContentType.
+type ResolveLinkJSONRequestBody ResolveLinkJSONBody
+
+// UpdateSessionJSONRequestBody defines body for UpdateSession for application/json ContentType.
+type UpdateSessionJSONRequestBody = UpdateSessionRequest
+
+// JoinSessionJSONRequestBody defines body for JoinSession for application/json ContentType.
+type JoinSessionJSONRequestBody JoinSessionJSONBody
+
+// CreateTurnCredentialsJSONRequestBody defines body for CreateTurnCredentials for application/json ContentType.
+type CreateTurnCredentialsJSONRequestBody CreateTurnCredentialsJSONBody

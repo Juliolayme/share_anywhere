@@ -4,8 +4,68 @@
   "title": "Share Anywhere WebSocket events",
   "description": "Server-to-client and client-to-server WebSocket messages (docs/API.md §4). Every message is a JSON text frame with a `type`. Messages carry metadata only, never file bytes, clipboard text, or ciphertext. `x-sa-phase` is the phase that delivers the event; later phases add events here before using them.",
   "type": "object",
-  "required": ["type"],
-  "oneOf": [{ "$ref": "#/$defs/Welcome" }],
+  "required": [
+    "type"
+  ],
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Welcome"
+    },
+    {
+      "$ref": "#/$defs/ParticipantJoined"
+    },
+    {
+      "$ref": "#/$defs/ParticipantRequested"
+    },
+    {
+      "$ref": "#/$defs/ParticipantApproved"
+    },
+    {
+      "$ref": "#/$defs/ParticipantRejected"
+    },
+    {
+      "$ref": "#/$defs/ParticipantRemoved"
+    },
+    {
+      "$ref": "#/$defs/ParticipantBlocked"
+    },
+    {
+      "$ref": "#/$defs/ParticipantLeft"
+    },
+    {
+      "$ref": "#/$defs/SessionUpdated"
+    },
+    {
+      "$ref": "#/$defs/SessionClosed"
+    },
+    {
+      "$ref": "#/$defs/SessionExpired"
+    },
+    {
+      "$ref": "#/$defs/ProtectedMode"
+    },
+    {
+      "$ref": "#/$defs/OfferIn"
+    },
+    {
+      "$ref": "#/$defs/OfferOut"
+    },
+    {
+      "$ref": "#/$defs/AnswerIn"
+    },
+    {
+      "$ref": "#/$defs/AnswerOut"
+    },
+    {
+      "$ref": "#/$defs/IceCandidateIn"
+    },
+    {
+      "$ref": "#/$defs/IceCandidateOut"
+    },
+    {
+      "$ref": "#/$defs/Error"
+    }
+  ],
   "$defs": {
     "Welcome": {
       "x-sa-phase": 1,
@@ -13,11 +73,595 @@
       "description": "First message on every connection, sent after the ticket is consumed. `server_time` lets clients correct clock skew for countdowns.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "device_id", "server_time"],
+      "required": [
+        "type",
+        "device_id",
+        "server_time"
+      ],
       "properties": {
-        "type": { "const": "WELCOME" },
-        "device_id": { "type": "string", "format": "uuid" },
-        "server_time": { "type": "string", "format": "date-time" }
+        "type": {
+          "const": "WELCOME"
+        },
+        "device_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "server_time": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Participant": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "shared",
+      "description": "Participant object inside events (same shape as the REST Participant schema).",
+      "type": "object",
+      "required": [
+        "id",
+        "role",
+        "status",
+        "display_name",
+        "platform",
+        "signed_in"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "role": {
+          "enum": [
+            "sender",
+            "receiver"
+          ]
+        },
+        "status": {
+          "enum": [
+            "REQUESTED",
+            "JOINED",
+            "LEFT",
+            "REMOVED",
+            "BLOCKED",
+            "REJECTED"
+          ]
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "signed_in": {
+          "type": "boolean"
+        },
+        "security_words": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "joined_via": {
+          "enum": [
+            "code",
+            "link"
+          ]
+        },
+        "request_reason": {
+          "enum": [
+            "approval",
+            "protected_mode"
+          ]
+        },
+        "joined_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ParticipantJoined": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "participant"
+      ],
+      "properties": {
+        "type": {
+          "const": "PARTICIPANT_JOINED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participant": {
+          "$ref": "#/$defs/Participant"
+        }
+      }
+    },
+    "ParticipantRequested": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "participant"
+      ],
+      "properties": {
+        "type": {
+          "const": "PARTICIPANT_REQUESTED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participant": {
+          "$ref": "#/$defs/Participant"
+        }
+      }
+    },
+    "ParticipantApproved": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "participant"
+      ],
+      "properties": {
+        "type": {
+          "const": "PARTICIPANT_APPROVED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participant": {
+          "$ref": "#/$defs/Participant"
+        }
+      }
+    },
+    "ParticipantRejected": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "participant"
+      ],
+      "properties": {
+        "type": {
+          "const": "PARTICIPANT_REJECTED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participant": {
+          "$ref": "#/$defs/Participant"
+        }
+      }
+    },
+    "ParticipantRemoved": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "participant"
+      ],
+      "properties": {
+        "type": {
+          "const": "PARTICIPANT_REMOVED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participant": {
+          "$ref": "#/$defs/Participant"
+        }
+      }
+    },
+    "ParticipantBlocked": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "participant"
+      ],
+      "properties": {
+        "type": {
+          "const": "PARTICIPANT_BLOCKED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participant": {
+          "$ref": "#/$defs/Participant"
+        }
+      }
+    },
+    "ParticipantLeft": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "participant"
+      ],
+      "properties": {
+        "type": {
+          "const": "PARTICIPANT_LEFT"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participant": {
+          "$ref": "#/$defs/Participant"
+        }
+      }
+    },
+    "SessionUpdated": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender and every JOINED or REQUESTED receiver when Require approval, the join window (expiry, full, stop accepting, Create new code), status, or capacity changes.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "status",
+        "require_approval",
+        "join_window",
+        "capacity",
+        "server_time"
+      ],
+      "properties": {
+        "type": {
+          "const": "SESSION_UPDATED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string"
+        },
+        "require_approval": {
+          "type": "boolean"
+        },
+        "join_window": {
+          "type": "object",
+          "required": [
+            "state",
+            "opened_at",
+            "ends_at",
+            "seq"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "OPEN",
+                "EXPIRED",
+                "ENDED_FULL",
+                "ENDED_BY_SENDER"
+              ]
+            },
+            "opened_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "ends_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "seq": {
+              "type": "integer"
+            }
+          }
+        },
+        "capacity": {
+          "type": "object",
+          "required": [
+            "joined",
+            "requested",
+            "max"
+          ],
+          "properties": {
+            "joined": {
+              "type": "integer"
+            },
+            "requested": {
+              "type": "integer"
+            },
+            "max": {
+              "type": "integer"
+            }
+          }
+        },
+        "server_time": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "SessionClosed": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "The sender closed the session. To all live participants.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "SESSION_CLOSED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "SessionExpired": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "Idle or maximum lifetime reached (reason idle or max_lifetime). To all live participants.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "SESSION_EXPIRED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "ProtectedMode": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "Broadcast when protected mode turns on or off.",
+      "type": "object",
+      "required": [
+        "type",
+        "active",
+        "until"
+      ],
+      "properties": {
+        "type": {
+          "const": "PROTECTED_MODE"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "until": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "OfferIn": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "client-to-server",
+      "description": "Relayed only between the sender and a JOINED receiver of the same live session. Payload at most 32 KiB, opaque to the server.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "to",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "const": "OFFER"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "to": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Target participant ID"
+        },
+        "payload": {}
+      }
+    },
+    "OfferOut": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "Delivered to the target participant's device.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "from",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "const": "OFFER"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "from": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Sending participant ID"
+        },
+        "payload": {}
+      }
+    },
+    "AnswerIn": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "client-to-server",
+      "description": "Relayed only between the sender and a JOINED receiver of the same live session. Payload at most 32 KiB, opaque to the server.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "to",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "const": "ANSWER"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "to": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Target participant ID"
+        },
+        "payload": {}
+      }
+    },
+    "AnswerOut": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "Delivered to the target participant's device.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "from",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "const": "ANSWER"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "from": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Sending participant ID"
+        },
+        "payload": {}
+      }
+    },
+    "IceCandidateIn": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "client-to-server",
+      "description": "Relayed only between the sender and a JOINED receiver of the same live session. Payload at most 32 KiB, opaque to the server.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "to",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "const": "ICE_CANDIDATE"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "to": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Target participant ID"
+        },
+        "payload": {}
+      }
+    },
+    "IceCandidateOut": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "Delivered to the target participant's device.",
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "from",
+        "payload"
+      ],
+      "properties": {
+        "type": {
+          "const": "ICE_CANDIDATE"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "from": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Sending participant ID"
+        },
+        "payload": {}
+      }
+    },
+    "Error": {
+      "x-sa-phase": 2,
+      "x-sa-direction": "server-to-client",
+      "description": "Reply to a client message that could not be handled: bad_message, unknown_type, not_found, peer_offline, payload_too_large, internal. ref echoes the message ref.",
+      "type": "object",
+      "required": [
+        "type",
+        "code"
+      ],
+      "properties": {
+        "type": {
+          "const": "ERROR"
+        },
+        "code": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
       }
     }
   },

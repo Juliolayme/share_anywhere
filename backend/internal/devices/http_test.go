@@ -22,8 +22,9 @@ func newHTTPFixture(t *testing.T) *httpFixture {
 	t.Helper()
 	f := newFixture(t, nil)
 	mux := http.NewServeMux()
-	NewHTTP(f.svc, clientip.New([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}), f.clk, true).
-		Register(access.NewRouter(mux, f.svc))
+	router := access.NewRouter(mux, f.svc)
+	NewHTTP(f.svc, clientip.New([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}), f.clk, true).Register(router)
+	router.Finalize()
 	return &httpFixture{fixture: f, mux: mux}
 }
 

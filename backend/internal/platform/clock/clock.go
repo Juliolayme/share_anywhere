@@ -39,3 +39,24 @@ func (f *Fake) Advance(d time.Duration) {
 	f.now = f.now.Add(d)
 	f.mu.Unlock()
 }
+
+// Offset is the real clock plus an adjustable offset. Test stacks use it so end-to-end specs can move
+// time forward (join windows, lifetimes) without waiting; production uses Real.
+type Offset struct {
+	mu     sync.Mutex
+	offset time.Duration
+}
+
+// Now returns the real time plus the offset.
+func (o *Offset) Now() time.Time {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return time.Now().Add(o.offset)
+}
+
+// Advance moves the clock forward.
+func (o *Offset) Advance(d time.Duration) {
+	o.mu.Lock()
+	o.offset += d
+	o.mu.Unlock()
+}

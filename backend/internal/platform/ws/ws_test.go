@@ -35,7 +35,9 @@ func newServer(t *testing.T, c clock.Clock) (*Hub, *httptest.Server) {
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	mux := http.NewServeMux()
-	hub.Register(access.NewRouter(mux, okVerifier{}))
+	router := access.NewRouter(mux, okVerifier{})
+	hub.Register(router)
+	router.Finalize()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return hub, srv
@@ -184,8 +186,82 @@ func TestMessageRateLimitClosesConnection(t *testing.T) {
 			break
 		}
 	}
-	_, _, err = c.Read(ctx)
+	// Each message gets an ERROR reply (no handler for it); keep reading until the server closes.
+	for err == nil {
+		_, _, err = c.Read(ctx)
+	}
 	if websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
 		t.Fatalf("expected policy violation close, got %v", err)
+	}
+}
+
+func readJSON(t *testing.T, c *websocket.Conn) map[string]any {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, b, err := c.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestDispatchSendAndDisconnect(t *testing.T) {
+	hub, srv := newServer(t, clock.Real{})
+	hub.Handle("PING_TEST", func(_ context.Context, deviceID string, raw json.RawMessage) error {
+		if strings.Contains(string(raw), "fail") {
+			return &Error{Code: "nope"}
+		}
+		hub.SendToDevice(deviceID, map[string]string{"type": "PONG_TEST"})
+		return nil
+	})
+	c, _, err := dial(t, wsURL(srv, hub.IssueTicket("dev-1")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.CloseNow() }()
+	if readJSON(t, c)["type"] != "WELCOME" {
+		t.Fatal("welcome first")
+	}
+	ctx := context.Background()
+	_ = c.Write(ctx, websocket.MessageText, []byte(`{"type":"PING_TEST"}`))
+	if m := readJSON(t, c); m["type"] != "PONG_TEST" {
+		t.Fatalf("got %v", m)
+	}
+	_ = c.Write(ctx, websocket.MessageText, []byte(`{"type":"PING_TEST","ref":"r1","x":"fail"}`))
+	if m := readJSON(t, c); m["type"] != "ERROR" || m["code"] != "nope" || m["ref"] != "r1" {
+		t.Fatalf("got %v", m)
+	}
+	_ = c.Write(ctx, websocket.MessageText, []byte(`{"type":"NOPE"}`))
+	if m := readJSON(t, c); m["code"] != "unknown_type" {
+		t.Fatalf("got %v", m)
+	}
+	if !hub.Connected("dev-1") || hub.Connected("dev-2") {
+		t.Fatal("connected registry")
+	}
+	if !hub.SendToDevice("dev-1", map[string]string{"type": "X"}) || hub.SendToDevice("dev-2", map[string]string{"type": "X"}) {
+		t.Fatal("send result")
+	}
+	_ = readJSON(t, c)
+	hub.Broadcast(map[string]string{"type": "B"})
+	if readJSON(t, c)["type"] != "B" {
+		t.Fatal("broadcast")
+	}
+	hub.DisconnectDevice("dev-1")
+	rctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if _, _, err := c.Read(rctx); err == nil {
+		t.Fatal("socket must close after DisconnectDevice")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for hub.Connected("dev-1") && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if hub.Connected("dev-1") {
+		t.Fatal("registry not cleared")
 	}
 }

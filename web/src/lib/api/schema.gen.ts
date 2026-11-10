@@ -123,6 +123,246 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/participants/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Sender only. Remove a receiver; revokes its access and frees the slot. */
+        delete: operations["removeParticipant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/participants/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sender only, REQUESTED participants. */
+        post: operations["approveParticipant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/participants/{id}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sender only. Remove and refuse rejoin from that device and IP /64 for the session. */
+        post: operations["blockParticipant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/participants/{id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** That receiver only. */
+        post: operations["leaveSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/participants/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sender only, REQUESTED participants. */
+        post: operations["rejectParticipant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a share session (guest or signed in) with a six-digit code, link and QR sharing one 10-minute join window. */
+        post: operations["createSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** The session as the caller may see it (sender, joined receiver, requested receiver, ended participant). */
+        get: operations["getSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Sender only. Toggle Require approval (future joins) or Stop accepting (accepting_receivers false). */
+        patch: operations["updateSession"];
+        trace?: never;
+    };
+    "/v1/sessions/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sender only. End the session; receivers get SESSION_CLOSED. */
+        post: operations["closeSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions/{id}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Join with a ticket. JOINED in open-join sessions; REQUESTED when approval is on or protected mode applies to a code join. */
+        post: operations["joinSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions/{id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sender only. Create new code - new code, link and QR, fresh 10-minute window; the old ones stop working. */
+        post: operations["renewSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions/resolve-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Look up a six-digit code. Counts toward code lookup and failed-lookup limits. */
+        post: operations["resolveCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions/resolve-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Look up a link or QR token. */
+        post: operations["resolveLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/turn/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Time-limited coturn credentials for the sender or a JOINED receiver of an ACTIVE session (guest 30 min, account 60 min). */
+        post: operations["createTurnCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ws": {
         parameters: {
             query?: never;
@@ -160,6 +400,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Capacity: {
+            joined: number;
+            max: number;
+            requested: number;
+        };
         CreateDeviceRequest: {
             display_name?: string;
             /** @example Chrome on macOS */
@@ -170,6 +415,11 @@ export interface components {
              * @enum {string}
              */
             transport: "cookie" | "body";
+        };
+        CreateSessionRequest: {
+            files: components["schemas"]["FileInput"][];
+            /** @default false */
+            require_approval: boolean;
         };
         Device: {
             /** Format: date-time */
@@ -199,9 +449,79 @@ export interface components {
             message: string;
             retry_after_s?: number;
         };
+        FileInput: {
+            mime?: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+        };
         Health: {
             status: string;
             version: string;
+        };
+        JoinPreview: {
+            /** @description Set when the caller already has a participant in this session. */
+            existing_status?: string;
+            file_count: number;
+            files: components["schemas"]["SharedFile"][];
+            join_ticket: string;
+            /** Format: date-time */
+            join_ticket_expires_at: string;
+            /** Format: date-time */
+            join_window_ends_at: string;
+            /** @description True when this code join will wait for approval because of protected mode. */
+            protected_mode: boolean;
+            require_approval: boolean;
+            sender: components["schemas"]["PeerSummary"];
+            /** Format: date-time */
+            server_time: string;
+            /** Format: uuid */
+            session_id: string;
+            /** Format: int64 */
+            total_bytes: number;
+            /** @enum {string} */
+            via: "code" | "link";
+        };
+        JoinResult: {
+            participant: components["schemas"]["Participant"];
+            /** Format: date-time */
+            server_time: string;
+            /** Format: uuid */
+            session_id: string;
+        };
+        JoinWindow: {
+            /** Format: date-time */
+            ends_at: string;
+            /** Format: date-time */
+            opened_at: string;
+            seq: number;
+            /** @enum {string} */
+            state: "OPEN" | "EXPIRED" | "ENDED_FULL" | "ENDED_BY_SENDER";
+        };
+        Participant: {
+            display_name: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            joined_at?: string;
+            /** @enum {string} */
+            joined_via?: "code" | "link";
+            platform: string;
+            /** @enum {string} */
+            request_reason?: "approval" | "protected_mode";
+            /** @enum {string} */
+            role: "sender" | "receiver";
+            security_words?: string[];
+            signed_in: boolean;
+            /** @enum {string} */
+            status: "REQUESTED" | "JOINED" | "LEFT" | "REMOVED" | "BLOCKED" | "REJECTED";
+        };
+        PeerSummary: {
+            display_name: string;
+            /** Format: uuid */
+            participant_id: string;
+            platform: string;
+            signed_in: boolean;
         };
         PowChallenge: {
             /** @description Leading zero bits required in SHA-256(token + ":" + solution). */
@@ -227,8 +547,62 @@ export interface components {
             /** @description Native apps only. The Web sends no body and uses the sa_device cookie. */
             refresh_secret?: string;
         };
+        SessionView: {
+            capacity?: components["schemas"]["Capacity"];
+            /** @description Sender only, while the join window is open. */
+            code?: string;
+            /** Format: date-time */
+            expires_at: string;
+            file_count: number;
+            files?: components["schemas"]["SharedFile"][];
+            /** Format: uuid */
+            id: string;
+            /** @description Sender only; also the QR payload. */
+            join_url?: string;
+            join_window?: components["schemas"]["JoinWindow"];
+            /** @description Sender only, while the join window is open. */
+            link_token?: string;
+            me?: components["schemas"]["Participant"];
+            /** @description Sender only (receivers). */
+            participants?: components["schemas"]["Participant"][];
+            protected_mode: boolean;
+            require_approval: boolean;
+            /** @enum {string} */
+            role: "sender" | "receiver";
+            sender?: components["schemas"]["PeerSummary"];
+            /** Format: date-time */
+            server_time: string;
+            /** @enum {string} */
+            status: "WAITING" | "ACTIVE" | "COMPLETED" | "PARTIALLY_COMPLETED" | "CLOSED" | "EXPIRED" | "CANCELLED";
+            /** Format: int64 */
+            total_bytes: number;
+        };
+        SharedFile: {
+            /** Format: uuid */
+            id: string;
+            mime: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+        };
+        TurnCredentials: {
+            credential: string;
+            /** Format: date-time */
+            expires_at: string;
+            ttl: number;
+            uris: string[];
+            username: string;
+        };
         UpdateDeviceRequest: {
             display_name: string;
+        };
+        UpdateSessionRequest: {
+            /**
+             * @description false = Stop accepting. Reopening uses renew.
+             * @enum {boolean}
+             */
+            accepting_receivers?: false;
+            require_approval?: boolean;
         };
         WsTicket: {
             expires_in: number;
@@ -238,6 +612,42 @@ export interface components {
     responses: {
         /** @description The request body or parameters are invalid. */
         BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The action conflicts with the current state (session_full, too_many_open_sessions, invalid_state). */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The caller may not do this (for example not the sender, or blocked). */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description join_window_expired, session_not_accepting, session_expired, join_ticket_invalid. */
+        Gone: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Unknown resource or no access (existence hidden). */
+        NotFound: {
             headers: {
                 [name: string]: unknown;
             };
@@ -481,6 +891,402 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    removeParticipant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated participant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Participant"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    approveParticipant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated participant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Participant"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    blockParticipant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated participant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Participant"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    leaveSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated participant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Participant"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    rejectParticipant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated participant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Participant"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Session created; the sender view includes the code, link token and join URL. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session view. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionView"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated sender view. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    closeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Closed (idempotent). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    joinSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ticket: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The caller's participant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    renewSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sender view with the new code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionView"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    resolveCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Preview and a single-use join ticket. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    resolveLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Preview and a single-use join ticket. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    createTurnCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    session_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description ICE server credentials. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnCredentials"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             429: components["responses"]["RateLimited"];
         };
     };

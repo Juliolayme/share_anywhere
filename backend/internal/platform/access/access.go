@@ -69,6 +69,34 @@ type Router struct {
 	verifier Verifier
 	routes   []Route
 	methods  map[string][]string
+	order    []string
+}
+
+// fallbackMethods get a 405 on known paths that do not implement them.
+var fallbackMethods = []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
+
+// Finalize registers 405 responses (with Allow) for unimplemented methods on every known path, so they do
+// not fall through to 404. It runs once, after all modules registered their routes; registering per method
+// avoids conflicts between literal paths and wildcard paths that a method-less pattern would cause.
+func (r *Router) Finalize() {
+	for _, pattern := range r.order {
+		allowed := map[string]bool{}
+		for _, m := range r.methods[pattern] {
+			allowed[m] = true
+		}
+		allow := append([]string(nil), r.methods[pattern]...)
+		sort.Strings(allow)
+		header := strings.Join(allow, ", ")
+		for _, m := range fallbackMethods {
+			if allowed[m] {
+				continue
+			}
+			r.mux.HandleFunc(m+" "+pattern, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Allow", header)
+				httpx.Error(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
+			})
+		}
+	}
 }
 
 // NewRouter returns a router enforcing levels with v.
@@ -80,13 +108,7 @@ func NewRouter(mux *http.ServeMux, v Verifier) *Router {
 func (r *Router) Handle(method, pattern string, level Level, h http.HandlerFunc) {
 	r.routes = append(r.routes, Route{Method: method, Pattern: pattern, Level: level})
 	if _, seen := r.methods[pattern]; !seen {
-		// Unknown methods on a known path answer 405 with Allow instead of falling through to 404.
-		r.mux.HandleFunc(pattern, func(w http.ResponseWriter, _ *http.Request) {
-			allow := append([]string(nil), r.methods[pattern]...)
-			sort.Strings(allow)
-			w.Header().Set("Allow", strings.Join(allow, ", "))
-			httpx.Error(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed.")
-		})
+		r.order = append(r.order, pattern)
 	}
 	r.methods[pattern] = append(r.methods[pattern], method)
 	if method == http.MethodGet {

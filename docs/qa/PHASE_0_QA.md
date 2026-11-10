@@ -37,6 +37,32 @@ Verified by QA in round 1: tokens pipeline, script tests (6/6), markdown lint, w
 | Web layout vs `CLAUDE.md` §6 | P2 | Aligned in Phase 1 |
 | Actions pinned by tag; duplicate push/PR runs | P2 | Accepted for now; revisit in Phase 9 |
 
-## Round 2
+## Round 2 — commit 29a3e09 — FAIL
 
-Pending: re-run after the design handoff is imported, since the remaining P1 findings all depend on it.
+No P0. Five P1 and thirteen P2 findings on the design work; every check and CI run green. Fixed in 8993201:
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Logo wordmark unreadable in dark theme on `/` (1.23:1) | P1 | `Logo` follows the theme by default through `--sa-logo-*` variables; the token check fails if the wordmark is below 4.5:1 on `bg` or `surface` in either theme; tests added; measured `#FFFFFF` on `#0B1A33` |
+| i18n catalogs missed the `VV`, `XX`, `YY`, `LBL` tables (including "Start sharing" and the screen-on pill copy) | P1 | The generator extracts every `{en, vi}` table, the Handoff Checklist microcopy, and a hand-written product overlay; an unparseable locale table fails the run; 1459 keys each; tests assert the key strings |
+| `DESIGN_SYSTEM.md` missing badges, Remove/Block, Require approval, pill, account-required intro, validation patterns, breakpoint decision | P1 | Added all, plus design-internal conflicts and the sample-data rule for strings |
+| PRD-required UI absent from the design not recorded | P1 | `DESIGN_DEVIATIONS.md` section E with component and string source for each; strings in `shared/i18n/product.json` |
+| Keep-screen-on docs contradicted each other | P1 | One pill definition with six states, strings, and tap behavior in `ARCHITECTURE.md` §7.3; PRD, UX map, phases, and `CLAUDE.md` point to it |
+| `brand:check` only checked non-empty rasters | P2 | Pixel comparison (ICO entries too); proven to fail on a replaced PNG |
+| iOS icons had an alpha channel | P2 | `removeAlpha()` for iOS and apple-touch icons; verified 3 channels |
+| Maskable scale 0.56 | P2 | Design value 64/96 |
+| Dotless favicon rule inconsistent | P2 | One rule (≤ 16 px dotless), deviations C3 |
+| No standalone 16/32 PNGs | P2 | Added |
+| Component state colors not tokenized | P2 | Listed in `DESIGN_SYSTEM.md` §6; tokens added in Phase 1 before Button and Input |
+| Design-internal value conflicts not noted | P2 | `DESIGN_SYSTEM.md` §1.1 |
+| Contrast pairs `send` on `send-soft`, `fg-3` on `surface-2` | P2 | `fg-3` pairs checked at 3:1; `send-ink` required on `send-soft` (deviations C4) |
+| Catalogs carry sample data and fragments | P2 | Rule in `DESIGN_SYSTEM.md` §1.2; parameterized keys in `product` |
+| New screen-map rows missing from main tables | P2 | ON-3, RX-5b, AC-8 added |
+| Settings default for Require approval | P2 | Adopted (deviations B9, PRD §5.8) |
+| Stale "Get started" in the master prompt | P2 | Fixed |
+| `CLAUDE.md` edited | P2 | Wording only ("security words", "screen-on pill"); reported to the user |
+| Minor markup | P2 | Duplicate focus class removed; `/` heading announces the name once |
+
+## Round 3
+
+Pending.

@@ -1,6 +1,6 @@
 # Phase 0 report — Foundation
 
-Status: **partially implemented; blocked on the Claude Design import.** The design-independent half of Phase 0 is implemented and tested. Every design-dependent deliverable waits for `design/claude-design/`, which could not be imported from this cloud session. The exit gate is not met, so Phase 1 has not started.
+Status: **implemented**. The Claude Design handoff was committed by the user in 089e59c (the DesignSync connector could not authorize from this cloud session) and applied in 29a3e09 and 8993201. Device-only behavior (Android launcher masks, iOS asset catalog compilation, Firefox and WebKit rendering) is untested here and is verified by later CI jobs.
 
 Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
 
@@ -35,20 +35,14 @@ Exact pins and the reasons for them are in `docs/ADR/0001-monorepo-and-toolchain
 - **ADRs 0001 to 0006**, README, `.env.example`, `.nvmrc`, `.editorconfig`, `.gitignore`, `.npmrc`.
 - **QA agent** `.claude/agents/qa-reviewer.md` and the first QA round (`docs/qa/PHASE_0_QA.md`).
 
-### Implemented but provisional
+### Implemented from the design handoff
 
-- `shared/design/tokens.json` values are invented placeholders marked `$comment: PROVISIONAL`. They must be replaced with the values from `design/claude-design/Design System.dc.html`.
-
-### Planned, blocked on the design import
-
-| Deliverable | Needs |
-|---|---|
-| 0. `design/claude-design/` with the exported files | The files themselves |
-| 3. Token values from the Design System | `Design System.dc.html` |
-| 4. `docs/DESIGN_SYSTEM.md` | `Design System.dc.html`, `Handoff Checklist.dc.html` |
-| 5. Screen map extension with Screen Map IDs, components, state models | `Screen Map.dc.html`, the three app files |
-| 6. Logo and brand assets for Web, Android, iOS; `scripts/export-brand.mjs` | `Logo.dc.html`, `Brand.dc.html` |
-| 6b. `shared/i18n/` EN/VI catalogs and their check | `i18n-strings.json` |
+- **Design import**: `design/claude-design/` with the ten exported files unchanged.
+- **Tokens**: `shared/design/tokens.json` carries the Design System values and names (`bg`, `surface`, `surface-2`, `border`, `fg`, `fg-2`, `fg-3`, `send*`, `receive*`, `warning*`, `danger*`, `cloud*`, `focus`, `toast`, `track`, `scrim`), type scale (display to code), spacing, radius, elevation (no shadows in dark), focus ring 2 + 2, control heights 36/44/52, and the `rail`/`sidebar` breakpoints. Every text pair passes WCAG AA in both themes, including the theme-following logo wordmark.
+- **Logo and icons**: one logo definition generates 26 files (`pnpm brand`): Web SVG and PNG favicons (16 px dotless), ICO, PWA icons and manifest, Android adaptive icon with a monochrome layer and a Play Store PNG, iOS 1024 px light/dark/tinted icons without an alpha channel. `brand:check` compares vectors byte for byte and rasters pixel for pixel.
+- **Strings**: `shared/i18n/en.json` and `vi.json`, 1459 keys each, from `i18n-strings.json`, every `{en, vi}` table in the three prototypes, the Handoff Checklist microcopy, and `shared/i18n/product.json` for PRD strings the design lacks; EN/VI keys and placeholders are validated.
+- **Web**: self-hosted Plus Jakarta Sans and JetBrains Mono, a theme-following `Logo` component, the `/brand` preview with lockups and every token.
+- **Docs**: `docs/DESIGN_SYSTEM.md`, `docs/design/DESIGN_DEVIATIONS.md` (PRD-wins items, adopted design decisions, accessibility notes, PRD elements the design lacks, answers to the handoff's open questions), design screen IDs and state models in `docs/UX_SCREEN_MAP.md` §12, one definition of the screen-on pill in `docs/ARCHITECTURE.md` §7.3.
 
 ## 2. Screens and routes usable, by platform
 
@@ -65,7 +59,8 @@ Exact pins and the reasons for them are in `docs/ADR/0001-monorepo-and-toolchain
 | Dev Compose stack: postgres, backend, web, coturn, Caddy | Local Docker with host-built images | All services up; `/healthz` 200; `/readyz` database ok; web served over HTTPS |
 | CI Compose stack with backend health check | Local Docker with host-built images | All healthy |
 | CI Compose stack with the real Dockerfiles | GitHub Actions `compose` job | Green on run 42769204329 |
-| `/brand` in light and dark | Chromium (Playwright), local dev server | Renders both themes (screenshots below) |
+| `/brand` in light and dark | Chromium (Playwright), local dev server | Renders both themes with the design fonts and lockups (screenshots below) |
+| Logo wordmark contrast on `/` | Chromium, light and dark | `#102A56` on `#F7FAFD` (light), `#FFFFFF` on `#0B1A33` (dark) |
 
 No product workflow exists yet, so nothing ran as guest or signed in.
 
@@ -77,11 +72,13 @@ No product workflow exists yet, so nothing ran as guest or signed in.
 
 | Command | Result |
 |---|---|
-| `pnpm tokens:check` | Schema valid, contrast AA, generated files current |
-| `pnpm test:scripts` | 6 passed |
+| `pnpm tokens:check` | Schema valid, contrast AA (including the logo wordmark), generated files current |
+| `pnpm i18n:check` | 1459 keys each in EN and VI, placeholders match |
+| `pnpm brand:check` | 26 files current |
+| `pnpm test:scripts` | 13 passed |
 | `pnpm lint:md` | 0 issues |
 | `pnpm audit` | No known vulnerabilities |
-| `web`: `format:check`, `lint`, `typecheck`, `test`, `build` | All pass; 8 tests; main bundle well under the 120 kB gzip budget |
+| `web`: `format:check`, `lint`, `typecheck`, `test`, `build` | All pass; 14 tests; main bundle under the 120 kB gzip budget |
 | `backend`: `gofmt -l`, `go vet`, `golangci-lint run` (v2.15.0) | Clean |
 | `backend`: `go test -race ./...` | 5 packages pass, including a real PostgreSQL ping (run by QA) |
 | `govulncheck` v1.9.0 on Go 1.27.3 | No vulnerabilities |
@@ -104,10 +101,9 @@ All variables are listed in `.env.example`: `SA_ENV`, `SA_HTTP_ADDR`, `SA_LOG_LE
 
 | Priority | Item |
 |---|---|
-| P0 | Import the Claude Design handoff into `design/claude-design/` |
-| P0 | Replace provisional tokens; write `docs/DESIGN_SYSTEM.md`; extend the screen map; export brand assets; generate i18n catalogs |
-| P0 | QA round 2 and a green CI run on the final Phase 0 commit |
+| P1 | Component state colors from the Design System as tokens with dark values, before Button and Input (Phase 1) |
 | P1 | Web CSP without inline styles, extra security headers, non-root web container (Phase 1) |
+| P2 | Android launcher and iOS asset catalog verification once their CI jobs exist (Phases 6 and 7) |
 | P2 | Pin actions by SHA; avoid duplicate push and PR runs (Phase 9) |
 
 ## 8. Local run instructions
@@ -122,3 +118,7 @@ See the README: `cp .env.example .env`, then `docker compose up --build`, then o
 | 303721f | Phase 0 scaffolds, Compose, CI, ADRs |
 | 1652d6a | Go 1.25 build image and Trivy invocation (superseded) |
 | 754b7f4 | QA round 1 fixes: Go 1.27, audit clean, gitleaks, redaction, middleware, lint guard, CI hygiene |
+| b7134b5 | Phase 0 report and QA record (before the design import) |
+| 089e59c | Claude Design handoff imported by the user |
+| 29a3e09 | Design applied: tokens, logo and icons, i18n catalogs, DESIGN_SYSTEM, deviations, screen IDs |
+| 8993201 | QA round 2 fixes: theme-following logo, every design string table plus product overlay, pill unification, deviations section E, brand check, iOS alpha |

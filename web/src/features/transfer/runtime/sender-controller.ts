@@ -80,6 +80,8 @@ interface Peer {
   conn: SenderConnection | null;
   connId: string;
   throughput: Throughput;
+  /** Remote description applied: candidates can be added now (before, they wait in `pendingIce`). */
+  ready?: boolean;
 }
 
 const RECONNECT_WINDOW_MS = 10 * 60_000;
@@ -105,6 +107,12 @@ export class SenderController extends Observable<TxState> {
   private transfers = new Map<string, Transfer>();
   private downTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private resuming = new Set<string>();
+  /**
+   * Receiver candidates that arrive before their connection is set up here (the offer handler awaits the
+   * session refresh and TURN credentials, and Chromium refuses candidates before the remote description).
+   * Keyed by connection id; flushed once the remote description is applied.
+   */
+  private pendingIce = new Map<string, RTCIceCandidateInit[]>();
   private hashes = new Map<number, FileHash>();
   private senderFiles: SenderFile[] = [];
   private list: TransferList | null = null;
@@ -328,9 +336,14 @@ export class SenderController extends Observable<TxState> {
     else if (e.type === 'ICE_CANDIDATE' && from) {
       const p = this.peers.get(from);
       const c = e.payload as CandidatePayload;
-      if (p && c.conn === p.connId && c.candidate) {
-        this.diag.push(`remote ${(c.candidate.candidate ?? '').split(' ').slice(4, 8).join(' ')}`);
-        void p.pc.addIceCandidate(c.candidate).catch((err: unknown) => this.diag.push(`add-error ${String(err)}`));
+      if (!c.candidate || !c.conn) return;
+      if (p && c.conn === p.connId && p.ready) this.addRemote(p, c.candidate);
+      else {
+        const list = this.pendingIce.get(c.conn) ?? [];
+        if (list.length < 100) list.push(c.candidate);
+        this.pendingIce.set(c.conn, list);
+        // Bound memory: keep the candidates of the latest few connections only.
+        while (this.pendingIce.size > 20) this.pendingIce.delete(this.pendingIce.keys().next().value as string);
       }
     } else if (e.type === 'TRANSFER_UPDATED') {
       const t = e.transfer as Transfer | undefined;
@@ -397,6 +410,10 @@ export class SenderController extends Observable<TxState> {
         grace = setTimeout(() => this.peers.get(pid) === peer && this.onLost(pid), 4000);
     };
     await pc.setRemoteDescription(payload.sdp);
+    peer.ready = true;
+    const early = this.pendingIce.get(payload.conn) ?? [];
+    this.pendingIce.delete(payload.conn);
+    for (const c of early) this.addRemote(peer, c);
     await pc.setLocalDescription(await pc.createAnswer());
     const answer: SdpPayload = { conn: payload.conn, sdp: pc.localDescription?.toJSON() ?? { type: 'answer' } };
     this.d.socket.send({ type: 'ANSWER', session_id: this.d.sessionId, to: pid, payload: answer });
@@ -487,6 +504,11 @@ export class SenderController extends Observable<TxState> {
         error: `product.tx_err_${code === 'checksum_retries' || code === 'file_hash_mismatch' ? 'checksum' : code === 'unauthorized' ? 'unauthorized' : code === 'file_unreadable' ? 'sender_files' : 'protocol'}`,
       });
     this.onLost(pid);
+  }
+
+  private addRemote(p: Peer, c: RTCIceCandidateInit): void {
+    this.diag.push(`remote ${(c.candidate ?? '').split(' ').slice(4, 8).join(' ')}`);
+    void p.pc.addIceCandidate(c).catch((err: unknown) => this.diag.push(`add-error ${String(err)}`));
   }
 
   private onLost(pid: string): void {

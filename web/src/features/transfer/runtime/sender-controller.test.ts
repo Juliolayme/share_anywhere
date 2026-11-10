@@ -6,7 +6,7 @@ import { Throughput } from '../engine/eta';
 import { SenderController } from './sender-controller';
 
 /** A sender tab with one joined receiver and one file, no picked files (so no peer connection is served). */
-function setup(status: TransferStatus) {
+function setup(status: TransferStatus, createPeer?: (cfg: RTCConfiguration) => RTCPeerConnection) {
   let listCalls = 0;
   let emit: (e: SocketEvent) => void = () => undefined;
   const transfer = (s: TransferStatus) => ({
@@ -48,6 +48,7 @@ function setup(status: TransferStatus) {
     socket,
     history: null,
     files: undefined,
+    ...(createPeer ? { createPeer } : {}),
   });
   const card = () => tx.state.receivers[0]?.status;
   const updated = (s: TransferStatus) =>
@@ -116,6 +117,46 @@ describe('SenderController', () => {
     expect(t.card()).toBe('reconnecting');
     await vi.advanceTimersByTimeAsync(10 * 60_000 + 1000);
     expect(t.card()).toBe('offline');
+    t.tx.dispose();
+  });
+  it('keeps receiver candidates that arrive before the offer is set up, and adds them after the remote description', async () => {
+    const added: string[] = [];
+    let remoteSet = false;
+    const pc = {
+      connectionState: 'new',
+      setRemoteDescription: async () => {
+        await new Promise((r) => setTimeout(r, 20));
+        remoteSet = true;
+      },
+      createAnswer: async () => ({ type: 'answer', sdp: '' }),
+      setLocalDescription: async () => undefined,
+      localDescription: { toJSON: () => ({ type: 'answer', sdp: '' }) },
+      addIceCandidate: async (c: RTCIceCandidateInit) => {
+        if (!remoteSet) throw new Error('no remote description');
+        added.push(c.candidate ?? '');
+      },
+      addEventListener: () => undefined,
+      close: () => undefined,
+    } as unknown as RTCPeerConnection;
+    const t = setup('TRANSFERRING', () => pc);
+    await t.tx.init();
+    const cand = (n: number) =>
+      ({
+        type: 'ICE_CANDIDATE',
+        from: 'p1',
+        payload: { conn: 'c1', candidate: { candidate: `candidate:${n} 1 udp 1 10.0.0.${n} 5000 typ host` } },
+      }) as unknown as SocketEvent;
+    // The receiver trickles host candidates right after its offer, before the sender has set anything up.
+    t.emit({
+      type: 'OFFER',
+      from: 'p1',
+      payload: { conn: 'c1', sdp: { type: 'offer', sdp: '' } },
+    } as unknown as SocketEvent);
+    t.emit(cand(1));
+    t.emit(cand(2));
+    await vi.waitFor(() => expect(added).toHaveLength(2));
+    t.emit(cand(3)); // after the remote description: added directly
+    await vi.waitFor(() => expect(added).toHaveLength(3));
     t.tx.dispose();
   });
 });

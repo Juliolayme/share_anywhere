@@ -158,6 +158,7 @@ The backend, web checks (123 unit tests), protocol, i18n, tokens and markdown al
 | Firefox record no longer honest | P1 | Report §4/§6/§7, TESTING_AND_CI §3 and this record state the real rate (3 of 6 recent runs, plus the e29c0a2 first-attempt failure) and withdraw the `pagehide` link |
 | Stale route chip while paused with no connection | P2 | The route is cleared when the connection is lost (receiver and sender) and set again when a channel opens |
 | No test covers the route chip | P2 | `ui.test.tsx`: Direct green, Relay blue at 26 px, nothing while the route is unknown |
+| Found while investigating: the sender dropped every receiver candidate that arrived before its offer handler had registered the peer and applied the remote description (it awaits the session refresh and TURN credentials). Host and srflx candidates, trickled at once, were lost; only the later relay candidate survived, so in CI every connection silently depended on TURN | — | Candidates are buffered per connection id and added once the remote description is applied; unit test. The first Firefox CI run with Firefox ICE logs (31d0a6e, run 42875252812) was green but the logs went to a folder Playwright empties; they now go to `web/moz-log/` |
 
 ## Round 8
 

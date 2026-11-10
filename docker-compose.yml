@@ -38,7 +38,7 @@ services:
       SA_PUBLIC_URL: https://localhost:8443
       # Must match coturn's static-auth-secret below.
       SA_TURN_SECRET: ${TURN_SHARED_SECRET:-dev-turn-secret-change-me}
-      SA_TURN_URIS: turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp
+      SA_TURN_URIS: turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp
     depends_on:
       postgres:
         condition: service_healthy

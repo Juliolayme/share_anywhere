@@ -166,7 +166,7 @@ func LoadFrom(lookup Lookup) (Config, error) {
 	if v := get("SA_TURN_SECRET", ""); v != "" {
 		cfg.TURNSecret = []byte(v)
 	}
-	for _, u := range strings.Split(get("SA_TURN_URIS", "turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp"), ",") {
+	for _, u := range strings.Split(get("SA_TURN_URIS", "turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp"), ",") {
 		if u = strings.TrimSpace(u); u == "" {
 			continue
 		}

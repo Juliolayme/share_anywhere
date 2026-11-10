@@ -96,7 +96,7 @@ export default function SessionPage() {
   const [, txState] = useSender(id, live && view?.role === 'sender');
   const transferring = txState.receivers.some((r) => txActive(r.status));
   // The screen stays on while the join window is open or transfers run (docs/ARCHITECTURE.md §7.1).
-  const pill = useKeepAwake(windowOpen || transferring);
+  const pill = useKeepAwake(windowOpen || (txState.hasFiles && transferring));
 
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);

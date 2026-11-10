@@ -307,22 +307,26 @@ export class ReceiverController extends Observable<RxState> {
   }
 
   /**
-   * The page is going away (reload, tab close, navigation to another site). Close the connection first, so
-   * errors from storage being torn down with the page are never sent to the sender or reported as a failure;
-   * the saved bitmap lets the next load resume.
+   * The page is going away (reload, tab close, navigation to another site). Go quiet: errors from storage torn
+   * down with the page are neither sent to the sender nor reported, and no reconnect starts; the saved bitmap
+   * lets the next load resume. The peer connection is left for the browser to tear down with the document:
+   * closing it here correlated with Firefox failing ICE in the reloaded page in CI (docs/TESTING_AND_CI.md §3).
    */
   suspend(): void {
     if (this.stopped) return;
     this.stopped = true;
     if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.openTimer) clearTimeout(this.openTimer);
     this.retryTimer = null;
-    this.teardown();
+    this.openTimer = null;
+    this.conn?.mute();
   }
 
   /** The page came back from the back-forward cache: reconnect if the transfer was still running. */
   wake(): void {
     if (!this.stopped) return;
     this.stopped = false;
+    this.teardown();
     if (rxActive(this.state_.phase) || this.state_.phase === 'reconnecting') this.connect();
   }
 
@@ -378,6 +382,7 @@ export class ReceiverController extends Observable<RxState> {
     };
     this.openTimer = setTimeout(() => this.pc === pc && this.lost(), 20_000);
     await pc.setLocalDescription(await pc.createOffer());
+    this.diag.push(`offer set, gathering ${pc.iceGatheringState}`);
     const payload: SdpPayload = { conn: connId, sdp: pc.localDescription?.toJSON() ?? { type: 'offer' } };
     if (!this.d.socket.send({ type: 'OFFER', session_id: this.d.sessionId, to: this.senderPid, payload })) this.lost();
   }

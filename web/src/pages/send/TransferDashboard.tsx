@@ -79,7 +79,8 @@ const ORDER: TxStatus[] = [
   'removed',
 ];
 /** Matrix cells as in the design: red for a failed receiver, amber while reconnecting, otherwise blue. */
-const matrixTone = (s: TxStatus) => (s === 'failed' ? 'danger' : s === 'reconnecting' ? 'warning' : 'send');
+const matrixTone = (s: TxStatus) =>
+  s === 'failed' ? 'danger' : s === 'reconnecting' ? 'warning' : s === 'offline' ? 'muted' : 'send';
 const mobile = (platform: string) => /android|iphone|ipad|ios|mobile/i.test(platform);
 
 /** TR-6 Transfer dashboard (`dashboard`) and TR-7 Session result (`dashboard-done`, `dashboard-partial`). */
@@ -101,7 +102,8 @@ export default function TransferDashboard() {
     return () => clearInterval(t);
   }, []);
   const windowOpen = !!s.windowEndsAt && Date.parse(s.windowEndsAt) > now + s.serverOffset;
-  const pill = useKeepAwake(active || (windowOpen && !s.final));
+  // A tab that lost its picked files (after a reload) cannot send, so its transfers do not hold the screen.
+  const pill = useKeepAwake((s.hasFiles && active) || (windowOpen && !s.final));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

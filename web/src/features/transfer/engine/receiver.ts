@@ -83,6 +83,7 @@ export class ReceiverConnection {
   private done = new Set<number>();
   private paused = false;
   private closed = false;
+  private muted = false;
   private authorized = false;
 
   constructor(private readonly o: ReceiverOptions) {
@@ -131,8 +132,13 @@ export class ReceiverConnection {
     this.o.channel.close();
   }
 
+  /** The page is going away: send nothing more (no ERROR from storage torn down with the page), close nothing. */
+  mute(): void {
+    this.muted = true;
+  }
+
   private send(buf: ArrayBuffer): void {
-    if (this.closed || this.o.channel.readyState !== 'open') return;
+    if (this.closed || this.muted || this.o.channel.readyState !== 'open') return;
     this.o.channel.send(buf);
   }
 
@@ -140,7 +146,7 @@ export class ReceiverConnection {
     const body: ErrorBody = { code, fatal, ...(message ? { message } : {}) };
     this.send(jsonFrame(FrameType.ERROR, body));
     this.end(code, fatal, message);
-    if (fatal) void this.closeAfterFlush();
+    if (fatal && !this.muted) void this.closeAfterFlush();
   }
 
   /** Lets the ERROR frame leave before the channel closes. */

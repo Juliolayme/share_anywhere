@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionSocket, SocketEvent } from '../../../lib/ws/socket';
 import type { SessionView } from '../../sharing/api';
 import type { TransferStatus, TransfersApi } from './api';
+import { Throughput } from '../engine/eta';
 import { SenderController } from './sender-controller';
 
 /** A sender tab with one joined receiver and one file, no picked files (so no peer connection is served). */
@@ -90,6 +91,31 @@ describe('SenderController', () => {
     const before = t.listCalls();
     t.emit({ type: 'SOCKET_OPEN' } as unknown as SocketEvent);
     await vi.waitFor(() => expect(t.listCalls()).toBe(before + 1));
+    t.tx.dispose();
+  });
+  it('a receiver that left while paused: Resume shows reconnecting (not transferring) and the window runs', async () => {
+    vi.useFakeTimers();
+    const t = setup('PAUSED');
+    await t.tx.init();
+    let closed = 0;
+    const internals = t.tx as unknown as {
+      peers: Map<string, unknown>;
+      onLost(pid: string): void;
+    };
+    // The peer connection failed while the card was paused (Chromium can leave the data channel "open").
+    internals.peers.set('p1', {
+      pc: { connectionState: 'failed', close: () => undefined },
+      conn: { close: () => closed++, resume: () => undefined, pause: () => undefined },
+      connId: 'c1',
+      throughput: new Throughput(),
+    });
+    internals.onLost('p1');
+    expect(closed).toBe(1);
+    expect(t.card()).toBe('paused');
+    t.tx.resume('p1');
+    expect(t.card()).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(10 * 60_000 + 1000);
+    expect(t.card()).toBe('offline');
     t.tx.dispose();
   });
 });

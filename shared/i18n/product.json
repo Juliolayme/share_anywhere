@@ -475,7 +475,7 @@
     "rx_download_named": "Tải xuống {name}",
     "pause_named": "Tạm dừng {name}",
     "resume_named": "Tiếp tục {name}",
-    "st_offline": "Mất kết nối",
+    "st_offline": "Ngoại tuyến",
     "transfer_offline": "Mất liên lạc. Người nhận có thể kết nối lại khi trang này vẫn mở"
   }
 }

@@ -104,6 +104,27 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 | Unit-test gaps | P2 | `sender-controller.test.ts` (follow a resume, window to Offline, Resume while away, refresh on reconnect); receiver tests for Retry staying paused and Pause ignored while verifying; Go test asserts `not_verified` for a partial `COMPLETED` while paused |
 | Sender window missing from the owner docs | P2 | ARCHITECTURE §7.1 and TRANSFER_PROTOCOL §6 |
 
-## Round 5
+## Round 5 — commit 7db1c5c — FAIL
+
+1 P0, 3 P1, 8 P2. Backend, web checks, 121 unit tests, protocol, i18n, tokens and markdown passed, and every local transfer spec passed on all five projects. CI 42863480743 on 7db1c5c had 11 of 12 jobs green; Firefox was red.
+
+### Resolution of round 5 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Firefox reload ICE failure recurred on HEAD (CI 42863480743) | P0 | The failure appears only in the two CI runs on commits whose receiver closed its peer connection on `pagehide` (added in 385b20e); runs before and between were green. Not reproduced locally (12 browsers × 4 reloads, with and without closing on `pagehide`). Change: the receiver no longer closes anything on `pagehide`; it mutes its connection (no frames, no reports, no reconnect) and leaves teardown to the browser, as before 385b20e. Each dial now records whether the offer was set and the gathering state. The 5 s poll in the pause spec is 30 s (ICE took about 6 s once). Report and TESTING_AND_CI record the runs; the item stays an open P1 until several consecutive Firefox CI runs are green. No retry or quarantine added |
+| Resume after the receiver left while paused showed Transferring forever and held the screen | P1 | `onLost` closes and forgets the connection whatever the card says; a channel counts as live only when the peer connection is `connected`, so Resume shows reconnecting and the 10-minute window runs. Unit test with a failed peer connection |
+| A sender tab without its files still held the screen on TR-5/TR-6 | P1 | Both pages hold for transfers only when `hasFiles`; after a refresh, an active record with no live channel shows reconnecting (window armed) |
+| Status chips differ from the Design System | P1 | Connecting grey; Transferring `ArrowUpRight`; Receiving `ArrowDownLeft`; Partial `CircleDashed`; the TR-5 Waiting chip recorded as G15 |
+| Huge ETA when throughput decays | P2 | Provisional after 10 s without bytes, and above a week; unit test |
+| `refresh()` ignored PAUSED/RESUMING missed while disconnected | P2 | Without a live channel the server record sets or clears Paused |
+| `resuming` never cleared on a failed resume | P2 | Cleared in the catch |
+| `onLost` cleared `conn` without closing it | P2 | Closed first |
+| Offline matrix cells blue | P2 | Grey, noted in G14 |
+| VI "Mất kết nối" vs the design's "Ngoại tuyến" | P2 | "Ngoại tuyến" |
+| UX_SCREEN_MAP TR-6 states lacked waiting and offline | P2 | Added |
+| Stale report numbers | P2 | Key count, CI rows, dial timings |
+
+## Round 6
 
 Pending.

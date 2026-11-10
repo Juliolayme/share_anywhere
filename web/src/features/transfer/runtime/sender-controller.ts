@@ -179,11 +179,18 @@ export class SenderController extends Observable<TxState> {
         const perFile = this.state_.files.map((f) => mine.find((t) => t.file_id === f.fileId)?.verified_bytes ?? 0);
         const server = statusFromServer(mine.map((t) => t.status));
         const removed = p.status !== 'JOINED';
-        const status: TxStatus = removed
+        let status: TxStatus = removed
           ? 'removed'
           : prev && !server?.match(/completed|failed|cancelled/)
             ? prev.status
             : (server ?? 'waiting');
+        // Without a live channel the server record is the only truth (after a reload, or events missed while
+        // the socket was down): take a pause from it, leave a pause it no longer has, and show an active record
+        // with nobody connected as reconnecting, which starts the reconnect window.
+        if (!removed && server && !this.live(p.id) && !server.match(/completed|failed|cancelled/)) {
+          if (server === 'paused') status = 'paused';
+          else if (status === 'paused' || status === 'transferring' || status === 'verifying') status = 'reconnecting';
+        }
         return {
           participantId: p.id,
           name: p.display_name,
@@ -221,8 +228,9 @@ export class SenderController extends Observable<TxState> {
   resume(pid: string): void {
     const p = this.peers.get(pid);
     this.resuming.add(pid); // until the server stops saying PAUSED for this receiver
-    this.patch(pid, { status: p?.conn ? 'transferring' : 'reconnecting' });
-    for (const t of this.openTransfers(pid)) void this.d.api.action(t.id, 'resume').catch(() => undefined);
+    this.patch(pid, { status: this.live(pid) ? 'transferring' : 'reconnecting' });
+    for (const t of this.openTransfers(pid))
+      void this.d.api.action(t.id, 'resume').catch(() => this.resuming.delete(pid));
     p?.conn?.resume();
   }
 
@@ -289,7 +297,7 @@ export class SenderController extends Observable<TxState> {
    */
   private syncWindow(pid: string): void {
     const r = this.state_.receivers.find((x) => x.participantId === pid);
-    const down = !!r && (r.status === 'reconnecting' || r.status === 'connecting') && !this.peers.get(pid)?.conn;
+    const down = !!r && (r.status === 'reconnecting' || r.status === 'connecting') && !this.live(pid);
     if (!down) return this.clearDownTimer(pid);
     if (this.downTimers.has(pid)) return;
     this.downTimers.set(
@@ -297,7 +305,7 @@ export class SenderController extends Observable<TxState> {
       setTimeout(() => {
         this.downTimers.delete(pid);
         const cur = this.state_.receivers.find((x) => x.participantId === pid);
-        if ((cur?.status === 'reconnecting' || cur?.status === 'connecting') && !this.peers.get(pid)?.conn)
+        if ((cur?.status === 'reconnecting' || cur?.status === 'connecting') && !this.live(pid))
           this.patch(pid, { status: 'offline' });
       }, RECONNECT_WINDOW_MS),
     );
@@ -344,7 +352,7 @@ export class SenderController extends Observable<TxState> {
         (server === 'transferring' || server === 'connecting' || server === 'reconnecting')
       )
         this.patch(r.participantId, {
-          status: this.peers.get(r.participantId)?.conn ? 'transferring' : 'reconnecting',
+          status: this.live(r.participantId) ? 'transferring' : 'reconnecting',
         });
       this.checkFinal();
     } else if (e.type.startsWith('PARTICIPANT_') || e.type === 'SESSION_UPDATED' || e.type === 'SOCKET_OPEN') {
@@ -482,12 +490,23 @@ export class SenderController extends Observable<TxState> {
   }
 
   private onLost(pid: string): void {
+    // The connection is gone whatever the card says (a paused receiver can leave too): close and forget it, so
+    // a later Resume does not mistake a dead channel for a live one.
+    const p = this.peers.get(pid);
+    if (p?.conn) {
+      p.conn.close();
+      p.conn = null;
+    }
     const r = this.state_.receivers.find((x) => x.participantId === pid);
     if (!r || !txActive(r.status)) return;
     this.log(pid, 'product.log_connection_lost_plain');
-    const p = this.peers.get(pid);
-    if (p) p.conn = null; // the channel is gone; the window starts now
     this.patch(pid, { status: 'reconnecting', eta: null });
+  }
+
+  /** A channel that can carry blocks right now. */
+  private live(pid: string): boolean {
+    const p = this.peers.get(pid);
+    return !!p?.conn && p.pc.connectionState === 'connected';
   }
 
   private clearDownTimer(pid: string): void {

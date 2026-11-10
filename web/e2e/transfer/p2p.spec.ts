@@ -72,7 +72,8 @@ test('transfer: pause and resume; the screen-on lock follows on both sides', asy
   const senderBefore = await wl(sender);
   await startInBrowser(rx);
   await expect(rx.locator('[data-screen="receive-progress"]')).toBeVisible();
-  await expect.poll(() => rxVerified(rx, s.id)).toBeGreaterThan(0);
+  // ICE can take several seconds on a loaded runner (seen at about 6 s in CI).
+  await expect.poll(() => rxVerified(rx, s.id), { timeout: 30_000 }).toBeGreaterThan(0);
   await expect(rx.getByTestId('screen-on-pill')).toHaveAttribute('data-state', 'on');
   expect((await wl(rx)).requests).toBeGreaterThanOrEqual(1);
   await expect.poll(async () => (await wl(sender)).requests).toBeGreaterThan(senderBefore.requests);

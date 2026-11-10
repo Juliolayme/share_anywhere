@@ -244,4 +244,17 @@ describe('Throughput', () => {
     expect(e.seconds).toBe(Math.ceil(95_000_000 / 2_500_000));
     expect(t.estimate(5_000_000, 100_000_000, true).seconds).toBeNull();
   });
+
+  it('goes back to provisional when nothing arrives for 10 s instead of showing a huge ETA', () => {
+    const t = new Throughput(0.5, 0);
+    t.sample(0, 0);
+    t.sample(10_000_000, 1000);
+    expect(t.estimate(10_000_000, 100_000_000).seconds).not.toBeNull();
+    for (let ms = 2000; ms <= 12_000; ms += 1000) t.sample(10_000_000, ms); // stalled
+    const e = t.estimate(10_000_000, 100_000_000);
+    expect(e.seconds).toBeNull();
+    expect(e.bytesPerSecond).toBe(0);
+    t.sample(12_000_000, 13_000); // bytes again
+    expect(t.estimate(12_000_000, 100_000_000).seconds).not.toBeNull();
+  });
 });

@@ -47,6 +47,7 @@ Every Share Session has a `require_approval` setting.
 The sender can turn Require approval on or off at any time during the session. The change applies to future joins only; people already joined stay joined.
 
 ### 3.0 Join window
+
 - The six-digit code, the share link, and the QR code are issued together and share one **join window of at most 10 minutes**. Inside the window, a valid code, link, or QR lets a receiver join. When the window ends, nobody else can join with them.
 - The window ends at whichever comes first: 10 minutes after it opened; the fifth receiver joining (or being requested, when approval applies); or the sender tapping **Stop accepting**.
 - **Create new code** (renew) issues a brand-new code, link token, and QR, opens a fresh 10-minute window, and immediately invalidates the previous code, link, and QR. It works whether the old window is still open or has ended, and it is unavailable while 5 receivers are in the session.
@@ -55,6 +56,7 @@ The sender can turn Require approval on or off at any time during the session. T
 - A join ticket from a code or link lookup can never outlive the window: a receiver who resolved the code at 9:58 must tap Receive before 10:00.
 
 ### 3.1 Protections that make open join acceptable
+
 - **Short join window:** at most 10 minutes per code, link, and QR, ending early when the session is full or the sender stops accepting (§3.0). There is no rotation inside the window and no automatic extension; only the sender can open a new window.
 - **Bounded exposure:** a session's code exists only while its window is open, so exposure is 10 minutes per window regardless of how long the session lasts. The previous design rotated the code every 5 minutes but kept *some* valid code for as long as the session accepted receivers, which could be hours.
 - **Lockout on guessing:** per-IP and per-device failed-lookup limits with 30-minute lockouts (§5).
@@ -67,6 +69,7 @@ The sender can turn Require approval on or off at any time during the session. T
 - **Nudges:** after the first join the sender sees "Everyone here? Stop accepting new receivers". The Send review screen shows a hint to turn on Require approval for sensitive files.
 
 ### 3.2 Residual risk of open join
+
 A distributed attacker with many IP addresses can still guess a live code before protected mode trips. A successful guess admits the attacker as a receiver, and files may start flowing before the sender notices and removes them. This is the accepted trade-off for zero-friction sharing; the mitigation for sensitive content is Require approval or sharing by link/QR only.
 
 **Model.** The code space has 10^6 values and an attacker never repeats a guess. `N` is the number of join windows open at a moment. Guessing faster than `CODE_GUESS_ALARM_PER_MIN` (default 300 failed lookups per minute, service-wide) turns on protected mode, after which code joins wait for the sender and a correct guess no longer admits anyone. Per-IP limits allow at most about 10 failed guesses per hour per address (§5), so guessing at the ceiling of 300 per minute needs about 1,800 IP addresses. The alarm also counts honest typos, so the real headroom is smaller than these figures.
@@ -82,6 +85,7 @@ A distributed attacker with many IP addresses can still guess a live code before
 Compared with the previous rotation design, the per-guess chance is the same for the same `N`, but each session's exposure is now capped at 10 minutes per window instead of lasting as long as the session accepted receivers, and `N` itself is smaller because codes no longer stay alive during long sessions. Phase 9 measures the real guess rate under the soak test and tunes `CODE_GUESS_ALARM_PER_MIN` and the per-IP limits.
 
 ## 4. Identity and tokens
+
 Implemented in Phase 1 (device identity) and Phase 5A (accounts). Flow diagrams in `docs/ARCHITECTURE.md` §3.
 
 - **Access token:** JWT, `alg: EdDSA` (Ed25519) only, any other `alg` rejected; 15-minute TTL; claims `sub` (device ID), `typ: device`, `gen` (refresh generation), `acct` (user ID, only with an account session), `dl` (device added to that account), `kid`. Signing keys come from configuration and rotate via `kid`.
@@ -95,6 +99,7 @@ Implemented in Phase 1 (device identity) and Phase 5A (accounts). Flow diagrams 
 - **Passwords:** Argon2id with parameters recorded in an ADR; no email verification in v1.
 
 ## 5. Rate limits and lockouts
+
 Implemented in Phase 1 (framework, device creation), Phase 2 (sessions, codes, joins, TURN, WebSocket), Phase 5A (accounts), Phase 5B (clipboard). Defaults; every value is configuration documented in `.env.example`.
 
 Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X-Forwarded-For` only when the request arrives from the trusted Caddy proxy. Responses are `429 rate_limited` with `Retry-After`; clients show the wait time. The MVP keeps buckets in process memory on a single backend instance; going multi-instance requires a shared store and an ADR.
@@ -118,6 +123,7 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 | Clipboard event creation | Device: 120 / min |
 
 ## 6. Session and token lifetimes
+
 Implemented in Phase 2.
 
 | Item | Lifetime |
@@ -159,10 +165,12 @@ Implemented in Phase 2.
 | Keep-screen-on abuse draining battery | Held only while a join window is open or transfers are active, released on window end, completion, pause, cancel, close, or expiry; user setting | Waiting is capped at 10 minutes per join window |
 
 ## 8. Privacy and logging
+
 - No file content, clipboard plaintext, or history plaintext in logs, metrics, or analytics.
 - Tokens, refresh secrets, capabilities, codes, emails, and verification words are redacted from logs.
 - IP addresses are used for rate limiting in memory only; logs keep a keyed hash of the IP truncated to /24 (IPv4) or /48 (IPv6) for 7 days.
 - Metrics are aggregates, never per person. No third-party analytics without an ADR.
 
 ## 9. Controls checklist
+
 Parameterized SQL only; input validation on every endpoint; strict CORS allowlist; CSP and safe headers on Web; no unsafe HTML rendering; dependency, secret, and image scanning in CI; every route enforces its declared access level (`docs/API.md` §1); IDOR tests for every resource.

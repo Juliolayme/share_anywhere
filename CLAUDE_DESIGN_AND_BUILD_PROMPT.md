@@ -3,7 +3,7 @@
 > **Purpose:** Entry point for Claude Code sessions working on Share Anywhere. Version 1 of this file was a single 1,200-line brief covering every phase at once. Version 2 splits it into standing rules, product requirements, a testing/CI strategy, and one executable file per phase, and reorders the phases so that everything verifiable on GitHub Actions comes first. Version 3 makes file sharing **guest-first**: no account is needed to send or receive, and only Clipboard Sync and other account-wide features require signing in. Version 4 makes joining **open by default** (Require approval becomes an opt-in), keeps the screen on during transfers, and moves architecture, screen map, security model, and API into their own documents. Version 5 replaces code rotation with a 10-minute join window renewed by the sender.
 >
 > **Product:** Share Anywhere — cross-platform peer-to-peer file sharing and clipboard synchronization.
-> **Repository:** https://github.com/Juliolayme/share_anywhere
+> **Repository:** <https://github.com/Juliolayme/share_anywhere>
 > **Platforms in scope:** Android app (native Kotlin) + iOS app (native Swift/SwiftUI) + Web app (React + TypeScript) for PC and mobile browsers. No desktop agent.
 > **Identity model:** guest-first. Every install gets an anonymous, server-signed device identity; accounts are optional and unlock only Clipboard Sync, the account Devices list, cloud history, and Cloud Distribution as a sender.
 > **Working language:** English in source and docs; UI shipped in English and Vietnamese.

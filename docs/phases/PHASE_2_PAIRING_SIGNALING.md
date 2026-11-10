@@ -5,6 +5,7 @@ Read: PRD §2 (guest-first, join and approval, keep screen on, abuse controls), 
 This is the **first vertical slice**, and it requires **no account**: a guest opens the Web app → anonymous device identity → create Share Session → QR / six-digit code / link → a guest receiver enters the code → **joins immediately** (open join is the default) → both see each other with verification words. No test in this phase may sign in; accounts do not exist yet.
 
 ## Scope
+
 - Migrations for `share_sessions` (`owner_device_id` required, `owner_user_id` nullable and unused until Phase 5A, `require_approval` default `false`), `session_participants` (`device_id` required, `user_id` nullable, `joined_via`), `session_blocks` (device ID and IP prefix), `shared_files`, `capability_tokens`, `session_events`, and protected-mode state, per `docs/ARCHITECTURE.md` §8.
 - Session creation with file metadata and `require_approval`; six-digit code stored as an HMAC and link/QR join tokens (≥ 128-bit, hashed), all sharing one **10-minute join window** (`join_window_state`, `join_window_ends_at`); window closes on timeout, when the fifth receiver arrives, or on Stop accepting; `renew` (Create new code) issues a new code, link, and QR, opens a fresh 10-minute window, and invalidates the old ones; joined receivers and transfers never depend on the window; `SESSION_UPDATED` on every window change; `server_time` in responses for accurate client countdowns.
 - `resolve-code` and `resolve-link` return the preview, `join_window_ends_at`, and a single-use join ticket valid 5 minutes but never past the window end (`410 join_window_expired` afterwards); `join` admits the receiver as `JOINED` in open-join sessions, or as `REQUESTED` when approval is on or when protected mode applies to a code join.
@@ -20,9 +21,11 @@ This is the **first vertical slice**, and it requires **no account**: a guest op
 - Update `docs/SECURITY_MODEL.md` (status of §3, §5, §6, §7 rows implemented here), `docs/ARCHITECTURE.md` §4 and §8, and `docs/API.md` §2.2 with any deviations.
 
 ## Out of scope
+
 File bytes over DataChannel, accounts, Android, iOS, Cloud.
 
 ## Tests to add
+
 - Backend:
   - Open join: code join and link join return `JOINED` with no sender action; signaling allowed right after.
   - Approval: with `require_approval = true`, join returns `REQUESTED`; approve → `JOINED`; reject; toggling the setting affects only later joins.
@@ -47,7 +50,9 @@ File bytes over DataChannel, accounts, Android, iOS, Cloud.
   - Mobile projects assert QR and code legibility at the project viewport (snapshot).
 
 ## CI changes
+
 `e2e-web` matrix runs the full `transfer/pairing` and `keep-awake` spec folders; coturn added to `docker-compose.ci.yml`.
 
 ## Exit gate
+
 Guest open-join vertical slice green in all receiver projects; approval, protected-mode, Remove/Block, and race tests green; all rate-limit and lifetime tests green; no signaling or file metadata reachable before `JOINED` (negative test); keep-awake tests green; report written.

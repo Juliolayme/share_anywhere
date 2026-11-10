@@ -3,10 +3,13 @@
 This file is loaded into every Claude Code session in this repository. It holds the rules that never change between phases. Product requirements live in `docs/PRODUCT_REQUIREMENTS.md`; the phase you are executing lives in `docs/phases/`; testing and CI rules live in `docs/TESTING_AND_CI.md`.
 
 **Read in this order at the start of every session:**
+
 1. This file.
 2. `docs/phases/README.md` to find the current phase and its exit gate.
 3. The phase file you were asked to execute.
 4. Only the sections of `docs/PRODUCT_REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/UX_SCREEN_MAP.md`, `docs/SECURITY_MODEL.md`, and `docs/API.md` that the phase references.
+
+**UI source of truth: the Claude Design handoff in `design/claude-design/`** (file names kept exactly as exported): `Design System.dc.html` (tokens and components), `Screen Map.dc.html` (screen IDs), `i18n-strings.json` (EN/VI strings), `Handoff Checklist.dc.html`, `Brand.dc.html`, `Logo.dc.html`, `Web App.dc.html`, `Android App.dc.html`, `iOS App.dc.html`, `support.js`. Web, Android, and iOS UI must match these files. `shared/design/tokens.json` must carry the Design System values, platform string catalogs must come from `i18n-strings.json`, and screen IDs in code and tests must use the Screen Map IDs. If a design file contradicts a product decision in the PRD (guest-first, open join, 10-minute join window, keep screen on), the PRD wins and the conflict is recorded in `docs/design/DESIGN_DEVIATIONS.md`. Until the folder exists, design-dependent work stays provisional and must be reconciled when it lands.
 
 Each fact lives in one document. Product decisions: PRD. Components, flows, data model, keep-screen-on lifecycle: ARCHITECTURE. Screens: UX_SCREEN_MAP. Join modes, tokens, lifetimes, rate limits, threat model: SECURITY_MODEL. Endpoints and access levels: API. When you change one, update the owner document and keep the others pointing to it.
 
@@ -74,6 +77,7 @@ share_anywhere/
 ├── .env.example
 ├── .github/workflows/             # ci.yml, nightly.yml, android-emulator.yml
 ├── docker-compose.yml             # postgres, coturn, caddy, backend, web (dev)
+├── design/claude-design/          # Claude Design handoff: UI source of truth (do not edit; re-import to update)
 ├── docs/
 │   ├── PRODUCT_REQUIREMENTS.md
 │   ├── TESTING_AND_CI.md

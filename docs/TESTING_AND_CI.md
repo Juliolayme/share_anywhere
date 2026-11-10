@@ -86,6 +86,7 @@ projects: [
 ```
 
 Conventions:
+
 - Clipboard permissions can only be granted in Chromium. Firefox and WebKit projects therefore exercise the **permission-denied / gesture-required** paths, which is exactly the behavior the product must handle. Tests use `test.skip(browserName !== 'chromium')` only for the granted path and must have a mirrored denied-path test.
 - WebRTC tests use two `browser.newContext()` instances in one test (sender and receiver). Chromium launches with `--use-fake-ui-for-media-stream` not needed (no media); no flags required for DataChannel.
 - Forced relay tests set `window.__SA_TEST_ICE_POLICY = 'relay'` via `addInitScript`, which the transfer engine reads only when `import.meta.env.MODE === 'test'`.

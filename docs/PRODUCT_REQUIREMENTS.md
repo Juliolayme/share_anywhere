@@ -8,7 +8,8 @@ This document is the source of truth for **what** to build and the product decis
 | Every screen, destinations, Guest vs Signed in variants | `docs/UX_SCREEN_MAP.md` |
 | Join modes, tokens, lifetimes, rate limits, threat model, privacy | `docs/SECURITY_MODEL.md` |
 | Endpoints, access levels, errors, WebSocket events | `docs/API.md` |
- Sections are numbered so phase files can reference them (for example "PRD §6.4").
+
+Sections are numbered so phase files can reference them (for example "PRD §6.4").
 
 ---
 
@@ -17,6 +18,7 @@ This document is the source of truth for **what** to build and the product decis
 Share Anywhere lets people transfer large files between devices and synchronize text clipboard history across their own devices, without requiring every device to be on the same local network.
 
 Core value:
+
 - **Guest-first file sharing:** open the app or the website and send or receive immediately. No account, no sign-in wall.
 - Share large files (4–20 GB target) across Android, iOS, and Web.
 - Join a session with QR code, six-digit code, or HTTPS share link.
@@ -78,6 +80,7 @@ Decisions marked **(v2)** were open in the first brief and are now fixed. Decisi
 Direction: **Concept 3 — Universal Transfer**. No logo asset exists in the repository; do not search external sites for one. Create an original logo as part of Phase 0.
 
 Creative guidance:
+
 - a clear two-way transfer/exchange idea;
 - a modern rounded symbol suggesting connection across devices and web;
 - blue and green primary colors;
@@ -88,6 +91,7 @@ Creative guidance:
 Deliverables: primary lockup (symbol + wordmark), standalone symbol, Android adaptive icon layers, iOS `AppIcon.appiconset` (1024 px source, light/dark/tinted variants for iOS 18), Web favicon/app icons, light/dark variants, monochrome variants, SVG sources plus raster exports, and a short brand usage guide (`docs/DESIGN_SYSTEM.md` §Brand). Assets live in `web/public/brand/`, Android `res/`, and `ios/ShareAnywhere/Assets.xcassets`, and share one vector source. Add a brand preview page at `/brand` in the Web app (dev builds only).
 
 Palette tokens:
+
 - Primary blue `#0878E8`, primary green `#16C75A`, navy `#102A56`, white `#FFFFFF`
 - Light background `#F7FAFD`; dark surfaces deep navy/blue-gray, not pure black
 - Accessible semantic tokens for success/warning/error/info
@@ -109,6 +113,7 @@ Every screen, its destination, entry points, and what guests and signed-in users
 Every screen includes loading, empty, populated, error, offline, and permission-denied states where applicable. Screen-by-screen content is in `docs/UX_SCREEN_MAP.md`; these are the rules the screens must follow.
 
 ### 5.1 Onboarding (guest-first)
+
 - Welcome is a single screen with one primary action, **Get started**, which opens Transfer home. An optional "Already have an account? Sign in" link is allowed but never required.
 - The anonymous device identity is created silently in the background. If creation fails, Transfer home still opens with an inline retry; local features keep working.
 - The device display name is auto-generated (platform model + two random words) and editable later. It is shown to the other side when joining.
@@ -116,12 +121,15 @@ Every screen includes loading, empty, populated, error, offline, and permission-
 - No blocking first-run checklist.
 
 ### 5.1b Account screens
+
 Sign in, Create account, Reset password, the after-sign-in choices ("Add this device to your account" on, "Copy this device's transfer history" off), Account Data Key setup with recovery phrase, device pairing or recovery phrase entry, and Sign out with keep/clear local history. Entry points are listed in `docs/UX_SCREEN_MAP.md` §9.
 
 ### 5.2 Transfer home
+
 Send files and Receive files are the two primary actions, identical for guests and signed-in users. Show active transfers, recent transfers from local history, transfer strategy status, and guidance without overwhelming new users.
 
 ### 5.3 Send
+
 - Works without an account.
 - Creating a session produces a QR code, a six-digit code, and an HTTPS share link that share one 10-minute join window, plus the remaining receiver slots. The session screen counts down from **10:00**. When the window ends it shows **"Code expired — Create new code"** (Vietnamese: "Mã đã hết hạn — Tạo mã mới"), hides the old code, link, and QR, and offers **Create new code**, which shows a new code and restarts the countdown. When the window ended because 5 receivers are in, the screen says "Session full" instead and Create new code is unavailable until a slot frees.
 - Ending the join window never interrupts receivers who already joined.
@@ -133,6 +141,7 @@ Send files and Receive files are the two primary actions, identical for guests a
 - The keep-screen-on status row is visible while the join window is open and during transfers.
 
 ### 5.4 Receive
+
 - Works without an account. Entry by QR scan (native), six-digit code, or link. A first-time visitor arriving by link skips Welcome.
 - The join preview shows the sender's display name and badge and the file names, sizes, and count, nothing more.
 - Tapping **Receive** joins the session. With open join the transfer starts right away (on Web after the save target is chosen). With approval on, or in protected mode for code joins, the receiver waits for the sender and sees the same verification words.
@@ -142,23 +151,29 @@ Send files and Receive files are the two primary actions, identical for guests a
 - The keep-screen-on status row is visible while waiting and receiving; iOS adds "Locking your iPhone pauses the transfer".
 
 ### 5.5 Multi-receiver dashboard
+
 One transfer card per file–receiver pair with progress, speed, ETA, route, retry, and error; aggregate progress; pause, resume, Remove, and Block per receiver; stop all; close session. A slow or disconnected receiver never blocks others. State machines are in `docs/ARCHITECTURE.md` §4.5.
 
 ### 5.6 History
+
 Local on the device for everyone; optional encrypted cloud sync for signed-in users. Search and filter by date, peer device, status, file name; distinguish transferred bytes from file size for partial transfers; delete entries; clear all.
 
 ### 5.7 Devices
+
 Guests see only "This device" (rename, reset identity) and an account-required intro. Signed-in users with the device added manage all account devices; revoking a device stops its access to future clipboard and history events and rotates the Account Data Key (§7.5).
 
 ### 5.8 Settings
+
 Guests see a "Guest" header with Sign in and Create account. Available to everyone: device name, theme, language, notifications, transfer strategy (Auto), **Keep screen on during transfers** (default on), data and battery, local history retention and clear, privacy, about. Cloud Distribution, history sync, clipboard settings, and device management are account-only and shown disabled with a Sign in action for guests.
 
 ### 5.9 Clipboard
+
 - Guests see an informational intro (what it does, end-to-end encrypted, needs an account) with Sign in and Create account. **No** clipboard reads, permission prompts, or clipboard API calls happen for guests.
 - Signed in but device not added: "Add this device to use Clipboard Sync". Device added without the key: pairing or recovery phrase first.
 - When ready: history, Sync Clipboard (Web button, Android action, iOS `UIPasteControl` with a fallback button), capture status, item detail with Copy, search, clear history. UX always states whether capture is automatic, best-effort, or manual.
 
 ### 5.10 Keep screen on
+
 - Applies to sending, receiving, waiting for receivers while the join window is open (at most 10 minutes per window), and waiting for approval; released when transfers complete, fail, pause, or are cancelled, when the join window ends with no transfer in progress, when the session ends, or when the receiver leaves or is removed.
 - Controlled by **Keep screen on during transfers** (default on, stored per device).
 - Every transfer screen shows one status: on, off by setting, not supported (Web), or refused (Web), with platform hints. Mechanics per platform are in `docs/ARCHITECTURE.md` §7.
@@ -167,18 +182,22 @@ Guests see a "Guest" header with Sign in and Create account. Available to everyo
 ## 6. File transfer
 
 ### 6.1 Architecture
+
 Go control plane: REST for device identity, accounts, sessions, participants, files, transfers; WebSocket for signaling and control events; PostgreSQL for durable metadata; coturn for TURN. Redis is not used in MVP. Clients own the transfer engine (chunking, hashing, flow control, route selection, ETA).
 
 ### 6.2 Transfer modes
+
 - **Direct P2P:** one PeerConnection + DataChannel per receiver; sender uploads one stream per receiver.
 - **TURN relay:** per-receiver relayed stream; TURN stores nothing and does not reduce sender upload.
 - **Cloud Distribution:** optional store-and-forward via S3-compatible storage, **signed-in senders only**, consented, cost-estimated, client-side encrypted with a per-file key shared to joined receivers over signaling, TTL and budget enforced, deleted after completion/expiry.
 - **P2P cascade:** out of scope.
 
 ### 6.3 Route strategy (client-side, per receiver)
+
 Candidate order: Direct P2P → TURN UDP → TURN TCP/TLS 443 → Cloud (if the sender is signed in, has enabled and consented, and is within budget) → queue/retry. For guest senders the Cloud step is skipped. This is a policy, not a claim that the first option is always fastest; compare observed throughput, reliability, constraints, and cost. Use hysteresis and cooldown; switch only on failure or sustained material improvement. The client reports the chosen route to the server for metrics.
 
 ### 6.4 Large-file streaming
+
 - Never load whole files into memory; stream with block-based I/O.
 - Block size 4 MiB (configurable, benchmarked). Transport frame 64 KiB initially; `bufferedAmountLowThreshold` backpressure; validate real DataChannel message limits per browser pair.
 - Bounded buffers and per-peer flow control; per-receiver ACK and retry state.
@@ -191,12 +210,15 @@ Candidate order: Direct P2P → TURN UDP → TURN TCP/TLS 443 → Cloud (if the 
 Block count sanity: 20 GB / 4 MiB = 5120 blocks → 640-byte bitmap.
 
 ### 6.5 Metrics and ETA
+
 Measure at clients: candidate pair type, connection state, RTT, effective throughput, loss/retransmit indicators, `bufferedAmount`, ACK rate, verified bytes. Smooth with EWMA. ETA = remaining verified bytes / effective throughput, provisional at first, hidden during disconnect/negotiation; group ETA follows the slowest active receiver. No large pre-transfer speed tests.
 
 ### 6.6 Cloud cost and consent
+
 Cloud Distribution requires a signed-in sender (§2). The server rejects `POST /v1/files/{id}/distribute` from a token without `acct` with `403 cloud_requires_account`. Before Cloud Distribution: show estimated temporary storage, receiver egress, retention, estimated cost or "cost unknown"; require explicit consent; enforce budget cap; on exhaustion pause and offer alternatives. Provider pricing is configuration, never hard-coded facts.
 
 ### 6.7 TURN credentials
+
 Guests may use TURN, otherwise many guests behind symmetric NAT could not transfer at all. Credentials are time-limited coturn HMAC credentials for the sender and joined receivers of an active session, with tighter TTL, issue limits, and relay byte caps for guests. Mechanics in `docs/ARCHITECTURE.md` §6; limits in `docs/SECURITY_MODEL.md` §5 and §6.
 
 ### 6.8 Browser capability matrix (Web client)
@@ -217,18 +239,23 @@ The client runs capability detection before starting and shows the honest outcom
 ## 7. Clipboard Sync
 
 ### 7.1 Product behavior
+
 PC uses Share Anywhere Web only. Web: automatic best-effort capture when permitted + always-available manual Sync. Android: capture while foreground and allowed; manual Sync opens the app and reads only when permitted; no background reading; no Foreground Service workaround; optional IME is out of v1 scope. Received items appear in history; user taps Copy to write to the system clipboard.
 
 ### 7.2 Browser constraints
+
 Use `navigator.clipboard.readText()` / `writeText()`; `read()` only for a later image feature. HTTPS required; feature-detect; handle permission denial, missing user activation, insecure context, unsupported browser; call from valid user gestures; no aggressive polling; opportunistic checks on focus/visibility only where policy permits; never spam permission prompts; the page `copy` event captures only in-page copies. Fallback copy: "Click Sync Clipboard to read the current clipboard." Never claim a website can observe clipboard changes from other apps while inactive.
 
 ### 7.3 Android constraints
+
 `ClipboardManager` with lifecycle-aware `OnPrimaryClipChangedListener` registered only while an Activity is resumed; unregister on stop; respect sensitive clip flags (`EXTRA_IS_SENSITIVE`); WorkManager for deferrable network sync only; notification action opens an Activity for user-driven sync. Android 10+ restricts background clipboard access; state this in UI.
 
 ### 7.3b iOS constraints
+
 `UIPasteboard.general` is readable only while the app is foreground; iOS 16+ shows a system paste banner on programmatic reads not triggered by `UIPasteControl`. Observe `UIPasteboard.changedNotification` and `changeCount` while the scene is active; never poll in background. Use `detectPatterns(for:)` / `detectedPatterns` to classify (URL, number, probable secret shape) before reading content. Honor Universal Clipboard content the same as local content. There is no background clipboard access; state this in UI.
 
 ### 7.4 Protocol and data model
+
 Each capture is an immutable event: `event_id (UUID), user_id, origin_device_id, event_type (TEXT), mime_type, ciphertext, nonce, key_version, payload_size, created_at, expires_at, seq`.
 
 Ordering **(v2 resolution of the sequence-ordering caveat):** `seq` is a per-user monotonically increasing integer assigned inside the insert transaction while holding `pg_advisory_xact_lock(hashtext(user_id))`. This serializes inserts per user so `seq` order equals commit order, and a cursor can safely be `last_seq`. Idempotency on `event_id`. Per-device cursor in `clipboard_device_cursors`. Offline retries must not duplicate events.
@@ -237,6 +264,7 @@ REST: `POST /v1/clipboard/events`, `GET /v1/clipboard/events?cursor=`, `GET /v1/
 WS: `CLIPBOARD_EVENT_CREATED, CLIPBOARD_EVENT_DELETED, CLIPBOARD_HISTORY_CLEARED, CLIPBOARD_SETTINGS_UPDATED, DEVICE_CONNECTED, DEVICE_DISCONNECTED`. WS carries metadata only; ciphertext is fetched over HTTPS.
 
 ### 7.5 Encryption and keys
+
 - Account Data Key (ADK): 256-bit, generated client-side on the first device at account creation. Versioned (`key_version`). Subkeys via HKDF-SHA256: `clipboard-v1` for clipboard items, `history-v1` for cloud history entries.
 - Per item: AES-256-GCM, random 96-bit nonce, AAD = `event_id || key_version` (clipboard) or `entry_id || key_version` (history).
 - Guests have no ADK and no clipboard or cloud history; nothing is encrypted with device identity keys.
@@ -248,6 +276,7 @@ WS: `CLIPBOARD_EVENT_CREATED, CLIPBOARD_EVENT_DELETED, CLIPBOARD_HISTORY_CLEARED
 - Never put plaintext keys in localStorage, source, analytics, or logs. If all devices and the phrase are lost, old history is unrecoverable; say so in UI.
 
 ### 7.6 Safety defaults
+
 Text only; ≤ 256 KB enforced client and server; cap 100 items; 7-day retention; skip platform-flagged sensitive clips; best-effort secret heuristics (OTP-like, token-like) with an honest disclaimer; no plaintext logs; no auto remote write; user can pause sync and clear history.
 
 ## 8. Identity, data model, API, and abuse controls
@@ -282,6 +311,7 @@ Keyboard navigation; screen reader labels and landmarks (VoiceOver labels and tr
 ## 11. Security requirements
 
 Security is a product feature. The controls, join-mode analysis, lifetimes, rate limits, threat model, residual risks, and privacy rules are in `docs/SECURITY_MODEL.md`. Requirements that product work must respect:
+
 - File sharing never requires an account; account-only features are exactly those in §2.
 - Open join is the default; its protections (10-minute join window, lockouts, protected mode, five-receiver cap, verification words, Remove/Block) are mandatory, not optional hardening.
 - Every route enforces its declared access level (`docs/API.md` §1).

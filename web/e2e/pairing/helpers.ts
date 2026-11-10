@@ -71,6 +71,8 @@ const escapeRe = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * runs 42802588370 and 42805131808). So the commit wait is bounded at 10 s, and on that timeout the
  * navigation is issued once more, with an annotation on the test so it shows in the report. Nothing is
  * swallowed: if the second attempt fails, or the URL is not the target afterwards, the test fails.
+ * A retried `/j/<token>` resolves the link twice, so an unknown or expired link counts two failed lookups
+ * against the lockout and protected-mode counters (harmless at the test thresholds).
  */
 export async function open(page: Page, path: string) {
   const attempt = () => page.goto(path, { waitUntil: 'commit', timeout: 10_000 });

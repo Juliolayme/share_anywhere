@@ -54,7 +54,7 @@ function utilityLike(candidate: string): boolean {
 /** Class-like candidates in a source file that Tailwind generates no CSS for. */
 export function undefinedClasses(src: string): string[] {
   const candidates = [...new Set(extract(src))].filter(
-    (c) => /^[!a-z0-9[-][\w\-:/.[\]#%(),&>_=+*@]*$/i.test(c) && !/:$/.test(c) && utilityLike(c),
+    (c) => /^[!a-z0-9[-][\w\-:/.[\]#%(),&>_=+*@!]*$/i.test(c) && !/:$/.test(c) && utilityLike(c),
   );
   return ctx
     .getClassOrder(candidates)
@@ -80,7 +80,7 @@ describe('Tailwind utilities', () => {
       export const A = () => (
         <div className="flex gap-5 h-px bg-warning-soft/40 md:flex sm:block lg:hidden rounded shadow text-sm
           gap-4 p-[20px] rounded-lg shadow-e1 rail:flex sidebar:hidden bg-send-soft text-caption hover:bg-surface-2
-          [&>svg]:h-5 [&>svg]:h-[20px]" data-x={\`gap-\${delay}\`} />
+          [&>svg]:h-5 [&>svg]:h-[20px] md:!p-5 hover:!gap-4" data-x={\`gap-\${delay}\`} />
       );`;
     expect(undefinedClasses(src).sort()).toEqual(
       [
@@ -89,6 +89,7 @@ describe('Tailwind utilities', () => {
         'gap-5',
         'h-px',
         'lg:hidden',
+        'md:!p-5',
         'md:flex',
         'rounded',
         'shadow',

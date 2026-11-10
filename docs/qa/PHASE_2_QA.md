@@ -77,6 +77,18 @@ No P0, one P1, four P2. CI run 42805131808 on b14a592: 12/12 jobs green, Firefox
 | receive-wait sentence: the design bolds the receiver's own device; paragraph width; security words alignment | P2 | Sentence is now "{name} needs to approve **{device}** …" (EN and VI) with this device's name in bold, `max-w-[400px]` and line-height 1.55; security words are centered |
 | Mobile session: QR left-aligned | P2 | QR is centered below the 760 px breakpoint |
 
-## Round 5
+## Round 5 — commit d4f60b2 — PASS
 
-Pending.
+No P0, no P1, five P2. Every round-4 resolution held up, including a 2 px width scan from 320 to 1920 px in EN and VI (copy button always 44 × 44, row inside the card, no overlap) and a negative control showing the spec fails without `flex-none`. CI run 42807469788 on d4f60b2: 12/12 jobs green; Firefox 0 flaky, with one `navigation-retry` annotation.
+
+### Resolution of round 5 findings (after the PASS, same process)
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| QR left-aligned when the code column stacks below it on desktop (872–1244 px) | P2 | The wrapping row is `justify-center`, as in the design; the layout spec asserts the QR is centered whenever it is stacked (now also at 320, 1000 and 1200 px) |
+| Layout spec missed digits painted under the copy button | P2 | Spec asserts the right edge of the painted digits (Range client rects) is at or left of the button's left edge |
+| Firefox stall hidden from the flaky count | P2 | Backlog target is now zero flaky tests and zero `navigation-retry` annotations; helper comment and TESTING_AND_CI note the double lookup on a retried `/j/` link |
+| Class guard skipped `!` after a variant (`md:!p-5`) | P2 | `!` allowed anywhere in a candidate; `md:!p-5` added to the self-test |
+| "·" alone on its own line at 320 px in the countdown row | P2 | Separator and timer kept together (`whitespace-nowrap`) |
+
+Phase 2 QA verdict: PASS

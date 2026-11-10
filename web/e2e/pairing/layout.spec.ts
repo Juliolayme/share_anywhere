@@ -8,7 +8,7 @@ test('session: the code is readable and the copy button keeps its 44 px target a
   const sender = await senderPage();
   await createSession(sender);
   const code = sender.getByTestId('session-code');
-  for (const width of [360, 390, 760, 1060, 1099, 1260, 1280, 1300, 1320, 1440, 1920]) {
+  for (const width of [320, 360, 390, 760, 1000, 1060, 1099, 1200, 1260, 1280, 1300, 1320, 1440, 1920]) {
     await sender.setViewportSize({ width, height: 900 });
     const m = await code.evaluate((el) => {
       const cs = getComputedStyle(el);
@@ -19,7 +19,17 @@ test('session: the code is readable and the copy button keeps its 44 px target a
       const card = el.closest('section');
       const pad = card ? parseFloat(getComputedStyle(card).paddingRight) : 0;
       const cardRight = (card?.getBoundingClientRect().right ?? 0) - pad;
+      // Right edge of the painted digits (not the span box, which can be narrower than its text).
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const textRight = Math.max(...Array.from(range.getClientRects(), (r) => r.right));
+      const qr = el.closest('section')?.querySelector('svg[role="img"]')?.getBoundingClientRect();
+      const qrRow = el.closest('section')?.querySelector('svg[role="img"]')?.closest('div')?.getBoundingClientRect();
       return {
+        textRight,
+        buttonLeft: button?.left ?? 0,
+        qrStacked: !!qr && !!button && qr.bottom <= el.getBoundingClientRect().top,
+        qrOffset: qr && qrRow ? Math.abs(qr.left + qr.width / 2 - (qrRow.left + qrRow.width / 2)) : 0,
         font,
         line,
         lines: Math.round(el.getBoundingClientRect().height / line),
@@ -37,6 +47,8 @@ test('session: the code is readable and the copy button keeps its 44 px target a
     expect(m.bw, `copy button width at ${width}px`).toBeGreaterThanOrEqual(44);
     expect(m.bh, `copy button height at ${width}px`).toBeGreaterThanOrEqual(44);
     expect(m.rowRight, `code row inside the card at ${width}px`).toBeLessThanOrEqual(m.cardRight + 0.5);
+    expect(m.textRight, `digits never under the copy button at ${width}px`).toBeLessThanOrEqual(m.buttonLeft + 0.5);
+    if (m.qrStacked) expect(m.qrOffset, `QR centered when stacked at ${width}px`).toBeLessThanOrEqual(1);
     const overflow = await sender.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, `no horizontal scroll at ${width}px`).toBeLessThanOrEqual(0);
   }

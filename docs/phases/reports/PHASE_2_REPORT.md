@@ -121,7 +121,7 @@ After the QA fixes the full suite passes locally on chromium-desktop and android
 | `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 59 unit tests (Tailwind-backed class guard, expiry announcer, keep-awake controller, countdown with server offset, expired, full and renew states, words and badges) |
 | `pnpm --filter web build` | Main JS 104.6 kB gzip (budget 120 kB) |
 | `playwright test --project=chromium-desktop --project=android-chrome` | 58 passed, 4 skipped (mobile-only specs on desktop) |
-| CI | Run 42797239669 (49efca8) and run 42800623094 (8356a0a): all 12 jobs green, including `e2e-web` on all five projects and the coturn allocation test in `compose` (Firefox needed retries on 8356a0a). Later runs in `docs/qa/PHASE_2_QA.md` |
+| CI | Run 42807469788 (d4f60b2, QA PASS): all 12 jobs green, Firefox 0 flaky with 1 `navigation-retry`. Earlier: run 42797239669 (49efca8) and run 42800623094 (8356a0a): all 12 jobs green, including `e2e-web` on all five projects and the coturn allocation test in `compose` (Firefox needed retries on 8356a0a). Later runs in `docs/qa/PHASE_2_QA.md` |
 
 ## 5. Environment variables and external services
 
@@ -139,7 +139,7 @@ New: `SA_PUBLIC_URL`, `SA_METRICS_ADDR` (internal metrics listener), `SA_TURN_SE
 | Priority | Item |
 |---|---|
 | P0 | Phase 3: DataChannel transfers, save location, dashboard, history entries |
-| P1 | Access matrix generated per level including expired and revoked tokens (Phase 1 backlog P2-5); root-cause the Firefox driver's missing navigation events; the `open()` helper only mitigates them (retry once, annotated). Target: zero flaky Firefox tests over several CI runs |
+| P1 | Access matrix generated per level including expired and revoked tokens (Phase 1 backlog P2-5); root-cause the Firefox driver's missing navigation events; the `open()` helper only mitigates them (retry once, annotated). Target: zero flaky tests and zero `navigation-retry` annotations in Firefox over several CI runs (run 42807469788 on d4f60b2: 0 flaky, 1 annotation) |
 | P2 | Sender notice for auto-declined receivers (F13); mobile visual snapshot baselines (Phase 3); lazy-load the session screens |
 
 ## 8. Local run
@@ -158,4 +158,5 @@ Same as Phase 1: `docker compose up --build`, then open `https://localhost:8443`
 | 8356a0a | QA round 1 fixes |
 | c6e1fd2 | QA round 2 fixes and QA record |
 | b14a592 | QA round 3 fixes and QA record |
-| (this commit) | QA round 4 fixes and QA record |
+| d4f60b2 | QA round 4 fixes and QA record |
+| (this commit) | QA round 5 PASS; P2 polish and QA record |

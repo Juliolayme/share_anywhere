@@ -221,10 +221,8 @@ export default function SessionPage() {
           <h2 className="sr-only">{t('web.share_h')}</h2>
           {windowOpen && view.code && view.join_url ? (
             <>
-              <div className="flex flex-wrap items-center gap-[18px]">
-                <div className="flex w-full justify-center rail:w-auto">
-                  <QRCode value={view.join_url} label={t('product.qr_aria')} />
-                </div>
+              <div className="flex flex-wrap items-center justify-center gap-[18px]">
+                <QRCode value={view.join_url} label={t('product.qr_aria')} />
                 <div className="flex min-w-[180px] flex-1 flex-col gap-2">
                   <span className="text-caption font-semibold text-fg-2">{t('web.code')}</span>
                   <div className="flex items-center gap-2">
@@ -276,15 +274,18 @@ export default function SessionPage() {
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-surface-2 px-3 py-[10px] text-caption text-fg-2">
                 <span className="inline-flex items-center gap-2">
                   <Clock aria-hidden size={14} />
-                  {t('common.cx_valid')} ·{' '}
-                  <b
-                    data-testid="countdown"
-                    className={`font-mono ${left <= 60 ? 'text-warning-ink' : 'text-fg'}`}
-                    role="timer"
-                    aria-live="off"
-                  >
-                    {mmss(left)}
-                  </b>
+                  {t('common.cx_valid')}
+                  <span className="whitespace-nowrap">
+                    ·{' '}
+                    <b
+                      data-testid="countdown"
+                      className={`font-mono ${left <= 60 ? 'text-warning-ink' : 'text-fg'}`}
+                      role="timer"
+                      aria-live="off"
+                    >
+                      {mmss(left)}
+                    </b>
+                  </span>
                   <ExpiryAnnouncer left={left} />
                 </span>
                 <Button

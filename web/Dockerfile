@@ -6,6 +6,7 @@ RUN npm install -g pnpm@10.28.0
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY web/package.json web/package.json
 RUN pnpm install --frozen-lockfile --filter @share-anywhere/web...
+COPY shared/i18n shared/i18n
 COPY web web
 RUN pnpm --filter @share-anywhere/web build
 

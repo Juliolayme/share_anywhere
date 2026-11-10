@@ -56,7 +56,7 @@ flowchart LR
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
 | RX-1 | Receive entry | `/receive` | Scan QR (camera permission asked just in time; simulator and desktop show code entry), enter code | Same | Scan / Enter code |
-| RX-2 | Code entry | `/join` | Six digits, validation, lockout message with wait time, "This code has expired. Ask the sender for a new code." | Same | Continue |
+| RX-2 | Code entry | `/join` | Six digits, validation, lockout message with wait time, "Code expired — ask the sender for a new code" (`common.cx_rx`) | Same | Continue |
 | RX-3 | Web join page | `/join/:token` | Opens the app when installed and verified; otherwise the Web flow | Same | — |
 | RX-4 | Join preview | `/join/preview` | Sender display name, Guest/Signed in badge, file names, sizes, count; browser capability check (Web); "Join within m:ss" in the last minute of the join window; expired message if the window ends before Receive; security words shown after joining | Same | Receive (Web: choose save target first) |
 | RX-5 | Waiting for approval | `/join/waiting` | Only when approval is on or protected mode applies; security words; keep-open banner and screen-on pill | Same | Cancel |
@@ -68,7 +68,7 @@ flowchart LR
 
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
-| HI-1 | History list | `/history` | Local entries only; banner "Stored on this device only. Sign in to sync history across your devices." with Sign in; search and filters | Sync off: banner "Turn on history sync". Sync on: merged local and synced entries with origin device | Search / Open entry |
+| HI-1 | History list | `/history` | Local entries only; banner "Stored only on this device" (`common.local`), and once accounts exist a Sign in action to sync history with Sign in; search and filters | Sync off: banner "Turn on history sync". Sync on: merged local and synced entries with origin device | Search / Open entry |
 | HI-2 | History detail | `/history/:entryId` | Direction, peer, files, transferred bytes vs size, result | Same, plus origin device | Delete entry |
 
 ## 7. Devices
@@ -118,7 +118,7 @@ Entry points: header chip and ST-1 Sign in, Clipboard intro (CB-1), Devices intr
 | Welcome | Route shown once | Shown once before the start destination | Full-screen cover shown once |
 | Account screens | Routes | Nested graph | Sheet |
 | Clipboard tab before Phase 5B | Hidden by the `clipboard` flag | Hidden | Hidden |
-| Screen-on pill | Wake Lock states, including unsupported and refused | Hint "You can turn the screen off; the transfer continues" | Hint "Locking your iPhone pauses the transfer" |
+| Screen-on pill | Wake Lock states, including unsupported and refused | Hint `product.hint_android_screen_off` | Hint `product.hint_ios_lock` |
 | QR scan | Not offered; code entry and links cover Web | CameraX | AVFoundation + Vision (real device only) |
 
 ## 12. Design screen IDs, components, and state models
@@ -142,7 +142,7 @@ Web IDs come from `Web App.dc.html`, Android IDs from `Android App.dc.html`, iOS
 | RX-2 Code entry | `receive` | `receive-code` | `receive-code` | OTP six-digit input | default, error not found, code expired, locked out |
 | RX-3 Web join page | `receive-preview` from a link | App Link | Universal Link | — | — |
 | RX-4 Join preview | `receive-preview` | `rx-preview` | `rx-preview` | Sender card, File row list, total | default, join window under one minute, expired |
-| RX-5 Waiting for approval | `receive-wait` | `rx-wait` | `rx-wait` | Security words, Keep-open banner | `receiveOutcome`: `approved`, `rejected`, `expired` |
+| RX-5 Waiting for approval | `receive-wait` | `rx-wait` | `rx-wait` | Security words, Keep-open banner, Screen-on pill | `receiveOutcome`: `approved`, `rejected`, `expired` |
 | RX-5b Save location | `receive-save` | `rx-save` | `rx-preview` (Save to Files) | Folder picker, large-file warning | default, `rxIssue`: `storage` |
 | RX-6 Receiving | `receive-progress` | `rx-progress` | `rx-progress` | Progress, Status chip, Keep-open banner, Screen-on pill | receiving, reconnecting, verifying, paused in background (iOS) |
 | RX-7 Receive result | `receive-done` | `rx-done` | `rx-done` | Status chip, Open / Share / Show in folder | completed, `rxIssue`: `checksum`, `partial` |

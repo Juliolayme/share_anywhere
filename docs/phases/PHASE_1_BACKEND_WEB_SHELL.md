@@ -14,7 +14,7 @@ No accounts in this phase. Everything built here must work for a user who never 
   - First visit: `/welcome` with one primary action **Start sharing** → Transfer home. Anonymous identity is created in the background; failure shows an inline retry on Transfer home without blocking navigation.
   - Navigation: Transfer, History, Devices, Settings. The Clipboard tab is hidden behind the `clipboard` flag (`CLAUDE.md` §8b).
   - Transfer home with Send and Receive actions. Session creation and joining arrive in Phase 2, so in this phase Send opens the real file picker and review screen and Receive opens the real code-entry screen with validation; the Create session and Join buttons stay hidden behind a `sharing` flag until Phase 2 turns it on.
-  - History backed by a real IndexedDB store (`web/src/features/history/store`) with an empty state and a "Stored on this device only" banner (without the Sign in action while `accounts` is off).
+  - History backed by a real IndexedDB store (`web/src/features/history/store`) with an empty state and a "Stored only on this device" banner (`common.local`) (without the Sign in action while `accounts` is off).
   - Devices shows the "This device" card with rename and reset identity.
   - Settings shows the "Guest" identity header (no Sign in button while `accounts` is off), device name, theme system/light/dark, language EN/VI, local history retention and Clear history, privacy, about.
   - Access token in memory; refresh via the `sa_device` cookie and `X-SA-Refresh` header; silent refresh before expiry; 429 handling with `Retry-After` messaging.

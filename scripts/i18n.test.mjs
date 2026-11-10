@@ -58,3 +58,22 @@ test('catalogs include every locale table, the handoff microcopy, and the produc
   assert.equal(en['product.block'], 'Block');
   assert.equal(en['product.join_within'], 'Join within {time}');
 });
+
+test('every catalog key named in the PRD section 9 microcopy table exists in EN and VI', () => {
+  const prd = readFileSync(new URL('../docs/PRODUCT_REQUIREMENTS.md', import.meta.url), 'utf8');
+  const section = prd.slice(prd.indexOf('Microcopy lives in the catalogs'), prd.indexOf('## 10.'));
+  const keys = [...section.matchAll(/`([a-z_]+\.[a-z0-9_]+)`/g)].map((m) => m[1]).filter((k) => !k.endsWith('.json') && !k.endsWith('.mjs'));
+  assert.ok(keys.length >= 30, `expected the microcopy table, found ${keys.length} keys`);
+  const { en, vi } = buildCatalogs();
+  const fe = flatten(en);
+  const fv = flatten(vi);
+  const missing = keys.filter((k) => !(k in fe) || !(k in fv));
+  assert.deepEqual(missing, []);
+});
+
+test('TRP patterns convert to templates without executing code', async () => {
+  const { patternToTemplates } = await import('./gen-i18n.mjs');
+  assert.deepEqual(patternToTemplates('^(.+) joined$', "m[1] + ' đã vào phiên'"), { en: '{1} joined', vi: '{1} đã vào phiên' });
+  assert.deepEqual(patternToTemplates('^(\\d+) devices? (was|were) declined$', "m[1] + ' thiết bị'"), { en: '{1} devices were declined', vi: '{1} thiết bị' });
+  assert.throws(() => patternToTemplates('^(.+) joined$', 'm[1].toUpperCase()'), /Unsupported VI expression/);
+});

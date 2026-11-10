@@ -31,6 +31,8 @@ These refine the PRD without contradicting it, so the design wins and the owner 
 | B8 | Screen IDs (`home`, `send`, `send-review`, `session`, …) | `docs/UX_SCREEN_MAP.md` |
 | B9 | A "Require approval" default in Settings › Transfer, in addition to the per-session switch | PRD §5.8: Settings holds the default for new sessions (off); each session can still switch it |
 | B10 | Web layout breakpoints 760 px (rail) and 1100 px (sidebar) replace the generic `sm/md/lg/xl` list in the Phase 0 plan | `docs/DESIGN_SYSTEM.md` §4, `docs/phases/PHASE_0_FOUNDATION.md` |
+| B12 | Receiver code-expired wording "Code expired — ask the sender for a new code" (`common.cx_rx`) and "Stored only on this device" (`common.local`) instead of the PRD's earlier sentences | PRD §5.4, §9 |
+| B13 | Vietnamese pattern translations (`TRP`) become templates with `{1}` placeholders under `<app>_patterns` | `docs/DESIGN_SYSTEM.md` §1.2 |
 | B11 | Screen-on pill with per-state copy ("Screen stays on", "Screen can sleep", "Screen-on is off in Settings", "…keep this tab visible") instead of the earlier status-row sentences | `docs/ARCHITECTURE.md` §7.3 |
 
 ## C. Accessibility notes on design values
@@ -72,6 +74,8 @@ These are required by the PRD or `CLAUDE.md` but have no design specimen. Each u
 | E3 | Protected-mode notices for sender and receiver | `docs/SECURITY_MODEL.md` §3.1 | Warning banner (`warning-soft` / `warning-ink`) | `product.protected_mode`, `protected_mode_sender` |
 | E4 | "Join within m:ss" in the last minute of the join window | PRD §5.4 | Caption under the preview's Receive button, stays calm (no red), like the sender countdown | `product.join_within` |
 | E5 | Web wake lock **refused** state | PRD §5.10, `docs/ARCHITECTURE.md` §7.3 | Screen-on pill, same visual as the unsupported state | `product.wake_refused` |
-| E6 | Microcopy "No account needed to send or receive files", "Waiting for the sender to let you in", "Sign in to use Cloud transfer" | PRD §9 | Welcome, receiver waiting screen, disabled Cloud option | `product.no_account`, `waiting_sender`, `cloud_signin` |
+| E6 | PRD §9 microcopy with no design source: "No account needed to send or receive files", "Waiting for the sender to let you in", "Sign in to use Cloud transfer" (the full list of required keys is the PRD §9 table) | PRD §9 | Welcome, receiver waiting screen, disabled Cloud option | `product.no_account`, `waiting_sender`, `cloud_signin` |
 | E7 | Rate-limit wait message, identity bootstrap failure, reset device identity | PRD §5.1, §5.7, `docs/SECURITY_MODEL.md` §5 | Inline banner, Devices card, confirm dialog | `product.rate_limited`, `identity_offline`, `identity_failed`, `reset_identity`, `reset_identity_p`, `anon_since` |
 | E8 | Session full for the receiver | PRD §5.4 | Error state on the preview | `product.session_full_rx` |
+| E9 | Parameterized versions of design strings that only exist as samples or code ternaries: join toast, receiver slots, join-window countdown, "Choose where to save" | PRD §5.3, §5.4, §9 | Toast, Capacity, Share panel, preview CTA | `product.peer_joined`, `slots_left`, `code_expires_in`, `choose_save` |
+| E10 | Clipboard sign-in prompt and the pill's platform hints | PRD §5.9, `docs/ARCHITECTURE.md` §7.3 | Account-required intro; text next to the keep-open banner | `product.sign_in_clipboard`, `hint_android_screen_off`, `hint_ios_lock` |

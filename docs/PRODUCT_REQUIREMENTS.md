@@ -137,7 +137,7 @@ Send files and Receive files are the two primary actions, identical for guests a
 - Works without an account. Entry by QR scan (native), six-digit code, or link. A first-time visitor arriving by link skips Welcome.
 - The join preview shows the sender's display name and badge and the file names, sizes, and count, nothing more.
 - Tapping **Receive** joins the session. With open join the transfer starts right away (on Web after the save target is chosen). With approval on, or in protected mode for code joins, the receiver waits for the sender and sees the same three security words.
-- Outcomes include removed, blocked, rejected, code expired ("This code has expired. Ask the sender for a new code."), session expired, session full, and session not accepting, each with a clear message. In the last minute of the window the preview shows "Join within m:ss".
+- Outcomes include removed, blocked, rejected, code expired (`common.cx_rx`: "Code expired — ask the sender for a new code"), session expired, session full, and session not accepting, each with a clear message. In the last minute of the window the preview shows "Join within m:ss".
 - Browser capability limits are detected and explained before the transfer starts. Never promise background downloads in mobile browsers.
 - If the Android or iOS app is installed and App Links / Universal Links are verified, the link opens the app; otherwise the Web join page.
 - The keep-open banner with the screen-on pill is visible while waiting and receiving; iOS adds "Locking your iPhone pauses the transfer".
@@ -171,7 +171,7 @@ Guests see a "Guest" header with Sign in and Create account. Available to everyo
 - Applies to sending, receiving, waiting for receivers while the join window is open (at most 10 minutes per window), and waiting for approval; released when transfers complete, fail, pause, or are cancelled, when the join window ends with no transfer in progress, when the session ends, or when the receiver leaves or is removed.
 - Controlled by **Keep screen on during transfers** (default on, stored per device).
 - Every transfer screen shows the screen-on pill. Its states (on, off for this transfer, paused or done, off in Settings, unsupported and refused on Web), strings, and tap behavior are defined once in `docs/ARCHITECTURE.md` §7.3; mechanics per platform are in §7.2.
-- On Web, when the API is missing or refused, show "Keep this tab open and visible" instead of using hidden-video workarounds.
+- On Web, when the API is missing or refused, the pill shows the unsupported or refused state from `docs/ARCHITECTURE.md` §7.3 instead of using hidden-video workarounds.
 
 ## 6. File transfer
 
@@ -296,7 +296,34 @@ These are specified in their own documents. This section only states the require
 **Android:** all equivalent screens in Compose with state hoisting; long-running work out of composables.
 **iOS:** all equivalent screens in SwiftUI with `@Observable` view models, engine work on structured-concurrency tasks off the main actor, Human Interface Guidelines patterns while keeping the Share Anywhere identity.
 
-Microcopy: "Start sharing", "No account needed to send or receive files", "Guest", "Sign in to sync your clipboard", "Stored on this device only", "Sign in to use Cloud transfer", "Send files", "Receive files", "Calm Otter joined", "Remove", "Block", "Require approval", "Everyone here? Stop accepting new receivers", "Waiting for the sender to let you in", "Code expires in 9:41", "Code expired — Create new code", "Create new code", "This code has expired. Ask the sender for a new code.", "Screen stays on", "Screen can sleep", "Your browser can’t keep the screen on — keep this tab visible", "Locking your iPhone pauses the transfer", "Connected directly", "Using relay", "Cloud transfer requires your approval", "Sync Clipboard", "Automatic capture is available when your browser permits it", "Open Share Anywhere to sync clipboard", "Your clipboard content is encrypted before sync". Never "Always syncing".
+Microcopy lives in the catalogs (`shared/i18n/en.json`, `vi.json`), never in this document. These product phrases must exist under the listed keys; `scripts/i18n.test.mjs` fails if one is missing. Never write "Always syncing".
+
+| Meaning | Catalog key |
+|---|---|
+| Welcome action "Start sharing" | `web_vv.k34` |
+| No account needed to send or receive files | `product.no_account` |
+| Guest | `web.guest` |
+| Sign in to sync your clipboard | `product.sign_in_clipboard` |
+| History stored only on this device | `common.local` |
+| Sign in to use Cloud transfer | `product.cloud_signin` |
+| Send files / Receive files | `web.send`, `web.receive` |
+| "{name} joined" toast | `product.peer_joined` |
+| Remove / Block | `web.remove`, `product.block` |
+| Require approval | `web.reqappr` |
+| Stop accepting nudge | `product.stop_nudge` |
+| Waiting for the sender to let you in | `product.waiting_sender` |
+| Join window countdown "Code expires in {time}" | `product.code_expires_in` |
+| Code expired — Create new code / Create new code | `common.cx_h`, `common.cx_btn` |
+| Receiver: code expired, ask the sender for a new code | `common.cx_rx` |
+| Keep-open banner | `web.keep` |
+| Screen-on pill states | `web_xx.wake_on`, `web_xx.wake_off`, `web_xx.wake_paused`, `web_xx.wake_setoff`, `web_xx.wake_unsup`, `product.wake_refused` |
+| Platform hints for the pill | `product.hint_android_screen_off`, `product.hint_ios_lock` |
+| Connected directly / Using relay | `handoff.p2p`, `handoff.relay` |
+| Cloud transfer requires your approval | `handoff.cloud` |
+| Sync Clipboard | `handoff.sync` |
+| Automatic capture is available when your browser permits it | `handoff.cb_auto` |
+| Open Share Anywhere to sync clipboard | `handoff.cb_notif` |
+| Your clipboard content is encrypted before sync | `handoff.cb_e2e` |
 
 ## 10. Accessibility and localization
 

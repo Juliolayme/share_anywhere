@@ -6,6 +6,9 @@
 //                       generated       EN text -> VI dictionary   -> "phrases" (slug keys)
 //   <App>.dc.html       every `const NAME = { en: {...}, vi: {...} }` table:
 //                       T -> "<app>", any other NAME -> "<app>_<name>" (web, android, ios)
+//   <App>.dc.html       `const TRP = [[/regex/, m => expr], ...]` VI pattern translations
+//                       -> "<app>_patterns" as EN/VI templates with {1}, {2} placeholders
+//                       (regex and expression are parsed as text, never executed)
 //   Handoff Checklist.dc.html  `copy: [[key, en, vi], ...]`   -> "handoff"
 //   shared/i18n/product.json   PRD strings the design lacks     -> "product" (hand-written)
 // All tables are parsed as JSON5 data (never executed). A table that looks like {en, vi} but cannot be parsed fails the run.
@@ -93,6 +96,87 @@ export function extractLocaleTables(source) {
   return tables;
 }
 
+/**
+ * Converts one TRP entry (a regex over an English string and a JS concatenation that builds the
+ * Vietnamese string from capture groups) into an EN/VI template pair with {1}, {2} placeholders.
+ * Supported regex syntax: literals, escapes, capture groups ( ... ), optional single characters (x?),
+ * optional groups ((...)?) which are dropped, and alternation groups ((a|b)) which keep the last
+ * alternative (the plural form). Anything else throws so the design cannot silently drift.
+ */
+export function patternToTemplates(regexSource, viExpr) {
+  let src = regexSource;
+  if (!src.startsWith('^') || !src.endsWith('$')) throw new Error(`Pattern not anchored: ${regexSource}`);
+  src = src.slice(1, -1);
+  let en = '';
+  let group = 0;
+  const placeholders = new Set();
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '\\') {
+      en += src[++i];
+    } else if (c === '(') {
+      // find the matching close paren (no nested groups in the design patterns)
+      const close = src.indexOf(')', i);
+      if (close < 0) throw new Error(`Unclosed group in ${regexSource}`);
+      const inner = src.slice(i + 1, close);
+      group++;
+      const optional = src[close + 1] === '?';
+      if (optional) {
+        i = close + 1; // optional literal group: dropped
+      } else if (/^[a-z ]+(\|[a-z ]+)+$/i.test(inner)) {
+        en += inner.split('|').pop(); // alternation: keep the last (plural) form
+        i = close;
+      } else {
+        en += `{${group}}`;
+        placeholders.add(group);
+        i = close;
+      }
+    } else if (src[i + 1] === '?' && /[a-z,]/i.test(c)) {
+      if (c !== ',') en += c; // optional single character: keep letters (plural), drop commas
+      i++;
+    } else if ('[]+*.|{}'.includes(c)) {
+      throw new Error(`Unsupported regex syntax "${c}" in ${regexSource}`);
+    } else {
+      en += c;
+    }
+  }
+  let vi = '';
+  for (const part of viExpr.split(/\s*\+\s*/)) {
+    const g = /^m\[(\d+)\]$/.exec(part);
+    const str = /^'((?:[^'\\]|\\.)*)'$/.exec(part);
+    if (g) {
+      const n = Number(g[1]);
+      if (!placeholders.has(n)) throw new Error(`VI uses group ${n} that EN drops: ${regexSource}`);
+      vi += `{${n}}`;
+    } else if (str) {
+      vi += str[1].replace(/\\(.)/g, '$1');
+    } else {
+      throw new Error(`Unsupported VI expression part "${part}" in ${viExpr}`);
+    }
+  }
+  return { en, vi };
+}
+
+/** Every entry of `const TRP = [...]` in a prototype as {key: {en, vi}}. */
+export function extractPatternTable(source) {
+  const start = source.indexOf('const TRP = [');
+  if (start < 0) return null;
+  const line = source.slice(start + 'const TRP = ['.length, source.indexOf('\n', start));
+  const entries = [...line.matchAll(/\[\/(.*?)\/, m => (.*?)\](?=, \[|\];?\s*$)/g)];
+  if (!entries.length) throw new Error('TRP table found but no entries could be read');
+  const en = {};
+  const vi = {};
+  for (const [, re, expr] of entries) {
+    const t = patternToTemplates(re, expr);
+    let key = slugify(t.en.replace(/\{\d+\}/g, 'x'));
+    let n = 2;
+    while (key in en) key = `${slugify(t.en.replace(/\{\d+\}/g, 'x'))}_${n++}`;
+    en[key] = t.en;
+    vi[key] = t.vi;
+  }
+  return { en, vi };
+}
+
 /** The Handoff Checklist's key microcopy list: [[key, en, vi], ...]. */
 export function extractHandoffCopy(source) {
   const start = source.indexOf('copy: [');
@@ -148,6 +232,11 @@ export function buildCatalogs() {
       const ns = name === 'T' ? app : `${app}_${name.toLowerCase()}`;
       en[ns] = table.en;
       vi[ns] = table.vi;
+    }
+    const patterns = extractPatternTable(readFileSync(join(DESIGN, file), 'utf8'));
+    if (patterns) {
+      en[`${app}_patterns`] = patterns.en;
+      vi[`${app}_patterns`] = patterns.vi;
     }
   }
 

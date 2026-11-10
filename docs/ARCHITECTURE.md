@@ -144,12 +144,12 @@ It releases as soon as none is true: every transfer is completed, failed, cancel
 | Release | `sentinel.release()` | Clear the flag | Set `isIdleTimerDisabled = false` |
 | Visibility | The browser releases the lock when the tab is hidden; the controller listens for `release` and re-requests on `visibilitychange` → visible while still active | Flag only matters while the window is visible; leaving the screen clears it | Reset on `.background`, re-apply on `.active` |
 | Screen turned off by the user | Transfer pauses if the browser suspends the tab (mobile); desktop continues | Foreground service keeps the transfer running, holding a `PARTIAL_WAKE_LOCK` and a Wi-Fi lock only while bytes move, released on pause or completion | App is suspended after ~30 s; checkpoint, local notification, resume on return |
-| Not available | API missing or insecure context → status "Your browser can't keep the screen on. Keep this tab open and visible." No hidden-video hacks | — | — |
-| Refused | `NotAllowedError` (battery saver, policy, hidden tab) → status "Couldn't keep the screen on" with the reason; retry on next visibility change | — | — |
+| Not available | API missing or insecure context → pill state Unsupported (§7.3). No hidden-video hacks | — | — |
+| Refused | `NotAllowedError` (battery saver, policy, hidden tab) → pill state Refused (§7.3); retry on the next visibility change or tap | — | — |
 
 ### 7.3 Keep-open banner and screen-on pill
 
-Every send, receive, and waiting screen carries the sticky keep-open banner ("Keep Share Anywhere open — don't close it so the transfer continues.", key `web.keep` / `common` equivalents). The Web app registers a `beforeunload` confirmation while the controller is active; Android shows the same text in the foreground-service notification; iOS shows "Transfer paused — reopen the app to resume" with a local notification when the app is backgrounded.
+Every send, receive, and waiting screen carries the sticky keep-open banner ("Keep Share Anywhere open — don't close it so the transfer continues.", keys `web.keep`, `android.keep`, `ios.keep`). The Web app registers a `beforeunload` confirmation while the controller is active; Android shows the same text in the foreground-service notification; iOS shows "Transfer paused — reopen the app to resume" with a local notification when the app is backgrounded.
 
 The banner ends with the **screen-on pill**, the single component that shows keep-screen-on status on every platform (`docs/DESIGN_SYSTEM.md` §6). It is a toggle button with `aria-pressed`, an icon plus a label (never color only), and a hit area of at least 44 px / 48 dp / 44 pt. Its states:
 
@@ -162,7 +162,7 @@ The banner ends with the **screen-on pill**, the single component that shows kee
 | Unsupported (Web) | No Screen Wake Lock API or insecure context | eye, warning tint | "Your browser can't keep the screen on — keep this tab visible" (`web_xx.wake_unsup`) | Not interactive |
 | Refused (Web) | `navigator.wakeLock.request` rejected (battery saver, policy, hidden tab) | eye, warning tint | "Couldn't keep the screen on — keep this tab visible" (`product.wake_refused`) | Retries the request |
 
-Platform hints next to the banner: Android "You can turn the screen off; the transfer continues", iOS "Locking your iPhone pauses the transfer".
+Platform hints next to the banner: Android `product.hint_android_screen_off`, iOS `product.hint_ios_lock`.
 
 ## 8. Server data model
 

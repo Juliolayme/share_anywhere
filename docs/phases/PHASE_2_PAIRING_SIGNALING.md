@@ -43,10 +43,10 @@ File bytes over DataChannel, accounts, Android, iOS, Cloud.
   - Require approval on → receiver waits → approve; reject path.
   - Remove and Block from the sender; blocked receiver cannot rejoin.
   - Stop accepting → code and link refused with the right message.
-  - Join window (clock advanced through a test-only hook): sender's screen counts down from 10:00, switches to "Code expired — Create new code" and hides the old code, link, and QR; a receiver entering the old code sees "This code has expired. Ask the sender for a new code."; Create new code shows a new code at 10:00 and the receiver can join with it; a receiver who joined earlier keeps receiving across the expiry; the wake lock stub records a release when the window ends with nobody transferring.
+  - Join window (clock advanced through a test-only hook): sender's screen counts down from 10:00, switches to "Code expired — Create new code" and hides the old code, link, and QR; a receiver entering the old code sees `common.cx_rx` ("Code expired — ask the sender for a new code"); Create new code shows a new code at 10:00 and the receiver can join with it; a receiver who joined earlier keeps receiving across the expiry; the wake lock stub records a release when the window ends with nobody transferring.
   - Sixth receiver sees "session full"; expired link page; locked-out code entry shows the wait time.
   - Protected mode (forced through a test-only admin hook) → code join waits for approval with the explanation.
-  - Keep screen on with `navigator.wakeLock` stubbed through `addInitScript` in three modes: granted (status "Screen stays on", `release()` called after Close session), refused (refused status), unsupported (reminder "Keep this tab open and visible"); hidden → visible re-request; Settings toggle off → no request.
+  - Keep screen on with `navigator.wakeLock` stubbed through `addInitScript` in three modes: granted (pill state On, `web_xx.wake_on`, and `release()` called after Close session), refused (pill state Refused, `product.wake_refused`), unsupported (pill state Unsupported, `web_xx.wake_unsup`), per `docs/ARCHITECTURE.md` §7.3; hidden → visible re-request; Settings toggle off → no request.
   - Mobile projects assert QR and code legibility at the project viewport (snapshot).
 
 ## CI changes

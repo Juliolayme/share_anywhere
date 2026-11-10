@@ -23,10 +23,11 @@ The Design System page wins over the prototypes' CSS when both give a value.
 | `receive-ink` (light) | `#0B7A3B` | `--greenInk #0B6B34` (Completed and P2P chips) | `#0B7A3B` |
 | `warning` (light) | `#B25E00` | `--warn #F59E0B` | `#B25E00` for text and icons; `#F59E0B` is only the capacity-full fill (Phase 1 state tokens) |
 | `e2` overlay | `0 8px 24px rgba(16,42,86,.12)` | `--shadow 0 8px 28px rgba(16,42,86,.14)` | Design System value |
+| Warning banner text (light) | `warning-ink #8A4A00` (status chips) | Banner text `#6B3A00` | `warning-ink #8A4A00` everywhere (5.9:1 on `warning-soft`) |
 
 ### 1.2 Strings
 
-- Catalog keys are namespaced by source: `common`, `phrases`, `web`, `web_vv`, `web_xx`, `web_yy`, `android*`, `ios*`, `handoff`, `product`.
+- Catalog keys are namespaced by source: `common`, `phrases`, `web`, `web_vv`, `web_xx`, `web_yy`, `web_patterns`, `android*`, `ios*`, `handoff`, `product`. `<app>_patterns` holds the design's Vietnamese pattern translations (`TRP`) as templates with `{1}`, `{2}` placeholders; plural forms are the design's plural wording, and code that needs a singular form uses `Intl.PluralRules` with a separate key.
 - Some design strings carry prototype sample data (`common.ve_p` with an example email, `common.ve_resend` with "0:42", `web.joined` with "Minh", dated phrases) or are fragments meant to be concatenated (`android.expires` + `android.left`). Production code must not use them; it uses a parameterized key from `product` instead (for example `product.joined_session` with `{name}`, `product.join_within` with `{time}`). QA treats any of these sample-data keys in a production path as a defect.
 
 ## 2. Color tokens
@@ -113,7 +114,7 @@ Lucide on Web (1.75 stroke), SF Symbols on iOS, Material Symbols Rounded on Andr
 
 ## 6. Components
 
-Every component implements default, hover, pressed, focus, disabled, loading, and error where they apply. The Design System gives light-mode state colors that are not tokens yet (primary pressed `#064D96`, ghost pressed `#D6E8FD`, destructive hover and pressed `#A82020` / `#8E1B1B`, secondary hover border and fill `#AFC0D6` / `#F1F5FA`, disabled `#E3E9F1` / `#8A97AC` / `#A3AFC2`, input focus halo `rgba(8,120,232,.22)`, capacity-full fill `#F59E0B`, iOS grouped background `#F2F5FA`). Phase 1 adds them as tokens, with dark values, before building Button and Input. Native apps use Material 3 components on Android and system SwiftUI controls on iOS, styled with these tokens.
+Every component implements default, hover, pressed, focus, disabled, loading, and error where they apply. The Design System gives light-mode state colors that are not tokens yet (primary pressed `#064D96`, ghost pressed `#D6E8FD`, secondary pressed `#E5ECF5`, destructive hover and pressed `#A82020` / `#8E1B1B`, destructive disabled `#F0E3E3` / `#B79A9A`, secondary hover border and fill `#AFC0D6` / `#F1F5FA`, disabled `#E3E9F1` / `#8A97AC` / `#A3AFC2`, disabled input `#F3F6FA`, selected card `#F5F9FF`, skeleton shimmer `#BDEFD0`, input focus halo `rgba(8,120,232,.22)`, capacity-full fill `#F59E0B`, iOS grouped background `#F2F5FA`). Phase 1 adds them as tokens, with dark values, before building Button and Input. Native apps use Material 3 components on Android and system SwiftUI controls on iOS, styled with these tokens.
 
 | Component | Variants and states | Web name | First phase |
 |---|---|---|---|

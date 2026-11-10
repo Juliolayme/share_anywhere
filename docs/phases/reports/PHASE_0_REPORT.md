@@ -40,7 +40,7 @@ Exact pins and the reasons for them are in `docs/ADR/0001-monorepo-and-toolchain
 - **Design import**: `design/claude-design/` with the ten exported files unchanged.
 - **Tokens**: `shared/design/tokens.json` carries the Design System values and names (`bg`, `surface`, `surface-2`, `border`, `fg`, `fg-2`, `fg-3`, `send*`, `receive*`, `warning*`, `danger*`, `cloud*`, `focus`, `toast`, `track`, `scrim`), type scale (display to code), spacing, radius, elevation (no shadows in dark), focus ring 2 + 2, control heights 36/44/52, and the `rail`/`sidebar` breakpoints. Every text pair passes WCAG AA in both themes, including the theme-following logo wordmark.
 - **Logo and icons**: one logo definition generates 26 files (`pnpm brand`): Web SVG and PNG favicons (16 px dotless), ICO, PWA icons and manifest, Android adaptive icon with a monochrome layer and a Play Store PNG, iOS 1024 px light/dark/tinted icons without an alpha channel. `brand:check` compares vectors byte for byte and rasters pixel for pixel.
-- **Strings**: `shared/i18n/en.json` and `vi.json`, 1459 keys each, from `i18n-strings.json`, every `{en, vi}` table in the three prototypes, the Handoff Checklist microcopy, and `shared/i18n/product.json` for PRD strings the design lacks; EN/VI keys and placeholders are validated.
+- **Strings**: `shared/i18n/en.json` and `vi.json`, 1541 keys each, from `i18n-strings.json`, every `{en, vi}` table and the Vietnamese pattern translations in the three prototypes, the Handoff Checklist microcopy, and `shared/i18n/product.json` for PRD strings the design lacks; EN/VI keys and placeholders are validated.
 - **Web**: self-hosted Plus Jakarta Sans and JetBrains Mono, a theme-following `Logo` component, the `/brand` preview with lockups and every token.
 - **Docs**: `docs/DESIGN_SYSTEM.md`, `docs/design/DESIGN_DEVIATIONS.md` (PRD-wins items, adopted design decisions, accessibility notes, PRD elements the design lacks, answers to the handoff's open questions), design screen IDs and state models in `docs/UX_SCREEN_MAP.md` §12, one definition of the screen-on pill in `docs/ARCHITECTURE.md` §7.3.
 
@@ -58,7 +58,7 @@ Exact pins and the reasons for them are in `docs/ADR/0001-monorepo-and-toolchain
 |---|---|---|
 | Dev Compose stack: postgres, backend, web, coturn, Caddy | Local Docker with host-built images | All services up; `/healthz` 200; `/readyz` database ok; web served over HTTPS |
 | CI Compose stack with backend health check | Local Docker with host-built images | All healthy |
-| CI Compose stack with the real Dockerfiles | GitHub Actions `compose` job | Green on run 42769204329 |
+| CI Compose stack with the real Dockerfiles | GitHub Actions `compose` job | Green on run 42779955558 (8ef378e) and on the final Phase 0 commit |
 | `/brand` in light and dark | Chromium (Playwright), local dev server | Renders both themes with the design fonts and lockups (screenshots below) |
 | Logo wordmark contrast on `/` | Chromium, light and dark | `#102A56` on `#F7FAFD` (light), `#FFFFFF` on `#0B1A33` (dark) |
 
@@ -73,9 +73,9 @@ No product workflow exists yet, so nothing ran as guest or signed in.
 | Command | Result |
 |---|---|
 | `pnpm tokens:check` | Schema valid, contrast AA (including the logo wordmark), generated files current |
-| `pnpm i18n:check` | 1459 keys each in EN and VI, placeholders match |
+| `pnpm i18n:check` | 1541 keys each in EN and VI, placeholders match |
 | `pnpm brand:check` | 26 files current |
-| `pnpm test:scripts` | 13 passed |
+| `pnpm test:scripts` | 15 passed |
 | `pnpm lint:md` | 0 issues |
 | `pnpm audit` | No known vulnerabilities |
 | `web`: `format:check`, `lint`, `typecheck`, `test`, `build` | All pass; 14 tests; main bundle under the 120 kB gzip budget |
@@ -84,7 +84,7 @@ No product workflow exists yet, so nothing ran as guest or signed in.
 | `govulncheck` v1.9.0 on Go 1.27.3 | No vulnerabilities |
 | gitleaks v8.24.3 | No leaks (one historical fixture ignored by fingerprint) |
 
-CI runs on this branch: <https://github.com/Juliolayme/share_anywhere/actions?query=branch%3Aclaude%2Fpractical-lovelace-avlb5g>. Run 1 was cancelled by run 2. Run 2 (1652d6a) failed in `security` on gitleaks; QA then found the Go and npm vulnerabilities that the same job would have hit. Run 3 (754b7f4, <https://github.com/Juliolayme/share_anywhere/actions/runs/42771308979>) carries the fixes: `security` (gitleaks, govulncheck, pnpm audit, Trivy on the Go 1.27 backend image), `web` (including the image build), `compose` (real Dockerfiles plus smoke test), `protocol`, and `docs` are green, and `backend` passed vet, golangci-lint, and race tests (its final image build was still running when this report was written; the identical image was already built by `security`).
+CI runs on this branch: <https://github.com/Juliolayme/share_anywhere/actions?query=branch%3Aclaude%2Fpractical-lovelace-avlb5g>. Exit-gate evidence: run 42779955558 on 8ef378e, all seven jobs green (`security` with gitleaks, govulncheck, pnpm audit, and Trivy; `backend`; `web`; `protocol`; `compose`; `docs`; `changes`). Earlier runs: 42769204329 (1652d6a) failed in `security` on gitleaks; 42771308979 (754b7f4) and 42777834542 (29a3e09) green; the run for 8993201 was cancelled by the next push.
 
 ## 5. Environment variables and external services
 
@@ -121,4 +121,6 @@ See the README: `cp .env.example .env`, then `docker compose up --build`, then o
 | b7134b5 | Phase 0 report and QA record (before the design import) |
 | 089e59c | Claude Design handoff imported by the user |
 | 29a3e09 | Design applied: tokens, logo and icons, i18n catalogs, DESIGN_SYSTEM, deviations, screen IDs |
+| 8ef378e | Report and QA record for the design work |
+| (next) | QA round 3 fixes: pattern translations, product strings for PRD microcopy, PRD §9 key table with test, pill copy unified |
 | 8993201 | QA round 2 fixes: theme-following logo, every design string table plus product overlay, pill unification, deviations section E, brand check, iOS alpha |

@@ -63,6 +63,20 @@ No P0. Five P1 and thirteen P2 findings on the design work; every check and CI r
 | `CLAUDE.md` edited | P2 | Wording only ("security words", "screen-on pill"); reported to the user |
 | Minor markup | P2 | Duplicate focus class removed; `/` heading announces the name once |
 
-## Round 3
+## Round 3 — commit 8ef378e — FAIL
+
+No P0. Two P1 and five P2 findings; all checks and CI run 42779955558 green.
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Keep-screen-on copy still contradicted in ARCHITECTURE §7.2, PRD §5.10, Phase 2; wrong `common` key reference; RX-5 row missing the pill | P1 | §7.2 keeps mechanics only and points to §7.3 for states; PRD and Phase 2 name the §7.3 states and keys; key reference corrected; pill added to RX-5 |
+| Catalogs missed the `TRP` pattern translations, inline `lang === 'vi'` strings, and PRD/ARCHITECTURE strings without a key | P1 | `TRP` converted (as text, never executed) into `<app>_patterns` templates; `product.json` gains `choose_save`, `code_expires_in`, `slots_left`, `peer_joined`, `sign_in_clipboard`, pill hints; PRD §9 microcopy is now a meaning → key table and a test fails if any key is missing; design wording adopted for the receiver code-expired and local-history labels (deviations B12, B13, E9, E10) |
+| Report CI evidence stale | P2 | Cites run 42779955558 and the run history |
+| State color list incomplete; warning banner text conflict | P2 | Completed in `DESIGN_SYSTEM.md` §6 and §1.1 |
+| Scaffold `/` hard-coded copy | P2 | Replaced by the Phase 1 shell |
+| `CLAUDE.md` wording edits need user sign-off | P2 | Reported to the user in the Phase 0 summary |
+| UX map row drift | P2 | Fixed with P1-1 |
+
+## Round 4
 
 Pending.

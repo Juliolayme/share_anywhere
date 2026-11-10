@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { Bitmap } from './bitmap';
-import { BlockCache } from './cache';
+import { BlockCache, blockCacheBytes } from './cache';
 import type { FileMetaEntry } from './frame';
 import { ReceiverConnection, type PreparedFile } from './receiver';
 import { FileHash, SenderConnection, type FileSource, type SenderFile } from './sender';
@@ -137,5 +137,18 @@ describe('multi-receiver scheduling', () => {
     const receivers = [0, 1].map(() => pair(file, hashes, undefined));
     await until(() => receivers.every((r) => r.done()), 20_000);
     expect(reads.n).toBe(32);
+  });
+});
+
+describe('block cache budget setting', () => {
+  it('defaults to 64 MiB and never drops below one block', () => {
+    const MiB = 1024 * 1024;
+    expect(blockCacheBytes(undefined)).toBe(64 * MiB);
+    expect(blockCacheBytes('')).toBe(64 * MiB);
+    expect(blockCacheBytes('abc')).toBe(64 * MiB);
+    expect(blockCacheBytes('-5')).toBe(64 * MiB);
+    expect(blockCacheBytes('128')).toBe(128 * MiB);
+    expect(blockCacheBytes('1')).toBe(4 * MiB);
+    expect(blockCacheBytes('0.5')).toBe(4 * MiB);
   });
 });

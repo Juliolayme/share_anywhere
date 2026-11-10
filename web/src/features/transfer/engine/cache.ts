@@ -1,3 +1,4 @@
+import { BLOCK_SIZE } from './frame';
 import { digest } from './hash';
 
 /** A block read from disk with its SHA-256, shared by every receiver's connection. Never mutate `data`. */
@@ -75,7 +76,16 @@ export class BlockCache {
 }
 
 /** Default budget: 64 MiB (16 blocks of 4 MiB); `VITE_BLOCK_CACHE_MB` overrides it at build time. */
-export function defaultBlockCacheBytes(): number {
-  const mb = Number(import.meta.env.VITE_BLOCK_CACHE_MB);
-  return (Number.isFinite(mb) && mb > 0 ? mb : 64) * 1024 * 1024;
+export function defaultBlockCacheBytes(env: string | undefined = import.meta.env.VITE_BLOCK_CACHE_MB): number {
+  return blockCacheBytes(env);
+}
+
+/**
+ * Cache budget from a megabyte setting: 64 MiB when unset or invalid, and never less than one block (4 MiB),
+ * so a small value still caches the block receivers share instead of silently caching nothing.
+ */
+export function blockCacheBytes(mbSetting: string | undefined): number {
+  const mb = Number(mbSetting);
+  const bytes = (mbSetting && Number.isFinite(mb) && mb > 0 ? mb : 64) * 1024 * 1024;
+  return Math.max(BLOCK_SIZE, Math.floor(bytes));
 }

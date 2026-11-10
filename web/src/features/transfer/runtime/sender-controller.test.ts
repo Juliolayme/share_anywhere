@@ -3,7 +3,7 @@ import type { SessionSocket, SocketEvent } from '../../../lib/ws/socket';
 import type { SessionView } from '../../sharing/api';
 import type { TransferStatus, TransfersApi } from './api';
 import { Throughput } from '../engine/eta';
-import { SenderController, groupEta, routeOf, sanitizeCandidate } from './sender-controller';
+import { SenderController, finalOf, groupEta, routeOf, sanitizeCandidate } from './sender-controller';
 
 /** A sender tab with one joined receiver and one file, no picked files (so no peer connection is served). */
 function setup(status: TransferStatus, createPeer?: (cfg: RTCConfiguration) => RTCPeerConnection) {
@@ -252,5 +252,32 @@ describe('SenderController', () => {
     expect(routeOf([null, null])).toEqual({});
     expect(routeOf(['direct', null, 'direct'])).toEqual({ route: 'direct' });
     expect(routeOf(['direct', 'relay'])).toEqual({ route: 'mixed' });
+  });
+  it('session result: removed and blocked receivers do not count; one that left counts with what it got', () => {
+    expect(finalOf(['completed', 'removed'])).toBe('completed');
+    expect(finalOf(['completed', 'blocked', 'removed'])).toBe('completed');
+    expect(finalOf(['completed', 'cancelled'])).toBe('partial'); // left early, or cancelled
+    expect(finalOf(['completed', 'failed'])).toBe('partial');
+    expect(finalOf(['failed', 'cancelled'])).toBe('failed');
+    expect(finalOf(['cancelled', 'removed'])).toBe('cancelled');
+    expect(finalOf(['removed', 'blocked'])).toBe('cancelled');
+  });
+  it('a blocked receiver is shown as blocked and left out of the result; a removed one as removed', async () => {
+    const t = setup('CANCELLED');
+    const internals = t.tx as unknown as { d: { view: () => Promise<SessionView> } };
+    const base = await internals.d.view();
+    for (const [status, card] of [
+      ['BLOCKED', 'blocked'],
+      ['REMOVED', 'removed'],
+      ['LEFT', 'cancelled'],
+    ] as const) {
+      await t.tx.refresh({
+        ...base,
+        participants: [{ id: 'p1', role: 'receiver', status, display_name: 'R', platform: 'Web' }],
+      } as unknown as SessionView);
+      expect(t.card()).toBe(card);
+      expect(t.tx.state.receivers[0]?.joined).toBe(false);
+    }
+    t.tx.dispose();
   });
 });

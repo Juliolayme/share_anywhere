@@ -247,7 +247,9 @@
     "resume_named": "Resume {name}",
     "st_offline": "Offline",
     "transfer_offline": "Lost contact. They can reconnect while this page stays open",
-    "block_failed": "Couldn’t block {name}. Try again."
+    "block_failed": "Couldn’t block {name}. Try again.",
+    "block_confirm_named_h": "Block {name}?",
+    "bytes_of_eta": "{done} of {total} · {eta}"
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -496,6 +498,8 @@
     "resume_named": "Tiếp tục {name}",
     "st_offline": "Ngoại tuyến",
     "transfer_offline": "Mất liên lạc. Người nhận có thể kết nối lại khi trang này vẫn mở",
-    "block_failed": "Không chặn được {name}. Hãy thử lại."
+    "block_failed": "Không chặn được {name}. Hãy thử lại.",
+    "block_confirm_named_h": "Chặn {name}?",
+    "bytes_of_eta": "{done} / {total} · {eta}"
   }
 }

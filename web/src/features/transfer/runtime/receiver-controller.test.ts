@@ -3,7 +3,7 @@ import type { SessionSocket } from '../../../lib/ws/socket';
 import type { SessionView } from '../../sharing/api';
 import type { ProgressStore } from '../storage/progress-store';
 import type { Transfer, TransferStatus, TransfersApi } from './api';
-import { ReceiverController } from './receiver-controller';
+import { ReceiverController, redialDelay } from './receiver-controller';
 
 const TERMINAL = ['COMPLETED', 'FAILED', 'CANCELLED'];
 
@@ -200,5 +200,20 @@ describe('ReceiverController', () => {
     expect(t.closes()).toBe(closes + 1);
     expect(t.dials()).toBe(dials + 1);
     t.rx.dispose();
+  });
+  it('redial backoff doubles from 1 s, caps at 15 s, and spreads receivers by ±25 %', () => {
+    const mid = () => 0.5;
+    expect([0, 1, 2, 3, 4, 5, 10].map((a) => redialDelay(a, mid))).toEqual([
+      1000, 2000, 4000, 8000, 15_000, 15_000, 15_000,
+    ]);
+    expect(redialDelay(2, () => 0)).toBe(3000);
+    expect(redialDelay(2, () => 0.999_999)).toBeCloseTo(5000, 0);
+    // Real randomness stays inside the bounds and is not constant.
+    const ds = Array.from({ length: 200 }, () => redialDelay(3));
+    for (const d of ds) {
+      expect(d).toBeGreaterThanOrEqual(6000);
+      expect(d).toBeLessThan(10_000);
+    }
+    expect(new Set(ds).size).toBeGreaterThan(1);
   });
 });

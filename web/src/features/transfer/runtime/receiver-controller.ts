@@ -108,6 +108,14 @@ const ERROR_KEYS: Partial<Record<ErrorCode, string>> = {
   protocol: 'product.tx_err_protocol',
 };
 
+/**
+ * Delay before redial number `attempt` (0-based): exponential from 1 s, capped at 15 s, with ±25 % jitter so
+ * receivers that lost the sender together do not redial in step.
+ */
+export function redialDelay(attempt: number, random: () => number = Math.random): number {
+  return Math.min(15_000, 1000 * 2 ** attempt) * (0.75 + random() * 0.5);
+}
+
 /** Drives one receive (docs/TRANSFER_PROTOCOL.md): storage, the peer connection, resume, reports, history. */
 export class ReceiverController extends Observable<RxState> {
   private reporter: Reporter;
@@ -588,8 +596,7 @@ export class ReceiverController extends Observable<RxState> {
       return this.update({ phase: 'unreachable', eta: null });
     }
     this.update({ phase: 'reconnecting' });
-    // Exponential backoff with ±25 % jitter, so receivers that lost the sender together do not redial in step.
-    const delay = Math.min(15_000, 1000 * 2 ** this.attempt) * (0.75 + Math.random() * 0.5);
+    const delay = redialDelay(this.attempt);
     this.attempt++;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;

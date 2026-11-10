@@ -35,7 +35,8 @@ export type ChipState =
   | 'partial'
   | 'failed'
   | 'cancelled'
-  | 'removed';
+  | 'removed'
+  | 'blocked';
 
 const CHIP: Record<ChipState, { cls: string; icon: LucideIcon; key: string }> = {
   waiting: { cls: 'bg-surface-2 text-fg-2', icon: Clock, key: 'product.st_waiting' },
@@ -51,6 +52,7 @@ const CHIP: Record<ChipState, { cls: string; icon: LucideIcon; key: string }> = 
   failed: { cls: 'bg-danger-soft text-danger-ink', icon: CircleX, key: 'web.st.failed' },
   cancelled: { cls: 'bg-surface-2 text-fg-2', icon: Ban, key: 'web.st.cancelled' },
   removed: { cls: 'bg-surface-2 text-fg-2', icon: UserX, key: 'web.st.removed' },
+  blocked: { cls: 'bg-surface-2 text-fg-2', icon: Ban, key: 'phrases.blocked' },
 };
 
 export function TransferChip({ state }: { state: ChipState }) {
@@ -93,7 +95,8 @@ export type BarTone = 'send' | 'receive' | 'warning' | 'danger' | 'muted';
 
 /** Progress bar color per state, as in the design (Web App `BAR`): grey when paused, green when verifying. */
 export function barTone(state: string): BarTone {
-  if (state === 'paused' || state === 'cancelled' || state === 'removed' || state === 'offline') return 'muted';
+  if (state === 'paused' || state === 'cancelled' || state === 'removed' || state === 'blocked' || state === 'offline')
+    return 'muted';
   if (state === 'verifying' || state === 'completed') return 'receive';
   if (state === 'reconnecting') return 'warning';
   if (state === 'failed') return 'danger';

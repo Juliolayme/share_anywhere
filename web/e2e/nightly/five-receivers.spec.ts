@@ -15,7 +15,7 @@ import { chromiumWebRtc, firefoxPrefs } from '../../playwright.config';
 import {
   BASE,
   apiDevice,
-  apiJoin,
+  apiJoinResult,
   closeSenderBrowser,
   createSession,
   senderPage,
@@ -104,8 +104,8 @@ test('five receivers at once: the slow one does not hold back the others; a sixt
   for (const rx of receivers) await joinToSave(rx, s.code);
 
   // The session is full: a sixth device is refused.
-  const sixth = await apiJoin(request, await apiDevice(request), s.code);
-  expect(sixth).toBeGreaterThanOrEqual(400);
+  const sixth = await apiJoinResult(request, await apiDevice(request), s.code);
+  expect(sixth).toEqual({ status: 409, error: 'session_full' });
 
   await receiverHook(slow, s.id, { pace: 2000 }); // 16 blocks × 2 s
   for (const rx of receivers) await startInBrowser(rx);

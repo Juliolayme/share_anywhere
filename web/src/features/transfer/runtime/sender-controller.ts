@@ -33,12 +33,16 @@ export type TxStatus =
   | 'completed'
   | 'failed'
   | 'cancelled'
-  | 'removed';
+  /** Removed or blocked by the sender: excluded from the session result (docs/ARCHITECTURE.md §4.5). */
+  | 'removed'
+  | 'blocked';
 
 export interface TxReceiver {
   participantId: string;
   name: string;
   platform: string;
+  /** Still JOINED (not left, removed or blocked): the sender can still block it, even after it finished. */
+  joined: boolean;
   status: TxStatus;
   /** Verified bytes per file index. */
   perFile: number[];
@@ -110,12 +114,23 @@ export function sanitizeCandidate(c: unknown): RTCIceCandidateInit | null {
 
 const ACTIVE: TxStatus[] = ['connecting', 'transferring', 'reconnecting', 'verifying'];
 export const txActive = (s: TxStatus) => ACTIVE.includes(s);
+/** The sender removed or blocked this receiver. */
+export const txExcluded = (s: TxStatus) => s === 'removed' || s === 'blocked';
+const ENDED: TxStatus[] = ['completed', 'failed', 'cancelled', 'removed', 'blocked'];
+export const txEnded = (s: TxStatus) => ENDED.includes(s);
 
 /**
- * Group ETA (docs/PRODUCT_REQUIREMENTS.md §6.5): the slowest active receiver decides. `undefined` when no
- * receiver is active (nothing to estimate); `null` ("Estimating time…") while any active receiver has no
- * estimate yet, for example one still connecting or reconnecting.
+ * Session result on the sender (docs/ARCHITECTURE.md §4.5): receivers the sender removed or blocked do not
+ * count; a receiver that left counts with what it received.
  */
+export function finalOf(statuses: TxStatus[]): NonNullable<TxFinal> {
+  const counted = statuses.filter((s) => !txExcluded(s));
+  const completed = counted.filter((s) => s === 'completed').length;
+  if (counted.length && completed === counted.length) return 'completed';
+  if (completed > 0) return 'partial';
+  return counted.some((s) => s === 'failed') ? 'failed' : 'cancelled';
+}
+
 /** One route for every receiver, or `mixed` (History). Nothing when no route was ever known. */
 export function routeOf(routes: (Route | null)[]): { route?: Route | 'mixed' } {
   const known = [...new Set(routes.filter((r): r is Route => !!r))];
@@ -123,6 +138,11 @@ export function routeOf(routes: (Route | null)[]): { route?: Route | 'mixed' } {
   return { route: known.length === 1 ? (known[0] as Route) : 'mixed' };
 }
 
+/**
+ * Group ETA (docs/PRODUCT_REQUIREMENTS.md §6.5): the slowest active receiver decides. `undefined` when no
+ * receiver is active (nothing to estimate); `null` ("Estimating time…") while any active receiver has no
+ * estimate yet, for example one still connecting or reconnecting.
+ */
 export function groupEta(receivers: Pick<TxReceiver, 'status' | 'eta'>[]): number | null | undefined {
   const active = receivers.filter((r) => txActive(r.status));
   if (!active.length) return undefined;
@@ -145,6 +165,8 @@ function statusFromServer(ts: TransferStatus[]): TxStatus | null {
 /** Serves every receiver of one session from this tab (docs/TRANSFER_PROTOCOL.md). */
 export class SenderController extends Observable<TxState> {
   private peers = new Map<string, Peer>();
+  /** Receivers no longer JOINED (left, removed, blocked): never served again. */
+  private gone = new Set<string>();
   private transfers = new Map<string, Transfer>();
   private downTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private resuming = new Set<string>();
@@ -238,11 +260,18 @@ export class SenderController extends Observable<TxState> {
         const perFile = this.state_.files.map((f) => mine.find((t) => t.file_id === f.fileId)?.verified_bytes ?? 0);
         const server = statusFromServer(mine.map((t) => t.status));
         const removed = p.status !== 'JOINED';
-        let status: TxStatus = removed
-          ? 'removed'
-          : prev && !server?.match(/completed|failed|cancelled/)
-            ? prev.status
-            : (server ?? 'waiting');
+        const settled = server?.match(/completed|failed|cancelled/) ? server : null;
+        // Removed and blocked receivers are shown as such; one that left shows what it received.
+        let status: TxStatus =
+          p.status === 'BLOCKED'
+            ? 'blocked'
+            : p.status === 'REMOVED'
+              ? 'removed'
+              : removed
+                ? (settled ?? 'cancelled')
+                : prev && !settled
+                  ? prev.status
+                  : (server ?? 'waiting');
         // Without a live channel the server record is the only truth (after a reload, or events missed while
         // the socket was down): take a pause from it, leave a pause it no longer has, and show an active record
         // with nobody connected as reconnecting, which starts the reconnect window.
@@ -254,6 +283,7 @@ export class SenderController extends Observable<TxState> {
           participantId: p.id,
           name: p.display_name,
           platform: p.platform,
+          joined: !removed,
           status,
           perFile: prev ? prev.perFile.map((n, i) => Math.max(n, perFile[i] ?? 0)) : perFile,
           verified: 0,
@@ -271,9 +301,12 @@ export class SenderController extends Observable<TxState> {
       windowEndsAt: v.join_window?.state === 'OPEN' ? v.join_window.ends_at : null,
       serverOffset: Date.parse(v.server_time) - Date.now(),
     });
-    for (const r of receivers) if (r.status === 'removed') this.drop(r.participantId);
+    this.gone = new Set(
+      (v.participants ?? []).filter((p) => p.role === 'receiver' && p.status !== 'JOINED').map((p) => p.id),
+    );
+    for (const pid of this.gone) this.drop(pid);
     // Held candidates only for receivers that can still connect.
-    const joined = new Set(receivers.filter((r) => r.status !== 'removed').map((r) => r.participantId));
+    const joined = new Set(receivers.filter((r) => !this.gone.has(r.participantId)).map((r) => r.participantId));
     for (const pid of [...this.pendingIce.keys()]) if (!joined.has(pid)) this.pendingIce.delete(pid);
     for (const r of receivers) this.syncWindow(r.participantId);
     this.checkFinal();
@@ -304,8 +337,7 @@ export class SenderController extends Observable<TxState> {
   }
 
   cancelAll(): void {
-    for (const r of this.state_.receivers)
-      if (!['completed', 'failed', 'cancelled', 'removed'].includes(r.status)) this.cancel(r.participantId);
+    for (const r of this.state_.receivers) if (!txEnded(r.status)) this.cancel(r.participantId);
   }
 
   /** Test hook: drop every peer connection and ignore offers for `ms` (simulates the sender going offline). */
@@ -403,7 +435,7 @@ export class SenderController extends Observable<TxState> {
       const mine = [...this.transfers.values()].filter((x) => x.participant_id === t.participant_id);
       const server = statusFromServer(mine.map((x) => x.status));
       const r = this.state_.receivers.find((x) => x.participantId === t.participant_id);
-      if (r && server && ['completed', 'failed', 'cancelled'].includes(server) && r.status !== 'removed')
+      if (r && server && ['completed', 'failed', 'cancelled'].includes(server) && !txExcluded(r.status))
         this.patch(r.participantId, { status: server });
       if (server !== 'paused') this.resuming.delete(t.participant_id);
       // While a resume of several files is in flight, the files still PAUSED must not flip the card back.
@@ -430,9 +462,9 @@ export class SenderController extends Observable<TxState> {
 
   private async onOffer(pid: string, payload: SdpPayload): Promise<void> {
     if (Date.now() < this.refusing) return;
-    if (!this.state_.receivers.some((r) => r.participantId === pid && r.status !== 'removed')) await this.refresh();
+    if (!this.state_.receivers.some((r) => r.participantId === pid && !this.gone.has(pid))) await this.refresh();
     const r = this.state_.receivers.find((x) => x.participantId === pid);
-    if (!r || r.status === 'removed') return;
+    if (!r || this.gone.has(pid)) return;
     this.drop(pid);
     const cfg = await rtcConfig(this.d.api, this.d.sessionId);
     const pc = this.d.createPeer ? this.d.createPeer(cfg) : new RTCPeerConnection(cfg);
@@ -549,7 +581,7 @@ export class SenderController extends Observable<TxState> {
 
   private onConnError(pid: string, code: ErrorCode | 'closed', fatal: boolean): void {
     const r = this.state_.receivers.find((x) => x.participantId === pid);
-    if (!r || ['completed', 'failed', 'cancelled', 'removed'].includes(r.status)) return;
+    if (!r || txEnded(r.status)) return;
     if (code === 'cancelled') return this.patch(pid, { status: 'cancelled' });
     if (fatal)
       return this.patch(pid, {
@@ -620,17 +652,8 @@ export class SenderController extends Observable<TxState> {
   private checkFinal(sessionEnded = false): void {
     const rs = this.state_.receivers;
     if (!rs.length) return;
-    const done = (s: TxStatus) => ['completed', 'failed', 'cancelled', 'removed'].includes(s);
-    if (!sessionEnded && !rs.every((r) => done(r.status))) return;
-    const completed = rs.filter((r) => r.status === 'completed').length;
-    const final: TxFinal =
-      completed === rs.length
-        ? 'completed'
-        : completed > 0
-          ? 'partial'
-          : rs.some((r) => r.status === 'failed')
-            ? 'failed'
-            : 'cancelled';
+    if (!sessionEnded && !rs.every((r) => txEnded(r.status))) return;
+    const final = finalOf(rs.map((r) => r.status));
     if (this.state_.final !== final) this.update({ final });
     if (this.historyWritten || !this.d.history) return;
     this.historyWritten = true;
@@ -645,7 +668,12 @@ export class SenderController extends Observable<TxState> {
       transferredBytes: Math.max(0, ...rs.map((r) => r.verified)),
       peer: rs.map((r) => r.name).join(', '),
       peers: rs.map((r) => r.name),
-      files: files.map((f) => ({ name: f.name, size: f.size })),
+      // Per file, the most any receiver verified (a partial send shows what got through).
+      files: files.map((f) => ({
+        name: f.name,
+        size: f.size,
+        transferredBytes: Math.max(0, ...rs.map((r) => r.perFile[f.index] ?? 0)),
+      })),
       ...routeOf(rs.map((r) => r.route)),
       ...(this.startedAt ? { startedAt: this.startedAt } : {}),
       status,

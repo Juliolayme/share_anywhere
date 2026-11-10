@@ -177,6 +177,23 @@ export async function apiJoin(request: APIRequestContext, token: string, code: s
   return j.status();
 }
 
+/** Like apiJoin, but also returns the error code of a refused lookup or join (`{ error, message }`). */
+export async function apiJoinResult(
+  request: APIRequestContext,
+  token: string,
+  code: string,
+): Promise<{ status: number; error?: string }> {
+  const headers = { Authorization: `Bearer ${token}` };
+  const r = await request.post(`${BASE}/v1/sessions/resolve-code`, { headers, data: { code } });
+  if (!r.ok()) return { status: r.status(), error: (await r.json().catch(() => ({}))).error };
+  const p = await r.json();
+  const j = await request.post(`${BASE}/v1/sessions/${p.session_id}/join`, {
+    headers,
+    data: { ticket: p.join_ticket },
+  });
+  return { status: j.status(), ...(j.ok() ? {} : { error: (await j.json().catch(() => ({}))).error }) };
+}
+
 export async function advanceClock(request: APIRequestContext, seconds: number) {
   const r = await request.post(`${BASE}/v1/_test/clock`, { data: { advance_seconds: seconds } });
   expect(r.ok(), 'the CI stack must be built with -tags testhooks').toBeTruthy();

@@ -105,6 +105,8 @@ test('Remove mid-transfer ends that receiver only; the other completes', async (
   await senderHook(sender, s.id, { pace: 0 });
   await expect(result(keep)).toHaveAttribute('data-result', 'completed', { timeout: 120_000 });
   await expect(card(sender, 'Receiver Keep')).toHaveAttribute('data-status', 'completed');
+  // The removed receiver does not count against the result (docs/ARCHITECTURE.md §4.5).
+  await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 30_000 });
 });
 
 test('Block mid-transfer ends that receiver, which cannot rejoin; the other completes', async ({
@@ -127,7 +129,7 @@ test('Block mid-transfer ends that receiver, which cannot rejoin; the other comp
 
   await card(sender, 'Receiver Blocked').getByRole('button', { name: 'Block Receiver Blocked' }).click();
   await sender.getByRole('dialog').getByRole('button', { name: 'Block' }).click();
-  await expect(card(sender, 'Receiver Blocked')).toHaveAttribute('data-status', 'removed', { timeout: 15_000 });
+  await expect(card(sender, 'Receiver Blocked')).toHaveAttribute('data-status', 'blocked', { timeout: 15_000 });
   await expect(bad.getByRole('heading', { name: 'The sender blocked this device from the session.' })).toBeVisible({
     timeout: 30_000,
   });
@@ -139,6 +141,7 @@ test('Block mid-transfer ends that receiver, which cannot rejoin; the other comp
 
   await senderHook(sender, s.id, { pace: 0 });
   await expect(result(keep)).toHaveAttribute('data-result', 'completed', { timeout: 120_000 });
+  await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 30_000 });
 });
 
 test('Close session: every receiver sees the session end', async ({ browser, browserName }) => {

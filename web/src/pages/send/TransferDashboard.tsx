@@ -23,6 +23,8 @@ import { useSender } from '../../features/transfer/TransferContext';
 import {
   groupEta,
   txActive,
+  txEnded,
+  txExcluded,
   type TxFinal,
   type TxReceiver,
   type TxStatus,
@@ -78,6 +80,7 @@ const ORDER: TxStatus[] = [
   'failed',
   'cancelled',
   'removed',
+  'blocked',
 ];
 /** Matrix cells as in the design: red for a failed receiver, amber while reconnecting, otherwise blue. */
 const matrixTone = (s: TxStatus) =>
@@ -202,11 +205,16 @@ export default function TransferDashboard() {
               <span className="text-[14px] text-fg-2">{t('web.overall')}</span>
             </span>
             <span className="font-mono text-[13px] text-fg-2" data-testid="group-eta">
-              {t('product.bytes_of', {
-                done: formatBytes(overallDone, locale),
-                total: formatBytes(overallTotal, locale),
-              })}
-              {groupSeconds !== undefined && !s.final && ` · ${overallEta(groupSeconds)}`}
+              {groupSeconds !== undefined && !s.final
+                ? t('product.bytes_of_eta', {
+                    done: formatBytes(overallDone, locale),
+                    total: formatBytes(overallTotal, locale),
+                    eta: overallEta(groupSeconds),
+                  })
+                : t('product.bytes_of', {
+                    done: formatBytes(overallDone, locale),
+                    total: formatBytes(overallTotal, locale),
+                  })}
             </span>
           </div>
           <ProgressBar value={overallTotal ? overallDone / overallTotal : 0} label={t('web.overall')} height={10} />
@@ -313,7 +321,9 @@ export default function TransferDashboard() {
       </div>
       <ConfirmDialog
         open={!!blockTarget}
-        title={t('product.block_confirm_h')}
+        title={
+          blockTarget ? t('product.block_confirm_named_h', { name: blockTarget.name }) : t('product.block_confirm_h')
+        }
         body={t('product.block_confirm_p')}
         confirmLabel={t('product.block')}
         cancelLabel={t('web.cancel')}
@@ -404,13 +414,13 @@ function ReceiverCard({
   const speed = useSpeed();
   const [details, setDetails] = useState(false);
   const Icon = mobile(r.platform) ? Smartphone : Laptop;
-  const ended = ['completed', 'failed', 'cancelled', 'removed'].includes(r.status);
+  const ended = txEnded(r.status);
   return (
     <article
       aria-label={r.name}
       data-testid="receiver-card"
       data-status={r.status}
-      className={`flex flex-col gap-[14px] rounded-[16px] border border-border bg-surface p-[18px] ${r.status === 'removed' || r.status === 'cancelled' ? 'opacity-60' : ''}`}
+      className={`flex flex-col gap-[14px] rounded-[16px] border border-border bg-surface p-[18px] ${txExcluded(r.status) || r.status === 'cancelled' ? 'opacity-60' : ''}`}
     >
       <div className="flex items-center gap-3">
         <span
@@ -484,7 +494,7 @@ function ReceiverCard({
             {t('web.remove')}
           </Button>
         )}
-        {!ended && (
+        {r.joined && (
           <Button
             size="sm"
             variant="danger-ghost"

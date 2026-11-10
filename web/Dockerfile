@@ -13,6 +13,9 @@ COPY web web
 # Test stacks only: exposes engine counters and fault injection (docs/TESTING_AND_CI.md §3). Off by default.
 ARG VITE_TEST_HOOKS=false
 ENV VITE_TEST_HOOKS=$VITE_TEST_HOOKS
+# Sender block cache budget in MiB (docs/TRANSFER_PROTOCOL.md §5.1).
+ARG VITE_BLOCK_CACHE_MB=64
+ENV VITE_BLOCK_CACHE_MB=$VITE_BLOCK_CACHE_MB
 RUN pnpm --filter @share-anywhere/web build
 
 FROM caddy:2-alpine

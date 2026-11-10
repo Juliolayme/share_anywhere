@@ -114,7 +114,13 @@ export async function receiverPage(
       ...(logFile ? { env: { ...process.env, MOZ_LOG_FILE: logFile } } : {}),
     });
     ownBrowsers.push(own);
-    return guestPage(own, wake ? { wake } : {});
+    const page = await guestPage(own, wake ? { wake } : {});
+    // Without a camera or microphone permission Firefox gathers only its default-route address, found by a
+    // UDP probe that fails intermittently on the CI runner after a reload ("failed to find default
+    // addresses", no candidates at all). With the permission it gathers every interface and skips the probe.
+    // Test-machine configuration like Chromium's mDNS flag (docs/TESTING_AND_CI.md §3).
+    await page.context().grantPermissions(['camera', 'microphone'], { origin: BASE });
+    return page;
   }
   if (!persistent) return guestPage(browser, wake ? { wake } : {});
   const type = browserName === 'webkit' ? webkit : chromium;

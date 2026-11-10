@@ -96,8 +96,8 @@ let senderBrowser: Browser | null = null;
 export async function senderPage(wake: WakeMode = 'granted'): Promise<Page> {
   // Explicit channel and path: the Firefox project's stock-Firefox options would otherwise apply here too.
   senderBrowser ??= await chromium.launch({
-    channel: undefined,
-    executablePath: undefined,
+    channel: 'chromium',
+    executablePath: chromium.executablePath(),
     args: ['--disable-features=WebRtcHideLocalIpsWithMdns'],
   });
   return guestPage(senderBrowser, { wake });

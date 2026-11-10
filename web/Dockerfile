@@ -7,6 +7,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY web/package.json web/package.json
 RUN pnpm install --frozen-lockfile --filter @share-anywhere/web...
 COPY shared/i18n shared/i18n
+# Shared transfer state table, read by the runtime tests that `tsc -b` type-checks.
+COPY shared/protocol/schemas shared/protocol/schemas
 COPY web web
 # Test stacks only: exposes engine counters and fault injection (docs/TESTING_AND_CI.md §3). Off by default.
 ARG VITE_TEST_HOOKS=false

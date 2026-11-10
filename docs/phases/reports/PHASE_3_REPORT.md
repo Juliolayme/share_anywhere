@@ -1,9 +1,9 @@
 # Phase 3 report: Web ↔ Web peer-to-peer file transfer
 
-Status: **implemented**, with one open gate item (Firefox, §6). All transfers here run between guest devices.
+Status: **implemented**. All transfers here run between guest devices.
 
 - **Chromium and WebKit:** Web-to-Web transfers work end to end, including the iPhone 14 and Pixel 7 profiles. Verified locally and in the CI `e2e-web` matrix.
-- **Firefox:** the receiver does not connect in Playwright's Firefox build, locally or in CI.
+- **Firefox:** transfers pass locally with a stock Firefox 160 receiver. Playwright's own patched Firefox build cannot open WebRTC connections (§6), so CI downloads a pinned stock Firefox for that job; the CI result is in `docs/qa/PHASE_3_QA.md`.
 
 Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
 
@@ -80,10 +80,11 @@ Date: 2026-11-10. Branch: `claude/practical-lovelace-avlb5g`.
 - **TURN relay:** Playwright transfers here connect directly. Forced relay is Phase 8.
 - **Files over 2 GB:** see the 20 GB runbook (`docs/runbooks/large-file-manual-test.md`).
 
-### Partially implemented
+### Also implemented
 
-- **Firefox receiver** (§6).
-- **Mobile visual baselines** (carried from Phase 2): the spec (`e2e/mobile/snapshots.spec.ts`) and the generating job (`nightly.yml` `mobile-snapshots`) exist. The baselines still have to be generated on the runner and committed before the PR suite compares them.
+- **Mobile visual baselines** (carried from Phase 2): `e2e/mobile/snapshots.spec.ts` compares four screens per mobile project. The baselines are generated on the CI runner by `nightly.yml` `mobile-snapshots` and committed.
+- **Browser storage lifecycle:** a finished file stays 24 hours so it can be downloaded again; partial data is removed on failure, cancel or removal; a sweep removes old and orphaned data (`storage/sweep.ts`).
+- **Reconnect window:** 2 minutes to make a first connection, 10 minutes to get one back. After that RX-6 shows "Couldn't reach the sender" with Retry.
 
 ### Planned (later phases)
 
@@ -105,16 +106,16 @@ Local runs used the CI Compose stack, with the backend built with `-tags testhoo
 
 | Workflow (`web/e2e/transfer/`, `mobile/transfer.spec.ts`) | chromium-desktop | webkit-desktop | android-chrome | ios-safari | firefox-desktop |
 |---|---|---|---|---|---|
-| 64 MB file, SHA-256 of the download matches, History on both sides survives a reload | Passed locally and in CI | Passed locally and in CI | — (mobile spec) | — | Fails (§6) |
-| Pause and resume; wake lock held on both sides, released on pause and completion, re-requested after resume and after hidden → visible | Passed | Passed | — | — | Fails |
-| Cancel releases the lock; the sender sees the receiver cancelled | Passed | Passed | — | — | Fails |
-| Receiver reload mid-transfer resumes from the bitmap: zero duplicate blocks, blocks received = total − resumed | Passed | Passed | — | — | Fails |
-| Corrupted block (test hook) → one `NACK`, re-sent, file matches | Passed | Passed | — | — | Fails |
-| Sender drops off → receiver shows Reconnecting and the banner, then completes | Passed | Passed | — | — | Fails |
+| 64 MB file, SHA-256 of the download matches, History on both sides survives a reload | Passed locally and in CI | Passed locally and in CI | — (mobile spec) | — | Passed locally (stock Firefox 160) |
+| Pause and resume; wake lock held on both sides, released on pause and completion, re-requested after resume and after hidden → visible | Passed | Passed | — | — | Passed locally |
+| Cancel releases the lock; the sender sees the receiver cancelled | Passed | Passed | — | — | Passed locally |
+| Receiver reload mid-transfer resumes from the bitmap: zero duplicate blocks, blocks received = total − resumed | Passed | Passed | — | — | Passed locally |
+| Corrupted block (test hook) → one `NACK`, re-sent, file matches | Passed | Passed | — | — | Passed locally |
+| Sender drops off → receiver shows Reconnecting and the banner, then completes | Passed | Passed | — | — | Passed locally |
 | Save to a folder (File System Access, picker returns an OPFS folder) | Passed | skipped | skipped | skipped | skipped |
 | Private window (ephemeral WebKit, no OPFS) → memory path, 8 MB | skipped | Passed | skipped | — | skipped |
 | Mobile: capability row (family, OPFS, folder), warning, 8 MB via browser storage, no horizontal scroll | — | — | Passed locally and in CI | Passed locally and in CI | — |
-| Nightly 2 GB with a receiver reload, zero duplicates, SHA-256, JS heap < 512 MiB | Passed locally (1.9 min); CI run in §4 | — | — | — | — |
+| Nightly 2 GB with a receiver reload, zero duplicates, SHA-256, JS heap < 512 MiB | Passed locally (1.9 min) and in CI: Nightly [42824525884](https://github.com/Juliolayme/share_anywhere/actions/runs/42824525884), [42825463463](https://github.com/Juliolayme/share_anywhere/actions/runs/42825463463), [42827720405](https://github.com/Juliolayme/share_anywhere/actions/runs/42827720405) | — | — | — | — |
 
 The Phase 1 and Phase 2 suites still pass on all four working projects (one Phase 2 spec now expects `receive-save` after joining, because RX-4b `receive-joined` was retired).
 
@@ -126,20 +127,21 @@ The Phase 1 and Phase 2 suites still pass on all four working projects (one Phas
 | `TEST_DATABASE_URL=… go test -race -count=1 -cover ./...` | All pass. Coverage: `transfers` 89.5 %, `sharing` 77.1 %, `signaling` 83.3 %, `turncreds` 75.0 %, `ws` 89.0 %, `devices` 88.9 %, `access` 98.1 % |
 | `pnpm protocol:check` | 31 operations agree with `docs/API.md`; WebSocket schema valid; TS client current |
 | `pnpm i18n:check` | EN/VI current, 1,760 keys each |
-| `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 105 unit tests, including the engine (codec fuzzing, bitmap, hashing against Node `crypto`, resume with zero duplicates, NACK, pause, cancel, unauthorized, 16 KiB message limit), shared vectors, save planning, the transitions mirror, the reporter, the progress store, History rows, and every catalog key used in code |
-| `pnpm --filter web build` | Main JS 100.2 kB gzip (budget 120 kB) |
-| Playwright, all five projects locally (chromium, android-chrome, webkit, ios-safari; Firefox installed but see §6) | All non-Firefox specs pass |
-| CI | Run 42819723606 (58fa83b): 11 of 12 jobs green; `e2e-web (firefox-desktop)` red on the six transfer specs. Later runs are listed in `docs/qa/PHASE_3_QA.md` |
+| `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 108 unit tests (the format check failed at 938f01c and was fixed in 9322f2b), including the engine (codec fuzzing, bitmap, hashing against Node `crypto`, resume with zero duplicates, NACK, pause, cancel, unauthorized, 16 KiB message limit), shared vectors, save planning, the transitions mirror, the reporter, the progress store, History rows, and every catalog key used in code |
+| `pnpm --filter web build` | Main JS about 100.5 kB gzip (budget 120 kB) |
+| Playwright, all five projects locally (Firefox as stock Firefox 160 over BiDi) | All specs pass; the mobile snapshot comparisons can differ locally by font anti-aliasing (baselines come from the CI runner) |
+| CI | Run 42819723606 (58fa83b): 11 of 12 jobs green, Firefox red (patched build). Run 42827720718 (ceb4d0b): `web` red on Prettier and Firefox red; both fixed in 9322f2b. Later runs in `docs/qa/PHASE_3_QA.md` |
 
 ## 5. Environment variables and external services
 
-- **New:** `VITE_TEST_HOOKS` (Web build argument, `true` only on the CI stack; `docker-compose.ci.yml`).
+- **New:** `VITE_TEST_HOOKS` (Web build argument, `true` only on the CI stack; `docker-compose.ci.yml`, `.env.example`).
+- **E2E only:** `E2E_FIREFOX_BIN` (stock Firefox for the `firefox-desktop` project; CI sets it).
 - **TURN:** as in Phase 2 (`SA_TURN_SECRET`, `SA_TURN_URIS`); clients derive a `stun:` URI from the TURN URIs.
 - **Nightly:** `E2E_LARGE=1` and `E2E_FIXTURE_DIR`.
 
 ## 6. Known limitations and untested behavior
 
-- **Firefox receiver.** In Playwright's Firefox build the RTCPeerConnection never gathers a candidate: `iceGatheringState` stays `new` and ICE fails at once, even with no ICE servers. I reproduced this locally, and in CI the receiver stays at 0 bytes. Chromium and WebKit connect in the same environment. This is being diagnosed with the ICE diagnostics the transfer specs now attach on failure. Until it is resolved, the exit gate's "three desktop engines" is met for two of them.
+- **Playwright's Firefox build cannot do WebRTC.** Its RTCPeerConnection never gathers a candidate (ICE fails at once, with or without STUN/TURN; CI diagnostics in run 42827720718). The Firefox project therefore drives stock Firefox over WebDriver BiDi. Real Firefox users are unaffected; this is a test-tool limit.
 - **Off-the-record contexts keep OPFS in memory.** Chromium incognito-like contexts (Playwright's default) are affected, so the nightly run uses a persistent profile. Real incognito windows could hit a storage error on large files. The capability check cannot see this, and the receiver shows "This device ran out of storage space".
 - **Picked files live only in the sender's tab.** A sender reload loses them (the browser gives no persistent access). Both screens explain it and receivers end with "The sender's tab no longer has the files".
 - **Web limits:** no "Open" or "Show in folder" on the Web (G3); Retry for a failed receiver is not built (G4).
@@ -148,8 +150,8 @@ The Phase 1 and Phase 2 suites still pass on all four working projects (one Phas
 
 | Priority | Item |
 |---|---|
-| P0 | Firefox receiver connectivity in CI (exit gate) |
-| P1 | Commit the runner-generated mobile baselines and turn on comparison in the PR suite; retry for failed receivers (Phase 4); Firefox `navigation-retry` root cause (from Phase 2) |
+| P0 | — |
+| P1 | Retry for failed receivers (Phase 4); confirm zero flaky Firefox specs over several CI runs now that Firefox runs as stock Firefox (the Phase 2 `navigation-retry` item) |
 | P2 | Move whole-file hashing into a worker on the sender (it shares the main thread with the block reader); unit tests for the controllers with a fake RTCPeerConnection; sender notice for auto-declined receivers (F13) |
 
 ## 8. Local run
@@ -167,3 +169,7 @@ Same as Phase 2: `docker compose up --build`, then open `https://localhost:8443`
 | 420ca24 | Nightly 2 GB job, diagnostics, docs |
 | 6c72d11 | Nightly jobs run when they change on a branch |
 | c00837a | Mobile baselines job; History transferred vs. size |
+| 938f01c | Report draft; catalog key check; Web catalog gains the `handoff` strings |
+| ceb4d0b | Runner-generated mobile baselines committed |
+| 9322f2b | QA round 1 fixes; stock Firefox for WebRTC specs |
+| (this commit) | Sender launch fix for the Firefox project; report and QA record |

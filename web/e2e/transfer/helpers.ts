@@ -177,6 +177,8 @@ export async function attachDiagnostics(pages: Page[]) {
         );
       })
       .catch((e: unknown) => `unavailable: ${String(e)}`);
-    await info.attach(`diagnostics-${i}`, { body: d, contentType: 'application/json' });
+    const path = info.outputPath(`diagnostics-${i}.json`);
+    writeFileSync(path, d);
+    await info.attach(`diagnostics-${i}`, { path, contentType: 'application/json' });
   }
 }

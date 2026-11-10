@@ -484,7 +484,7 @@ type RefreshRequest struct {
 type SessionView struct {
 	Capacity *Capacity `json:"capacity,omitempty"`
 
-	// Code Sender only
+	// Code Sender only, while the join window is open.
 	Code      *string            `json:"code,omitempty"`
 	ExpiresAt time.Time          `json:"expires_at"`
 	FileCount int                `json:"file_count"`
@@ -495,7 +495,7 @@ type SessionView struct {
 	JoinUrl    *string     `json:"join_url,omitempty"`
 	JoinWindow *JoinWindow `json:"join_window,omitempty"`
 
-	// LinkToken Sender only
+	// LinkToken Sender only, while the join window is open.
 	LinkToken *string      `json:"link_token,omitempty"`
 	Me        *Participant `json:"me,omitempty"`
 

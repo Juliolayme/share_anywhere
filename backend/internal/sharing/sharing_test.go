@@ -502,7 +502,14 @@ func TestRenewWhileFullAndApprovalAfterExpiry(t *testing.T) {
 	}
 	// Removing someone frees a slot, and Create new code works again.
 	v, _ := e.svc.View(ctx, sender.DeviceID, s.ID)
-	if _, err := e.svc.Decide(ctx, sender, v.Participants[1].ID, "reject"); err != nil {
+	var pending string
+	for _, p := range v.Participants {
+		if p.Status == PRequested {
+			pending = p.ID
+			break
+		}
+	}
+	if _, err := e.svc.Decide(ctx, sender, pending, "reject"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.svc.Renew(ctx, sender, s.ID); err != nil {

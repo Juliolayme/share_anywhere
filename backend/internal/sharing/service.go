@@ -206,7 +206,7 @@ type querier interface {
 }
 
 func listParticipants(ctx context.Context, q querier, sessionID string) ([]participantRow, error) {
-	rows, err := q.Query(ctx, `SELECT `+participantCols+` FROM session_participants WHERE session_id = $1::uuid ORDER BY created_at`, sessionID)
+	rows, err := q.Query(ctx, `SELECT `+participantCols+` FROM session_participants WHERE session_id = $1::uuid ORDER BY created_at, id`, sessionID)
 	if err != nil {
 		return nil, err
 	}

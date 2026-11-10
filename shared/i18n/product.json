@@ -26,11 +26,11 @@
     "joined_session": "You joined {name}’s session",
     "joining": "Joining…",
     "log_all_chunks": "All chunks received · verifying SHA-256",
-    "log_connection_lost_at": "Connection lost at {percent}%",
+    "log_connection_lost_at": "Connection lost at {done} — network changed",
     "log_integrity_ok": "Integrity OK · SHA-256 match on {n} files",
     "log_joined_code": "Joined with a code",
     "log_receiving": "Receiving {n} files",
-    "log_reconnected_from": "Reconnected · resumed from last verified chunk ({percent}%)",
+    "log_reconnected_from": "Reconnected · resumed from last verified chunk ({done})",
     "log_relay": "Using relay · {region} · encrypted",
     "log_relay_timeout": "Relay timed out after {seconds} s — stopped at {percent}%",
     "log_sending_to": "Sending to {name}",
@@ -50,7 +50,14 @@
     "stop_nudge": "Everyone here? Stop accepting new receivers",
     "turn_on_history_sync": "Turn on history sync",
     "waiting_sender": "Waiting for the sender to let you in",
-    "wake_refused": "Couldn’t keep the screen on — keep this tab visible"
+    "wake_refused": "Couldn’t keep the screen on — keep this tab visible",
+    "badge_guest": "Guest",
+    "badge_signed_in": "Signed in",
+    "log_retry_requested": "Retry requested",
+    "log_cloud_approved": "Cloud distribution approved · uploading once, receivers download",
+    "log_cloud_budget": "Cloud budget limit reached ({amount}) — paused",
+    "live_sending_to": "Sending to {n} receivers",
+    "clipboard_click_sync": "Click Sync Clipboard to read the current clipboard."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -78,11 +85,11 @@
     "joined_session": "Bạn đã vào phiên của {name}",
     "joining": "Đang vào phiên…",
     "log_all_chunks": "Đã nhận đủ các phần · đang kiểm tra SHA-256",
-    "log_connection_lost_at": "Mất kết nối ở {percent}%",
+    "log_connection_lost_at": "Mất kết nối ở {done} — mạng đã thay đổi",
     "log_integrity_ok": "Toàn vẹn OK · khớp SHA-256 cả {n} tệp",
     "log_joined_code": "Đã vào bằng mã",
     "log_receiving": "Đang nhận {n} tệp",
-    "log_reconnected_from": "Đã nối lại · tiếp tục từ phần đã kiểm tra ({percent}%)",
+    "log_reconnected_from": "Đã nối lại · tiếp tục từ phần đã kiểm tra ({done})",
     "log_relay": "Dùng relay · {region} · có mã hoá",
     "log_relay_timeout": "Relay quá thời gian {seconds} giây — dừng ở {percent}%",
     "log_sending_to": "Đang gửi tới {name}",
@@ -102,6 +109,13 @@
     "stop_nudge": "Đủ người rồi? Ngừng nhận thêm người nhận",
     "turn_on_history_sync": "Bật đồng bộ lịch sử",
     "waiting_sender": "Đang chờ người gửi cho bạn vào",
-    "wake_refused": "Không giữ được màn hình sáng — hãy để tab này luôn hiển thị"
+    "wake_refused": "Không giữ được màn hình sáng — hãy để tab này luôn hiển thị",
+    "badge_guest": "Khách",
+    "badge_signed_in": "Đã đăng nhập",
+    "log_retry_requested": "Đã yêu cầu thử lại",
+    "log_cloud_approved": "Đã duyệt phân phối qua Cloud · tải lên một lần, người nhận tự tải xuống",
+    "log_cloud_budget": "Đã chạm giới hạn ngân sách Cloud ({amount}) — tạm dừng",
+    "live_sending_to": "Đang gửi tới {n} người nhận",
+    "clipboard_click_sync": "Nhấn Đồng bộ clipboard để đọc nội dung clipboard hiện tại."
   }
 }

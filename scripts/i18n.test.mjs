@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractObjectLiteral, extractLocaleTables, slugify, validateCatalogs, buildCatalogs, flatten } from './gen-i18n.mjs';
+import { extractObjectLiteral, extractLocaleTables, slugify, validateCatalogs, buildCatalogs, flatten, extractInlinePairs } from './gen-i18n.mjs';
 import { readFileSync } from 'node:fs';
 
 test('extracts an object literal even when strings contain braces and quotes', () => {
@@ -89,4 +89,10 @@ test('TRP patterns convert to templates without executing code', async () => {
   assert.deepEqual(patternToTemplates('^(.+) joined$', "m[1] + ' đã vào phiên'"), { en: '{1} joined', vi: '{1} đã vào phiên' });
   assert.deepEqual(patternToTemplates('^(\\d+) devices? (was|were) declined$', "m[1] + ' thiết bị'"), { en: '{1} devices were declined', vi: '{1} thiết bị' });
   assert.throws(() => patternToTemplates('^(.+) joined$', 'm[1].toUpperCase()'), /Unsupported VI expression/);
+});
+
+test('inline L() extraction fails loudly on an unsupported form or a key collision', () => {
+  assert.deepEqual(extractInlinePairs("L('a b', 'c')").en, { a_b: 'a b' });
+  assert.throws(() => extractInlinePairs('L("dq", "vi") L(\'a b\', \'c\')'), /2 L\( calls but extracted 1/);
+  assert.throws(() => extractInlinePairs("L('A b', 'x') L('a-b', 'y')"), /collide/);
 });

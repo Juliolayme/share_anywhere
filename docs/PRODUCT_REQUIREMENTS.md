@@ -113,7 +113,7 @@ Every screen includes loading, empty, populated, error, offline, and permission-
 
 ### 5.1b Account screens
 
-Sign in, Create account, Reset password, the after-sign-in choices ("Add this device to your account" on, "Copy this device's transfer history" off), Account Data Key setup with recovery phrase, device pairing or recovery phrase entry, and Sign out with keep/clear local history. Entry points are listed in `docs/UX_SCREEN_MAP.md` §9.
+Sign in, Create account, Reset password, the after-sign-in choices (`product.add_device` on, `product.copy_history` off), Account Data Key setup with recovery phrase, device pairing or recovery phrase entry, and Sign out with keep/clear local history. Entry points are listed in `docs/UX_SCREEN_MAP.md` §9.
 
 ### 5.2 Transfer home
 
@@ -238,7 +238,7 @@ PC uses Share Anywhere Web only. Web: automatic best-effort capture when permitt
 
 ### 7.2 Browser constraints
 
-Use `navigator.clipboard.readText()` / `writeText()`; `read()` only for a later image feature. HTTPS required; feature-detect; handle permission denial, missing user activation, insecure context, unsupported browser; call from valid user gestures; no aggressive polling; opportunistic checks on focus/visibility only where policy permits; never spam permission prompts; the page `copy` event captures only in-page copies. Fallback copy: "Click Sync Clipboard to read the current clipboard." Never claim a website can observe clipboard changes from other apps while inactive.
+Use `navigator.clipboard.readText()` / `writeText()`; `read()` only for a later image feature. HTTPS required; feature-detect; handle permission denial, missing user activation, insecure context, unsupported browser; call from valid user gestures; no aggressive polling; opportunistic checks on focus/visibility only where policy permits; never spam permission prompts; the page `copy` event captures only in-page copies. Fallback copy: `product.clipboard_click_sync`. Never claim a website can observe clipboard changes from other apps while inactive.
 
 ### 7.3 Android constraints
 

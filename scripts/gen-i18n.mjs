@@ -185,12 +185,22 @@ export function extractPatternTable(source) {
 export function extractInlinePairs(source) {
   const en = {};
   const vi = {};
+  let matched = 0;
   for (const m of source.matchAll(/\bL\('((?:[^'\\]|\\.)*)',\s*'((?:[^'\\]|\\.)*)'\)/g)) {
+    matched++;
     const e = m[1].replace(/\\(.)/g, '$1');
     const v = m[2].replace(/\\(.)/g, '$1');
     const key = slugify(e);
+    if (key in en && (en[key] !== e || vi[key] !== v)) {
+      throw new Error(`inline L() pairs collide on key "${key}": "${en[key]}" vs "${e}"`);
+    }
     en[key] = e;
     vi[key] = v;
+  }
+  // Every L( call must be a single-quoted literal pair; anything else would be skipped silently.
+  const calls = (source.match(/\bL\(/g) || []).length;
+  if (calls !== matched) {
+    throw new Error(`found ${calls} L( calls but extracted ${matched}; update extractInlinePairs for the new form`);
   }
   return Object.keys(en).length ? { en, vi } : null;
 }

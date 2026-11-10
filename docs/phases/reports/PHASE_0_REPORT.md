@@ -58,7 +58,7 @@ Exact pins and the reasons for them are in `docs/ADR/0001-monorepo-and-toolchain
 |---|---|---|
 | Dev Compose stack: postgres, backend, web, coturn, Caddy | Local Docker with host-built images | All services up; `/healthz` 200; `/readyz` database ok; web served over HTTPS |
 | CI Compose stack with backend health check | Local Docker with host-built images | All healthy |
-| CI Compose stack with the real Dockerfiles | GitHub Actions `compose` job | Green on runs 42779955558 (8ef378e) and 42781828564 (259582c) |
+| CI Compose stack with the real Dockerfiles | GitHub Actions `compose` job | Green on runs 42779955558 (8ef378e), 42781828564 (259582c) and 42782979011 (d44226e) |
 | `/brand` in light and dark | Chromium (Playwright), local dev server | Renders both themes with the design fonts and lockups (screenshots below) |
 | Logo wordmark contrast on `/` | Chromium, light and dark | `#102A56` on `#F7FAFD` (light), `#FFFFFF` on `#0B1A33` (dark) |
 
@@ -124,4 +124,5 @@ See the README: `cp .env.example .env`, then `docker compose up --build`, then o
 | 8993201 | QA round 2 fixes: theme-following logo, every design string table plus product overlay, pill unification, deviations section E, brand check, iOS alpha |
 | 8ef378e | Report and QA record for the design work |
 | 259582c | QA round 3 fixes: pattern translations, product strings for PRD microcopy, PRD §9 key table with test, pill copy unified |
-| (this commit) | QA round 4 fixes: connection-log strings, remaining PRD strings as keys, iOS notification wording, doc cleanups |
+| d44226e | QA round 4 fixes: connection-log strings, remaining PRD strings as keys, iOS notification wording, doc cleanups |
+| (this commit) | QA round 5 record and P2 cleanups: badge and Web log keys, inline-pair extractor guard |

@@ -89,6 +89,22 @@ No P0. Three P1 and several P2 findings; all checks and CI run 42781828564 green
 | Garbled HI-1 cell; B rows out of order; report commit table; pill tap quote; DESIGN_SYSTEM example strings; TRP count guard; positional-key meaning test; placeholder rule; QA agent "status row" | P2 | Fixed |
 | `CLAUDE.md` wording edits need the user's sign-off; CI Node 20 action warnings | P2 | Reported to the user; Node 20 actions tracked for Phase 9 |
 
-## Round 5
+## Round 5 — commit d44226e — PASS
 
-Pending.
+No P0 or P1. All three round-4 P1s verified fixed; no regressions. Every local check passed (tokens, i18n 1588 keys, brand 26 files, script tests 16/16, markdown lint, `pnpm audit`, web format/lint/typecheck/tests 14/14/build, backend gofmt/vet/golangci-lint/race tests including a real PostgreSQL ping, gitleaks on history and tree, both Compose configs) and CI run 42782979011 on d44226e was green in every job.
+
+Not verified by QA, with where it is covered: local dev Compose stack (CI `compose` job with the real Dockerfiles; verified locally in rounds 1–2 and unchanged since); Firefox and WebKit rendering (Phase 1 `e2e-web`); Android adaptive icon masks and iOS asset catalog compilation (Phase 6 and 7 CI jobs); dependency review (runs on pull requests).
+
+### Resolution of round 5 P2 findings (follow-up commit)
+
+| Finding | Resolution |
+|---|---|
+| Web connection-log lines partly covered; percent vs bytes | `product.log_retry_requested`, `log_cloud_approved`, `log_cloud_budget` added; `log_connection_lost_at` and `log_reconnected_from` take `{done}` (a byte amount, as the Web design shows) and keep "— network changed" |
+| `<app>_log` description and `log_sending_to` parameter | DESIGN_SYSTEM §1.2 describes `<app>_log` as the inline `L()` pairs; `product.live_sending_to` with `{n}` for the live receiver count |
+| Inline-pair extractor had no completeness guard | `extractInlinePairs` fails when the number of `L(` calls differs from the pairs extracted and on a key collision with different text; test added (17/17) |
+| "Signed in" badge without key or deviation row | `product.badge_guest` and `product.badge_signed_in`; DESIGN_SYSTEM cites them; deviation E12 |
+| Literal quotes drifting from keys (PRD AC choices and clipboard fallback, UX TR-5 nudge, ARCHITECTURE iOS notification) | Replaced by `product.add_device`, `product.copy_history`, `product.clipboard_click_sync`, `product.stop_nudge`, `ios.susp_h` |
+| Report references stale | Commit table names d44226e; CI evidence cites run 42782979011 |
+| `CLAUDE.md` wording edits need the user's sign-off | Reported to the user in the Phase 0 summary |
+
+**Phase 0 QA verdict: PASS.**

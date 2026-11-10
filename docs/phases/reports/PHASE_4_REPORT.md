@@ -43,8 +43,8 @@ TR-4/TR-5 session (reachable from TR-6/TR-7 by "Back to the session"; Create new
 | Two receivers, one slowed; screen held until the last ends | CI and locally: chromium-desktop, firefox-desktop (stock 160), webkit-desktop |
 | Remove and Block mid-transfer; blocked device cannot rejoin; sender result stays completed | Same |
 | Close session ends every receiver | Same |
-| A receiver joins after the result: TR-6 returns, then New transfer closes the session (code refused) and both receivers keep RX-7 | Locally: chromium-desktop, firefox-desktop, webkit-desktop; CI pending |
-| Five receivers (3 Chromium, Firefox, WebKit), sixth join refused with 409 `session_full` | Nightly [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) (06e9211) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410) (546873f, with the strict sixth-join check); locally |
+| A receiver joins after the result: TR-6 returns, then New transfer closes the session (code refused) and both receivers keep RX-7 | CI [42920840711](https://github.com/Juliolayme/share_anywhere/actions/runs/42920840711) and locally: chromium-desktop, firefox-desktop, webkit-desktop |
+| Five receivers (3 Chromium, Firefox, WebKit), sixth join refused with 409 `session_full` | Nightly [42920858447](https://github.com/Juliolayme/share_anywhere/actions/runs/42920858447) on b247af7 (final backend), earlier [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) (06e9211) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410) (546873f, with the strict sixth-join check); locally |
 | History search, filters, detail, delete, clear | CI and locally: all five projects |
 | Phase 3 transfer and pairing specs (including Create new code after expiry) | CI and locally: all five projects |
 
@@ -57,8 +57,8 @@ TR-4/TR-5 session (reachable from TR-6/TR-7 by "Back to the session"; Create new
 | `pnpm -C web format:check`, `lint`, `exec tsc -b`, `test --run` | Pass; 167 unit tests |
 | `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md` | Pass (1,787 keys each) |
 | Playwright, all five projects locally (ac7a284) | 197 passed, 61 skipped (project-specific); the 2 Android screenshot comparisons differ by local fonts (baselines are made on the runner) |
-| CI | [42916941586](https://github.com/Juliolayme/share_anywhere/actions/runs/42916941586) on ac7a284: all 12 jobs green, every e2e project included. Earlier: 42913806193 on 06e9211 (non-e2e green; four e2e jobs cancelled by the next push) |
-| Nightly | [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410): five-receivers, large-file and mobile-snapshots green |
+| CI | [42920840711](https://github.com/Juliolayme/share_anywhere/actions/runs/42920840711) on b247af7: green, every e2e project included. [42916941586](https://github.com/Juliolayme/share_anywhere/actions/runs/42916941586) on ac7a284: all 12 jobs green. Earlier: 42913806193 on 06e9211 (non-e2e green; four e2e jobs cancelled by the next push) |
+| Nightly | [42920858447](https://github.com/Juliolayme/share_anywhere/actions/runs/42920858447) on b247af7 (dispatched on the branch), [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410): five-receivers, large-file and mobile-snapshots green |
 
 ## 5. Environment variables and external services
 
@@ -96,3 +96,5 @@ Unchanged from Phase 3. New: `VITE_BLOCK_CACHE_MB` (optional, build time, in `.e
 | 595be07 | Report draft |
 | 546873f | QA round 1 Web fixes (result counting, Blocked chip, cache setting, tests) |
 | ac7a284 | QA round 1 P0: a live session ends only by Close or its lifetime |
+| 823e67e | QA round 1 record, report links |
+| b247af7 | QA round 2: provisional sender result, New transfer closes a finished session, session-end cleanup |

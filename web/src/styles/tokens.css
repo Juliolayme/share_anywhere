@@ -100,6 +100,10 @@
   --sa-elevation-e0: none;
   --sa-elevation-e1: 0 1px 2px rgba(16, 42, 86, 0.08), 0 1px 3px rgba(16, 42, 86, 0.06);
   --sa-elevation-e2: 0 8px 24px rgba(16, 42, 86, 0.12);
+  --sa-logo-send: #0878E8;
+  --sa-logo-receive: #16C75A;
+  --sa-logo-dot: #FFFFFF;
+  --sa-logo-text: #102A56;
   color-scheme: light;
 }
 
@@ -140,6 +144,10 @@
     --sa-elevation-e0: none;
     --sa-elevation-e1: none;
     --sa-elevation-e2: none;
+    --sa-logo-send: #2D8DF2;
+    --sa-logo-receive: #22D468;
+    --sa-logo-dot: #102A56;
+    --sa-logo-text: #FFFFFF;
     color-scheme: dark;
   }
 }
@@ -180,6 +188,10 @@
   --sa-elevation-e0: none;
   --sa-elevation-e1: none;
   --sa-elevation-e2: none;
+  --sa-logo-send: #2D8DF2;
+  --sa-logo-receive: #22D468;
+  --sa-logo-dot: #102A56;
+  --sa-logo-text: #FFFFFF;
   color-scheme: dark;
 }
 

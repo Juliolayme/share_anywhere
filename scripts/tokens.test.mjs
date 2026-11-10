@@ -40,3 +40,9 @@ test('a failing pair is reported', () => {
   const failures = checkContrast(t);
   assert.ok(failures.some((f) => f.startsWith('light: fg-2 on')));
 });
+
+test('a logo theme mode with an unreadable wordmark is reported', () => {
+  const t = structuredClone(loadTokens());
+  t.logo.themeMode.dark = 'color';
+  assert.ok(checkContrast(t).some((f) => f.startsWith('dark: logo wordmark on bg')));
+});

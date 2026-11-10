@@ -1,9 +1,10 @@
 import { logo, type LogoMode } from '../styles/tokens';
 
 interface LogoProps {
-  /** Symbol height in px. Below 16 px the design drops the dots; below 24 px use the symbol alone. */
+  /** Symbol height in px. At 16 px and below the dotless variant is used; below 24 px use the symbol alone. */
   size?: number;
-  mode?: LogoMode;
+  /** "auto" follows the theme through CSS variables: color mode on light, reverse (dark) mode on dark. */
+  mode?: LogoMode | 'auto';
   /** Show the "Share Anywhere" wordmark next to the symbol. */
   lockup?: boolean;
   /** Override the dot color, e.g. to match the background in mono modes (Brand.dc.html). */
@@ -13,10 +14,17 @@ interface LogoProps {
 }
 
 // Mirrors design/claude-design/Logo.dc.html: two passing capsules (blue sends, green receives) with lead dots.
-export function Logo({ size = 40, mode = 'color', lockup = false, dotColor, label = 'Share Anywhere' }: LogoProps) {
-  const m = logo.modes[mode];
+const AUTO = {
+  send: 'var(--sa-logo-send)',
+  receive: 'var(--sa-logo-receive)',
+  dot: 'var(--sa-logo-dot)',
+  text: 'var(--sa-logo-text)',
+} as const;
+
+export function Logo({ size = 40, mode = 'auto', lockup = false, dotColor, label = 'Share Anywhere' }: LogoProps) {
+  const m = mode === 'auto' ? AUTO : logo.modes[mode];
   const g = logo.geometry;
-  const showDots = size >= logo.dotlessBelowPx;
+  const showDots = size > logo.dotlessAtOrBelowPx;
   const [sx, sy, sw, sh, sr] = g.capsuleSend;
   const [rx, ry, rw, rh, rr] = g.capsuleReceive;
   const decorative = label === '' || lockup;

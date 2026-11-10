@@ -53,7 +53,7 @@ export default function BrandPreview() {
           {(['system', 'light', 'dark'] as const).map((p) => (
             <label
               key={p}
-              className={`min-h-touch cursor-pointer rounded-md px-3 py-2 text-caption focus-within:outline focus-within:outline-focus focus-within:outline-offset-focus focus-within:outline-focus ${pref === p ? 'bg-send text-on-send' : 'text-fg'}`}
+              className={`min-h-touch cursor-pointer rounded-md px-3 py-2 text-caption focus-within:outline focus-within:outline-[2px] focus-within:outline-offset-2 focus-within:outline-[var(--sa-focus)] ${pref === p ? 'bg-send text-on-send' : 'text-fg'}`}
             >
               <input
                 type="radio"

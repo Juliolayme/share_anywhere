@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // Generates EN/VI string catalogs from the Claude Design handoff (CLAUDE.md, UI source of truth).
 //
-// Sources, all in design/claude-design/:
-//   i18n-strings.json  ui.en / ui.vi   named strings            -> "common"
-//                      generated       EN text -> VI dictionary  -> "phrases" (slug keys)
-//   Web App.dc.html     const T = {en, vi}                      -> "web"
-//   Android App.dc.html const T = {en, vi}                      -> "android"
-//   iOS App.dc.html     const T = {en, vi}                      -> "ios"
-// The T tables are parsed as JSON5 data (never executed).
+// Sources, all in design/claude-design/ unless noted:
+//   i18n-strings.json   ui.en / ui.vi   named strings              -> "common"
+//                       generated       EN text -> VI dictionary   -> "phrases" (slug keys)
+//   <App>.dc.html       every `const NAME = { en: {...}, vi: {...} }` table:
+//                       T -> "<app>", any other NAME -> "<app>_<name>" (web, android, ios)
+//   Handoff Checklist.dc.html  `copy: [[key, en, vi], ...]`   -> "handoff"
+//   shared/i18n/product.json   PRD strings the design lacks     -> "product" (hand-written)
+// All tables are parsed as JSON5 data (never executed). A table that looks like {en, vi} but cannot be parsed fails the run.
 //
 //   node scripts/gen-i18n.mjs           write shared/i18n/en.json and vi.json
 //   node scripts/gen-i18n.mjs --check   fail if they are out of date or EN/VI keys differ
@@ -72,6 +73,52 @@ export function flatten(obj, prefix = '') {
 
 const placeholders = (s) => (String(s).match(/\{[a-zA-Z0-9_]+\}/g) ?? []).sort().join(',');
 
+/** Every `const NAME = {...}` in a prototype whose value is an {en, vi} string table. */
+export function extractLocaleTables(source) {
+  const tables = {};
+  for (const m of source.matchAll(/const ([A-Z][A-Z0-9_]*) = \{/g)) {
+    const name = m[1];
+    const literal = extractObjectLiteral(source.slice(m.index), name);
+    const looksLocale = /^\{\s*["']?en["']?\s*:/.test(literal);
+    if (!looksLocale) continue;
+    let parsed;
+    try {
+      parsed = JSON5.parse(literal);
+    } catch (e) {
+      throw new Error(`Locale table ${name} could not be parsed: ${e.message}`);
+    }
+    if (!parsed.en || !parsed.vi) throw new Error(`Locale table ${name} lacks en or vi`);
+    tables[name] = parsed;
+  }
+  return tables;
+}
+
+/** The Handoff Checklist's key microcopy list: [[key, en, vi], ...]. */
+export function extractHandoffCopy(source) {
+  const start = source.indexOf('copy: [');
+  if (start < 0) throw new Error('Handoff Checklist copy list not found');
+  let i = source.indexOf('[', start);
+  const begin = i;
+  let depth = 0;
+  let quote = null;
+  for (; i < source.length; i++) {
+    const c = source[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "'" || c === '"') quote = c;
+    else if (c === '[') depth++;
+    else if (c === ']' && --depth === 0) break;
+  }
+  const rows = JSON5.parse(source.slice(begin, i + 1));
+  return {
+    en: Object.fromEntries(rows.map(([k, en]) => [k, en])),
+    vi: Object.fromEntries(rows.map(([k, , vi]) => [k, vi])),
+  };
+}
+
 export function buildCatalogs() {
   const strings = JSON.parse(readFileSync(join(DESIGN, 'i18n-strings.json'), 'utf8'));
   const en = { common: strings.ui.en, phrases: {} };
@@ -90,15 +137,27 @@ export function buildCatalogs() {
     vi.phrases[key] = viText;
   }
 
-  for (const [ns, file] of [
+  for (const [app, file] of [
     ['web', 'Web App.dc.html'],
     ['android', 'Android App.dc.html'],
     ['ios', 'iOS App.dc.html'],
   ]) {
-    const table = JSON5.parse(extractObjectLiteral(readFileSync(join(DESIGN, file), 'utf8'), 'T'));
-    en[ns] = table.en;
-    vi[ns] = table.vi;
+    const tables = extractLocaleTables(readFileSync(join(DESIGN, file), 'utf8'));
+    if (!tables.T) throw new Error(`${file}: string table T not found`);
+    for (const [name, table] of Object.entries(tables)) {
+      const ns = name === 'T' ? app : `${app}_${name.toLowerCase()}`;
+      en[ns] = table.en;
+      vi[ns] = table.vi;
+    }
   }
+
+  const handoff = extractHandoffCopy(readFileSync(join(DESIGN, 'Handoff Checklist.dc.html'), 'utf8'));
+  en.handoff = handoff.en;
+  vi.handoff = handoff.vi;
+
+  const product = JSON.parse(readFileSync(join(OUT, 'product.json'), 'utf8'));
+  en.product = product.en;
+  vi.product = product.vi;
   return { en: sortKeys(en), vi: sortKeys(vi) };
 }
 

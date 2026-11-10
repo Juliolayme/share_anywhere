@@ -3,7 +3,7 @@
 // design/claude-design/Logo.dc.html (geometry, four color modes) and Brand.dc.html (icon specs).
 //
 //   node scripts/export-brand.mjs           write assets
-//   node scripts/export-brand.mjs --check   fail if committed assets differ (vector files only; PNGs are size-checked)
+//   node scripts/export-brand.mjs --check   fail if committed assets differ (vector files byte for byte; rasters by decoded pixels)
 import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -47,8 +47,38 @@ function iconSvg({ size, bg, radius = 0, mode, scale, dotColor, dots = true }) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${bgEl}<g transform="translate(${off} ${off}) scale(${k})">${symbolElements(mode, { dotColor, dots })}</g></svg>`;
 }
 
-async function png(svg, size) {
-  return sharp(Buffer.from(svg), { density: 384 }).resize(size, size).png({ compressionLevel: 9 }).toBuffer();
+async function png(svg, size, { opaque = false } = {}) {
+  let img = sharp(Buffer.from(svg), { density: 384 }).resize(size, size);
+  // App icons for iOS must not carry an alpha channel (App Store rejects them; Brand.dc.html: "no transparency").
+  if (opaque) img = img.removeAlpha();
+  return img.png({ compressionLevel: 9 }).toBuffer();
+}
+
+/** Decoded pixels and dimensions, so raster checks do not depend on encoder byte output. */
+async function pixels(buf) {
+  const { data, info } = await sharp(buf).raw().toBuffer({ resolveWithObject: true });
+  return { data, key: `${info.width}x${info.height}x${info.channels}` };
+}
+
+/** Splits an ICO built by ico() back into its embedded PNG images. */
+function icoImages(buf) {
+  const count = buf.readUInt16LE(4);
+  return Array.from({ length: count }, (_, i) => {
+    const size = buf.readUInt32LE(6 + 16 * i + 8);
+    const offset = buf.readUInt32LE(6 + 16 * i + 12);
+    return buf.subarray(offset, offset + size);
+  });
+}
+
+async function sameRaster(a, b, isIco) {
+  const as = isIco ? icoImages(a) : [a];
+  const bs = isIco ? icoImages(b) : [b];
+  if (as.length !== bs.length) return false;
+  for (let i = 0; i < as.length; i++) {
+    const [pa, pb] = await Promise.all([pixels(as[i]), pixels(bs[i])]);
+    if (pa.key !== pb.key || !pa.data.equals(pb.data)) return false;
+  }
+  return true;
 }
 
 /** Minimal ICO container with embedded PNG images (supported by all current browsers). */
@@ -103,17 +133,20 @@ export async function buildAssets() {
   // Web: symbol SVGs per mode, favicon set, PWA icons, manifest
   for (const mode of Object.keys(L.modes)) files.push([web(`brand/logo-symbol-${mode}.svg`), symbolSvg(mode)]);
   files.push([web('brand/logo-symbol-16.svg'), symbolSvg('color', { dots: false })]);
-  files.push([web('favicon.svg'), symbolSvg('color')]);
+  // Browsers mostly draw the SVG favicon at 16 px, so it uses the dotless variant (at or below 16 px, Brand.dc.html).
+  files.push([web('favicon.svg'), symbolSvg('color', { dots: false })]);
   const fav16 = await png(iconSvg({ size: 16, mode: 'color', scale: 1, dots: false }), 16);
   const fav32 = await png(iconSvg({ size: 32, mode: 'color', scale: 1 }), 32);
   const fav48 = await png(iconSvg({ size: 48, bg: NAVY, radius: 0.25, mode: 'dark', scale: 32 / 48 }), 48);
   files.push([web('favicon.ico'), ico([{ size: 16, data: fav16 }, { size: 32, data: fav32 }, { size: 48, data: fav48 }])]);
   files.push([web('brand/icon-48.png'), fav48]);
-  files.push([web('apple-touch-icon.png'), await png(iconSvg({ size: 180, bg: NAVY, mode: 'dark', scale: 0.62 }), 180)]);
+  files.push([web('brand/favicon-16.png'), fav16]);
+  files.push([web('brand/favicon-32.png'), fav32]);
+  files.push([web('apple-touch-icon.png'), await png(iconSvg({ size: 180, bg: NAVY, mode: 'dark', scale: 0.62 }), 180, { opaque: true })]);
   for (const size of [192, 512]) {
     files.push([web(`brand/icon-${size}.png`), await png(iconSvg({ size, bg: '#FFFFFF', radius: 22 / 96, mode: 'color', scale: 64 / 96 }), size)]);
   }
-  files.push([web('brand/icon-512-maskable.png'), await png(iconSvg({ size: 512, bg: NAVY, mode: 'dark', scale: 0.56 }), 512)]);
+  files.push([web('brand/icon-512-maskable.png'), await png(iconSvg({ size: 512, bg: NAVY, mode: 'dark', scale: 64 / 96 }), 512)]);
   files.push([
     web('site.webmanifest'),
     JSON.stringify(
@@ -178,14 +211,14 @@ export async function buildAssets() {
   // iOS app icon: one opaque 1024 PNG per appearance, symbol in the central 62% (Brand.dc.html)
   const ios = (p) => join(ROOT, 'ios/ShareAnywhere/Assets.xcassets', p);
   files.push([ios('Contents.json'), JSON.stringify({ info: { author: 'xcode', version: 1 } }, null, 2) + '\n']);
-  files.push([ios('AppIcon.appiconset/AppIcon-1024.png'), await png(iconSvg({ size: 1024, bg: NAVY, mode: 'dark', scale: 0.62 }), 1024)]);
+  files.push([ios('AppIcon.appiconset/AppIcon-1024.png'), await png(iconSvg({ size: 1024, bg: NAVY, mode: 'dark', scale: 0.62 }), 1024, { opaque: true })]);
   files.push([
     ios('AppIcon.appiconset/AppIcon-1024-dark.png'),
-    await png(iconSvg({ size: 1024, bg: '#000000', mode: 'dark', scale: 0.62, dotColor: '#000000' }), 1024),
+    await png(iconSvg({ size: 1024, bg: '#000000', mode: 'dark', scale: 0.62, dotColor: '#000000' }), 1024, { opaque: true }),
   ]);
   files.push([
     ios('AppIcon.appiconset/AppIcon-1024-tinted.png'),
-    await png(iconSvg({ size: 1024, bg: '#1A1A1A', mode: 'mono-light', scale: 0.62, dotColor: '#1A1A1A' }), 1024),
+    await png(iconSvg({ size: 1024, bg: '#1A1A1A', mode: 'mono-light', scale: 0.62, dotColor: '#1A1A1A' }), 1024, { opaque: true }),
   ]);
   files.push([
     ios('AppIcon.appiconset/Contents.json'),
@@ -220,8 +253,9 @@ async function main(argv) {
       }
       const cur = readFileSync(file);
       const isRaster = /\.(png|ico)$/.test(file);
-      // Raster encoders can differ by version; compare dimensions/size class instead of bytes.
-      if (isRaster ? cur.length === 0 : !cur.equals(buf)) {
+      // Rasters are compared by decoded pixels so encoder byte differences do not matter.
+      const same = isRaster ? await sameRaster(cur, buf, file.endsWith('.ico')) : cur.equals(buf);
+      if (!same) {
         console.error(`Out of date: ${rel}. Run "pnpm brand".`);
         stale++;
       }
@@ -232,7 +266,7 @@ async function main(argv) {
     }
   }
   if (stale) process.exit(1);
-  if (check) console.log(`Brand assets: ${files.length} files present and vector sources current.`);
+  if (check) console.log(`Brand assets: ${files.length} files current (vectors byte for byte, rasters pixel for pixel).`);
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : '';

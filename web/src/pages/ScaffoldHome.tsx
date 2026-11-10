@@ -4,8 +4,9 @@ import { Logo } from '../components/Logo';
 export function ScaffoldHome() {
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-4 p-6">
-      <Logo size={48} lockup />
-      <h1 className="sr-only">Share Anywhere</h1>
+      <h1>
+        <Logo size={48} lockup />
+      </h1>
       <p className="text-fg-2">
         Web app scaffold. The guest-first app shell arrives in Phase 1; see <code>docs/phases/</code>.
       </p>

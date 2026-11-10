@@ -147,11 +147,22 @@ It releases as soon as none is true: every transfer is completed, failed, cancel
 | Not available | API missing or insecure context → status "Your browser can't keep the screen on. Keep this tab open and visible." No hidden-video hacks | — | — |
 | Refused | `NotAllowedError` (battery saver, policy, hidden tab) → status "Couldn't keep the screen on" with the reason; retry on next visibility change | — | — |
 
-### 7.3 Status shown to the user
+### 7.3 Keep-open banner and screen-on pill
 
-Every send, receive, and waiting screen carries the sticky keep-open banner ("Keep Share Anywhere open — don't close it so the transfer continues."). The Web app registers a `beforeunload` confirmation while the controller is active; Android shows the same text in the foreground-service notification; iOS shows "Transfer paused — reopen the app to resume" with a local notification when the app is backgrounded.
+Every send, receive, and waiting screen carries the sticky keep-open banner ("Keep Share Anywhere open — don't close it so the transfer continues.", key `web.keep` / `common` equivalents). The Web app registers a `beforeunload` confirmation while the controller is active; Android shows the same text in the foreground-service notification; iOS shows "Transfer paused — reopen the app to resume" with a local notification when the app is backgrounded.
 
-Every send, receive, and active-session screen shows one status row from the controller: "Screen stays on during this transfer", "Screen may turn off: turned off in Settings", "Your browser can't keep the screen on. Keep this tab open and visible.", or "Couldn't keep the screen on". Platform hints sit next to it: Android "You can turn the screen off; the transfer continues", iOS "Locking your iPhone pauses the transfer". Tapping the row opens the setting.
+The banner ends with the **screen-on pill**, the single component that shows keep-screen-on status on every platform (`docs/DESIGN_SYSTEM.md` §6). It is a toggle button with `aria-pressed`, an icon plus a label (never color only), and a hit area of at least 44 px / 48 dp / 44 pt. Its states:
+
+| State | When | Icon | Label (catalog key, `<app>` = `web_xx`, `android_xx`, `ios_xx`) | Tap |
+|---|---|---|---|---|
+| On | Controller active, setting on, lock held | sun | "Screen stays on" (`<app>.wake_on`) | Turns it off for this transfer → "Off for this transfer" |
+| Off for this transfer | User tapped the pill off; resets for the next session | sun-dim | "Screen can sleep" (`<app>.wake_off`) | Turns it back on |
+| Paused or done | No active transfer and no open join window | sun-dim | "Screen can sleep — paused" (`<app>.wake_paused`) | Not interactive (`aria-disabled`) |
+| Off in Settings | "Keep screen on during transfers" is off | sun-dim | "Screen-on is off in Settings" (`<app>.wake_setoff`) | Turns the setting back on |
+| Unsupported (Web) | No Screen Wake Lock API or insecure context | eye, warning tint | "Your browser can't keep the screen on — keep this tab visible" (`web_xx.wake_unsup`) | Not interactive |
+| Refused (Web) | `navigator.wakeLock.request` rejected (battery saver, policy, hidden tab) | eye, warning tint | "Couldn't keep the screen on — keep this tab visible" (`product.wake_refused`) | Retries the request |
+
+Platform hints next to the banner: Android "You can turn the screen off; the transfer continues", iOS "Locking your iPhone pauses the transfer".
 
 ## 8. Server data model
 

@@ -45,5 +45,13 @@ export function checkContrast(tokens) {
       }
     }
   }
+  // The theme-following logo wordmark must be readable on the canvas and on cards in both themes.
+  for (const theme of ['light', 'dark']) {
+    const text = tokens.logo.modes[tokens.logo.themeMode[theme]].text;
+    for (const bg of ['bg', 'surface']) {
+      const ratio = contrastRatio(text, tokens.color[theme][bg]);
+      if (ratio < 4.5) failures.push(`${theme}: logo wordmark on ${bg} is ${ratio.toFixed(2)}:1, needs 4.5:1`);
+    }
+  }
   return failures;
 }

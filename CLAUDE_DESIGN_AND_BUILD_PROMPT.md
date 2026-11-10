@@ -81,7 +81,7 @@ The reasoning for this order: a cloud CI environment can run Go, Node, five emul
 | Area | Before (v2) | Now (v3) | Where |
 |---|---|---|---|
 | Who can send and receive | Accounts send; guests receive only | Everyone, no account | PRD §2, §5.3, §5.4 |
-| First launch | Welcome, sign-in, device registration, checklist | Welcome → **Get started** → Transfer home | PRD §5.1, §4 |
+| First launch | Welcome, sign-in, device registration, checklist | Welcome → **Start sharing** → Transfer home | PRD §5.1, §4 |
 | Identity | Cookie session (Web) or bearer token (Android) after sign-in | Anonymous server-signed device token for everyone; account adds an `acct` claim | `docs/SECURITY_MODEL.md` §4, `CLAUDE.md` §7 |
 | Account-only features | Everything except receiving | Clipboard Sync, account Devices list, cloud history, Cloud as sender | PRD §2 |
 | Clipboard tab for guests | Not reachable | Intro screen with Sign in / Create account; no clipboard access | PRD §5.9 |
@@ -105,7 +105,7 @@ The reasoning for this order: a cloud CI environment can run Go, Node, five emul
 | Guessing defense | Per-IP limits | Plus global **protected mode** forcing approval for code joins when guessing spikes; residual risk documented | `docs/SECURITY_MODEL.md` §3.1, §3.2 |
 | Block | Same device only | Device ID and IP /64 for the session | `docs/SECURITY_MODEL.md` §3.1 |
 | Participant states | `REQUESTED`, `APPROVED`, … | `REQUESTED` only when approval applies; `JOINED` grants access | `docs/ARCHITECTURE.md` §4.5 |
-| Screen during transfers | Not specified | Kept on while sending, receiving, or waiting: iOS idle timer, Web Wake Lock with re-request and fallback reminder, Android keep-screen-on flag plus foreground service; auto-release; setting default on; status row | PRD §2, §5.10; `docs/ARCHITECTURE.md` §7 |
+| Screen during transfers | Not specified | Kept on while sending, receiving, or waiting: iOS idle timer, Web Wake Lock with re-request and fallback reminder, Android keep-screen-on flag plus foreground service; auto-release; setting default on; screen-on pill | PRD §2, §5.10; `docs/ARCHITECTURE.md` §7 |
 | Document layout | Architecture, API matrix, threat model inside the PRD | Separate `ARCHITECTURE.md`, `UX_SCREEN_MAP.md`, `SECURITY_MODEL.md`, `API.md`; PRD points to them | Document map above |
 
 ## v5 change: 10-minute join window

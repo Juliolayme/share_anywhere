@@ -9,10 +9,25 @@ How the Claude Design handoff becomes code. The design files in `design/claude-d
 | `Design System.dc.html` | Color tokens, type scale, spacing, radius, elevation, components and states, naming for Tailwind, Compose, SwiftUI | `shared/design/tokens.json` | `pnpm tokens` writes `web/src/styles/tokens.css` and `tokens.ts`; Kotlin (Phase 6) and Swift (Phase 7) targets are hooks in `scripts/gen-tokens.mjs` |
 | `Web App.dc.html` CSS variables | Values for tokens the Design System names but does not list (soft and ink variants, `fg-3`, `border-strong`, `track`, `toast`, `scrim`, cloud violet) | same | same |
 | `Logo.dc.html`, `Brand.dc.html` | Logo geometry, four color modes, icon specifications | `tokens.json` → `logo` | `pnpm brand` writes Web, Android, and iOS icons |
-| `i18n-strings.json` and the `T` tables in the three app files | EN/VI strings | `shared/i18n/en.json`, `vi.json` | `pnpm i18n` |
+| `i18n-strings.json`, every `{en, vi}` table in the three app files (`T`, `VV`, `XX`, `YY`, `LBL`), the Handoff Checklist microcopy, and the hand-written `shared/i18n/product.json` for PRD strings the design lacks | EN/VI strings | `shared/i18n/en.json`, `vi.json` | `pnpm i18n` |
 | `Screen Map.dc.html` and app `startScreen` options | Screen IDs | `docs/UX_SCREEN_MAP.md` | by hand |
 
 CI fails if a generated file is stale (`pnpm tokens:check`, `pnpm brand:check`, `pnpm i18n:check`) or if a declared text color pair falls below WCAG AA in either theme.
+
+### 1.1 Conflicts inside the design and how they were resolved
+
+The Design System page wins over the prototypes' CSS when both give a value.
+
+| Token | Design System | Web App CSS | Used |
+|---|---|---|---|
+| `receive-ink` (light) | `#0B7A3B` | `--greenInk #0B6B34` (Completed and P2P chips) | `#0B7A3B` |
+| `warning` (light) | `#B25E00` | `--warn #F59E0B` | `#B25E00` for text and icons; `#F59E0B` is only the capacity-full fill (Phase 1 state tokens) |
+| `e2` overlay | `0 8px 24px rgba(16,42,86,.12)` | `--shadow 0 8px 28px rgba(16,42,86,.14)` | Design System value |
+
+### 1.2 Strings
+
+- Catalog keys are namespaced by source: `common`, `phrases`, `web`, `web_vv`, `web_xx`, `web_yy`, `android*`, `ios*`, `handoff`, `product`.
+- Some design strings carry prototype sample data (`common.ve_p` with an example email, `common.ve_resend` with "0:42", `web.joined` with "Minh", dated phrases) or are fragments meant to be concatenated (`android.expires` + `android.left`). Production code must not use them; it uses a parameterized key from `product` instead (for example `product.joined_session` with `{name}`, `product.join_within` with `{time}`). QA treats any of these sample-data keys in a production path as a defect.
 
 ## 2. Color tokens
 
@@ -74,7 +89,7 @@ Status is never color-only: every semantic color ships with an icon and a label.
 - Elevation: `e0` = 1 px `border`; `e1` card = `0 1px 2px rgba(16,42,86,.08), 0 1px 3px rgba(16,42,86,.06)`; `e2` overlay = `0 8px 24px rgba(16,42,86,.12)`. Dark mode has no shadows.
 - Focus ring: 2 px `focus` with 2 px offset.
 - Control heights: Web `sm` 36, `md` 44, `lg` 52 (hero Send and Receive with a leading icon). Android 48 dp minimum, 56 dp hero. iOS 44 pt minimum.
-- Web layout breakpoints: below 760 px a bottom bar, 760 to 1099 px an icon rail, 1100 px and above a sidebar (`rail` and `sidebar` Tailwind screens).
+- Web layout breakpoints: below 760 px a bottom bar, 760 to 1099 px an icon rail, 1100 px and above a sidebar. These replace the generic `sm 640 / md 768 / lg 1024 / xl 1280` list from the Phase 0 plan: Tailwind's `screens` are exactly `rail` (760 px) and `sidebar` (1100 px), and content inside a page uses fluid grids (`auto-fit`, `minmax`) as the design does. Recorded in `docs/design/DESIGN_DEVIATIONS.md` B10.
 
 ## 5. Icons
 
@@ -98,7 +113,7 @@ Lucide on Web (1.75 stroke), SF Symbols on iOS, Material Symbols Rounded on Andr
 
 ## 6. Components
 
-Every component implements default, hover, pressed, focus, disabled, loading, and error where they apply. Native apps use Material 3 components on Android and system SwiftUI controls on iOS, styled with these tokens.
+Every component implements default, hover, pressed, focus, disabled, loading, and error where they apply. The Design System gives light-mode state colors that are not tokens yet (primary pressed `#064D96`, ghost pressed `#D6E8FD`, destructive hover and pressed `#A82020` / `#8E1B1B`, secondary hover border and fill `#AFC0D6` / `#F1F5FA`, disabled `#E3E9F1` / `#8A97AC` / `#A3AFC2`, input focus halo `rgba(8,120,232,.22)`, capacity-full fill `#F59E0B`, iOS grouped background `#F2F5FA`). Phase 1 adds them as tokens, with dark values, before building Button and Input. Native apps use Material 3 components on Android and system SwiftUI controls on iOS, styled with these tokens.
 
 | Component | Variants and states | Web name | First phase |
 |---|---|---|---|
@@ -108,12 +123,15 @@ Every component implements default, hover, pressed, focus, disabled, loading, an
 | Card, Toast / Snackbar, Dialog / Alert, Bottom sheet, Empty state, Skeleton, Permission banner, Tabs / Segmented, Search and filter bar, Switch | per Design System page | same names | 1 |
 | Sidebar / Rail / Bottom nav (Web); bottom navigation (Android); tab bar (iOS) | active, inactive, focus | `<AppNav/>` | 1 |
 | Identity chip | Guest + Sign in (Sign in hidden until Phase 5A), account menu | `<IdentityChip/>` | 1 |
-| Keep-open banner | sticky on sending, receiving, waiting screens: "Keep Share Anywhere open — don't close it so the transfer continues." | `<KeepOpenBanner/>` | 2 |
-| Screen-on toggle | on (default), off for this transfer, paused or done, off in Settings, Web unsupported, focus; `aria-pressed`; icon sun / sun-dim plus label; hit area ≥ 44 px | `<ScreenOnToggle active supported onToggle/>` | 2 |
+| Guest / Signed in badge | "Guest" (neutral `surface-2` / `fg-2`, user icon), "Signed in" (`send-soft` / `send-ink`, shield icon) next to a peer's device name | `<IdentityBadge kind/>` | 2 |
+| Account-required intro | informational, never an error: icon, headline, two-sentence benefit, privacy line, Sign in and Create account; used by the Clipboard tab, Devices account section, disabled Settings rows | `<AccountRequiredIntro/>` | 5A |
+| Require approval toggle | Switch with label and state description ("Off · anyone with a valid code joins" / "On · you approve each receiver"), on the review screen, the session screen, and Settings › Transfer (default for new sessions) | `<RequireApprovalSwitch/>` | 2 |
+| Keep-open banner | sticky on sending, receiving, waiting screens: "Keep Share Anywhere open — don't close it so the transfer continues." with the screen-on pill at its end | `<KeepOpenBanner/>` | 2 |
+| Screen-on pill | one component for every keep-screen-on status; states, strings, and tap behavior are defined once in `docs/ARCHITECTURE.md` §7.3 | `<ScreenOnPill/>` | 2 |
 | QR panel, six-digit code with 10:00 countdown, code expired state | valid, under one minute (stays calm, no red), expired with Create new code | `<SharePanel/>` | 2 |
 | Security words | same three words on sender and receiver | `<SecurityWords/>` | 2 |
 | Capacity five-segment | "2/5 receivers · 3 slots left", "5/5 · Session full" | `<Capacity/>` | 2 |
-| Participant card | auto-joined receiver (default) with Remove; join request (approval on) with Approve / Reject | `<ParticipantCard/>` | 2 |
+| Participant card | auto-joined receiver (default): device name, platform, Guest/Signed in badge, security words, status, **Remove** and **Block** (Block is a PRD addition, `DESIGN_DEVIATIONS.md` E1); join request (approval on) with Approve / Reject / Block; removed and blocked end states | `<ParticipantCard/>` | 2 |
 | File row | name, type, size; reading metadata | `<FileRow/>` | 2 |
 | Route badge | Direct P2P, Relay, Cloud, Finding route… | `<RouteBadge route/>` | 3 |
 | Status chip | connecting, transferring, paused, reconnecting, verifying, completed, partial, failed, removed, cancelled, budget | `<StatusChip status/>` | 3 |
@@ -123,9 +141,20 @@ Every component implements default, hover, pressed, focus, disabled, loading, an
 
 Reduced motion disables shimmer and progress sweeps; values update stepwise.
 
+## 6b. Form validation patterns
+
+From the Design System Input and OTP specimens:
+
+- Labels are always visible above the field; placeholders never replace labels.
+- Validate on blur and on submit, not on every keystroke; once a field has shown an error, re-validate on input so the error clears as soon as it is fixed.
+- Error state: `danger` border and ring, an icon plus a one-line message below the field ("Enter a valid email address"), linked with `aria-describedby` and announced with `aria-invalid="true"`.
+- The six-digit code input accepts digits only, supports paste of the whole code, moves focus forward and backward automatically, and shows one error for the whole group ("Code not found or expired", "Code expired — ask the sender for a new code").
+- Submit buttons show a loading label ("Creating…", "Joining…") and stay disabled until the form is valid; server errors appear inline above the button, never only in a toast.
+- Rate limits show the wait time from `Retry-After` ("Too many attempts. Try again in {time}.").
+
 ## 7. Accessibility rules
 
-- Text tokens meet 4.5:1 on their surfaces, checked by `pnpm tokens:check`; `fg-3` is limited to large or non-essential text.
+- Text tokens meet 4.5:1 on their surfaces, checked by `pnpm tokens:check`; `fg-3` is limited to large or non-essential text (3:1 on `bg`, `surface`, `surface-2`). Text on `send-soft` uses `send-ink`, never `send` (4.4:1).
 - Status always has an icon and a label in addition to color.
 - Focus is always visible (2 px ring, 2 px offset); dialogs trap and restore focus.
 - Touch targets: 44 px Web, 48 dp Android, 44 pt iOS, through padding when the visual is smaller.
@@ -135,11 +164,12 @@ Reduced motion disables shimmer and progress sweeps; values update stepwise.
 
 ## 8. Brand guide
 
+- The `Logo` component follows the theme by default (`mode="auto"`): the color lockup on light surfaces and the reverse lockup on dark ones, through `--sa-logo-*` variables; the wordmark contrast is checked in both themes.
 - Mark: "Passing lanes" — two capsules passing each other with a dot on each lane's leading edge; blue sends, green receives.
 - Color modes: `color` (blue `#0878E8`, green `#16C75A`, white dots, navy text), `dark` (blue `#2D8DF2`, green `#22D468`, navy dots, white text), `mono-dark`, `mono-light`.
 - Wordmark: Plus Jakarta Sans 700, letter spacing −0.025em, font size 0.52 × symbol, gap 0.24 × symbol.
 - Clear space: one capsule height (a quarter of the symbol height) on all sides.
-- Minimum size: symbol 16 px; lockup 24 px high and 120 px wide. Below 16 px drop the dots; below 24 px use the symbol alone.
+- Minimum size: symbol 16 px; lockup 24 px high and 120 px wide. At 16 px and below use the dotless variant (the 16 px favicon and the SVG favicon); below 24 px use the symbol alone.
 - Do not stretch, rotate, recolor, mirror or swap lanes, add effects, or place on busy backgrounds.
-- Icons: Android adaptive icon with a navy background and the `dark` symbol at 52 of 108 dp inside the 66 dp safe zone, plus a monochrome layer for themed icons; Web PWA icons (white rounded and navy maskable), favicons at 16 (dotless), 32, and 48 px; iOS one opaque 1024 px PNG per appearance (navy, black, tinted) with the symbol inside the central 62 %.
+- Icons: Android adaptive icon with a navy background and the `dark` symbol at 52 of 108 dp inside the 66 dp safe zone, plus a monochrome layer for themed icons; Web PWA icons (white rounded and navy maskable), favicons at 16 (dotless), 32, and 48 px plus standalone 16 and 32 px PNGs; iOS one opaque 1024 px PNG without an alpha channel per appearance (navy, black, tinted) with the symbol inside the central 62 %. The maskable PWA icon uses the design's 64/96 scale.
 - Generated assets live in `web/public/`, `android/app/src/main/res/`, and `ios/ShareAnywhere/Assets.xcassets/`. The development page `/brand` renders the lockups and every token.

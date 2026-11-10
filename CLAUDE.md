@@ -45,7 +45,7 @@ Act as principal product designer, staff full-stack engineer, Android engineer, 
 ## 4. Definition of done (per feature)
 
 - UX states implemented: loading, empty, populated, error, offline, permission-denied, success, partial.
-- Any screen that sends, receives, or waits for a peer drives the keep-screen-on controller and shows its status row (`docs/ARCHITECTURE.md` §7).
+- Any screen that sends, receives, or waits for a peer drives the keep-screen-on controller and shows the keep-open banner with the screen-on pill (`docs/ARCHITECTURE.md` §7).
 - Happy path works end-to-end on at least one tested platform.
 - API and data model documented (OpenAPI for REST, `shared/protocol/websocket-events.json` for WS).
 - Automated tests cover the critical logic and run in CI.

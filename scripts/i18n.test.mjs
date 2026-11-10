@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractObjectLiteral, slugify, validateCatalogs, buildCatalogs, flatten } from './gen-i18n.mjs';
+import { extractObjectLiteral, extractLocaleTables, slugify, validateCatalogs, buildCatalogs, flatten } from './gen-i18n.mjs';
+import { readFileSync } from 'node:fs';
 
 test('extracts an object literal even when strings contain braces and quotes', () => {
   const src = "const X = 1; const T = { en: { a: 'has } brace', b: \"it's {n}\" }, vi: { a: 'có } dấu', b: 'của {n}' } }; const Y = {};";
@@ -35,4 +36,25 @@ test('catalogs built from the design handoff are valid and carry the key product
   assert.equal(en['common.cx_h'], 'Code expired — Create new code');
   assert.equal(vi['common.cx_h'], 'Mã đã hết hạn — Tạo mã mới');
   assert.equal(en['common.s_wake'], 'Keep screen on during transfers');
+});
+
+test('every {en, vi} table in each prototype is extracted, and an unparseable one fails', () => {
+  const src = "const T = { en: { a: 'A' }, vi: { a: 'Á' } }; const XX = {\"en\":{\"b\":\"B\"},\"vi\":{\"b\":\"Bé\"}}; const CHIP = { x: 1 };";
+  assert.deepEqual(Object.keys(extractLocaleTables(src)).sort(), ['T', 'XX']);
+  assert.throws(() => extractLocaleTables("const BAD = { en: { a: 'A' , }, vi: { a: oops } };"), /could not be parsed/);
+});
+
+test('catalogs include every locale table, the handoff microcopy, and the product overlay', () => {
+  const en = flatten(buildCatalogs().en);
+  for (const file of ['Web App.dc.html', 'Android App.dc.html', 'iOS App.dc.html']) {
+    const src = readFileSync(new URL(`../design/claude-design/${file}`, import.meta.url), 'utf8');
+    const names = Object.keys(extractLocaleTables(src));
+    assert.ok(names.length >= 2, `${file} should have several string tables`);
+  }
+  const values = Object.values(en);
+  for (const required of ['Start sharing', 'Screen stays on', 'Code expired — Create new code', 'Session full — extra devices are declined automatically.']) {
+    assert.ok(values.includes(required), `missing "${required}"`);
+  }
+  assert.equal(en['product.block'], 'Block');
+  assert.equal(en['product.join_within'], 'Join within {time}');
 });

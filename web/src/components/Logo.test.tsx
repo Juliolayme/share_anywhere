@@ -3,8 +3,16 @@ import { Logo } from './Logo';
 import { logo } from '../styles/tokens';
 
 describe('Logo', () => {
-  it('renders the two capsules and two dots in the color mode by default', () => {
-    const { container } = render(<Logo />);
+  it('follows the theme by default through the logo CSS variables', () => {
+    const { container } = render(<Logo lockup />);
+    const rects = container.querySelectorAll('rect');
+    expect(rects[0]).toHaveAttribute('fill', 'var(--sa-logo-send)');
+    expect(rects[1]).toHaveAttribute('fill', 'var(--sa-logo-receive)');
+    expect(screen.getByText('Share Anywhere')).toHaveStyle({ color: 'var(--sa-logo-text)' });
+  });
+
+  it('renders the two capsules and two dots in the fixed color mode', () => {
+    const { container } = render(<Logo mode="color" />);
     expect(screen.getByRole('img', { name: 'Share Anywhere' })).toBeInTheDocument();
     const rects = container.querySelectorAll('rect');
     expect(rects[0]).toHaveAttribute('fill', logo.modes.color.send);
@@ -12,9 +20,9 @@ describe('Logo', () => {
     expect(container.querySelectorAll('circle')).toHaveLength(2);
   });
 
-  it('drops the dots below 16 px as the brand guide requires', () => {
-    const { container } = render(<Logo size={12} />);
-    expect(container.querySelectorAll('circle')).toHaveLength(0);
+  it('uses the dotless variant at 16 px and below, as the brand guide requires', () => {
+    expect(render(<Logo size={16} />).container.querySelectorAll('circle')).toHaveLength(0);
+    expect(render(<Logo size={17} />).container.querySelectorAll('circle')).toHaveLength(2);
   });
 
   it('renders the wordmark lockup as one labelled image', () => {

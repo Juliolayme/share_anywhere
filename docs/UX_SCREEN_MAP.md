@@ -13,7 +13,7 @@ Status: **planned**; reconciled with the Claude Design handoff (commit 089e59c).
 - **Guest** and **Signed in** say what each identity state sees. "Same" means no difference.
 - Every screen implements the shared states where they apply: loading, empty, populated, error, offline, permission-denied, success, partial.
 - No screen in the Onboarding, Transfer, Receive, History, or Settings areas may require an account. Account screens are reached only from the account CTAs in §9.
-- Every send, receive, and active-session screen shows the **keep-screen-on status row** (`docs/ARCHITECTURE.md` §7.3).
+- Every send, receive, and active-session screen shows the **keep-open banner with the screen-on pill** (`docs/ARCHITECTURE.md` §7.3).
 
 ## 2. First-launch and entry paths
 
@@ -36,6 +36,7 @@ flowchart LR
 |---|---|---|---|---|---|
 | ON-1 | Welcome | `/welcome` | Value proposition, "No account needed to send or receive files", privacy line, optional "Already have an account? Sign in" link | Not shown (Welcome is first launch only) | Start sharing → TR-1 |
 | ON-2 | Identity bootstrap error (inline on TR-1) | — | Inline card: offline, rate-limited with wait time, or proof-of-work in progress; Retry | Same | Retry |
+| ON-3 | Permissions and privacy (education shown just in time, never on the first-launch path) | `/permissions` | Why notifications (and on mobile the camera) help, with Allow / Not now; denied state with how to change it in system settings | Same | Allow |
 
 ## 4. Transfer (send)
 
@@ -44,9 +45,9 @@ flowchart LR
 | TR-1 | Transfer home | `/` | Send files, Receive files, active transfers, recent transfers from local history, header chip "Guest" + Sign in | Same, header chip shows account name | Send files / Receive files |
 | TR-2 | Select files | `/send` | Web picker + drag-and-drop; Android SAF; iOS document picker | Same | Continue |
 | TR-3 | Review selection | `/send/review` | Names, types, sizes, total; **Require approval** toggle (default off) with hint for sensitive files; Cloud option disabled with "Sign in to use Cloud transfer" (Phase 8) | Same, Cloud option enabled when consented (Phase 8) | Create session |
-| TR-4 | Session: share and waiting | `/send/session/:id` | QR, six-digit code, and link sharing one join window with a countdown from **10:00**; receiver slots "0 of 5"; Require approval toggle; Stop accepting; keep-screen-on status. **Expired state:** code, link, and QR hidden, "Code expired — Create new code" with the Create new code button; joined receivers keep transferring. **Full state:** "Session full", Create new code disabled until a slot frees | Same | Copy link / Create new code |
+| TR-4 | Session: share and waiting | `/send/session/:id` | QR, six-digit code, and link sharing one join window with a countdown from **10:00**; receiver slots "0 of 5"; Require approval toggle; Stop accepting; keep-open banner and screen-on pill. **Expired state:** code, link, and QR hidden, "Code expired — Create new code" with the Create new code button; joined receivers keep transferring. **Full state:** "Session full", Create new code disabled until a slot frees | Same | Copy link / Create new code |
 | TR-5 | Participants and requests | `/send/session/:id` (panel) | Joined receivers with name, platform, Guest/Signed in badge, security words, Remove, Block; when approval is on, request cards with Approve, Reject, Block; join toasts; "Everyone here? Stop accepting" nudge; protected-mode notice when active | Same | Remove / Approve |
-| TR-6 | Transfer dashboard | `/send/session/:id/transfers` | Per receiver and per file progress, speed, ETA with uncertainty, route badge, pause/resume/retry/cancel, error drawer, aggregate progress, keep-screen-on status | Same | Pause all / Close session |
+| TR-6 | Transfer dashboard | `/send/session/:id/transfers` | Per receiver and per file progress, speed, ETA with uncertainty, route badge, pause/resume/retry/cancel, error drawer, aggregate progress, keep-open banner and screen-on pill | Same | Pause all / Close session |
 | TR-7 | Session result | `/send/session/:id/result` | Completed, partially completed, failed, cancelled; per-receiver summary; entry written to local history | Same, plus synced to cloud history when sync is on | Done / New session |
 | TR-8 | Close or expire confirmation | dialog | Confirms ending the session and what happens to running transfers | Same | Close session |
 
@@ -58,8 +59,9 @@ flowchart LR
 | RX-2 | Code entry | `/join` | Six digits, validation, lockout message with wait time, "This code has expired. Ask the sender for a new code." | Same | Continue |
 | RX-3 | Web join page | `/join/:token` | Opens the app when installed and verified; otherwise the Web flow | Same | — |
 | RX-4 | Join preview | `/join/preview` | Sender display name, Guest/Signed in badge, file names, sizes, count; browser capability check (Web); "Join within m:ss" in the last minute of the join window; expired message if the window ends before Receive; security words shown after joining | Same | Receive (Web: choose save target first) |
-| RX-5 | Waiting for approval | `/join/waiting` | Only when approval is on or protected mode applies; security words; keep-screen-on status | Same | Cancel |
-| RX-6 | Receiving | `/receive/:sessionId` | Destination, per-file progress, verification, pause/resume/retry, keep-screen-on status, iOS hint "Locking your iPhone pauses the transfer" | Same | Pause |
+| RX-5 | Waiting for approval | `/join/waiting` | Only when approval is on or protected mode applies; security words; keep-open banner and screen-on pill | Same | Cancel |
+| RX-5b | Save location | `/receive/:sessionId/save` | Web: choose a folder (File System Access) or download, large-file warning for browsers without it; Android SAF folder (default Download); iOS Files location (default On My iPhone); storage-full error | Same | Start receiving |
+| RX-6 | Receiving | `/receive/:sessionId` | Destination, per-file progress, verification, pause/resume/retry, keep-open banner and screen-on pill, iOS hint "Locking your iPhone pauses the transfer" | Same | Pause |
 | RX-7 | Receive result | `/receive/:sessionId/result` | Completed, partial, failed; open, share, or locate files where the platform allows; removed/blocked/code-expired/session-expired/session-full outcomes; entry written to local history | Same, plus cloud history when on | Open / Done |
 
 ## 6. History
@@ -95,6 +97,7 @@ Entry points: header chip and ST-1 Sign in, Clipboard intro (CB-1), Devices intr
 | AC-5 | Account Data Key setup | `/account/key/setup` | First device of a new account | Save recovery phrase → Continue |
 | AC-6 | Pair this device | `/account/key/pair` | Added device without the ADK | Scan QR / paste pairing code, or Use recovery phrase |
 | AC-7 | Sign out | dialog | From ST-1 | Keep local history / Clear local history → Sign out |
+| AC-8 | You're set up (checklist) | `/account/checklist` | After the first sign-in on a device | Go to Clipboard |
 
 ## 10. Clipboard
 
@@ -115,7 +118,7 @@ Entry points: header chip and ST-1 Sign in, Clipboard intro (CB-1), Devices intr
 | Welcome | Route shown once | Shown once before the start destination | Full-screen cover shown once |
 | Account screens | Routes | Nested graph | Sheet |
 | Clipboard tab before Phase 5B | Hidden by the `clipboard` flag | Hidden | Hidden |
-| Keep-screen-on row | Wake Lock status, including "can't keep the screen on" | "Transfer continues with the screen off" | "Locking your iPhone pauses the transfer" |
+| Screen-on pill | Wake Lock states, including unsupported and refused | Hint "You can turn the screen off; the transfer continues" | Hint "Locking your iPhone pauses the transfer" |
 | QR scan | Not offered; code entry and links cover Web | CameraX | AVFoundation + Vision (real device only) |
 
 ## 12. Design screen IDs, components, and state models
@@ -130,9 +133,9 @@ Web IDs come from `Web App.dc.html`, Android IDs from `Android App.dc.html`, iOS
 | TR-1 Transfer home | `home` | `home` | `home` | Hero Send/Receive buttons, active transfer card, recent list, empty state, skeleton | `homeState`: `active`, `new`, `loading`, `offline` |
 | TR-2 Select files | `send` | `send` | `send` | Drop zone / picker, File row | empty, picking, picked, error |
 | TR-3 Review selection | `send-review` | `send` | `send` | File row list, total, Require approval switch | default, offline |
-| TR-4 Session share and waiting | `session`, `session-full`, `session-expired` | `session`, `session-expired` | `session`, `session-expired` | QR panel, six-digit code, 10:00 countdown, Capacity, Keep-open banner, Screen-on toggle | open window, under one minute, `session-expired`, `session-full`, `wakeLock`: `auto`, `unsupported` |
+| TR-4 Session share and waiting | `session`, `session-full`, `session-expired` | `session`, `session-expired` | `session`, `session-expired` | QR panel, six-digit code, 10:00 countdown, Capacity, Keep-open banner, Screen-on pill | open window, under one minute, `session-expired`, `session-full`, `wakeLock`: `auto`, `unsupported` |
 | TR-5 Participants and requests | `session` panel, `session-approved` | `session` (`approval=1`) | `session-approval` | Participant card, Security words, toast | auto-joined, pending request, approved, rejected, removed, blocked, protected mode |
-| TR-6 Transfer dashboard | `dashboard` | `dashboard` | `dashboard`, `suspended` | Progress bar/ring, Route badge, Status chip, Files × receivers matrix, connection-log drawer/sheet, Keep-open banner, Screen-on toggle | per receiver: connecting, transferring, paused, reconnecting, verifying, completed, failed, removed, cancelled, budget; iOS `suspended` |
+| TR-6 Transfer dashboard | `dashboard` | `dashboard` | `dashboard`, `suspended` | Progress bar/ring, Route badge, Status chip, Files × receivers matrix, connection-log drawer/sheet, Keep-open banner, Screen-on pill | per receiver: connecting, transferring, paused, reconnecting, verifying, completed, failed, removed, cancelled, budget; iOS `suspended` |
 | TR-7 Session result | `dashboard-done`, `dashboard-partial` | `dashboard-done`, `dashboard-partial` | `dashboard-done`, `dashboard-partial` | Status chip, summary | completed, partial, failed, cancelled |
 | TR-8 Close session dialog | `dashboard` dialog | sheet | alert | Dialog / bottom sheet | default |
 | RX-1 Receive entry | `receive` | `receive` (scan) | `receive` (scan) | QR scanner (native), code input | camera denied, scanning |
@@ -141,7 +144,7 @@ Web IDs come from `Web App.dc.html`, Android IDs from `Android App.dc.html`, iOS
 | RX-4 Join preview | `receive-preview` | `rx-preview` | `rx-preview` | Sender card, File row list, total | default, join window under one minute, expired |
 | RX-5 Waiting for approval | `receive-wait` | `rx-wait` | `rx-wait` | Security words, Keep-open banner | `receiveOutcome`: `approved`, `rejected`, `expired` |
 | RX-5b Save location | `receive-save` | `rx-save` | `rx-preview` (Save to Files) | Folder picker, large-file warning | default, `rxIssue`: `storage` |
-| RX-6 Receiving | `receive-progress` | `rx-progress` | `rx-progress` | Progress, Status chip, Keep-open banner, Screen-on toggle | receiving, reconnecting, verifying, paused in background (iOS) |
+| RX-6 Receiving | `receive-progress` | `rx-progress` | `rx-progress` | Progress, Status chip, Keep-open banner, Screen-on pill | receiving, reconnecting, verifying, paused in background (iOS) |
 | RX-7 Receive result | `receive-done` | `rx-done` | `rx-done` | Status chip, Open / Share / Show in folder | completed, `rxIssue`: `checksum`, `partial` |
 | HI-1, HI-2 History | `history` | `history` | `history` | Tabs, search and filter bar, list, empty state, clear dialog | empty, populated, no match, cleared |
 | DV-1, DV-2 Devices | `devices` | `devices` | `devices` | This device card, device list, rename sheet, revoke dialog | guest, signed in |

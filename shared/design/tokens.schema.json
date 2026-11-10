@@ -40,7 +40,8 @@
       "required": [
         "geometry",
         "modes",
-        "wordmark"
+        "wordmark",
+        "themeMode"
       ],
       "properties": {
         "modes": {

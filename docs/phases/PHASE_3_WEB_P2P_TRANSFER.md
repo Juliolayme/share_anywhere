@@ -14,7 +14,7 @@ All transfers in this phase run between **guest** devices; accounts do not exist
 - Sender reads via `File.slice()` streaming; never full-file `arrayBuffer()`.
 - `transfers` table and state machine; client reports state, verified bytes, route type; server validates transitions and authorizes by participant.
 - Local history: on completion, failure, or cancellation, write an entry to the IndexedDB history store from Phase 1 on both sender and receiver; History shows it with transferred-vs-size.
-- Keep screen on (Web), second part: extend the Phase 2 controller to hold during `CONNECTING`, `TRANSFERRING`, `RESUMING`, `RECONNECTING`, and verification on both sender and receiver, and release on completion, failure, pause, cancel, removal, and session end; status row on TR-6 and RX-6.
+- Keep screen on (Web), second part: extend the Phase 2 controller to hold during `CONNECTING`, `TRANSFERRING`, `RESUMING`, `RECONNECTING`, and verification on both sender and receiver, and release on completion, failure, pause, cancel, removal, and session end; screen-on pill on TR-6 and RX-6.
 - UI: transfer dashboard (PRD §9 Active transfer) for one receiver; receive screens 8–13; pause/resume/cancel/retry; ETA with provisional/uncertain states (PRD §6.5); verification progress.
 - Reconnect: on DataChannel close, re-signal, re-handshake with transfer capability, exchange bitmap, continue.
 

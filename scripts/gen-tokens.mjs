@@ -37,9 +37,12 @@ export function renderCss(t) {
   for (const [k, v] of Object.entries(t.motion.easing)) shared.push(`  --sa-easing-${k}: ${v};`);
   shared.push(`  --sa-touch-target: ${t.touchTarget.web};`);
 
+  // The logo follows the theme: the color mode on light surfaces, the reverse (dark) mode on dark ones (Brand.dc.html).
+  const logoVars = (name) => Object.entries(t.logo.modes[t.logo.themeMode[name]]).map(([k, v]) => `  --sa-logo-${k}: ${v};`);
   const theme = (name) => [
     ...Object.entries(t.color[name]).map(([k, v]) => `  --sa-${k}: ${v};`),
     ...Object.entries(t.elevation[name]).map(([k, v]) => `  --sa-elevation-${k}: ${v};`),
+    ...logoVars(name),
     `  color-scheme: ${name};`,
   ];
 
@@ -92,6 +95,7 @@ export function cssVariableNames(t) {
     '--sa-touch-target',
     ...Object.keys(t.color.light).map((k) => `--sa-${k}`),
     ...Object.keys(t.elevation.light).map((k) => `--sa-elevation-${k}`),
+    ...Object.keys(t.logo.modes.color).map((k) => `--sa-logo-${k}`),
   ];
 }
 

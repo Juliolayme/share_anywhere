@@ -29,6 +29,9 @@ These refine the PRD without contradicting it, so the design wins and the owner 
 | B6 | Sixth receiver auto-declined with a notice to the sender | PRD §5.3 |
 | B7 | ETA shows "Estimating time…" until progress passes 3 % and while reconnecting | PRD §6.5 |
 | B8 | Screen IDs (`home`, `send`, `send-review`, `session`, …) | `docs/UX_SCREEN_MAP.md` |
+| B9 | A "Require approval" default in Settings › Transfer, in addition to the per-session switch | PRD §5.8: Settings holds the default for new sessions (off); each session can still switch it |
+| B10 | Web layout breakpoints 760 px (rail) and 1100 px (sidebar) replace the generic `sm/md/lg/xl` list in the Phase 0 plan | `docs/DESIGN_SYSTEM.md` §4, `docs/phases/PHASE_0_FOUNDATION.md` |
+| B11 | Screen-on pill with per-state copy ("Screen stays on", "Screen can sleep", "Screen-on is off in Settings", "…keep this tab visible") instead of the earlier status-row sentences | `docs/ARCHITECTURE.md` §7.3 |
 
 ## C. Accessibility notes on design values
 
@@ -36,6 +39,8 @@ These refine the PRD without contradicting it, so the design wins and the owner 
 |---|---|---|
 | C1 | `border` and `border-strong` are below 3:1 against `surface` (WCAG 1.4.11 for component boundaries) | Controls never rely on the border alone: inputs carry a visible label and the `surface-2` fill, and focus shows a 2 px `focus` ring. Recorded in `docs/DESIGN_SYSTEM.md` §7 |
 | C2 | `fg-3` is 4.3:1 on white | Used only for large or non-essential text; the token check enforces 3:1 for it and 4.5:1 for every other text token |
+| C3 | The Brand page says "below 16 px drop the dots" but also shows a dotless favicon at exactly 16 px, while its browser-tab mock draws the dotted logo at 16 px | One rule: at 16 px and below use the dotless variant (16 px ICO entry, SVG favicon, `Logo` at size ≤ 16); dots from 17 px up |
+| C4 | `send` text on `send-soft` is 4.4:1 (the Design System ghost hover state) | Text on `send-soft` uses `send-ink`; documented in `docs/DESIGN_SYSTEM.md` §7 |
 
 ## D. Open questions from the handoff and their answers
 
@@ -55,3 +60,18 @@ The Handoff Checklist lists open questions. Answers come from the PRD and the se
 | Reconnect window before Failed | Decided in Phase 4 with the reconnect policy |
 | Can a sender stop joining early; can an expired code value be reused? | Yes, Stop accepting; code values are unique among open join windows and may be reissued later (`docs/ARCHITECTURE.md` §8) |
 | Does the session close when the last receiver finishes? | No; it stays until Close, idle expiry, or its maximum lifetime (`docs/SECURITY_MODEL.md` §6) |
+
+## E. PRD elements the design does not show
+
+These are required by the PRD or `CLAUDE.md` but have no design specimen. Each uses existing design components so it looks native, and its strings come from the hand-written `shared/i18n/product.json` (EN and VI), merged into the catalogs under `product`.
+
+| # | Required element | Source of the requirement | Component used | Strings |
+|---|---|---|---|---|
+| E1 | **Block** a receiver (removes and refuses rejoin from the device and its IP /64), with a confirmation | PRD §5.3, `CLAUDE.md` §7 | Participant card action next to Remove (`user-x` icon family, `danger` ghost button), dialog | `product.block`, `block_confirm_h`, `block_confirm_p`, `blocked_rx` |
+| E2 | **Stop accepting** and the nudge after the first join | PRD §5.3 | Ghost button on the session screen; inline banner | `product.stop_accepting`, `stop_nudge`, `not_accepting_rx` |
+| E3 | Protected-mode notices for sender and receiver | `docs/SECURITY_MODEL.md` §3.1 | Warning banner (`warning-soft` / `warning-ink`) | `product.protected_mode`, `protected_mode_sender` |
+| E4 | "Join within m:ss" in the last minute of the join window | PRD §5.4 | Caption under the preview's Receive button, stays calm (no red), like the sender countdown | `product.join_within` |
+| E5 | Web wake lock **refused** state | PRD §5.10, `docs/ARCHITECTURE.md` §7.3 | Screen-on pill, same visual as the unsupported state | `product.wake_refused` |
+| E6 | Microcopy "No account needed to send or receive files", "Waiting for the sender to let you in", "Sign in to use Cloud transfer" | PRD §9 | Welcome, receiver waiting screen, disabled Cloud option | `product.no_account`, `waiting_sender`, `cloud_signin` |
+| E7 | Rate-limit wait message, identity bootstrap failure, reset device identity | PRD §5.1, §5.7, `docs/SECURITY_MODEL.md` §5 | Inline banner, Devices card, confirm dialog | `product.rate_limited`, `identity_offline`, `identity_failed`, `reset_identity`, `reset_identity_p`, `anon_since` |
+| E8 | Session full for the receiver | PRD §5.4 | Error state on the preview | `product.session_full_rx` |

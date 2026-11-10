@@ -51,6 +51,8 @@ A backend test generated from `openapi.yaml` calls every operation with no token
 | `POST /v1/participants/{id}/leave` | participant (that receiver) | |
 | `POST /v1/turn/credentials` | participant | Sender or `JOINED` receiver of an `ACTIVE` session; guest TTL 30 min, account 60 min |
 
+**As built (Phase 2):** `POST /v1/sessions` and `GET /v1/sessions/{id}` return `SessionView` (`shared/protocol/openapi.yaml`), whose fields depend on the caller: the sender sees `code`, `link_token`, `join_url` (also the QR payload) while the join window is open, plus `capacity` and `participants`; a `JOINED` receiver sees `files`, `sender`, and `me` with its security words; a `REQUESTED` receiver sees the preview and its own status; a receiver that left or was removed, rejected, or blocked sees only `me`. Resolve endpoints return `JoinPreview`. Join tickets are single use (`410 join_ticket_invalid` when reused); joining again while already in returns the existing participant when presented with a fresh ticket. `POST /v1/turn/credentials` takes `{"session_id"}` and returns `username`, `credential`, `uris`, `ttl`. Participant actions take no body.
+
 ### 2.3 Files and transfers (Phases 2–4)
 
 | Endpoint | Level | Notes |

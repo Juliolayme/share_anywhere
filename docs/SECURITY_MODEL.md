@@ -17,7 +17,7 @@ Status: **planned**. Nothing here is implemented yet; each section names the pha
 | Join capability token (link / QR) | Share link, QR code | Admits a receiver while valid |
 | Six-digit code | Shown on the sender's screen | Admits a receiver while valid **when approval is off** (§3) |
 | Transfer capability | Participant devices | Authorizes resume and re-handshake |
-| TURN credentials | Participant devices | Lets a device consume relay bandwidth |
+| TURN credentials | Participant devices | Lets a device consume relay bandwidth. **Built in Phase 2** |
 | Account credentials | User memory; Argon2id hash on the server | Account takeover |
 | Account Data Key (ADK) | Wrapped per device; recovery-wrapped copy on the server | Decrypts clipboard and cloud history |
 | Clipboard items, cloud history entries | Server stores ciphertext only | Highly sensitive personal data |
@@ -45,6 +45,8 @@ Every Share Session has a `require_approval` setting.
 | Recommended for | Sharing with people in the same room or on a call | Sensitive files, sharing a code in a public place |
 
 The sender can turn Require approval on or off at any time during the session. The change applies to future joins only; people already joined stay joined.
+
+**Status:** sections 3.0–3.1 are built in Phase 2 (`backend/internal/sharing`) and covered by PostgreSQL integration tests (`sharing_test.go`) and the Playwright pairing specs. Protected mode is an in-memory breaker on the single backend instance; the threshold is `SA_CODE_GUESS_ALARM_PER_MIN`.
 
 ### 3.0 Join window
 
@@ -109,13 +111,13 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 |---|---|
 | Anonymous device creation | Address (IPv4, or IPv6 /64): proof-of-work required beyond 3 / hour (soft limit); `429` beyond 10 / hour (hard limit, attempts that got `428` count). Reset device identity shares the hard limit. Proof-of-work challenges: 30 / min per address. **Built in Phase 1** |
 | Token refresh | Device: 60 / hour. **Built in Phase 1** |
-| Session creation | Device: 10 / hour; IP: 30 / hour |
-| Concurrent open sessions | Guest device: 2; signed-in device: 5 |
-| Code lookup | IP: 10 / min; device: 5 / min |
-| Create new code | Device: 20 / hour |
-| Failed code lookups | IP: 10 / hour → 30-min lockout; device: 5 / 10 min → 30-min lockout; global: protected mode above `CODE_GUESS_ALARM_PER_MIN` (§3.1) |
-| Link / QR resolution | IP: 30 / min; device: 10 / min |
-| Joins | Device: 10 / min; per session at most 10 pending requests when approval is on |
+| Session creation | Device: 10 / hour; IP: 30 / hour. **Built in Phase 2** |
+| Concurrent open sessions | Guest device: 2; signed-in device: 5. **Built in Phase 2** |
+| Code lookup | IP: 10 / min; device: 5 / min. **Built in Phase 2** |
+| Create new code | Device: 20 / hour. **Built in Phase 2** |
+| Failed code lookups | IP: 10 / hour → 30-min lockout; device: 5 / 10 min → 30-min lockout; global: protected mode above `CODE_GUESS_ALARM_PER_MIN` (§3.1). **Built in Phase 2** |
+| Link / QR resolution | IP: 30 / min; device: 10 / min. **Built in Phase 2** |
+| Joins | Device: 10 / min; per session at most 10 pending requests when approval is on. **Built in Phase 2** |
 | TURN credentials | Guest device: 20 / hour; account device: 60 / hour |
 | WebSocket | IP: 20 concurrent; device: 3 concurrent; 50 messages / s per socket; tickets: 30 / min per device. **Built in Phase 1** |
 | Sign-in | IP + email: 5 / 15 min; IP: 30 / hour |
@@ -125,7 +127,7 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 
 ## 6. Session and token lifetimes
 
-Implemented in Phase 2.
+Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests drive them with an injected clock).
 
 | Item | Lifetime |
 |---|---|

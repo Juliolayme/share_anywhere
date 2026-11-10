@@ -87,6 +87,16 @@ Sender selects files → `POST /v1/sessions` with file metadata and `require_app
 
 Code, link, and QR share one join window (`docs/SECURITY_MODEL.md` §3.0). The server checks the window on `resolve-code`, `resolve-link`, and `join`, and caps the join ticket at the window end. A background job and the `join` path both close the window when it times out, when the fifth receiver arrives, or on Stop accepting, and emit `SESSION_UPDATED`. `renew` (Create new code) replaces the code HMAC and the link token and opens a new window. Clients count down from `join_window_ends_at` using server time offsets from the API response, never only the local clock. Joined receivers, signaling, TURN, and transfers do not depend on the window.
 
+**As built (Phase 2):** `backend/internal/sharing` (sessions, join window, participants, protected mode, jobs), `internal/signaling` (relay), `internal/turncreds`. Details:
+
+- The code is stored as an HMAC (lookups) and also sealed with AES-256-GCM so that only the sender can see it again after a reload; the same holds for the link token. Neither is shown once the window is no longer open.
+- `resolve-code` / `resolve-link` issue a single-use join ticket bound to the device and to the window's `join_window_seq`; Create new code increments the sequence and revokes old link tokens and tickets, so anything from the previous window fails at once.
+- Window expiry is computed at request time (an open window past `join_window_ends_at` is treated as expired) and persisted by a maintenance job every 5 seconds, which also emits `SESSION_UPDATED`, expires idle (30 min with no connected participant) and over-age sessions, and purges ended sessions after 7 days.
+- A removed, left, or rejected receiver may join again with a new valid ticket; a blocked one cannot (device ID and IP /64).
+- Signaling: the WebSocket hub routes `OFFER`/`ANSWER`/`ICE_CANDIDATE` only between the sender and a `JOINED` receiver of a live session; anything else gets an `ERROR` reply. A device's sockets close when its identity is revoked.
+- Test builds (`go build -tags testhooks`, used only by `docker-compose.ci.yml` with `SA_ENV=test`) add an adjustable clock (`POST /v1/_test/clock`) and a protected-mode switch (`POST /v1/_test/protected-mode`); production binaries contain neither.
+- Web: `web/src/features/sharing` (API, socket, participant card), `web/src/pages/send/SessionPage.tsx`, `web/src/pages/receive/*`, keep-awake controller in `web/src/lib/keepAwake`. Countdowns use the offset from `server_time`.
+
 ### 4.2 Open join (default)
 
 ```mermaid
@@ -178,9 +188,9 @@ Core (guest and account):
 
 - `devices(id, kind anonymous|account, user_id NULL, display_name, platform, refresh_transport cookie|body, refresh_generation, created_at, last_seen_at, expires_at, revoked_at)` with `CHECK ((kind = 'account') = (user_id IS NOT NULL))`. **Built in Phase 1** (`backend/migrations/0001_devices.sql`); `user_id` stays NULL until Phase 5A.
 - `device_refresh_secrets(secret_hash PK, device_id → devices ON DELETE CASCADE, generation, created_at, used_at)`: every issued refresh secret as a SHA-256 hash. A used secret keeps its row so reuse is detected; reuse revokes the device and deletes its rows. **Built in Phase 1.** Rotation locks the secret and the device rows (`SELECT … FOR UPDATE`) so two concurrent refreshes cannot both win.
-- `share_sessions(id, owner_device_id NOT NULL, owner_user_id NULL, status, require_approval DEFAULT false, join_window_state OPEN|EXPIRED|ENDED_FULL|ENDED_BY_SENDER, join_window_opened_at, join_window_ends_at, code_hmac NULL, created_at, expires_at, ended_at, purge_after)`. `owner_user_id` is set only when the sender was signed in at creation and is used for Cloud and per-account limits, never required.
+- `share_sessions(id, owner_device_id NOT NULL, owner_user_id NULL, status, require_approval DEFAULT false, join_window_state OPEN|EXPIRED|ENDED_FULL|ENDED_BY_SENDER, join_window_seq, join_window_opened_at, join_window_ends_at, code_hmac, code_enc, link_enc, created_at, last_activity_at, expires_at, ended_at, purge_after)`. **Built in Phase 2** (`backend/migrations/0003_sharing.sql`), with a partial unique index on `code_hmac` where the window is open. `owner_user_id` is set only when the sender was signed in at creation and is used for Cloud and per-account limits, never required.
 - `session_participants(id, session_id, device_id NOT NULL, user_id NULL, role sender|receiver, status, security_words, joined_via code|link, joined_at, decided_at)` with `UNIQUE (session_id, device_id)`.
-- `session_blocks(session_id, device_id, ip_prefix)`.
+- `session_blocks(session_id, device_id, ip_key)` (`ip_key` is the IPv4 address or IPv6 /64). Built in Phase 2, as are `session_participants` (plus `display_name`, `platform`, `signed_in`, `request_reason`, `ip_key`), `shared_files`, `transfers` (created `PENDING` when a receiver becomes `JOINED`), `session_events`, and `capability_tokens` (purposes `join`, `join_ticket`, `transfer`; `window_seq`, `via`, `device_id`, `used_at`).
 - `shared_files`, `transfers(participant_id, file_id, status, verified_bytes, route, …)`, `session_events`.
 - `capability_tokens(id, session_id, participant_id NULL, purpose join|transfer, token_hash, expires_at, revoked_at)`.
 - `protected_mode(active_until)` (single row) or an equivalent in-memory flag mirrored to metrics.

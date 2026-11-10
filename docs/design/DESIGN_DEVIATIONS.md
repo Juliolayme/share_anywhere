@@ -98,3 +98,8 @@ The design shows the finished product with sample data. These elements are left 
 | F6 | Settings sections Transfer, Notifications, Data, Clipboard; Account menu (profile, security, sign out) | Not shown until the feature each one controls exists | Phases 2, 3, 5A, 5B |
 | F7 | Settings "Licenses" link | Not shown until a licenses page exists | Phase 9 |
 | F8 | History rows open a detail view | Rows are not interactive until transfers write history | Phase 3 |
+| F9 | Session screen "Start transfer" / "Open dashboard", the transfer dashboard, and per-receiver progress | Transfers arrive in Phase 3; joined receivers show `common.queued` and the screen states that transfers start in the next version (`product.files_pending`) | Phase 3 |
+| F10 | Security words shown once in the share panel ("receivers see the same: maple · river · seven") | Words are derived per receiver device (`docs/SECURITY_MODEL.md` §3.1), so they appear on each participant card and on the receiver's screen, not in the share panel | — |
+| F11 | Demo controls: "Demo: expire now", "Simulate a join request" | Not built; the test stack's clock hook covers expiry in e2e | — |
+| F12 | Receive save location (RX-5b, `receive-save`) and "You're approved — Choose save location" | Saving files arrives with transfers; an approved receiver goes straight to the joined state | Phase 3 |
+| F13 | Sender notice when a sixth receiver was auto-declined (B6) | The server refuses the sixth join (`409 session_full`, receiver sees `product.session_full_rx`) and the sender sees "5/5 · Session full"; a per-attempt notice to the sender is backlog | Phase 4 |

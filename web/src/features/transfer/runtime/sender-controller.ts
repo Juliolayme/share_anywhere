@@ -498,6 +498,7 @@ export class SenderController extends Observable<TxState> {
       p.conn = null;
     }
     const r = this.state_.receivers.find((x) => x.participantId === pid);
+    if (r?.route) this.patch(pid, { route: null }); // known again once a new channel opens
     if (!r || !txActive(r.status)) return;
     this.log(pid, 'product.log_connection_lost_plain');
     this.patch(pid, { status: 'reconnecting', eta: null });

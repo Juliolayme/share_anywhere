@@ -265,6 +265,9 @@ jobs:
       - name: Guest Playwright suite
         env:
           E2E_BASE_URL: http://localhost:8080
+          # Firefox ICE logs for the open receiver-reload failure (docs/TESTING_AND_CI.md §3); uploaded with the results.
+          MOZ_LOG: ${{ matrix.project == 'firefox-desktop' && 'timestamp,nr_ice:4,jsep:4,signaling:4' || '' }}
+          MOZ_LOG_FILE: ${{ matrix.project == 'firefox-desktop' && format('{0}/web/test-results/moz-log/firefox', github.workspace) || '' }}
         run: pnpm --filter @share-anywhere/web exec playwright test --project=${{ matrix.project }} --trace retain-on-failure
       - name: Upload report and traces (also when a test only passed on retry)
         if: always()

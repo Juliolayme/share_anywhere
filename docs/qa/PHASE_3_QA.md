@@ -146,6 +146,19 @@ The backend, web checks (123 unit tests), protocol, i18n, tokens and markdown al
 | No test locked in "mute, don't close" on `pagehide` | P2 | Controller test (no `pc.close()` on suspend; `wake()` tears down and redials) and engine test (a muted connection sends nothing) |
 | Route chip stale while reconnecting | P2 | Hidden while connecting, reconnecting, unreachable or offline (G9 notes it instead of the probe badge) |
 
-## Round 7
+## Round 7 — commit b898abe — FAIL
+
+1 P0, 1 P1, 2 P2. Every round-6 fix held, and so did the full-phase pass. That pass covered security (receiver-only reports, capability, authorization, rate limit, CSP, no secrets), keep-screen-on, i18n, design conformance with G1–G15, the backend, the web checks (125 unit tests), protocol, tokens, markdown and 25 local transfer specs. CI 42871975278 on b898abe was red on Firefox.
+
+### Resolution of round 7 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Required Firefox job red on HEAD; same reload ICE failure, without the `pagehide` close | P0 | Open. The `pagehide` link is withdrawn. CI now captures Firefox ICE logs (`MOZ_LOG`), the receiver's diagnostics across the reload, and the ICE server URLs per dial; the Firefox job is being re-run to catch a failure with those logs. Recorded as an exit-gate blocker. No retry or quarantine |
+| Firefox record no longer honest | P1 | Report §4/§6/§7, TESTING_AND_CI §3 and this record state the real rate (3 of 6 recent runs, plus the e29c0a2 first-attempt failure) and withdraw the `pagehide` link |
+| Stale route chip while paused with no connection | P2 | The route is cleared when the connection is lost (receiver and sender) and set again when a channel opens |
+| No test covers the route chip | P2 | `ui.test.tsx`: Direct green, Relay blue at 26 px, nothing while the route is unknown |
+
+## Round 8
 
 Pending.

@@ -56,6 +56,29 @@ function hooks(): TestHooks | null {
   return w.__saTest;
 }
 
+/**
+ * Test builds only: the receiver's ICE diagnostics survive a reload (sessionStorage), so a failure after a
+ * reload can be compared with the connection before it.
+ */
+function keepDiagAcrossLoads(sessionId: string, diag: string[]): void {
+  const key = `sa.test.diag.${sessionId}`;
+  try {
+    // eslint-disable-next-line no-restricted-globals -- test builds only: ICE diagnostics, no tokens or secrets
+    const prev = JSON.parse(sessionStorage.getItem(key) ?? '[]') as string[];
+    diag.push(...prev.map((l) => `prev: ${l}`).slice(-150));
+  } catch {
+    /* ignore */
+  }
+  window.addEventListener('pagehide', () => {
+    try {
+      // eslint-disable-next-line no-restricted-globals -- test builds only: ICE diagnostics, no tokens or secrets
+      sessionStorage.setItem(key, JSON.stringify(diag.filter((l) => !l.startsWith('prev: ')).slice(-150)));
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
 /** For tests: the store to use instead of IndexedDB, and a reset between cases. */
 export function setProgressStoreForTests(s: ProgressStore | null): void {
   progress = s;
@@ -83,6 +106,7 @@ export function receiverFor(sessionId: string, d: Deps): ReceiverController {
     });
     receivers.set(sessionId, c);
     const rc = c;
+    if (hooks()) keepDiagAcrossLoads(sessionId, rc.diag);
     window.addEventListener('pagehide', () => rc.suspend());
     window.addEventListener('pageshow', (e) => e.persisted && rc.wake());
     keepAwake ??= d.keepAwake ?? null;

@@ -358,7 +358,8 @@ export class ReceiverController extends Observable<RxState> {
     const pc = this.d.createPeer ? this.d.createPeer(cfg) : new RTCPeerConnection(cfg);
     this.pc = pc;
     watchPeer(pc, this.diag);
-    this.diag.push(`dial ${connId.slice(0, 8)} servers ${cfg.iceServers?.length ?? 0}`);
+    const urls = (cfg.iceServers ?? []).flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]));
+    this.diag.push(`dial ${connId.slice(0, 8)} servers ${urls.join(' ')}`);
     const dc = pc.createDataChannel(CHANNEL_LABEL, { ordered: true });
     pc.onicecandidate = (e) => {
       const payload: CandidatePayload = { conn: connId, candidate: e.candidate ? e.candidate.toJSON() : null };
@@ -547,6 +548,7 @@ export class ReceiverController extends Observable<RxState> {
     if (this.stopped || rxFinal(this.state_.phase) || this.retryTimer) return;
     const paused = this.state_.phase === 'paused';
     this.teardown();
+    this.update({ route: null }); // known again once a new channel opens
     if (this.hadData) this.log('product.log_connection_lost_plain');
     for (const f of this.open()) void this.reporter.state(f.transferId, paused ? 'PAUSED' : 'DISCONNECTED', f.verified);
     if (paused) return;

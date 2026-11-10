@@ -39,10 +39,11 @@ export function useKeepAwakeController(): KeepAwakeController {
 /** Marks this screen as needing the screen on while `active` is true. */
 export function useKeepAwake(active: boolean): PillState {
   const c = useKeepAwakeController();
+  const [holder] = useState(() => Symbol('keep-awake holder'));
   useEffect(() => {
-    c.setActive(active);
-    return () => c.setActive(false);
-  }, [c, active]);
+    c.hold(holder, active);
+    return () => c.hold(holder, false);
+  }, [c, holder, active]);
   return useSyncExternalStore(
     (cb) => c.subscribe(cb),
     () => c.state,

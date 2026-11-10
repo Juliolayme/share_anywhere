@@ -79,6 +79,13 @@ test('transfer: pause and resume; the screen-on lock follows on both sides', asy
   await expect(rx.getByTestId('transfer-status')).toHaveAttribute('data-state', 'paused');
   await expect.poll(async () => (await wl(rx)).releases).toBeGreaterThanOrEqual(1);
   await expect(rx.getByTestId('screen-on-pill')).toHaveAttribute('data-state', 'paused');
+  // The sender (join window already ended) releases too while its only receiver is paused.
+  await expect
+    .poll(async () => {
+      const w = await wl(sender);
+      return w.releases >= w.requests;
+    })
+    .toBe(true);
   const atPause = await rxVerified(rx, s.id);
   await rx.waitForTimeout(1500);
   expect(await rxVerified(rx, s.id)).toBeLessThanOrEqual(atPause + 4 * 4 * MiB); // in-flight blocks only
@@ -118,8 +125,10 @@ test('transfer: cancel releases the lock and ends both sides', async ({ browser,
   await senderHook(sender, s.id, { pace: 300 });
   const rx = track(await receiverPage(browser, browserName, 'granted'));
   await joinToSave(rx, s.code);
+  await sender.getByRole('button', { name: 'Stop accepting' }).last().click();
   await startInBrowser(rx);
   await expect.poll(() => rxVerified(rx, s.id)).toBeGreaterThan(0);
+  await expect.poll(async () => (await wl(sender)).requests).toBeGreaterThan(0);
   await rx.getByRole('button', { name: 'Cancel' }).click();
   await rx.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
   await expect(result(rx)).toHaveAttribute('data-result', 'cancelled');
@@ -129,7 +138,14 @@ test('transfer: cancel releases the lock and ends both sides', async ({ browser,
       return w.releases >= w.requests && w.requests > 0;
     })
     .toBe(true);
-  await sender.goto(`/send/session/${s.id}/transfers`);
+  // The sender releases after the cancel as well, and its dashboard shows the receiver cancelled.
+  await expect
+    .poll(async () => {
+      const w = await wl(sender);
+      return w.releases >= w.requests;
+    })
+    .toBe(true);
+  await sender.getByRole('button', { name: 'View transfers' }).click();
   await expect(sender.getByTestId('receiver-card')).toHaveAttribute('data-status', 'cancelled', { timeout: 15_000 });
   await sender.context().close();
   await rx.context().close();

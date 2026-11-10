@@ -1,0 +1,48 @@
+{
+  "$comment": "Transfer state machine (docs/ARCHITECTURE.md \u00a74.5). Source of truth for backend/internal/transfers/model.go and web/src/features/transfer/runtime/transitions.ts; both test suites assert they match this file.",
+  "next": {
+    "PENDING": ["CONNECTING", "PAUSED", "FAILED", "CANCELLED"],
+    "CONNECTING": [
+      "TRANSFERRING",
+      "RESUMING",
+      "DISCONNECTED",
+      "PAUSED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "TRANSFERRING": [
+      "PAUSED",
+      "DISCONNECTED",
+      "COMPLETED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "PAUSED": ["CONNECTING", "RESUMING", "TRANSFERRING", "FAILED", "CANCELLED"],
+    "DISCONNECTED": [
+      "RECONNECTING",
+      "CONNECTING",
+      "PAUSED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "RECONNECTING": [
+      "RESUMING",
+      "CONNECTING",
+      "DISCONNECTED",
+      "PAUSED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "RESUMING": [
+      "TRANSFERRING",
+      "DISCONNECTED",
+      "PAUSED",
+      "COMPLETED",
+      "FAILED",
+      "CANCELLED"
+    ],
+    "COMPLETED": [],
+    "FAILED": [],
+    "CANCELLED": []
+  }
+}

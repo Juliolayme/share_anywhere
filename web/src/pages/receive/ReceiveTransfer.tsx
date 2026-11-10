@@ -32,6 +32,7 @@ import {
 
 const CHIP: Partial<Record<RxPhase, ChipState>> = {
   connecting: 'connecting',
+  unreachable: 'failed',
   transferring: 'receiving',
   paused: 'paused',
   reconnecting: 'reconnecting',
@@ -61,7 +62,18 @@ export function ReceiveTransfer({
   if (s.phase === 'loading') {
     return (
       <Screen id="receive-progress">
-        {failed && <Banner tone="danger" role="alert" title={t('product.error_generic')} />}
+        {failed && (
+          <Banner
+            tone="danger"
+            role="alert"
+            title={t('product.error_generic')}
+            action={
+              <Button size="sm" onClick={() => window.location.reload()}>
+                {t('common.retry')}
+              </Button>
+            }
+          />
+        )}
         <div aria-hidden className="mx-auto h-[240px] w-full max-w-[680px] animate-pulse rounded-[16px] bg-surface-2" />
       </Screen>
     );
@@ -162,6 +174,9 @@ export function ReceiveTransfer({
             </div>
           )}
           {fileList(true)}
+          {s.target?.mode === 'opfs' && s.files.some((f) => f.done) && (
+            <p className="m-0 text-center text-[13px] text-fg-2">{t('product.rx_kept')}</p>
+          )}
           <div className="flex flex-wrap justify-center gap-2">
             <Link
               to="/"
@@ -214,8 +229,20 @@ export function ReceiveTransfer({
               className="flex items-center gap-2 rounded-[10px] bg-warning-soft px-3 py-[10px] text-[13px] text-warning-ink"
             >
               <WifiOff aria-hidden size={16} />
-              {t('product.rx_reconnecting')}
+              {t(s.verified > 0 ? 'product.rx_reconnecting' : 'product.rx_connecting')}
             </div>
+          )}
+          {s.phase === 'unreachable' && (
+            <Banner
+              tone="danger"
+              role="alert"
+              title={t('product.tx_err_unreachable')}
+              action={
+                <Button size="sm" variant="send" onClick={() => rx.retry()}>
+                  {t('common.retry')}
+                </Button>
+              }
+            />
           )}
           {s.phase === 'verifying' && (
             <div
@@ -223,7 +250,7 @@ export function ReceiveTransfer({
               className="flex items-center gap-2 rounded-[10px] bg-send-soft px-3 py-[10px] text-[13px] text-send-ink"
             >
               <ShieldCheck aria-hidden size={16} />
-              {t('web.verifying')} SHA-256
+              {t('product.verifying_sha')}
             </div>
           )}
           {s.error && <Banner tone="warning" role="alert" title={t(s.error)} />}

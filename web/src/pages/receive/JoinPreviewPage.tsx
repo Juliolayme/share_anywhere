@@ -85,7 +85,7 @@ export default function JoinPreviewPage() {
             </span>
             <div className="flex-1">
               <span className="flex flex-wrap items-center gap-2">
-                <b>{sender.display_name}</b>
+                <b data-testid="preview-sender">{sender.display_name}</b>
                 <IdentityBadge signedIn={sender.signed_in} />
               </span>
               <div className="text-caption text-fg-2">

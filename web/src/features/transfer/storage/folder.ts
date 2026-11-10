@@ -1,6 +1,6 @@
 // "Save to a folder" through the File System Access API (Chromium). Blocks are staged in OPFS while they
 // arrive (so a reload resumes without losing verified blocks), and each file is copied into the chosen
-// folder as soon as it passes the whole-file SHA-256 check (docs/design/DESIGN_DEVIATIONS.md F16).
+// folder as soon as it passes the whole-file SHA-256 check (docs/design/DESIGN_DEVIATIONS.md G1).
 
 interface DirectoryPickerWindow {
   showDirectoryPicker?: (opts?: { id?: string; mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;

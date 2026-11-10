@@ -29,6 +29,8 @@ export interface SaveTarget {
 
 export interface ProgressStore {
   get(key: string): Promise<Progress | undefined>;
+  all(): Promise<Progress[]>;
+  remove(key: string): Promise<void>;
   put(p: Progress): Promise<void>;
   forSession(sessionId: string): Promise<Progress[]>;
   removeSession(sessionId: string): Promise<void>;
@@ -66,6 +68,8 @@ export function openProgressStore(factory: IDBFactory = indexedDB): ProgressStor
     (await open()).transaction(name, mode).objectStore(name);
   return {
     get: async (key) => req<Progress | undefined>((await store('progress', 'readonly')).get(key)),
+    all: async () => req<Progress[]>((await store('progress', 'readonly')).getAll()),
+    remove: async (key) => void (await req((await store('progress', 'readwrite')).delete(key))),
     put: async (p) => void (await req((await store('progress', 'readwrite')).put(p))),
     forSession: async (sessionId) =>
       req<Progress[]>((await store('progress', 'readonly')).index('session').getAll(sessionId)),

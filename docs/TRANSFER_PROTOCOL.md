@@ -67,6 +67,8 @@ A malformed frame, a frame out of order, or a frame of the wrong direction is a 
 - Bit *i* is block *i*, least significant bit first: block *i* is done when `(bytes[i >> 3] >> (i & 7)) & 1`.
 - The bitmap is `ceil(block_count / 8)` bytes, and bits past the last block must be zero. 20 GB / 4 MiB = 5,120 blocks → 640 bytes.
 - The receiver persists the bitmap after each block is written and verified, **before** it sends `ACK`. On Web it lives in IndexedDB, keyed by the transfer capability's hash and the transfer ID; the partial file lives in OPFS.
+- Lifecycle: a finished file stays in browser storage for 24 hours so it can be downloaded again; progress records untouched for 24 hours are removed with their staging files, staging files no record refers to are removed after an hour (`storage/sweep.ts`, once per tab), partial data is removed when a transfer fails, is cancelled, or the receiver is removed, and a folder copy removes its staging file at once.
+- A receiver first checks that `FILE_META` matches the server's files (ID and size, the size the save screen checked); a mismatch is a `protocol` error.
 - On every connect the receiver sends its persisted bitmap. The sender schedules exactly the missing blocks, in ascending order per file, files in `FILE_META` order. Holes and out-of-order completion are normal. A block that arrives although its bit is already set is acknowledged and counted as a duplicate; the resume tests assert the count stays zero.
 
 ## 5. Block flow, flow control, verification
@@ -88,7 +90,7 @@ A malformed frame, a frame out of order, or a frame of the wrong direction is a 
 
 ## 6. Reconnect
 
-When the channel closes without a fatal error:
+When the channel closes without a fatal error (reconnect window: 2 minutes to make a first connection, 10 minutes to get one back; after that the receiver shows "Couldn't reach the sender" with Retry, and nothing is reported as failed):
 
 1. The receiver reports `DISCONNECTED`.
 2. The receiver re-offers with backoff (1 s doubling to 15 s), reporting `RECONNECTING`.
@@ -102,7 +104,7 @@ The sender keeps its file handles and whole-file hash state across reconnects, b
   - on every state change;
   - at most every 2 s while bytes flow;
   - `COMPLETED` only after `DONE ok`.
-- The sender reports nothing except its own pause, resume, and cancel actions.
+- The sender reports nothing except its own pause, resume, and cancel actions; the server refuses reports from the sender (`403 receiver_only`). Leaving `PAUSED` for an active state goes through `resume`, which checks a receiver's capability, so a report cannot skip it (`409 use_resume`).
 - The route (`direct` or `relay`) comes from the selected ICE candidate pair (`getStats()`: `relay` when either local or remote candidate type is `relay`).
 - The keep-awake controller holds the screen on while any transfer is `CONNECTING`, `TRANSFERRING`, `RESUMING`, `RECONNECTING`, or verifying (`docs/ARCHITECTURE.md` §7).
 

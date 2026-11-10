@@ -42,7 +42,10 @@ test('devices → settings: rename shows in Settings, and Settings says Guest', 
   await expect(page.getByTestId('device-name')).not.toHaveText(/Setting up/);
   await page.getByRole('button', { name: 'Rename' }).click();
   const input = page.getByRole('textbox', { name: 'Device name' });
-  await input.fill('E2E Desk');
+  // Real keystrokes (select all, then type): behaves the same in every driver, including WebDriver BiDi.
+  await input.click();
+  await input.press('ControlOrMeta+a');
+  await input.pressSequentially('E2E Desk');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByTestId('device-name')).toHaveText('E2E Desk');
   await expect(page.getByRole('status').filter({ hasText: 'Device renamed' })).toBeVisible();
@@ -117,10 +120,10 @@ test('receive: code entry validates the six digits on blur', async ({ page }) =>
   await openAsReturningGuest(page, '/receive');
   await expect(page.locator('[data-screen="receive"]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue' })).toBeVisible();
-  await page.getByRole('textbox', { name: 'Digit 1 of 6' }).fill('4');
+  await page.getByRole('textbox', { name: 'Digit 1 of 6' }).pressSequentially('4');
   await page.getByRole('textbox', { name: 'Or paste a share link' }).focus();
   await expect(page.getByRole('alert')).toHaveText('Enter all 6 digits.');
-  await page.getByRole('textbox', { name: 'Digit 1 of 6' }).fill('482913');
+  await page.getByRole('textbox', { name: 'Digit 2 of 6' }).pressSequentially('82913');
   await expect(page.getByRole('textbox', { name: 'Digit 6 of 6' })).toHaveValue('3');
   await expect(page.getByRole('alert')).toHaveCount(0);
 });

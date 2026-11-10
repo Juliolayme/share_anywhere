@@ -113,6 +113,7 @@ export default function SaveLocationPage() {
               void rx
                 .start({ sessionId, mode: 'opfs' })
                 .then(() => navigate(`/receive/${sessionId}`, { replace: true }))
+                .catch(() => setNotice(t('product.error_generic')))
             }
           >
             {t('product.save_opfs_h')}

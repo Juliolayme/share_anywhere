@@ -25,7 +25,12 @@ test('mobile screens match their baselines: session, preview, save location, res
   const rx = await receiverPage(browser, browserName);
   await enterCode(rx, s.code);
   await expect(rx.locator('[data-screen="receive-preview"]')).toBeVisible();
-  await shot(rx, 'receive-preview.png', ['[data-testid="identity-badge"]', 'h1', '[role="status"]']);
+  await shot(rx, 'receive-preview.png', [
+    '[data-testid="identity-badge"]',
+    '[data-testid="preview-sender"]',
+    'h1',
+    '[role="status"]',
+  ]);
   await rx.getByRole('button', { name: 'Receive' }).click();
   await expect(rx.getByTestId('capability-row')).toBeVisible();
   await shot(rx, 'receive-save.png', [

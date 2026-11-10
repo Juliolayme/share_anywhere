@@ -5,8 +5,13 @@ import { openProgressStore, progressKey } from '../storage/progress-store';
 import type { Transfer, TransferStatus, TransfersApi } from './api';
 import { Reporter } from './reporter';
 import { NEXT, pathTo, terminal } from './transitions';
+import shared from '../../../../../shared/protocol/schemas/transfer-states.json';
 
 describe('transitions mirror', () => {
+  it('matches the shared table the server is tested against', () => {
+    expect(NEXT).toEqual(shared.next);
+  });
+
   it('walks to the target through allowed states', () => {
     expect(pathTo('PENDING', 'TRANSFERRING')).toEqual(['CONNECTING', 'TRANSFERRING']);
     expect(pathTo('DISCONNECTED', 'TRANSFERRING')).toEqual(['CONNECTING', 'TRANSFERRING']);
@@ -114,5 +119,30 @@ describe('progress store', () => {
     expect(await store.get(key)).toBeUndefined();
     expect(await store.getTarget('s1')).toBeUndefined();
     expect(await store.get(progressKey('abc', 't2'))).toBeDefined();
+  });
+});
+
+describe('storage sweep', () => {
+  it('drops progress older than 24 hours with its staging file and keeps recent ones', async () => {
+    const { sweepStorage } = await import('../storage/sweep');
+    const store = openProgressStore(new IDBFactory());
+    const now = Date.UTC(2026, 10, 10);
+    const row = (key: string, updatedAt: number) => ({
+      key,
+      sessionId: 's',
+      transferId: key,
+      name: 'a',
+      size: 1,
+      blockSize: 4,
+      bitmap: new Uint8Array([0]),
+      staging: key,
+      verified: true,
+      updatedAt,
+    });
+    await store.put(row('old', now - 25 * 3600_000));
+    await store.put(row('new', now - 3600_000));
+    expect(await sweepStorage(store, now)).toBe(1);
+    expect(await store.get('old')).toBeUndefined();
+    expect(await store.get('new')).toBeDefined();
   });
 });

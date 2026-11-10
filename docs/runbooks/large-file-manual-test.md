@@ -5,7 +5,7 @@ CI covers 2 GB nightly (`.github/workflows/nightly.yml`, `large-file`). A 20 GB 
 ## Setup
 
 1. Two computers on different networks if possible (for example office Wi-Fi and a phone hotspot), or one computer with two browsers for a LAN baseline.
-2. Free space: the receiver needs about 2 × 20 GB with "Save to a folder" (browser storage while receiving, then the copy) or 20 GB plus the download with "Keep in this browser". Check the capability table on the save screen: it shows the browser's free storage.
+2. Free space: the receiver needs about 2 × 20 GB with "Save to a folder" (browser storage while receiving, then the copy) or 20 GB plus the download with "Keep in this browser". Check the capability table on the save screen: it shows the browser's free storage. A finished file stays in browser storage for 24 hours, then the app removes it.
 3. Create the fixture on the sender:
 
    ```bash

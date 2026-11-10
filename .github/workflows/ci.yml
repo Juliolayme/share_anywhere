@@ -249,6 +249,19 @@ jobs:
       - name: Install chromium and ${{ matrix.browser }}
         # The pairing specs always run the sender in Chromium, whatever the receiver project.
         run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium ${{ matrix.browser }}
+      - name: Stock Firefox for WebRTC (pinned, checksum verified)
+        # Playwright's patched Firefox never gathers ICE candidates; the Firefox project drives a stock
+        # Firefox over WebDriver BiDi instead (docs/TESTING_AND_CI.md §3).
+        if: matrix.browser == 'firefox'
+        env:
+          FIREFOX_VERSION: '160.0'
+          FIREFOX_SHA256: fde774e9757c8878534c05ec210db592bf6a1b244c57941ffb2e364c04f35fcd
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/firefox.tar.xz" "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz"
+          echo "${FIREFOX_SHA256}  $RUNNER_TEMP/firefox.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP"
+          echo "E2E_FIREFOX_BIN=$RUNNER_TEMP/firefox/firefox" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/firefox/firefox" --version
       - name: Guest Playwright suite
         env:
           E2E_BASE_URL: http://localhost:8080

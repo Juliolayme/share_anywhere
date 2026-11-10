@@ -34,7 +34,7 @@ export type ChipState =
   | 'removed';
 
 const CHIP: Record<ChipState, { cls: string; icon: LucideIcon; key: string }> = {
-  waiting: { cls: 'bg-surface-2 text-fg-2', icon: Clock, key: 'web.st.pending' },
+  waiting: { cls: 'bg-surface-2 text-fg-2', icon: Clock, key: 'product.st_waiting' },
   connecting: { cls: 'bg-send-soft text-send-ink', icon: Loader, key: 'web.st.connecting' },
   transferring: { cls: 'bg-send-soft text-send-ink', icon: Radio, key: 'web.st.transferring' },
   receiving: { cls: 'bg-send-soft text-send-ink', icon: Radio, key: 'web.st.receiving' },
@@ -127,7 +127,12 @@ export function useEta() {
     if (seconds === null) return t('web.estimating');
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    const time = m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : m > 0 ? `${m} min ${s} s` : `${s} s`;
+    const time =
+      m >= 60
+        ? t('product.eta_hm', { h: Math.floor(m / 60), m: m % 60 })
+        : m > 0
+          ? t('product.eta_ms', { m, s })
+          : t('product.eta_s', { s });
     return t('product.eta_left', { time });
   };
 }

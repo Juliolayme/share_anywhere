@@ -94,7 +94,12 @@ export async function open(page: Page, path: string) {
 let senderBrowser: Browser | null = null;
 /** The sender always runs in Chromium (docs/phases/PHASE_2_PAIRING_SIGNALING.md), whatever the project. */
 export async function senderPage(wake: WakeMode = 'granted'): Promise<Page> {
-  senderBrowser ??= await chromium.launch({ args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] });
+  // Explicit channel and path: the Firefox project's stock-Firefox options would otherwise apply here too.
+  senderBrowser ??= await chromium.launch({
+    channel: undefined,
+    executablePath: undefined,
+    args: ['--disable-features=WebRtcHideLocalIpsWithMdns'],
+  });
   return guestPage(senderBrowser, { wake });
 }
 
@@ -128,7 +133,8 @@ export async function createSession(page: Page, opts: { approval?: boolean; file
 /** Receiver enters a code on /receive and continues to the preview. */
 export async function enterCode(page: Page, code: string) {
   await open(page, '/receive');
-  await page.getByRole('textbox', { name: 'Digit 1 of 6' }).fill(code);
+  // Typed key by key like a person (focus moves to the next digit); works the same in every driver.
+  await page.getByRole('textbox', { name: 'Digit 1 of 6' }).pressSequentially(code);
   await page.getByRole('button', { name: 'Continue' }).click();
 }
 

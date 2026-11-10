@@ -90,7 +90,15 @@ export default function TransferDashboard() {
   const [confirmClose, setConfirmClose] = useState(false);
   const [closing, setClosing] = useState(false);
   const active = s.receivers.some((r) => txActive(r.status));
-  const pill = useKeepAwake(active);
+  // Also held while the join window is open, as on the session screen (docs/ARCHITECTURE.md §7.1).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const windowOpen = !!s.windowEndsAt && Date.parse(s.windowEndsAt) > now + s.serverOffset;
+  const pill = useKeepAwake(active || (windowOpen && !s.final));
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (s.final && location.pathname.endsWith('/transfers')) navigate(`/send/session/${id}/result`, { replace: true });
@@ -108,14 +116,21 @@ export default function TransferDashboard() {
 
   const close = async () => {
     setClosing(true);
-    tx.cancelAll();
+    setError(null);
     try {
       await api.close(id);
+      tx.cancelAll();
+      navigate(`/send/session/${id}`);
+    } catch {
+      setError(t('product.close_failed'));
     } finally {
       setClosing(false);
       setConfirmClose(false);
-      navigate(`/send/session/${id}`);
     }
+  };
+  const remove = (r: TxReceiver) => {
+    setError(null);
+    api.remove(r.participantId).catch(() => setError(t('product.remove_failed', { name: r.name })));
   };
 
   return (
@@ -128,7 +143,7 @@ export default function TransferDashboard() {
               {t('product.dash_sub', { count, size: formatBytes(total, locale) })}
             </span>
             <h1 className="m-0 text-[clamp(24px,3vw,30px)] tracking-[-0.025em]">
-              {n === 1 ? t('product.dash_h_one') : t('web.dash_h', { n })}
+              {s.final ? t(FINAL[s.final].title) : n === 1 ? t('product.dash_h_one') : t('web.dash_h', { n })}
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -140,7 +155,19 @@ export default function TransferDashboard() {
             <Button onClick={() => setConfirmClose(true)}>{t('web.close')}</Button>
           </div>
         </div>
-        {failed && <Banner tone="danger" role="alert" title={t('product.error_generic')} />}
+        {failed && (
+          <Banner
+            tone="danger"
+            role="alert"
+            title={t('product.error_generic')}
+            action={
+              <Button size="sm" onClick={() => window.location.reload()}>
+                {t('common.retry')}
+              </Button>
+            }
+          />
+        )}
+        {error && <Banner tone="danger" role="alert" title={error} />}
         {!s.hasFiles && s.loaded && !s.final && <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />}
         {s.final && <FinalBanner final={s.final} />}
         <Card className="flex flex-col gap-3 px-[20px] py-[18px]" as="section">
@@ -192,7 +219,7 @@ export default function TransferDashboard() {
                 r={r}
                 onPause={() => tx.pause(r.participantId)}
                 onResume={() => tx.resume(r.participantId)}
-                onRemove={() => void api.remove(r.participantId)}
+                onRemove={() => remove(r)}
               />
             ))}
           </div>
@@ -238,16 +265,11 @@ export default function TransferDashboard() {
                                 {t('common.done')}
                               </span>
                             ) : v === 0 ? (
-                              <span className="text-[12px] text-fg-3">{t('common.queued')}</span>
+                              <span className="text-[12px] text-fg-2">{t('common.queued')}</span>
                             ) : (
                               <span className="font-mono text-[12px] text-fg-2">{percent(v, f.size)}</span>
                             )}
-                            <ProgressBar
-                              value={f.size ? v / f.size : 1}
-                              label={`${f.name} · ${r.name}`}
-                              height={4}
-                              tone={done ? 'receive' : 'send'}
-                            />
+                            <ProgressBar value={f.size ? v / f.size : 1} label={`${f.name} · ${r.name}`} height={4} />
                           </span>
                         </td>
                       );

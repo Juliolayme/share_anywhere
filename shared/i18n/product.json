@@ -222,7 +222,17 @@
     "log_empty": "Nothing logged yet.",
     "transfer_waiting": "Waiting for the receiver to choose where to save",
     "history_partial_bytes": "{done} of {total}",
-    "back_to_session": "Back to the session"
+    "back_to_session": "Back to the session",
+    "verifying_sha": "Checking file integrity (SHA-256)…",
+    "eta_hm": "{h} h {m} min",
+    "eta_ms": "{m} min {s} s",
+    "eta_s": "{s} s",
+    "st_waiting": "Waiting",
+    "tx_err_unreachable": "Couldn’t reach the sender. Ask them to keep this session open, then try again.",
+    "rx_connecting": "Connecting to the sender…",
+    "rx_kept": "Files are kept in this browser for 24 hours so you can download them again.",
+    "remove_failed": "Couldn’t remove {name}. Try again.",
+    "close_failed": "Couldn’t close the session. Try again."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -446,6 +456,16 @@
     "log_empty": "Chưa có nhật ký.",
     "transfer_waiting": "Đang chờ người nhận chọn nơi lưu",
     "history_partial_bytes": "{done} / {total}",
-    "back_to_session": "Quay lại phiên"
+    "back_to_session": "Quay lại phiên",
+    "verifying_sha": "Đang kiểm tra toàn vẹn tệp (SHA-256)…",
+    "eta_hm": "{h} giờ {m} phút",
+    "eta_ms": "{m} phút {s} giây",
+    "eta_s": "{s} giây",
+    "st_waiting": "Đang chờ",
+    "tx_err_unreachable": "Không kết nối được với người gửi. Hãy nhờ họ giữ phiên này mở, rồi thử lại.",
+    "rx_connecting": "Đang kết nối với người gửi…",
+    "rx_kept": "Tệp được giữ trong trình duyệt này 24 giờ để bạn có thể tải lại.",
+    "remove_failed": "Không xóa được {name}. Hãy thử lại.",
+    "close_failed": "Không đóng được phiên. Hãy thử lại."
   }
 }

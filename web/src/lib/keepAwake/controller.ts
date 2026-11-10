@@ -77,6 +77,18 @@ export class KeepAwakeController {
     for (const l of this.listeners) l(this.state);
   }
 
+  private holders = new Set<symbol>();
+
+  /**
+   * One screen or component says whether it needs the screen on. The controller is active while any holder
+   * needs it, so a parent and a child screen never override each other.
+   */
+  hold(holder: symbol, needs: boolean) {
+    if (needs) this.holders.add(holder);
+    else this.holders.delete(holder);
+    this.setActive(this.holders.size > 0);
+  }
+
   /** Something that needs the screen on started (true) or ended (false). Ending resets the user's choice. */
   setActive(active: boolean) {
     if (this.active === active) return;

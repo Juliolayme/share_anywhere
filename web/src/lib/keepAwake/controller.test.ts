@@ -47,6 +47,25 @@ function stub(mode: 'granted' | 'refused' | 'unsupported') {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('KeepAwakeController', () => {
+  it('stays active while any holder needs it (a parent and a child screen do not override each other)', async () => {
+    const s = stub('granted');
+    const c = new KeepAwakeController(s.env);
+    const parent = Symbol('parent');
+    const child = Symbol('child');
+    c.hold(child, true);
+    c.hold(parent, false); // the parent's effect runs after the child's
+    await flush();
+    expect(c.state).toBe('on');
+    c.hold(parent, true);
+    c.hold(child, false);
+    await flush();
+    expect(c.state).toBe('on');
+    c.hold(parent, false);
+    await flush();
+    expect(c.state).toBe('paused');
+    expect(s.calls.release).toBe(1);
+  });
+
   it('acquires while active, releases when inactive, re-requests on visible', async () => {
     const s = stub('granted');
     const c = new KeepAwakeController(s.env);

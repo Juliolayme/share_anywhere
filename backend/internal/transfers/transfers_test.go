@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -254,7 +255,8 @@ func TestReportStateMachine(t *testing.T) {
 	}
 	wantCode(t, mustErr(e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Transferring, VerifiedBytes: 300})), "invalid_bytes")
 	wantCode(t, mustErr(e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Transferring, VerifiedBytes: 1001})), "invalid_bytes")
-	wantCode(t, mustErr(e.svc.Report(ctx, sender.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 1000})), "not_verified")
+	wantCode(t, mustErr(e.svc.Report(ctx, sender.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 1000})), "receiver_only")
+	wantCode(t, mustErr(e.svc.Report(ctx, sender.DeviceID, tr.ID, Report{Status: Transferring, VerifiedBytes: 400})), "receiver_only")
 	wantCode(t, mustErr(e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 999})), "not_verified")
 	// Disconnect → reconnect → resume → complete.
 	for _, r := range []Report{{Status: Disconnected, VerifiedBytes: 400}, {Status: Reconnecting, VerifiedBytes: 400}, {Status: Resuming, VerifiedBytes: 400}, {Status: Transferring, VerifiedBytes: 800}} {
@@ -295,6 +297,12 @@ func TestActionsAndCapability(t *testing.T) {
 	wantCode(t, mustErr(e.svc.Action(ctx, rx.DeviceID, tr.ID, "resume", l.Capability)), "invalid_transition")
 	if p, err := e.svc.Action(ctx, sender.DeviceID, tr.ID, "pause", ""); err != nil || p.Status != Paused {
 		t.Fatalf("pause: %+v %v", p, err)
+	}
+	// A paused transfer cannot be resumed through a report (that would skip the capability check).
+	wantCode(t, mustErr(e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Transferring})), "use_resume")
+	wantCode(t, mustErr(e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Resuming})), "use_resume")
+	if _, err := e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Paused}); err != nil {
+		t.Fatalf("progress while paused: %v", err)
 	}
 	wantCode(t, mustErr(e.svc.Action(ctx, rx.DeviceID, tr.ID, "resume", "")), "capability_required")
 	wantCode(t, mustErr(e.svc.Action(ctx, rx.DeviceID, tr.ID, "resume", "forged")), "capability_required")
@@ -412,3 +420,29 @@ func scrape(r *metrics.Registry) string {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+// TestTransitionsMatchSharedTable keeps the server table and the Web mirror in step through one JSON file.
+func TestTransitionsMatchSharedTable(t *testing.T) {
+	raw, err := os.ReadFile("../../../shared/protocol/schemas/transfer-states.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shared struct {
+		Next map[string][]string `json:"next"`
+	}
+	if err := json.Unmarshal(raw, &shared); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{Pending, Connecting, Transferring, Paused, Disconnected, Reconnecting, Resuming, Completed, Failed, Cancelled} {
+		got, want := next[s], shared.Next[s]
+		if len(got) == 0 && len(want) == 0 {
+			continue
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s: server %v, shared table %v", s, got, want)
+		}
+	}
+	if len(shared.Next) != 10 {
+		t.Errorf("shared table has %d states", len(shared.Next))
+	}
+}

@@ -11,6 +11,7 @@ import { getOutbox } from './runtime/outbox';
 import { ReceiverController, type RxState } from './runtime/receiver-controller';
 import { SenderController, type TxState } from './runtime/sender-controller';
 import { openProgressStore, type ProgressStore } from './storage/progress-store';
+import { sweepStorage } from './storage/sweep';
 
 /**
  * One controller per session for the life of the tab (module scope, so this code ships only with the lazily
@@ -51,7 +52,10 @@ export function setProgressStoreForTests(s: ProgressStore | null): void {
 export function receiverFor(sessionId: string, d: Deps): ReceiverController {
   let c = receivers.get(sessionId);
   if (!c) {
-    progress ??= openProgressStore();
+    if (!progress) {
+      progress = openProgressStore();
+      void sweepStorage(progress).catch(() => undefined);
+    }
     c = new ReceiverController({
       sessionId,
       api: transfersApi(d.client),

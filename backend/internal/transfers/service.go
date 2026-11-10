@@ -186,12 +186,20 @@ func (s *Service) Report(ctx context.Context, deviceID, transferID string, r Rep
 		}
 	}
 	return s.move(ctx, deviceID, transferID, func(t Transfer, m sharing.Member) (Transfer, error) {
+		// Only the receiver's engine reports (docs/TRANSFER_PROTOCOL.md §7); the sender uses the controls.
+		if m.Role != "receiver" {
+			return t, errReporter
+		}
+		// Leaving PAUSED for an active state goes through resume, which checks the capability.
+		if t.Status == Paused && r.Status != Paused && !Terminal(r.Status) {
+			return t, errUseResume
+		}
 		if r.VerifiedBytes < t.VerifiedBytes || r.VerifiedBytes > t.Size {
 			if !Terminal(t.Status) || t.Status != r.Status {
 				return t, errBytes
 			}
 		}
-		if r.Status == Completed && (m.Role != "receiver" || r.VerifiedBytes != t.Size) {
+		if r.Status == Completed && r.VerifiedBytes != t.Size {
 			return t, errComplete
 		}
 		t.Status, t.VerifiedBytes = r.Status, max(r.VerifiedBytes, t.VerifiedBytes)

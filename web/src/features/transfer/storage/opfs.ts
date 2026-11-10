@@ -87,3 +87,22 @@ export async function removeOpfs(name: string): Promise<void> {
     /* already gone */
   }
 }
+
+/** Staging files with their last-modified time (for the storage sweep). */
+export async function listOpfs(): Promise<Array<{ name: string; modified: number }>> {
+  if (!navigator.storage?.getDirectory) return [];
+  try {
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(DIR, { create: true });
+    const out: Array<{ name: string; modified: number }> = [];
+    for await (const [name, handle] of (
+      dir as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }
+    ).entries()) {
+      if (handle.kind !== 'file') continue;
+      const f = await (handle as FileSystemFileHandle).getFile().catch(() => null);
+      out.push({ name, modified: f?.lastModified ?? 0 });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}

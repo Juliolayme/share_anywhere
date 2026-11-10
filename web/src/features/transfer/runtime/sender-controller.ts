@@ -57,6 +57,10 @@ export interface TxState {
   /** False after a reload: the browser no longer gives this tab the picked files. */
   hasFiles: boolean;
   final: TxFinal;
+  /** End of the open join window (server time, ISO), or null when no window is open. */
+  windowEndsAt: string | null;
+  /** Milliseconds to add to Date.now() to follow the server clock. */
+  serverOffset: number;
 }
 
 export interface SenderDeps {
@@ -111,7 +115,15 @@ export class SenderController extends Observable<TxState> {
   readonly diag: string[] = [];
 
   constructor(private readonly d: SenderDeps) {
-    super({ loaded: false, files: [], receivers: [], hasFiles: !!d.files, final: null });
+    super({
+      loaded: false,
+      files: [],
+      receivers: [],
+      hasFiles: !!d.files,
+      final: null,
+      windowEndsAt: null,
+      serverOffset: 0,
+    });
   }
 
   init(): Promise<void> {
@@ -182,7 +194,11 @@ export class SenderController extends Observable<TxState> {
         };
       })
       .map((r) => ({ ...r, verified: r.perFile.reduce((a, b) => a + b, 0) }));
-    this.update({ receivers });
+    this.update({
+      receivers,
+      windowEndsAt: v.join_window?.state === 'OPEN' ? v.join_window.ends_at : null,
+      serverOffset: Date.parse(v.server_time) - Date.now(),
+    });
     for (const r of receivers) if (r.status === 'removed') this.drop(r.participantId);
     this.checkFinal();
   }
@@ -286,7 +302,7 @@ export class SenderController extends Observable<TxState> {
         this.patch(r.participantId, { status: server });
       if (r && server === 'paused' && txActive(r.status)) this.patch(r.participantId, { status: 'paused' });
       this.checkFinal();
-    } else if (e.type.startsWith('PARTICIPANT_')) {
+    } else if (e.type.startsWith('PARTICIPANT_') || e.type === 'SESSION_UPDATED') {
       void this.refresh();
     } else if (e.type === 'SESSION_CLOSED' || e.type === 'SESSION_EXPIRED') {
       for (const pid of [...this.peers.keys()]) this.drop(pid);

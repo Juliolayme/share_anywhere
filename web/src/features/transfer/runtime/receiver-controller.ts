@@ -4,7 +4,7 @@ import type { SessionView } from '../../sharing/api';
 import { Bitmap } from '../engine/bitmap';
 import { fromDataChannel } from '../engine/channel';
 import { Throughput } from '../engine/eta';
-import type { ErrorCode, FileMetaEntry } from '../engine/frame';
+import { ProtocolError, type ErrorCode, type FileMetaEntry } from '../engine/frame';
 import { sha256Hex } from '../engine/hash';
 import { ReceiverConnection, type PreparedFile, type Sink } from '../engine/receiver';
 import { copyIntoFolder, downloadFile, folderPermission } from '../storage/folder';
@@ -29,7 +29,9 @@ export type RxPhase =
   | 'completed'
   | 'partial'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  /** Could not reach the sender within the reconnect window; Retry starts again (not final, nothing reported as failed). */
+  | 'unreachable';
 
 export interface RxFile {
   index: number;
@@ -120,6 +122,9 @@ export class ReceiverController extends Observable<RxState> {
   private historyWritten = false;
   private initialized: Promise<void> | null = null;
   private participantId = '';
+  /** When the current run of failed attempts started (null while a channel is open). */
+  private downSince: number | null = null;
+  private everOpened = false;
   /** ICE and connection diagnostics (memory only). */
   readonly diag: string[] = [];
   /** Per-file completion work (folder copy, records), serialized so completion sees every file. */
@@ -245,6 +250,14 @@ export class ReceiverController extends Observable<RxState> {
     }
   }
 
+  /** After the reconnect window ran out: try again from the start of a new window. */
+  retry(): void {
+    if (this.state_.phase !== 'unreachable') return;
+    this.attempt = 0;
+    this.downSince = null;
+    this.connect();
+  }
+
   async cancel(): Promise<void> {
     this.conn?.cancel();
     await Promise.all(this.open().map((f) => this.d.api.action(f.transferId, 'cancel').catch(() => undefined)));
@@ -283,6 +296,7 @@ export class ReceiverController extends Observable<RxState> {
   private connect(): void {
     if (this.stopped || rxFinal(this.state_.phase)) return;
     this.teardown();
+    this.downSince ??= Date.now();
     const reconnecting = this.hadData || this.attempt > 0;
     this.update({ phase: reconnecting ? 'reconnecting' : 'connecting' });
     for (const f of this.open())
@@ -316,6 +330,8 @@ export class ReceiverController extends Observable<RxState> {
     dc.onopen = () => {
       if (this.pc !== pc) return;
       if (this.openTimer) clearTimeout(this.openTimer);
+      this.downSince = null;
+      this.everOpened = true;
       this.attach(dc, pc);
     };
     this.openTimer = setTimeout(() => this.pc === pc && this.lost(), 20_000);
@@ -362,7 +378,9 @@ export class ReceiverController extends Observable<RxState> {
 
   private async prepare(e: FileMetaEntry): Promise<PreparedFile> {
     const f = this.state_.files.find((x) => x.transferId === e.transfer_id);
-    if (!f) throw new Error('unknown transfer');
+    // The sender's FILE_META must describe exactly the files the server announced (and the save screen sized).
+    if (!f || f.fileId !== e.file_id || f.size !== e.size)
+      throw new ProtocolError('FILE_META does not match the session’s files');
     const mode = this.state_.target?.mode ?? 'opfs';
     const key = progressKey(this.capHash, f.transferId);
     if (mode === 'memory') {
@@ -469,6 +487,7 @@ export class ReceiverController extends Observable<RxState> {
     }
     if (fatal) {
       for (const f of this.open()) void this.reporter.state(f.transferId, 'FAILED', f.verified);
+      void this.cleanupStaging(true); // keep files that finished, drop partial data
       this.update({ error: ERROR_KEYS[code as ErrorCode] ?? 'product.tx_err_protocol' });
       return this.finish(this.state_.files.some((f) => f.done) ? 'partial' : 'failed');
     }
@@ -483,6 +502,11 @@ export class ReceiverController extends Observable<RxState> {
     if (this.hadData) this.log('product.log_connection_lost_plain');
     for (const f of this.open()) void this.reporter.state(f.transferId, paused ? 'PAUSED' : 'DISCONNECTED', f.verified);
     if (paused) return;
+    // Reconnect window: 2 minutes to make a first connection, 10 minutes to get one back.
+    const window = this.everOpened ? 10 * 60_000 : 2 * 60_000;
+    if (this.downSince !== null && Date.now() - this.downSince > window) {
+      return this.update({ phase: 'unreachable', eta: null });
+    }
     this.update({ phase: 'reconnecting' });
     const delay = Math.min(15_000, 1000 * 2 ** this.attempt);
     this.attempt++;

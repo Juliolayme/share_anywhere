@@ -62,7 +62,7 @@ A backend test generated from `openapi.yaml` calls every operation with no token
 | `POST /v1/transfers/{id}/pause`, `/resume`, `/cancel` | participant | Resume also requires the transfer capability |
 | `POST /v1/transfers/{id}/report` | participant | State, verified bytes, route type (metrics) |
 
-**As built (Phase 3):** `GET /v1/sessions/{id}/transfers` returns `TransferList`: the sender gets every transfer plus `peers` (each receiver's status and, while `JOINED`, the hex SHA-256 of its transfer capability); a `JOINED` receiver gets its own transfers plus `capability`. Others get `404`. `report` takes `{status, verified_bytes, route?}` and validates the transition (`docs/ARCHITECTURE.md` §4.5): verified bytes never decrease or exceed the file size, only the receiver may report `COMPLETED` and only with every byte verified, terminal states accept only the same state again (idempotent), and an ended session refuses changes (`409 session_ended`). Errors: `invalid_status`, `invalid_route`, `invalid_bytes` (400), `invalid_transition`, `not_verified` (409), `capability_required` (403), `rate_limited` (429, 300 reports / min per device). `pause`, `resume` (from `PAUSED` to `RESUMING`), and `cancel` take an optional `{capability}`; a receiver resuming must send it. Every change sends `TRANSFER_UPDATED` to the sender and that receiver. A receiver that rejoins after Remove gets its cancelled transfers back as `PENDING` with a new capability.
+**As built (Phase 3):** `GET /v1/sessions/{id}/transfers` returns `TransferList`: the sender gets every transfer plus `peers` (each receiver's status and, while `JOINED`, the hex SHA-256 of its transfer capability); a `JOINED` receiver gets its own transfers plus `capability`. Others get `404`. `report` takes `{status, verified_bytes, route?}` and validates the transition (`docs/ARCHITECTURE.md` §4.5): verified bytes never decrease or exceed the file size, only the receiver may report `COMPLETED` and only with every byte verified, terminal states accept only the same state again (idempotent), and an ended session refuses changes (`409 session_ended`). Only the receiver reports (`403 receiver_only`), and a report cannot move a transfer out of `PAUSED` into an active state (`409 use_resume`: use `resume`, which checks the capability). Errors: `invalid_status`, `invalid_route`, `invalid_bytes` (400), `invalid_transition`, `not_verified`, `use_resume` (409), `capability_required`, `receiver_only` (403), `rate_limited` (429, 300 reports / min per device). `pause`, `resume` (from `PAUSED` to `RESUMING`), and `cancel` take an optional `{capability}`; a receiver resuming must send it. Every change sends `TRANSFER_UPDATED` to the sender and that receiver. A receiver that rejoins after Remove gets its cancelled transfers back as `PENDING` with a new capability.
 
 ### 2.4 Accounts, devices, keys, history (Phase 5A)
 
@@ -116,7 +116,7 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 403 | `account_required` | Account endpoint with a guest token |
 | 403 | `device_not_added` | Keys, clipboard, or history with a signed-in but not-added device |
 | 403 | `blocked` | Device or IP /64 blocked from this session |
-| 403 | `capability_required` | A receiver resumed a transfer without its transfer capability |
+| 403 | `capability_required`, `receiver_only` | A receiver resumed a transfer without its transfer capability; the sender sent a transfer report |
 | 403 | `cloud_requires_account`, `cloud_consent_required` | Cloud Distribution preconditions |
 | 403 | `csrf_header_missing` | Cookie refresh without `X-SA-Refresh: 1` |
 | 403 | `origin_not_allowed` | WebSocket upgrade from an origin outside `SA_ALLOWED_ORIGINS` |
@@ -126,7 +126,7 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 405 | `method_not_allowed` | Known path, wrong method; `Allow` header lists the methods |
 | 409 | `session_full` | Five receivers already joined or requested |
 | 409 | `too_many_open_sessions` | Guest device already has 2 open sessions (signed in: 5) |
-| 409 | `invalid_transition`, `not_verified`, `session_ended` | Transfer state change not allowed now; `COMPLETED` from the sender or before every byte is verified; changes after the session ended |
+| 409 | `invalid_transition`, `not_verified`, `use_resume`, `session_ended` | Transfer state change not allowed now; `COMPLETED` from the sender or before every byte is verified; changes after the session ended |
 | 409 | `invalid_state`, `own_session`, `session_not_active` | Action does not apply to the current state; resolving your own code; TURN before a receiver joined |
 | 410 | `join_window_expired` | The 10-minute join window for this code, link, or QR has ended or was replaced by Create new code |
 | 410 | `session_not_accepting`, `session_expired` | Sender tapped Stop accepting, or the session lifetime ended |

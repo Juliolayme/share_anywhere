@@ -14,13 +14,18 @@
     "brand": "node scripts/export-brand.mjs",
     "brand:check": "node scripts/export-brand.mjs --check",
     "i18n": "node scripts/gen-i18n.mjs",
-    "i18n:check": "node scripts/gen-i18n.mjs --check"
+    "i18n:check": "node scripts/gen-i18n.mjs --check",
+    "protocol": "node scripts/protocol.mjs",
+    "protocol:check": "node scripts/protocol.mjs --check"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "13.1.0",
     "ajv": "8.20.0",
     "json5": "2.2.3",
     "markdownlint-cli2": "0.24.0",
-    "sharp": "0.35.5"
+    "openapi-typescript": "7.13.0",
+    "sharp": "0.35.5",
+    "yaml": "2.9.1"
   },
   "pnpm": {
     "overrides": {

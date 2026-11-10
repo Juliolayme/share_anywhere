@@ -1,0 +1,5 @@
+package: api
+# Relative to internal/platform/api, where `go generate` runs (see generate.go there).
+output: types.gen.go
+generate:
+  models: true

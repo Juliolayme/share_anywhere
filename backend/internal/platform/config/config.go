@@ -2,9 +2,14 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,6 +29,24 @@ type Config struct {
 	LogLevel        string
 	ShutdownTimeout time.Duration
 	AllowedOrigins  []string
+
+	// TokenKeys maps a key ID to its Ed25519 signing key; TokenActiveKID signs new tokens.
+	TokenKeys      map[string]ed25519.PrivateKey
+	TokenActiveKID string
+	// ServerSecret keys HMACs (proof-of-work challenges, log IP hashes, later code HMACs).
+	ServerSecret []byte
+	// TrustedProxies are the only peers whose X-Forwarded-For is believed.
+	TrustedProxies []netip.Prefix
+	// CookieSecure sets the Secure attribute on the refresh cookie. Only non-production may disable it.
+	CookieSecure bool
+	// PoWDifficulty is the leading-zero bits required by the anonymous-device proof-of-work.
+	PoWDifficulty int
+	// RateLimitMultiplier scales rate limits for test stacks (SA_ENV=test only; 1 elsewhere).
+	RateLimitMultiplier int
+	// MigrateOnStart applies pending migrations at startup.
+	MigrateOnStart bool
+	// Generated lists settings filled with ephemeral development values (never in production).
+	Generated []string
 }
 
 // Lookup reads one variable; os.LookupEnv in production, a map in tests.
@@ -75,6 +98,96 @@ func LoadFrom(lookup Lookup) (Config, error) {
 	case "debug", "info", "warn", "error":
 	default:
 		errs = append(errs, fmt.Errorf("SA_LOG_LEVEL must be one of debug, info, warn, error; got %q", cfg.LogLevel))
+	}
+
+	// Token signing keys: "kid:base64-seed,kid2:base64-seed" (32-byte Ed25519 seeds).
+	cfg.TokenKeys = map[string]ed25519.PrivateKey{}
+	for _, entry := range strings.Split(get("SA_TOKEN_KEYS", ""), ",") {
+		if entry = strings.TrimSpace(entry); entry == "" {
+			continue
+		}
+		kid, seed, ok := strings.Cut(entry, ":")
+		raw, err := base64.StdEncoding.DecodeString(seed)
+		if !ok || kid == "" || err != nil || len(raw) != ed25519.SeedSize {
+			errs = append(errs, fmt.Errorf("SA_TOKEN_KEYS entries must be kid:base64(32-byte seed)"))
+			continue
+		}
+		cfg.TokenKeys[kid] = ed25519.NewKeyFromSeed(raw)
+	}
+	cfg.TokenActiveKID = get("SA_TOKEN_ACTIVE_KID", "")
+
+	if v := get("SA_SERVER_SECRET", ""); v != "" {
+		raw, err := base64.StdEncoding.DecodeString(v)
+		if err != nil || len(raw) < 32 {
+			errs = append(errs, errors.New("SA_SERVER_SECRET must be base64 of at least 32 bytes"))
+		}
+		cfg.ServerSecret = raw
+	}
+
+	for _, p := range strings.Split(get("SA_TRUSTED_PROXIES", ""), ",") {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(p)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("SA_TRUSTED_PROXIES entry %q is not a CIDR prefix", p))
+			continue
+		}
+		cfg.TrustedProxies = append(cfg.TrustedProxies, prefix)
+	}
+
+	cfg.CookieSecure = get("SA_COOKIE_SECURE", "true") != "false"
+	cfg.MigrateOnStart = get("SA_MIGRATE_ON_START", "false") == "true"
+	diff, err := strconv.Atoi(get("SA_POW_DIFFICULTY", "16"))
+	if err != nil || diff < 8 || diff > 28 {
+		errs = append(errs, errors.New("SA_POW_DIFFICULTY must be an integer between 8 and 28"))
+	}
+	cfg.PoWDifficulty = diff
+	// SA_RATE_LIMIT_MULTIPLIER raises every limit for automated test stacks, where all browsers share one
+	// address. It is test configuration, not a way to switch limits off: only SA_ENV=test accepts it.
+	mult, err := strconv.Atoi(get("SA_RATE_LIMIT_MULTIPLIER", "1"))
+	switch {
+	case err != nil || mult < 1 || mult > 1000:
+		errs = append(errs, errors.New("SA_RATE_LIMIT_MULTIPLIER must be an integer between 1 and 1000"))
+	case mult != 1 && cfg.Env != EnvTest:
+		errs = append(errs, errors.New("SA_RATE_LIMIT_MULTIPLIER is only allowed with SA_ENV=test"))
+	}
+	cfg.RateLimitMultiplier = mult
+
+	if cfg.Env == EnvProduction {
+		if len(cfg.TokenKeys) == 0 || cfg.TokenActiveKID == "" {
+			errs = append(errs, errors.New("SA_TOKEN_KEYS and SA_TOKEN_ACTIVE_KID are required in production"))
+		}
+		if len(cfg.ServerSecret) == 0 {
+			errs = append(errs, errors.New("SA_SERVER_SECRET is required in production"))
+		}
+		if !cfg.CookieSecure {
+			errs = append(errs, errors.New("SA_COOKIE_SECURE cannot be false in production"))
+		}
+	} else {
+		// Development and test get ephemeral secrets so the stack starts with no setup; tokens do not
+		// survive a restart, which is acceptable outside production.
+		if len(cfg.TokenKeys) == 0 {
+			_, key, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("generate dev token key: %w", err))
+			}
+			cfg.TokenKeys["dev"] = key
+			cfg.TokenActiveKID = "dev"
+			cfg.Generated = append(cfg.Generated, "SA_TOKEN_KEYS")
+		}
+		if len(cfg.ServerSecret) == 0 {
+			cfg.ServerSecret = make([]byte, 32)
+			if _, err := rand.Read(cfg.ServerSecret); err != nil {
+				errs = append(errs, fmt.Errorf("generate dev server secret: %w", err))
+			}
+			cfg.Generated = append(cfg.Generated, "SA_SERVER_SECRET")
+		}
+	}
+	if cfg.TokenActiveKID != "" {
+		if _, ok := cfg.TokenKeys[cfg.TokenActiveKID]; !ok {
+			errs = append(errs, fmt.Errorf("SA_TOKEN_ACTIVE_KID %q is not in SA_TOKEN_KEYS", cfg.TokenActiveKID))
+		}
 	}
 
 	if cfg.Env == EnvProduction {

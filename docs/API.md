@@ -31,6 +31,7 @@ A backend test generated from `openapi.yaml` calls every operation with no token
 | `GET /v1/devices/current`, `PATCH /v1/devices/current` | device | Display name, platform |
 | `POST /v1/devices/current/reset` | device | New anonymous identity; ends this device's open sessions |
 | `POST /v1/ws/ticket` | device | One-time ticket, 30 s |
+| `GET /v1/ws?ticket=` | public (one-time ticket) | WebSocket upgrade. `Origin` must be an allowed origin (absent for native apps); the ticket is consumed on use. Limits in `docs/SECURITY_MODEL.md` §5 |
 
 ### 2.2 Share sessions and joining (Phase 2)
 
@@ -112,6 +113,7 @@ Connect to `/v1/ws?ticket=<one-time ticket>`. The server checks `Origin`, consum
 
 | Event | Delivered to |
 |---|---|
+| `WELCOME` (device ID, `server_time`) | Every socket, first message after the ticket is consumed (Phase 1) |
 | `OFFER`, `ANSWER`, `ICE_CANDIDATE` | The two participants of a sender–receiver pair, only after the receiver is `JOINED` |
 | `PARTICIPANT_JOINED`, `PARTICIPANT_REQUESTED`, `PARTICIPANT_APPROVED`, `PARTICIPANT_REJECTED`, `PARTICIPANT_REMOVED`, `PARTICIPANT_BLOCKED`, `PARTICIPANT_LEFT` | Sender; the affected receiver gets its own status changes |
 | `SESSION_UPDATED` (require approval; join window state and `join_window_ends_at`, including expiry and Create new code), `SESSION_CLOSED`, `SESSION_EXPIRED`, `PROTECTED_MODE` | All participants of the session |

@@ -10,3 +10,5 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0004](0004-clipboard-key-bootstrap.md) | Account Data Key bootstrap | Accepted |
 | [0005](0005-browser-capability-policy.md) | Browser capability policy | Accepted |
 | [0006](0006-android-sdk-and-fgs-limits.md) | Android SDK levels and foreground-service limits | Accepted |
+| [0007](0007-goose-migrations.md) | Database migrations with goose | Accepted |
+| [0008](0008-device-token-format.md) | Device access token format and lifetimes | Accepted |

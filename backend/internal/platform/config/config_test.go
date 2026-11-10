@@ -43,6 +43,35 @@ func TestValidationErrors(t *testing.T) {
 	}
 }
 
+// seed32 is base64 of 32 zero bytes, a valid (test-only) Ed25519 seed.
+const seed32 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+func TestDevGeneratesEphemeralSecrets(t *testing.T) {
+	cfg, err := LoadFrom(lookupFrom(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.TokenKeys) != 1 || cfg.TokenActiveKID != "dev" || len(cfg.ServerSecret) != 32 || len(cfg.Generated) != 2 {
+		t.Fatalf("unexpected generated config: kid=%q secret=%d generated=%v", cfg.TokenActiveKID, len(cfg.ServerSecret), cfg.Generated)
+	}
+	if !cfg.CookieSecure || cfg.PoWDifficulty != 16 || cfg.MigrateOnStart {
+		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+}
+
+func TestExplicitKeysAndProxies(t *testing.T) {
+	cfg, err := LoadFrom(lookupFrom(map[string]string{
+		"SA_TOKEN_KEYS": "k1:" + seed32 + ",k2:" + seed32, "SA_TOKEN_ACTIVE_KID": "k2",
+		"SA_SERVER_SECRET": seed32, "SA_TRUSTED_PROXIES": "172.16.0.0/12, 10.0.0.0/8", "SA_COOKIE_SECURE": "false",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.TokenKeys) != 2 || cfg.TokenActiveKID != "k2" || len(cfg.TrustedProxies) != 2 || cfg.CookieSecure || len(cfg.Generated) != 0 {
+		t.Fatalf("unexpected: %+v", cfg)
+	}
+}
+
 func TestOriginsAreTrimmed(t *testing.T) {
 	cfg, err := LoadFrom(lookupFrom(map[string]string{"SA_ALLOWED_ORIGINS": " https://a.example/ , http://localhost:5173 "}))
 	if err != nil {
@@ -50,5 +79,26 @@ func TestOriginsAreTrimmed(t *testing.T) {
 	}
 	if len(cfg.AllowedOrigins) != 2 || cfg.AllowedOrigins[0] != "https://a.example" || cfg.AllowedOrigins[1] != "http://localhost:5173" {
 		t.Fatalf("unexpected origins %#v", cfg.AllowedOrigins)
+	}
+}
+
+func TestRateLimitMultiplierOnlyInTest(t *testing.T) {
+	load := func(env map[string]string) (Config, error) {
+		return LoadFrom(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	}
+	if c, err := load(map[string]string{"SA_ENV": "test", "SA_RATE_LIMIT_MULTIPLIER": "100"}); err != nil || c.RateLimitMultiplier != 100 {
+		t.Fatalf("test env: %v %v", c.RateLimitMultiplier, err)
+	}
+	if c, err := load(map[string]string{"SA_ENV": "development"}); err != nil || c.RateLimitMultiplier != 1 {
+		t.Fatalf("default: %v %v", c.RateLimitMultiplier, err)
+	}
+	for _, env := range []map[string]string{
+		{"SA_ENV": "development", "SA_RATE_LIMIT_MULTIPLIER": "10"},
+		{"SA_ENV": "test", "SA_RATE_LIMIT_MULTIPLIER": "0"},
+		{"SA_ENV": "test", "SA_RATE_LIMIT_MULTIPLIER": "x"},
+	} {
+		if _, err := load(env); err == nil {
+			t.Errorf("%v should fail", env)
+		}
 	}
 }

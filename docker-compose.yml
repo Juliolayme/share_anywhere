@@ -28,6 +28,13 @@ services:
       SA_LOG_LEVEL: ${SA_LOG_LEVEL:-info}
       DATABASE_URL: postgres://shareanywhere:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/shareanywhere?sslmode=disable
       SA_ALLOWED_ORIGINS: https://localhost:8443
+      SA_MIGRATE_ON_START: "true"
+      # Caddy is the only peer allowed to set X-Forwarded-For (Docker's default bridge ranges).
+      SA_TRUSTED_PROXIES: 172.16.0.0/12
+      # Optional: set both in .env so device tokens survive backend restarts (see .env.example).
+      SA_TOKEN_KEYS: ${SA_TOKEN_KEYS:-}
+      SA_TOKEN_ACTIVE_KID: ${SA_TOKEN_ACTIVE_KID:-}
+      SA_SERVER_SECRET: ${SA_SERVER_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy

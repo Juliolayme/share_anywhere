@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -14,10 +15,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/juliolayme/share_anywhere/backend/internal/devices"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/clientip"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/clock"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/config"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/db"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/httpserver"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/logging"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/ws"
+	"github.com/juliolayme/share_anywhere/backend/migrations"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -81,25 +88,48 @@ func run() error {
 		return fmt.Errorf("invalid configuration:\n%w", err)
 	}
 	log := logging.New(os.Stdout, cfg.LogLevel)
+	for _, g := range cfg.Generated {
+		log.Warn("using an ephemeral development value; set it to keep tokens valid across restarts", "setting", g)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	clk := clock.Real{}
 	var checks []httpserver.Check
+	var store devices.Store
 	if cfg.DatabaseURL != "" {
 		pool, err := db.Open(ctx, cfg.DatabaseURL)
 		if err != nil {
 			return err
 		}
 		defer pool.Close()
+		if cfg.MigrateOnStart {
+			applied, err := db.Migrate(ctx, pool, migrations.FS)
+			if err != nil {
+				return err
+			}
+			log.Info("migrations applied", "count", len(applied))
+		}
 		checks = append(checks, httpserver.Check{Name: "database", Fn: pool.Ping})
+		store = devices.NewPGStore(pool)
 	} else {
-		log.Warn("DATABASE_URL not set; running without a database (development only)")
+		if cfg.Env == config.EnvProduction {
+			return errors.New("DATABASE_URL is required in production")
+		}
+		log.Warn("DATABASE_URL not set; device identities are kept in memory and lost on restart (development only)")
+		store = devices.NewMemStore()
 	}
+
+	a, err := newApp(cfg, store, clk, log, checks)
+	if err != nil {
+		return err
+	}
+	go a.devices.RunPurger(ctx, time.Hour)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpserver.NewHandler(httpserver.Options{Logger: log, Version: version, Checks: checks}),
+		Handler:           a.handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -129,4 +159,29 @@ func run() error {
 	}
 	log.Info("stopped")
 	return nil
+}
+
+type app struct {
+	handler http.Handler
+	router  *access.Router
+	devices *devices.Service
+}
+
+// newApp wires every module onto one router; the route-table test builds the server the same way.
+func newApp(cfg config.Config, store devices.Store, clk clock.Clock, log *slog.Logger, checks []httpserver.Check) (*app, error) {
+	tokens, err := devices.NewTokens(cfg.TokenKeys, cfg.TokenActiveKID, clk)
+	if err != nil {
+		return nil, err
+	}
+	ips := clientip.New(cfg.TrustedProxies)
+	deviceSvc := devices.NewService(store, tokens, devices.NewPoW(cfg.ServerSecret, cfg.PoWDifficulty, clk), clk, devices.ScaledLimits(clk, cfg.RateLimitMultiplier), log)
+	hub := ws.NewHub(ws.Config{AllowedOrigins: cfg.AllowedOrigins, Clock: clk, IPs: ips, Log: log})
+	h, router := httpserver.New(httpserver.Options{
+		Logger: log, Version: version, Checks: checks, Verifier: deviceSvc,
+		Modules: []func(*access.Router){
+			devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure).Register,
+			hub.Register,
+		},
+	})
+	return &app{handler: h, router: router, devices: deviceSvc}, nil
 }

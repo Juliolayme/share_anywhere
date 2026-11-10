@@ -26,6 +26,13 @@ services:
       SA_LOG_LEVEL: debug
       DATABASE_URL: postgres://shareanywhere:ci-password@postgres:5432/shareanywhere?sslmode=disable
       SA_ALLOWED_ORIGINS: http://localhost:8080
+      SA_MIGRATE_ON_START: "true"
+      SA_TRUSTED_PROXIES: 172.16.0.0/12
+      # Plain HTTP on localhost: WebKit drops Secure cookies over http, so the test stack turns Secure off.
+      SA_COOKIE_SECURE: "false"
+      # All Playwright projects share one address; scale limits (test config, never off; SA_ENV=test only).
+      SA_RATE_LIMIT_MULTIPLIER: "100"
+      SA_POW_DIFFICULTY: "8"
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://share-anywhere.invalid/protocol/websocket-events.json",
+  "title": "Share Anywhere WebSocket events",
+  "description": "Server-to-client and client-to-server WebSocket messages (docs/API.md §4). Every message is a JSON text frame with a `type`. Messages carry metadata only, never file bytes, clipboard text, or ciphertext. `x-sa-phase` is the phase that delivers the event; later phases add events here before using them.",
+  "type": "object",
+  "required": ["type"],
+  "oneOf": [{ "$ref": "#/$defs/Welcome" }],
+  "$defs": {
+    "Welcome": {
+      "x-sa-phase": 1,
+      "x-sa-direction": "server-to-client",
+      "description": "First message on every connection, sent after the ticket is consumed. `server_time` lets clients correct clock skew for countdowns.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "device_id", "server_time"],
+      "properties": {
+        "type": { "const": "WELCOME" },
+        "device_id": { "type": "string", "format": "uuid" },
+        "server_time": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "x-sa-limits": {
+    "ticket_ttl_seconds": 30,
+    "max_connections_per_device": 3,
+    "max_connections_per_address": 20,
+    "max_messages_per_second": 50,
+    "max_message_bytes": 65536,
+    "heartbeat_seconds": 25,
+    "close_codes": {
+      "1008": "Policy violation: message rate exceeded"
+    }
+  }
+}

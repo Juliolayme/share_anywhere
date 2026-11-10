@@ -50,6 +50,10 @@ jobs:
               - 'web/public/**'
               - 'android/app/src/main/res/**'
               - 'ios/ShareAnywhere/Assets.xcassets/**'
+              - 'docs/API.md'
+              - 'backend/oapi-codegen.yaml'
+              - 'backend/internal/platform/api/**'
+              - 'web/src/lib/api/**'
             docs:
               - *common
               - '**/*.md'
@@ -141,6 +145,15 @@ jobs:
           working-directory: backend
       - run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
       - run: go tool cover -func=coverage.out | tail -1
+      - name: Coverage gate (devices and platform middleware >= 70 %)
+        run: |
+          fail=0
+          for pkg in internal/devices internal/platform/access internal/platform/ratelimit internal/platform/clientip internal/platform/httpserver internal/platform/ws; do
+            pct=$(go test -count=1 -cover ./$pkg | sed -n 's/.*coverage: \([0-9.]*\)%.*/\1/p')
+            echo "$pkg: ${pct}%"
+            awk -v p="$pct" 'BEGIN { exit !(p >= 70) }' || fail=1
+          done
+          exit $fail
       - name: Build image
         run: docker build -t share-anywhere-backend:ci .
 
@@ -196,6 +209,17 @@ jobs:
         run: pnpm brand:check
       - name: Script tests
         run: pnpm test:scripts
+      - name: OpenAPI valid, x-sa-access on every operation, agrees with docs/API.md, TS client current
+        run: pnpm protocol:check
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Go types generated from openapi.yaml are current
+        working-directory: backend
+        run: |
+          go generate ./internal/platform/api/
+          git diff --exit-code -- internal/platform/api/
 
   compose:
     needs: changes

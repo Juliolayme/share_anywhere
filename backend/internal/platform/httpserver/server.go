@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
 )
 
 // Check reports whether a dependency is ready. It must honour ctx cancellation.
@@ -24,18 +26,38 @@ type Options struct {
 	Checks  []Check
 	// ReadyTimeout bounds each readiness check. Defaults to 2s.
 	ReadyTimeout time.Duration
+	// Verifier checks device access tokens for non-public routes. Nil rejects every token.
+	Verifier access.Verifier
+	// Modules register their routes, each with an access level (docs/API.md §1).
+	Modules []func(*access.Router)
+}
+
+type denyAll struct{}
+
+func (denyAll) Verify(context.Context, string) (access.Identity, error) {
+	return access.Identity{}, access.ErrTokenInvalid
 }
 
 // NewHandler returns the root handler with health endpoints and common middleware.
 func NewHandler(opts Options) http.Handler {
+	h, _ := New(opts)
+	return h
+}
+
+// New returns the root handler and the router, whose route table tests compare with openapi.yaml.
+func New(opts Options) (http.Handler, *access.Router) {
 	if opts.ReadyTimeout <= 0 {
 		opts.ReadyTimeout = 2 * time.Second
 	}
+	if opts.Verifier == nil {
+		opts.Verifier = denyAll{}
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	router := access.NewRouter(mux, opts.Verifier)
+	router.Handle(http.MethodGet, "/healthz", access.Public, func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": opts.Version})
 	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+	router.Handle(http.MethodGet, "/readyz", access.Public, func(w http.ResponseWriter, r *http.Request) {
 		results := map[string]string{}
 		status := http.StatusOK
 		for _, c := range opts.Checks {
@@ -56,21 +78,13 @@ func NewHandler(opts Options) http.Handler {
 		}
 		writeJSON(w, status, body)
 	})
-	for _, path := range []string{"/healthz", "/readyz"} {
-		mux.HandleFunc(path, methodNotAllowed("GET, HEAD"))
+	for _, register := range opts.Modules {
+		register(router)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "message": "No such endpoint."})
 	})
-	return recoverer(opts.Logger, securityHeaders(requestLogger(opts.Logger, mux)))
-}
-
-// methodNotAllowed answers 405 for a known path called with the wrong method.
-func methodNotAllowed(allow string) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Allow", allow)
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed", "message": "Method not allowed."})
-	}
+	return recoverer(opts.Logger, securityHeaders(requestLogger(opts.Logger, mux))), router
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

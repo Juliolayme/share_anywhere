@@ -9,7 +9,7 @@ const STORAGE_MESSAGE =
   'Use src/lib/storage.ts for UI preferences only; tokens and secrets must never go to Web Storage.';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'src/styles/tokens.ts'] },
+  { ignores: ['dist', 'coverage', 'src/styles/tokens.ts', 'src/lib/api/schema.gen.ts'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.strict, jsxA11y.flatConfigs.strict],
     files: ['**/*.{ts,tsx}'],

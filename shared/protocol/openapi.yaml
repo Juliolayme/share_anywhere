@@ -1,0 +1,303 @@
+openapi: 3.0.3
+info:
+  title: Share Anywhere API
+  version: 0.1.0
+  x-sa-api-sections: ['2.1']
+  description: |
+    Machine-readable contract. Every operation declares `x-sa-access` (public, device, participant,
+    account, account+device), which must match docs/API.md and is enforced by the backend
+    (docs/SECURITY_MODEL.md, CLAUDE.md §7). Phase 1 covers health and anonymous device identity.
+servers:
+  - url: /
+security:
+  - deviceToken: []
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      x-sa-access: public
+      security: []
+      responses:
+        '200':
+          description: Process is alive.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /readyz:
+    get:
+      operationId: getReady
+      x-sa-access: public
+      security: []
+      responses:
+        '200':
+          description: Dependencies are ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ready' }
+        '503':
+          description: A dependency is unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ready' }
+  /v1/devices/anonymous/challenge:
+    get:
+      operationId: getDeviceChallenge
+      x-sa-access: public
+      security: []
+      summary: Proof-of-work challenge for anonymous device creation.
+      responses:
+        '200':
+          description: A challenge bound to the caller's address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PowChallenge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/devices/anonymous:
+    post:
+      operationId: createAnonymousDevice
+      x-sa-access: public
+      security: []
+      summary: Create an anonymous device identity (guest-first; no account).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDeviceRequest' }
+      responses:
+        '201':
+          description: Device created. With transport "cookie" the refresh secret is set as the sa_device cookie and omitted from the body.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '428':
+          description: The caller's address is above the soft limit; solve the included challenge and retry.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PowRequired' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/devices/token:
+    post:
+      operationId: refreshDeviceToken
+      x-sa-access: public
+      security: []
+      summary: Rotate the refresh secret and issue a new access token.
+      description: Native clients send refresh_secret in the body. Web clients send the sa_device cookie and must send X-SA-Refresh 1.
+      parameters:
+        - in: header
+          name: X-SA-Refresh
+          schema: { type: string, enum: ['1'] }
+          required: false
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: New access token; the refresh secret was rotated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Cookie refresh without the X-SA-Refresh header.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/devices/current:
+    get:
+      operationId: getCurrentDevice
+      x-sa-access: device
+      responses:
+        '200':
+          description: This device.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      operationId: updateCurrentDevice
+      x-sa-access: device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateDeviceRequest' }
+      responses:
+        '200':
+          description: Updated device.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/devices/current/reset:
+    post:
+      operationId: resetCurrentDevice
+      x-sa-access: device
+      summary: Revoke this device identity and issue a new anonymous one.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetDeviceRequest' }
+      responses:
+        '201':
+          description: New anonymous identity.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/ws/ticket:
+    post:
+      operationId: createWsTicket
+      x-sa-access: device
+      responses:
+        '201':
+          description: One-time WebSocket ticket valid for 30 seconds.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WsTicket' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/ws:
+    get:
+      operationId: connectWebSocket
+      x-sa-access: public
+      security: []
+      summary: WebSocket upgrade, authenticated by a one-time ticket and an Origin check.
+      parameters:
+        - in: query
+          name: ticket
+          required: true
+          schema: { type: string }
+      responses:
+        '101': { description: Switching protocols. Events are described in shared/protocol/websocket-events.json. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Origin not allowed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT (EdDSA)
+  responses:
+    BadRequest:
+      description: The request body or parameters are invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, invalid, or expired credentials.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Too many requests. See the Retry-After header.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string, description: Machine-readable code (docs/API.md §3). }
+        message: { type: string }
+        retry_after_s: { type: integer }
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string }
+        version: { type: string }
+    Ready:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ok, unavailable] }
+        checks:
+          type: object
+          additionalProperties: { type: string, enum: [ok, unavailable] }
+    PowChallenge:
+      type: object
+      required: [token, difficulty, expires_in]
+      properties:
+        token: { type: string }
+        difficulty: { type: integer, description: Leading zero bits required in SHA-256(token + ":" + solution). }
+        expires_in: { type: integer }
+    PowSolution:
+      type: object
+      required: [token, solution]
+      properties:
+        token: { type: string }
+        solution: { type: string, maxLength: 32 }
+    PowRequired:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          required: [challenge]
+          properties:
+            challenge: { $ref: '#/components/schemas/PowChallenge' }
+    CreateDeviceRequest:
+      type: object
+      required: [platform, transport]
+      additionalProperties: false
+      properties:
+        platform: { type: string, minLength: 1, maxLength: 60, example: Chrome on macOS }
+        display_name: { type: string, minLength: 1, maxLength: 40 }
+        transport: { type: string, enum: [cookie, body] }
+        pow: { $ref: '#/components/schemas/PowSolution' }
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        refresh_secret: { type: string }
+        transport: { type: string, enum: [cookie, body] }
+    ResetDeviceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        transport: { type: string, enum: [cookie, body] }
+    UpdateDeviceRequest:
+      type: object
+      required: [display_name]
+      additionalProperties: false
+      properties:
+        display_name: { type: string, minLength: 1, maxLength: 40 }
+    Device:
+      type: object
+      required: [id, kind, display_name, platform, created_at, last_seen_at]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [anonymous, account] }
+        display_name: { type: string }
+        platform: { type: string }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+    DeviceSession:
+      type: object
+      required: [device, access_token, expires_in, server_time]
+      properties:
+        device: { $ref: '#/components/schemas/Device' }
+        access_token: { type: string }
+        expires_in: { type: integer, description: Seconds until the access token expires. }
+        refresh_secret: { type: string, description: Present only with transport "body". }
+        server_time: { type: string, format: date-time }
+    WsTicket:
+      type: object
+      required: [ticket, expires_in]
+      properties:
+        ticket: { type: string }
+        expires_in: { type: integer }

@@ -2,3 +2,4 @@ dist
 coverage
 src/styles/tokens.css
 src/styles/tokens.ts
+src/lib/api/schema.gen.ts

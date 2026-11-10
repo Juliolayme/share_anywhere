@@ -11,6 +11,7 @@ on:
       - '.github/workflows/nightly.yml'
       - 'web/e2e/nightly/**'
       - 'web/e2e/transfer/helpers.ts'
+      - 'web/e2e/mobile/snapshots.spec.ts'
 
 permissions:
   contents: read
@@ -53,6 +54,39 @@ jobs:
       - name: Logs on failure
         if: failure()
         run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
+  mobile-snapshots:
+    # Generates the mobile visual baselines on the runner (fonts must match CI) and uploads them to commit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install chromium and webkit
+        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium webkit
+      - name: Generate baselines
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_SNAPSHOTS: '1'
+        run: pnpm --filter @share-anywhere/web exec playwright test e2e/mobile/snapshots.spec.ts --project=android-chrome --project=ios-safari --update-snapshots=all --retries=0
+      - name: Upload baselines
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-snapshot-baselines
+          if-no-files-found: error
+          path: web/e2e/mobile/snapshots.spec.ts-snapshots
+          retention-days: 14
       - name: Stop
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v

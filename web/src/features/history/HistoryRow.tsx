@@ -23,7 +23,7 @@ export function StatusChip({ status }: { status: HistoryStatus }) {
   );
 }
 
-/** One local history entry. Detail views arrive with transfers (Phase 3), so rows are not interactive yet. */
+/** One local history entry with transferred vs. size for partial transfers. The detail view (HI-2) is Phase 4. */
 export function HistoryRow({ entry, compact }: { entry: HistoryEntry; compact?: boolean }) {
   const { t, locale } = useI18n();
   const sent = entry.direction === 'sent';
@@ -46,7 +46,12 @@ export function HistoryRow({ entry, compact }: { entry: HistoryEntry; compact?: 
       </span>
       {!compact && (
         <span className="min-w-[100px] text-right font-mono text-[12px] text-fg-2">
-          {formatBytes(entry.totalBytes, locale)}
+          {entry.transferredBytes !== undefined && entry.transferredBytes < entry.totalBytes
+            ? t('product.history_partial_bytes', {
+                done: formatBytes(entry.transferredBytes, locale),
+                total: formatBytes(entry.totalBytes, locale),
+              })
+            : formatBytes(entry.totalBytes, locale)}
         </span>
       )}
       <StatusChip status={entry.status} />

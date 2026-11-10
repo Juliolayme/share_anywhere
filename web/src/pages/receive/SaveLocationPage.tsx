@@ -129,7 +129,7 @@ export default function SaveLocationPage() {
           <CircleCheck aria-hidden size={22} className="flex-none text-receive-ink" />
           <div className="min-w-0 flex-1">
             <b data-testid="joined-title">{t('product.joined_session', { name: senderName })}</b>
-            <div className="text-[13px] text-fg-2">
+            <div className="text-[13px] text-fg-2" data-testid="save-summary">
               {t('product.save_summary', { count, size: formatBytes(state.total, locale), name: senderName })}
             </div>
           </div>

@@ -57,10 +57,19 @@ export default function HistoryPage() {
               tabIndex={filter.tab === o.value ? 0 : -1}
               onClick={() => set({ tab: o.value })}
               onKeyDown={(e) => {
-                const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-                if (!step) return;
+                const target =
+                  e.key === 'ArrowRight'
+                    ? (i + 1) % tabs.length
+                    : e.key === 'ArrowLeft'
+                      ? (i - 1 + tabs.length) % tabs.length
+                      : e.key === 'Home'
+                        ? 0
+                        : e.key === 'End'
+                          ? tabs.length - 1
+                          : -1;
+                if (target < 0) return;
                 e.preventDefault();
-                const next = tabs[(i + step + tabs.length) % tabs.length];
+                const next = tabs[target];
                 if (!next) return;
                 set({ tab: next.value });
                 document.getElementById(`history-tab-${next.value}`)?.focus();
@@ -82,7 +91,7 @@ export default function HistoryPage() {
           />
         </label>
         <select
-          aria-label={t('web_vv.k98')}
+          aria-label={t('product.filter_status')}
           value={filter.status}
           onChange={(e) => set({ status: e.target.value as HistoryFilter['status'] })}
           className={selectCls}
@@ -94,7 +103,7 @@ export default function HistoryPage() {
           <option value="cancelled">{t('web_vv.k102')}</option>
         </select>
         <select
-          aria-label={t('web_vv.k103')}
+          aria-label={t('product.filter_date')}
           value={filter.range}
           onChange={(e) => set({ range: e.target.value as HistoryFilter['range'] })}
           className={selectCls}
@@ -105,7 +114,7 @@ export default function HistoryPage() {
           <option value="today">{t('web_vv.k105')}</option>
         </select>
         <select
-          aria-label={t('web_vv.k106')}
+          aria-label={t('product.filter_device')}
           value={filter.peer}
           onChange={(e) => set({ peer: e.target.value })}
           className={selectCls}
@@ -159,7 +168,7 @@ export default function HistoryPage() {
             await clear();
             toast.show(t('common.n_cleared'));
           } catch {
-            toast.show(t('product.history_unavailable'));
+            toast.show(t(error ? 'product.history_unavailable' : 'product.clear_failed'));
           } finally {
             setBusy(false);
             setConfirm(false);

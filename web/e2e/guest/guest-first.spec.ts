@@ -131,3 +131,30 @@ test('history: starts empty and says it is stored only on this device', async ({
   await expect(page.getByText('No transfers yet')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Clear history' })).toBeDisabled();
 });
+
+test('home: pages load with no Content-Security-Policy violations', async ({ page }) => {
+  const violations: string[] = [];
+  page.on('console', (msg) => {
+    if (/Content Security Policy|Content-Security-Policy|violates/i.test(msg.text())) violations.push(msg.text());
+  });
+  await openAsReturningGuest(page);
+  for (const path of ['/', '/send', '/receive', '/history', '/devices', '/settings']) {
+    await page.goto(path);
+    await expect(page.locator('[data-screen]')).not.toHaveCount(0);
+  }
+  // Vietnamese text in the mono font uses its own subset file; it must load from 'self'.
+  await page.getByRole('radio', { name: 'Tiếng Việt' }).click();
+  await page.goto('/receive');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  expect(violations).toEqual([]);
+});
+
+test('send-review: picking a file switches the screen ID', async ({ page }) => {
+  await openAsReturningGuest(page, '/send');
+  await expect(page.locator('[data-screen="send"]')).toHaveCount(1);
+  await page
+    .getByTestId('file-input')
+    .setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+  await expect(page.locator('[data-screen="send-review"]')).toHaveCount(1);
+  await expect(page.getByText('notes.txt')).toBeVisible();
+});

@@ -15,6 +15,8 @@ export default defineConfig({
   build: {
     // Maps are generated for debugging but not referenced from the bundle or served by default.
     sourcemap: 'hidden',
+    // Never inline fonts as data: URIs; the CSP allows fonts from 'self' only (web/Caddyfile).
+    assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
   },
   test: {
     globals: true,

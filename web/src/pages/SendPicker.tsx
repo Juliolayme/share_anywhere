@@ -87,7 +87,7 @@ export default function SendPicker() {
   };
 
   return (
-    <Screen id="send">
+    <Screen id={files.length > 0 ? 'send-review' : 'send'}>
       <div className="flex flex-col gap-[6px]">
         <Link
           to="/"

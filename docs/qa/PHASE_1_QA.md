@@ -24,6 +24,20 @@ No P0. Four P1 and seven P2 findings. Every check passed (backend vet, lint, rac
 
 User decisions recorded on 2026-11-10: the `CLAUDE.md` wording ("security words", keep-open banner with the screen-on pill), deviation C5 (44 px header controls) and deviation section F are approved.
 
-## Round 2
+## Round 2 — commit ce7933f — PASS
 
-Pending.
+No P0 or P1. All four round-1 P1s verified fixed, including live attempts to break them (cookie refresh with body fields, cookie secret presented in the body, reset with a body, `text/plain`, empty and chunked content types, oversized and trailing bodies, native-device reset). Every check passed; coverage devices 89.2 %, access 97.8 %, ratelimit 100 %, clientip 91.4 %, httpserver 96.4 %, ws 85.4 %. CI run 42790219354 on ce7933f was green in every job, including `e2e-web` on all five projects. Deferring round-1 P2-5 and P2-7 to Phase 2 was judged acceptable (no client socket or rooms yet); P2-7 must close before Phase 2 signaling uses the socket.
+
+### Resolution of round 2 P2 findings (follow-up commit)
+
+| Finding | Resolution |
+|---|---|
+| CSP blocked fonts Vite inlined as `data:` URIs (Vietnamese and Cyrillic-ext subsets) | `build.assetsInlineLimit` never inlines `.woff`/`.woff2`; the CSP stays `font-src 'self'`. New e2e check: zero CSP console violations across all screens, including Vietnamese |
+| Send review kept the `send` screen ID | `send-review` once files are picked; e2e check |
+| History filter dropdowns named by an option's text | `product.filter_status`, `filter_date`, `filter_device` |
+| History tabs lacked Home and End | Added to the roving tabindex handler |
+| Clear history always blamed blocked storage; Settings dialog could be submitted twice | `product.clear_failed` unless storage is unavailable; busy state in Settings |
+| Report CI evidence and coverage figure | Run 42790219354 added; httpserver 96.4 % |
+| API error table order and `500 internal` | Sorted by status; `500 internal` added |
+
+**Phase 1 QA verdict: PASS.**

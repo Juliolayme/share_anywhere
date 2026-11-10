@@ -90,7 +90,7 @@ Screenshots (Chromium, local Compose stack):
 
 ## 3. End-to-end workflows executed (all as guest)
 
-CI results are from run 42787622458 (f6f559c); the specs were updated in the QA round 1 fixes and rerun locally, and CI reruns them on that commit. Local runs used the Compose CI stack (`docker-compose.ci.yml` with host-built binaries, because container builds here have no internet) and Playwright 1.63.0.
+CI results are from runs 42787622458 (f6f559c) and 42790219354 (ce7933f, after the QA round 1 fixes). Local runs used the Compose CI stack (`docker-compose.ci.yml` with host-built binaries, because container builds here have no internet) and Playwright 1.63.0.
 
 | Workflow (`web/e2e/`) | chromium-desktop | android-chrome | firefox-desktop | webkit-desktop | ios-safari |
 |---|---|---|---|---|---|
@@ -112,17 +112,18 @@ Server-side flows were also checked by hand against the binary with a real Postg
 |---|---|
 | `go vet ./...`, `golangci-lint run` (v2.15.0) | Clean, 0 issues |
 | `TEST_DATABASE_URL=… go test -race -count=1 ./...` (PostgreSQL 16 container) | 12 packages pass |
-| Coverage | `devices` 89.2 % with PostgreSQL (76.9 % without), `access` 97.8 %, `ratelimit` 100 %, `clientip` 91.4 %, `httpserver` 97.1 %, `ws` 85.4 %. CI gate is ≥ 70 % for each |
+| Coverage | `devices` 89.2 % with PostgreSQL (76.9 % without), `access` 97.8 %, `ratelimit` 100 %, `clientip` 91.4 %, `httpserver` 96.4 %, `ws` 85.4 %. CI gate is ≥ 70 % for each |
 | `govulncheck ./...` (v1.9.0) | No vulnerabilities |
 | `pnpm protocol:check` | 10 operations valid and in agreement with `docs/API.md`; generated client current |
 | `pnpm tokens:check`, `i18n:check` (1625 keys each), `brand:check`, `test:scripts` (20/20), `lint:md`, `pnpm audit` | All pass, no known vulnerabilities |
 | `pnpm --filter web format:check`, `lint`, `typecheck`, `test` | Pass; 44 unit tests |
 | `pnpm --filter web build` | Main JS 90.5 kB gzip (budget 120 kB); Vietnamese catalog chunk 13 kB gzip |
-| `playwright test --project=chromium-desktop --project=android-chrome` | 18 passed, 2 skipped (mobile-only specs on desktop) |
+| `playwright test --project=chromium-desktop --project=android-chrome` (stack rebuilt from the final code) | 22 passed, 2 skipped (mobile-only specs on desktop), including zero CSP console violations and the `send-review` screen ID |
 | `docker compose -f docker-compose.ci.yml up --wait` (host-built images) | All services healthy; `/readyz` database ok; web CSP header present |
 | CI run 42784930757 (backend commit 38580ab) | success |
 | CI run 42787423644 (Web commit 0a37732) | failure: the Web image build lacked `shared/i18n` (compose and e2e-web) |
 | CI run 42787622458 attempt 2 (f6f559c) | success in every job, including `e2e-web` on chromium-desktop, firefox-desktop, webkit-desktop, android-chrome, ios-safari |
+| CI run 42790219354 (ce7933f, QA round 1 fixes) | success in every job, including `e2e-web` on all five projects |
 
 ## 5. Environment variables and external services
 
@@ -180,4 +181,5 @@ pnpm --filter @share-anywhere/web exec playwright test --project=chromium-deskto
 | 0a37732 | Web: guest-first shell, identity client, IndexedDB history, Playwright suite, e2e-web CI job, CSP, IP hashing in logs |
 | f6f559c | Web image build copies `shared/i18n` (CI compose and e2e-web fix) |
 | ff48c53 | Phase 1 report |
-| (this commit) | QA round 1 fixes: fixed refresh transport, `ip_hash` logging, Receive without dead actions, screen IDs, landmark strings, JSON-only bodies, theme sync, docs |
+| ce7933f | QA round 1 fixes: fixed refresh transport, `ip_hash` logging, Receive without dead actions, screen IDs, landmark strings, JSON-only bodies, theme sync, docs |
+| (this commit) | QA round 2 P2 cleanups: fonts never inlined (CSP), `send-review` screen ID, filter labels, tab Home/End, Clear history busy and error copy, API error table; QA record |

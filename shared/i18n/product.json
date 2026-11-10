@@ -87,7 +87,11 @@
     "back_home": "Back to Transfer",
     "history_unavailable": "History isn’t available because this browser blocks site storage.",
     "nav_main": "Main navigation",
-    "steps": "Steps"
+    "steps": "Steps",
+    "filter_status": "Filter by status",
+    "filter_date": "Filter by date",
+    "filter_device": "Filter by device",
+    "clear_failed": "Couldn’t clear history. Try again."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -176,6 +180,10 @@
     "back_home": "Về Truyền tệp",
     "history_unavailable": "Không dùng được lịch sử vì trình duyệt đang chặn bộ nhớ của trang.",
     "nav_main": "Điều hướng chính",
-    "steps": "Các bước"
+    "steps": "Các bước",
+    "filter_status": "Lọc theo trạng thái",
+    "filter_date": "Lọc theo ngày",
+    "filter_device": "Lọc theo thiết bị",
+    "clear_failed": "Không xóa được lịch sử. Hãy thử lại."
   }
 }

@@ -29,10 +29,11 @@ export default function SettingsPage() {
   const { t, locale, setLocale } = useI18n();
   const toast = useToast();
   const { device } = useIdentity();
-  const { refresh, clear, entries } = useHistory();
+  const { refresh, clear, entries, error } = useHistory();
   const theme = useTheme();
   const [retention, setRetention] = useRetention();
   const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   return (
     <Screen id="settings">
@@ -128,13 +129,16 @@ export default function SettingsPage() {
         cancelLabel={t('common.cancel')}
         danger
         onCancel={() => setConfirm(false)}
+        busy={busy}
         onConfirm={async () => {
+          setBusy(true);
           try {
             await clear();
             toast.show(t('common.n_cleared'));
           } catch {
-            toast.show(t('product.history_unavailable'));
+            toast.show(t(error ? 'product.history_unavailable' : 'product.clear_failed'));
           } finally {
+            setBusy(false);
             setConfirm(false);
           }
         }}

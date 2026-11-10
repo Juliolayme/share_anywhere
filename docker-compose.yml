@@ -43,9 +43,11 @@ services:
     volumes:
       - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
     ports:
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
-      - "49160-49200:49160-49200/udp"
+      # Bound to loopback for local development. For LAN testing with real phones, change to 0.0.0.0
+      # and set a strong TURN_SHARED_SECRET in .env. Production uses a mounted config (Phase 9).
+      - "127.0.0.1:3478:3478/udp"
+      - "127.0.0.1:3478:3478/tcp"
+      - "127.0.0.1:49160-49200:49160-49200/udp"
 
   caddy:
     image: caddy:2-alpine
@@ -53,7 +55,7 @@ services:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
     ports:
-      - "8443:8443"
+      - "127.0.0.1:8443:8443"
     depends_on:
       - backend
       - web

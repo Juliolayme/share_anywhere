@@ -2,6 +2,7 @@
 package logging
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"regexp"
@@ -47,12 +48,28 @@ func IsSensitiveKey(key string) bool {
 }
 
 // Replace is a slog ReplaceAttr function that redacts sensitive attributes and JWT-like strings.
-func Replace(_ []string, a slog.Attr) slog.Attr {
+// slog does not call ReplaceAttr for group attributes themselves, so a sensitive group name
+// (for example slog.Group("token", ...)) is detected through the groups path of its members.
+func Replace(groups []string, a slog.Attr) slog.Attr {
+	for _, g := range groups {
+		if IsSensitiveKey(g) {
+			return slog.String(a.Key, Redacted)
+		}
+	}
 	if IsSensitiveKey(a.Key) {
 		return slog.String(a.Key, Redacted)
 	}
-	if a.Value.Kind() == slog.KindString && jwtLike.MatchString(a.Value.String()) {
-		return slog.String(a.Key, jwtLike.ReplaceAllString(a.Value.String(), Redacted))
+	v := a.Value.Resolve()
+	switch v.Kind() {
+	case slog.KindString:
+		if jwtLike.MatchString(v.String()) {
+			return slog.String(a.Key, jwtLike.ReplaceAllString(v.String(), Redacted))
+		}
+	case slog.KindAny:
+		// Errors and other values are printed with their String/Error text; scrub tokens from it.
+		if text := fmt.Sprint(v.Any()); jwtLike.MatchString(text) {
+			return slog.String(a.Key, jwtLike.ReplaceAllString(text, Redacted))
+		}
 	}
 	return a
 }

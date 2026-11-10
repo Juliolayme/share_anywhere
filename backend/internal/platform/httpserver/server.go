@@ -4,6 +4,7 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -90,15 +91,28 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// statusRecorder captures the status code. Unwrap lets http.ResponseController reach
+// Flush, Hijack (WebSocket upgrades), and deadline methods on the underlying writer.
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
+	status      int
+	wroteHeader bool
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
-	s.status = code
+	if !s.wroteHeader {
+		s.status = code
+		s.wroteHeader = true
+	}
 	s.ResponseWriter.WriteHeader(code)
 }
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	s.wroteHeader = true
+	return s.ResponseWriter.Write(b)
+}
+
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // requestLogger logs method, path (never the query string, which may carry tokens), status, and duration.
 func requestLogger(log *slog.Logger, next http.Handler) http.Handler {
@@ -116,14 +130,24 @@ func requestLogger(log *slog.Logger, next http.Handler) http.Handler {
 	})
 }
 
+// recoverer turns a handler panic into a logged 500. http.ErrAbortHandler is re-raised so the
+// server aborts the response as intended, and no body is written if the handler already started one.
 func recoverer(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		defer func() {
-			if v := recover(); v != nil {
-				log.Error("panic in handler", "path", r.URL.Path, "panic", v, "stack", string(debug.Stack()))
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal", "message": "Something went wrong."})
+			v := recover()
+			if v == nil {
+				return
+			}
+			if v == http.ErrAbortHandler {
+				panic(v)
+			}
+			log.Error("panic in handler", "path", r.URL.Path, "panic", fmt.Sprint(v), "stack", string(debug.Stack()))
+			if !rec.wroteHeader {
+				writeJSON(rec, http.StatusInternalServerError, map[string]string{"error": "internal", "message": "Something went wrong."})
 			}
 		}()
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(rec, r)
 	})
 }

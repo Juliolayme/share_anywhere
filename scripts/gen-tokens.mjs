@@ -9,7 +9,8 @@
 //   css     web/src/styles/tokens.css and web/src/styles/tokens.ts (implemented, Phase 0)
 //   kotlin  android/app/src/main/java/app/shareanywhere/ui/theme/Tokens.kt (hook, implemented in Phase 6)
 //   swift   ios/ShareAnywhereCore/Sources/DesignTokens/Tokens.swift (hook, implemented in Phase 7)
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 import { ROOT, loadTokens, validateTokens, checkContrast } from './lib/tokens.mjs';
 
@@ -147,4 +148,6 @@ function main(argv) {
   if (check) console.log('Design tokens: schema valid, contrast AA, generated files current.');
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main(process.argv.slice(2));
+// Run main() only when executed directly (robust to spaces, symlinks, and Windows paths).
+const invokedPath = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : '';
+if (import.meta.url === invokedPath) main(process.argv.slice(2));

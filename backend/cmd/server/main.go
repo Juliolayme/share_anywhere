@@ -6,9 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -34,21 +36,19 @@ func main() {
 }
 
 // probe calls the local health endpoint. Distroless images have no curl, so the binary checks itself.
+// It always targets loopback; only the port is taken from SA_HTTP_ADDR, and it must be a valid number.
 func probe() int {
-	addr := os.Getenv("SA_HTTP_ADDR")
-	if addr == "" || addr[0] == ':' {
-		addr = "127.0.0.1" + addr
-		if addr == "127.0.0.1" {
-			addr += ":8080"
-		}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
+	port, err := listenPort(os.Getenv("SA_HTTP_ADDR"))
 	if err != nil {
 		return 1
 	}
-	resp, err := http.DefaultClient.Do(req)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/healthz", port), nil) // #nosec G704 -- fixed loopback host, numeric port
+	if err != nil {
+		return 1
+	}
+	resp, err := http.DefaultClient.Do(req) // #nosec G704 -- fixed loopback host, numeric port
 	if err != nil {
 		return 1
 	}
@@ -57,6 +57,22 @@ func probe() int {
 		return 1
 	}
 	return 0
+}
+
+// listenPort extracts the numeric port from an address such as ":8080" or "0.0.0.0:8080" (default 8080).
+func listenPort(addr string) (int, error) {
+	if addr == "" {
+		return 8080, nil
+	}
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, err
+	}
+	port, err := strconv.Atoi(p)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, fmt.Errorf("invalid port %q", p)
+	}
+	return port, nil
 }
 
 func run() error {

@@ -24,4 +24,5 @@ jobs:
             Phase 5B clipboard-cross-client encrypted clipboard Web <-> Android / iOS
             Phase 7  ios-matrix, ios-web-interop, ios-background-suspend
             Phase 8  turn-forced         relay-only transfers over UDP and TCP/TLS
+            Phase 7  android-ios-interop best-effort, two half-tests against a shared ephemeral backend
           TXT

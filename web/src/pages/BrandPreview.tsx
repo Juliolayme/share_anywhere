@@ -20,7 +20,7 @@ export default function BrandPreview() {
           {(['system', 'light', 'dark'] as const).map((p) => (
             <label
               key={p}
-              className={`min-h-touch cursor-pointer rounded-md px-3 py-2 text-sm ${pref === p ? 'bg-primary text-on-primary' : 'text-text'}`}
+              className={`min-h-touch cursor-pointer rounded-md px-3 py-2 text-sm focus-within:outline focus-within:outline-[3px] focus-within:outline-offset-2 focus-within:outline-focus ${pref === p ? 'bg-primary text-on-primary' : 'text-text'}`}
             >
               <input
                 type="radio"

@@ -1,0 +1,4 @@
+# Test-only JWT-shaped string committed in 303721f (logging redaction test). It was never a real
+# credential. History cannot be rewritten (no force-push), so this exact finding is ignored;
+# the test now builds the string at runtime.
+303721fe878ec680fa22552eb63972ce338b5714:backend/internal/platform/logging/logging_test.go:jwt:41

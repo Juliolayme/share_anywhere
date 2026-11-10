@@ -1,8 +1,9 @@
+// @vitest-environment node
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cssVariables, colorTokens, palettes } from './tokens';
 
-const css = readFileSync(resolve(__dirname, 'tokens.css'), 'utf8');
+const css = readFileSync(fileURLToPath(new URL('./tokens.css', import.meta.url)), 'utf8');
 
 describe('generated design tokens', () => {
   it('declares a CSS custom property for every token', () => {

@@ -93,3 +93,38 @@ func TestRecoverer(t *testing.T) {
 		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestRecovererReraisesAbort(t *testing.T) {
+	h := recoverer(discard(), http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }))
+	defer func() {
+		if v := recover(); v != http.ErrAbortHandler {
+			t.Fatalf("expected ErrAbortHandler to propagate, got %v", v)
+		}
+	}()
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+}
+
+func TestRecovererDoesNotOverwriteStartedResponse(t *testing.T) {
+	h := recoverer(discard(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("partial"))
+		panic("late")
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusAccepted || rec.Body.String() != "partial" {
+		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestResponseControllerReachesUnderlyingWriter(t *testing.T) {
+	var flushErr error
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		flushErr = http.NewResponseController(w).Flush()
+	})
+	wrapped := recoverer(discard(), securityHeaders(requestLogger(discard(), inner)))
+	wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if flushErr != nil {
+		t.Fatalf("Flush through middleware failed: %v", flushErr)
+	}
+}

@@ -13,7 +13,8 @@ export default defineConfig({
     },
   },
   build: {
-    sourcemap: true,
+    // Maps are generated for debugging but not referenced from the bundle or served by default.
+    sourcemap: 'hidden',
   },
   test: {
     globals: true,

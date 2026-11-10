@@ -4,7 +4,7 @@ Status: Accepted (Phase 0, 2026-11-10)
 
 ## Context
 
-Route quality (direct, TURN UDP, TURN TCP/TLS, Cloud) is only observable at the endpoints through WebRTC `getStats()`. A backend that tried to choose routes would act on stale, second-hand data and would need per-receiver state that the clients already hold.
+PRD §2 fixes route selection as per receiver, decided by the client and recorded by the server. Route quality (direct, TURN UDP, TURN TCP/TLS, Cloud) is only observable at the endpoints through WebRTC `getStats()`. A backend that tried to choose routes would act on stale, second-hand data and would need per-receiver state that the clients already hold.
 
 ## Decision
 

@@ -4,7 +4,7 @@ Status: Accepted (Phase 0, 2026-11-10)
 
 ## Context
 
-Browsers differ widely in how they can receive large files, read the clipboard, and keep the screen on (PRD §6.8, §7.2, §5.10). Pretending otherwise leads to failed 20 GB transfers and broken promises.
+PRD §2 sets browser support by the §6.8 capability matrix. Browsers differ widely in how they can receive large files, read the clipboard, and keep the screen on (PRD §6.8, §7.2, §5.10). Pretending otherwise leads to failed 20 GB transfers and broken promises.
 
 ## Decision
 

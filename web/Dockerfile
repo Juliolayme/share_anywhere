@@ -12,4 +12,5 @@ RUN pnpm --filter @share-anywhere/web build
 FROM caddy:2-alpine
 COPY web/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/web/dist /srv
+RUN find /srv -name '*.map' -delete
 EXPOSE 80

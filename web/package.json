@@ -17,7 +17,7 @@
   "dependencies": {
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-router-dom": "6.30.6"
+    "react-router-dom": "7.18.5"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
@@ -41,6 +41,6 @@
     "typescript": "5.8.3",
     "typescript-eslint": "8.72.2",
     "vite": "6.4.6",
-    "vitest": "3.2.7"
+    "vitest": "5.1.0"
   }
 }

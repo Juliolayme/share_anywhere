@@ -7,12 +7,15 @@ export type JoinPreview = S['JoinPreview'];
 export type JoinResult = S['JoinResult'];
 export type Participant = S['Participant'];
 export type FileInput = S['FileInput'];
+export type OpenSession = S['OpenSession'];
+export type OpenSessionList = S['OpenSessionList'];
 
 /** Typed calls for docs/API.md §2.2, all authenticated with the device token. */
 export function sessionsApi(client: DeviceClient) {
   return {
     create: (files: FileInput[], requireApproval: boolean) =>
       client.request<SessionView>('POST', '/v1/sessions', { files, require_approval: requireApproval }),
+    listOpen: () => client.request<OpenSessionList>('GET', '/v1/sessions'),
     get: (id: string) => client.request<SessionView>('GET', `/v1/sessions/${encodeURIComponent(id)}`),
     update: (id: string, body: S['UpdateSessionRequest']) =>
       client.request<SessionView>('PATCH', `/v1/sessions/${encodeURIComponent(id)}`, body),

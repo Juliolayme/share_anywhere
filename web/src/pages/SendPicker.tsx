@@ -16,6 +16,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Banner, Button, Card, Screen, Switch } from '../components/ui';
 import { putOutbox } from '../features/transfer/runtime/outbox';
 import { useSharing } from '../features/sharing/SharingContext';
+import { OpenSessionsPanel } from '../features/sharing/OpenSessionsPanel';
 import { useIdentity } from '../lib/identity/identity';
 import { ApiError } from '../lib/api/errors';
 import { formatWait } from '../lib/identity/identity';
@@ -80,6 +81,8 @@ export default function SendPicker() {
   const [approval, setApproval] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // Bumped each time Create hits the open-session cap: shows (and reloads) the open-sessions panel.
+  const [capHit, setCapHit] = useState(0);
   const [files, setFiles] = useState<Picked[]>([]);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,10 +108,12 @@ export default function SendPicker() {
       );
       navigate(`/send/session/${v.id}`);
     } catch (e) {
+      const cap = e instanceof ApiError && e.code === 'too_many_open_sessions';
+      setCapHit((n) => (cap ? n + 1 : 0));
       setCreateError(
         e instanceof ApiError && e.status === 429
           ? t('product.rate_limited', { time: formatWait(e.retryAfterS ?? 60) })
-          : e instanceof ApiError && e.code === 'too_many_open_sessions'
+          : cap
             ? t('product.too_many_open')
             : t('product.error_generic'),
       );
@@ -259,6 +264,7 @@ export default function SendPicker() {
           </div>
         </Card>
       )}
+      {files.length > 0 && capHit > 0 && <OpenSessionsPanel key={capHit} onClosed={() => setCreateError(null)} />}
     </Screen>
   );
 }

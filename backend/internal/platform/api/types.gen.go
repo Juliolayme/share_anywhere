@@ -87,6 +87,24 @@ func (e JoinWindowState) Valid() bool {
 	}
 }
 
+// Defines values for OpenSessionStatus.
+const (
+	OpenSessionStatusACTIVE  OpenSessionStatus = "ACTIVE"
+	OpenSessionStatusWAITING OpenSessionStatus = "WAITING"
+)
+
+// Valid indicates whether the value is a known member of the OpenSessionStatus enum.
+func (e OpenSessionStatus) Valid() bool {
+	switch e {
+	case OpenSessionStatusACTIVE:
+		return true
+	case OpenSessionStatusWAITING:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ParticipantJoinedVia.
 const (
 	ParticipantJoinedViaCode ParticipantJoinedVia = "code"
@@ -535,6 +553,30 @@ type JoinWindow struct {
 
 // JoinWindowState defines model for JoinWindow.State.
 type JoinWindowState string
+
+// OpenSession defines model for OpenSession.
+type OpenSession struct {
+	Capacity      Capacity           `json:"capacity"`
+	CreatedAt     time.Time          `json:"created_at"`
+	ExpiresAt     time.Time          `json:"expires_at"`
+	FileCount     int                `json:"file_count"`
+	FirstFileName string             `json:"first_file_name"`
+	Id            openapi_types.UUID `json:"id"`
+	JoinWindow    JoinWindow         `json:"join_window"`
+	Status        OpenSessionStatus  `json:"status"`
+	TotalBytes    int64              `json:"total_bytes"`
+}
+
+// OpenSessionStatus defines model for OpenSession.Status.
+type OpenSessionStatus string
+
+// OpenSessionList defines model for OpenSessionList.
+type OpenSessionList struct {
+	// MaxOpen The caller's open-session cap: 2 for a guest device, 5 signed in.
+	MaxOpen    int           `json:"max_open"`
+	ServerTime time.Time     `json:"server_time"`
+	Sessions   []OpenSession `json:"sessions"`
+}
 
 // Participant defines model for Participant.
 type Participant struct {

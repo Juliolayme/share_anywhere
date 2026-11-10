@@ -225,7 +225,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** The caller device's live sessions as sender (WAITING or ACTIVE, before their maximum lifetime), newest first - exactly what the open-session cap counts. Never includes codes or links. */
+        get: operations["listOpenSessions"];
         put?: never;
         /** Create a share session (guest or signed in) with a six-digit code, link and QR sharing one 10-minute join window. */
         post: operations["createSession"];
@@ -630,6 +631,29 @@ export interface components {
             seq: number;
             /** @enum {string} */
             state: "OPEN" | "EXPIRED" | "ENDED_FULL" | "ENDED_BY_SENDER";
+        };
+        OpenSession: {
+            capacity: components["schemas"]["Capacity"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            file_count: number;
+            first_file_name: string;
+            /** Format: uuid */
+            id: string;
+            join_window: components["schemas"]["JoinWindow"];
+            /** @enum {string} */
+            status: "WAITING" | "ACTIVE";
+            /** Format: int64 */
+            total_bytes: number;
+        };
+        OpenSessionList: {
+            /** @description The caller's open-session cap: 2 for a guest device, 5 signed in. */
+            max_open: number;
+            /** Format: date-time */
+            server_time: string;
+            sessions: components["schemas"]["OpenSession"][];
         };
         Participant: {
             display_name: string;
@@ -1204,6 +1228,27 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listOpenSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open sessions owned by the calling device (at most 20; the open-session cap keeps it at 2 for guests, 5 signed in). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenSessionList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     createSession: {

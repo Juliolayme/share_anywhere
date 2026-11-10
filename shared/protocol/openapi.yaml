@@ -183,6 +183,17 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "429": { $ref: "#/components/responses/RateLimited" }
   /v1/sessions:
+    get:
+      operationId: listOpenSessions
+      x-sa-access: device
+      summary: The caller device's live sessions as sender (WAITING or ACTIVE, before their maximum lifetime), newest first - exactly what the open-session cap counts. Never includes codes or links.
+      responses:
+        "200":
+          description: Open sessions owned by the calling device (at most 20; the open-session cap keeps it at 2 for guests, 5 signed in).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpenSessionList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
     post:
       operationId: createSession
       x-sa-access: device
@@ -987,6 +998,42 @@ components:
         file_count: { type: integer }
         protected_mode: { type: boolean }
         expires_at: { type: string, format: date-time }
+        server_time: { type: string, format: date-time }
+    OpenSession:
+      type: object
+      required:
+        [
+          id,
+          status,
+          created_at,
+          expires_at,
+          file_count,
+          total_bytes,
+          first_file_name,
+          capacity,
+          join_window,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [WAITING, ACTIVE] }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        file_count: { type: integer }
+        total_bytes: { type: integer, format: int64 }
+        first_file_name: { type: string }
+        capacity: { $ref: "#/components/schemas/Capacity" }
+        join_window: { $ref: "#/components/schemas/JoinWindow" }
+    OpenSessionList:
+      type: object
+      required: [sessions, max_open, server_time]
+      properties:
+        sessions:
+          { type: array, items: { $ref: "#/components/schemas/OpenSession" } }
+        max_open:
+          {
+            type: integer,
+            description: "The caller's open-session cap: 2 for a guest device, 5 signed in.",
+          }
         server_time: { type: string, format: date-time }
     JoinPreview:
       type: object

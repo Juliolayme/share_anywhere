@@ -161,3 +161,32 @@ func TestSessionHTTPIDOR(t *testing.T) {
 		}
 	}
 }
+
+func TestListOpenSessionsHTTPUsesTokenIdentity(t *testing.T) {
+	e := newEnv(t)
+	mux := e.mux()
+	snd, other := e.device("Sender"), e.device("Other")
+	rec := call(mux, "POST", "/v1/sessions", snd.DeviceID, `{"files":[{"name":"a.bin","size":5,"mime":""}]}`)
+	if rec.Code != 201 {
+		t.Fatalf("create %d %s", rec.Code, rec.Body)
+	}
+	var s SessionView
+	_ = json.Unmarshal(rec.Body.Bytes(), &s)
+	// A device_id in the query is ignored: identity comes only from the verified token.
+	rec = call(mux, "GET", "/v1/sessions?device_id="+snd.DeviceID, other.DeviceID, "")
+	var l OpenSessionList
+	if err := json.Unmarshal(rec.Body.Bytes(), &l); err != nil || rec.Code != 200 || len(l.Sessions) != 0 {
+		t.Fatalf("other device: %d %s", rec.Code, rec.Body)
+	}
+	rec = call(mux, "GET", "/v1/sessions", snd.DeviceID, "")
+	_ = json.Unmarshal(rec.Body.Bytes(), &l)
+	if rec.Code != 200 || len(l.Sessions) != 1 || l.Sessions[0].ID != s.ID || l.Sessions[0].FirstFile != "a.bin" {
+		t.Fatalf("own list: %d %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), s.Code) || strings.Contains(rec.Body.String(), "link_token") {
+		t.Fatalf("list must not carry the code or link: %s", rec.Body)
+	}
+	if rec := call(mux, "GET", "/v1/sessions", "forged-token", ""); rec.Code != 401 {
+		t.Fatalf("forged token: %d", rec.Code)
+	}
+}

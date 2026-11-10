@@ -34,6 +34,7 @@ func NewHTTP(svc *Service, ips *clientip.Resolver, devices DeviceLookup) *HTTP {
 // Register adds the routes with their access levels.
 func (h *HTTP) Register(r *access.Router) {
 	r.Handle(http.MethodPost, "/v1/sessions", access.Device, h.create)
+	r.Handle(http.MethodGet, "/v1/sessions", access.Device, h.listOpen)
 	r.Handle(http.MethodGet, "/v1/sessions/{id}", access.Participant, h.get)
 	r.Handle(http.MethodPatch, "/v1/sessions/{id}", access.Participant, h.update)
 	r.Handle(http.MethodPost, "/v1/sessions/{id}/close", access.Participant, h.close)
@@ -94,6 +95,17 @@ func (h *HTTP) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, v)
+}
+
+// listOpen is GET /v1/sessions: the caller device's live sessions as sender (identity from the token only).
+func (h *HTTP) listOpen(w http.ResponseWriter, r *http.Request) {
+	id, _ := access.FromContext(r.Context())
+	v, err := h.svc.ListOpen(r.Context(), id.DeviceID, id.AccountID != "")
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, v)
 }
 
 func (h *HTTP) get(w http.ResponseWriter, r *http.Request) {

@@ -785,3 +785,65 @@ func TestStoredAddressesAreHashedAndMetricsCount(t *testing.T) {
 	_, err := e.svc.ResolveCode(ctx, rx, s.Code)
 	wantCode(t, err, "locked_out")
 }
+
+func TestListOpenReturnsOnlyOwnLiveSessions(t *testing.T) {
+	e := newEnv(t)
+	a, b, rx := e.device("A"), e.device("B"), e.device("rx")
+	ids := func(l OpenSessionList) []string {
+		out := []string{}
+		for _, s := range l.Sessions {
+			out = append(out, s.ID)
+		}
+		return out
+	}
+	s1 := e.create(a, false)
+	e.clk.Advance(time.Minute)
+	s2 := e.create(a, false)
+	other := e.create(b, false)
+	if _, err := e.joinCode(rx, s2.Code); err != nil {
+		t.Fatal(err)
+	}
+	l, err := e.svc.ListOpen(ctx, a.DeviceID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(l); len(got) != 2 || got[0] != s2.ID || got[1] != s1.ID {
+		t.Fatalf("own live sessions newest first: %v", got)
+	}
+	if l.MaxOpen != GuestOpenSessions {
+		t.Fatalf("max_open %d", l.MaxOpen)
+	}
+	top := l.Sessions[0]
+	if top.Status != StatusActive || top.FileCount != 2 || top.TotalBytes != 1010 || top.FirstFile != "trip.mp4" ||
+		top.Capacity != (Capacity{Joined: 1, Max: MaxReceivers}) || top.JoinWindow.State != WindowOpen || !top.CreatedAt.Equal(s2.ServerTime) {
+		t.Fatalf("item: %+v", top)
+	}
+	// The cap and the list agree: the third create fails while both are listed.
+	_, err = e.svc.Create(ctx, a, CreateInput{Files: []FileInput{{Name: "x", Size: 1}}})
+	wantCode(t, err, "too_many_open_sessions")
+	// Receivers and other senders see none of A's sessions.
+	if l, _ := e.svc.ListOpen(ctx, rx.DeviceID, false); len(l.Sessions) != 0 {
+		t.Fatalf("receiver lists %v", ids(l))
+	}
+	if l, _ := e.svc.ListOpen(ctx, b.DeviceID, true); len(l.Sessions) != 1 || l.Sessions[0].ID != other.ID || l.MaxOpen != AcctOpenSessions {
+		t.Fatalf("other device: %v max %d", ids(l), l.MaxOpen)
+	}
+	// Closed and expired sessions drop out; an expired join window alone does not.
+	if err := e.svc.Close(ctx, a, s1.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.clk.Advance(JoinWindow + time.Minute)
+	s3 := e.create(a, false)
+	if _, err := e.pool.Exec(ctx, `UPDATE share_sessions SET status = 'EXPIRED', ended_at = $2 WHERE id = $1::uuid`, s3.ID, e.clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	l, _ = e.svc.ListOpen(ctx, a.DeviceID, false)
+	if got := ids(l); len(got) != 1 || got[0] != s2.ID || l.Sessions[0].JoinWindow.State != WindowExpired {
+		t.Fatalf("after close and expiry: %v %+v", got, l.Sessions)
+	}
+	// Past its maximum lifetime a session is no longer listed (nor counted), even before the job ends it.
+	e.clk.Advance(GuestLifetime)
+	if l, _ := e.svc.ListOpen(ctx, a.DeviceID, false); len(l.Sessions) != 0 {
+		t.Fatalf("over-age listed: %v", ids(l))
+	}
+}

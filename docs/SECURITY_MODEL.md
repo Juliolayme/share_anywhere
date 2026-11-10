@@ -112,7 +112,7 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 | Anonymous device creation | Address (IPv4, or IPv6 /64): proof-of-work required beyond 3 / hour (soft limit); `429` beyond 10 / hour (hard limit, attempts that got `428` count). Reset device identity shares the hard limit. Proof-of-work challenges: 30 / min per address. **Built in Phase 1** |
 | Token refresh | Device: 60 / hour. **Built in Phase 1** |
 | Session creation | Device: 10 / hour; IP: 30 / hour. **Built in Phase 2** |
-| Concurrent open sessions | Guest device: 2; signed-in device: 5. **Built in Phase 2** |
+| Concurrent open sessions | Guest device: 2; signed-in device: 5, counted per device in the same transaction as creation (`409 too_many_open_sessions`). **Built in Phase 2.** Since Phase 4 `GET /v1/sessions` lists the device's open sessions, and the Web send screen shows them with Open and Close when creation hits the cap |
 | Code lookup | IP: 10 / min; device: 5 / min. **Built in Phase 2** |
 | Create new code | Device: 20 / hour. **Built in Phase 2** |
 | Failed code lookups | IP: 10 / hour → 30-min lockout; device: 5 / 10 min → 30-min lockout; global: protected mode above `CODE_GUESS_ALARM_PER_MIN` (§3.1). **Built in Phase 2** |

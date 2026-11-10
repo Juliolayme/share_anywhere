@@ -63,3 +63,27 @@ Nightly [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/
 | P2-5 Report overstated Create new code after delivery on Web | P2 | TR-6/TR-7 now link back to the session (the code and Create new code). The report states what is covered: backend DB tests for Renew after delivery, and the e2e late receiver through the open window |
 | P2-6 Blocking a receiver that had finished flipped the result to cancelled | P2 | Server `EndStatus` and client `finalOf` count a removed or blocked receiver that had received every file as a delivery; table and exhaustive tests updated |
 | P2-7 Fairness test on real timers | P2 | Accepted in round 1; documented |
+
+## Round 3 — commit dd5e363 (code as b247af7) — FAIL
+
+0 P0, 3 P1, 6 P2 findings. The round-2 fixes held except where noted.
+
+**Why it failed:**
+
+- the new late-receiver spec failed its first attempt in every CI run on chromium-desktop and webkit-desktop, so CI was green only through the retry;
+- the open-session cap fix covered only TR-7 "New transfer";
+- the sender's result counted receivers while the server and the receiver count files.
+
+### Resolution of round 3 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| The late-receiver spec failed its first attempt in CI on chromium and webkit (green only on retry). Cause: helper contexts were never closed, so their WebSockets reached the backend's per-address cap and the late receiver's socket was refused | P1 | The helpers track every context they open (`trackContext`), and `closeContexts` runs after each test in every spec that opens pages (through `closeReceiverBrowsers` in the transfer specs). Locally, the pairing, transfer, keep-awake and History specs in one worker with no retries gave 66 passed and 2 skipped on chromium-desktop and webkit-desktop. CI first-attempt results are recorded in the report |
+| The open-session cap fix covered only "New transfer"; any other exit left finished sessions live and the guest stuck | P1 | New `GET /v1/sessions` (access `device`) lists the caller's live sessions as sender: the same set the cap counts, without codes or links. When Create returns `too_many_open_sessions`, the send screen shows them with Open and Close (`OpenSessionsPanel`).<br>Tests: DB and HTTP tests (own sessions only, token identity, ended sessions excluded); route and access tests; 8 component tests; e2e `open-sessions.spec.ts` on three engines (cap hit, Close one, Create succeeds).<br>Docs: API.md, openapi, SECURITY_MODEL §5, ARCHITECTURE §4.5, E16 |
+| The sender's result counted receivers; with one file of two the sender said "failed" while the receiver and the server said partial | P1 | `finalOf` counts files of the counted receivers, like `EndStatus`; unit cases for multi-file partial sends. ARCHITECTURE §4.5 states the shared unit |
+| A reload rewrote History with a new creation time and no duration; a deleted entry could come back | P2 | Writes are serialized and keep the stored creation and start times; an entry deleted after this tab wrote it is not rewritten. Unit test |
+| The e2e could race the transient TR-6 | P2 | Asserts the dashboard right after the late receiver joins (waiting), before its transfer starts |
+| No component tests for the TR-7 "New transfer" branches | P2 | Covered by the e2e (window open → confirm → close → `/send`, code refused afterwards); a `TransferDashboard` component test is in the backlog |
+| `/result` could render TR-6 | P2 | `/result` without a result redirects to `/transfers` |
+| A receiver whose WebSocket upgrade is refused waits without explanation | P2 | Pre-existing; backlog |
+| Report commit table omitted dd5e363 | P2 | Added |

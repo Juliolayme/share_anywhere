@@ -249,7 +249,20 @@
     "transfer_offline": "Lost contact. They can reconnect while this page stays open",
     "block_failed": "Couldn’t block {name}. Try again.",
     "block_confirm_named_h": "Block {name}?",
-    "bytes_of_eta": "{done} of {total} · {eta}"
+    "bytes_of_eta": "{done} of {total} · {eta}",
+    "open_sessions_h": "Your open sessions",
+    "open_sessions_p": "This device can keep {max} sessions open at once. Close one you no longer need, then create the new one.",
+    "open_sessions_loading": "Loading your open sessions…",
+    "open_sessions_error": "Couldn’t load your open sessions.",
+    "open_sessions_empty": "No sessions are open now. You can create the new one.",
+    "open_session_started": "Started {time}",
+    "open_session_receivers": "{joined}/{max} receivers",
+    "open_session_window_open": "Code open until {time}",
+    "open_session_window_expired": "Code expired",
+    "open_session_window_full": "Session full",
+    "open_session_open_named": "Open {name}",
+    "open_session_close_named": "Close {name}",
+    "open_session_closed": "Session closed. You can create the new session now."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -500,6 +513,19 @@
     "transfer_offline": "Mất liên lạc. Người nhận có thể kết nối lại khi trang này vẫn mở",
     "block_failed": "Không chặn được {name}. Hãy thử lại.",
     "block_confirm_named_h": "Chặn {name}?",
-    "bytes_of_eta": "{done} / {total} · {eta}"
+    "bytes_of_eta": "{done} / {total} · {eta}",
+    "open_sessions_h": "Các phiên đang mở của bạn",
+    "open_sessions_p": "Thiết bị này chỉ mở được cùng lúc {max} phiên. Hãy đóng một phiên không còn cần, rồi tạo phiên mới.",
+    "open_sessions_loading": "Đang tải các phiên đang mở…",
+    "open_sessions_error": "Không tải được các phiên đang mở.",
+    "open_sessions_empty": "Hiện không còn phiên nào đang mở. Bạn có thể tạo phiên mới.",
+    "open_session_started": "Bắt đầu {time}",
+    "open_session_receivers": "{joined}/{max} người nhận",
+    "open_session_window_open": "Mã còn hiệu lực đến {time}",
+    "open_session_window_expired": "Mã đã hết hạn",
+    "open_session_window_full": "Phiên đã đủ người",
+    "open_session_open_named": "Mở {name}",
+    "open_session_close_named": "Đóng {name}",
+    "open_session_closed": "Đã đóng phiên. Bây giờ bạn có thể tạo phiên mới."
   }
 }

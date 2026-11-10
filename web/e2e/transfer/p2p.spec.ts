@@ -195,6 +195,40 @@ test('transfer: a receiver reload resumes from the saved bitmap with zero re-sen
   await rx.context().close();
 });
 
+test('transfer: receiver pauses, reloads and resumes; the sender leaves Paused and holds the screen again', async ({
+  browser,
+  browserName,
+}) => {
+  test.setTimeout(180_000);
+  const f = fixture('64M');
+  const sender = track(await senderPage('granted'));
+  const s = await createSession(sender, { files: [f.path] });
+  await senderHook(sender, s.id, { pace: 300 });
+  const rx = track(await receiverPage(browser, browserName, 'granted'));
+  await joinToSave(rx, s.code);
+  await sender.getByRole('button', { name: 'Stop accepting' }).last().click();
+  await startInBrowser(rx);
+  await expect.poll(() => rxVerified(rx, s.id), { timeout: 60_000 }).toBeGreaterThan(4 * MiB);
+  await rx.getByRole('button', { name: 'Pause' }).click();
+  await sender.getByRole('button', { name: 'View transfers' }).click();
+  const card = sender.getByTestId('receiver-card');
+  await expect(card).toHaveAttribute('data-status', 'paused', { timeout: 15_000 });
+  await expect.poll(async () => (await wl(sender)).releases).toBeGreaterThan(0);
+  const requestsWhilePaused = (await wl(sender)).requests;
+  await rx.reload();
+  await expect(rx.getByTestId('transfer-status')).toHaveAttribute('data-state', 'paused', { timeout: 30_000 });
+  const at = await rxVerified(rx, s.id);
+  await rx.getByRole('button', { name: 'Resume' }).click();
+  await expect.poll(() => rxVerified(rx, s.id), { timeout: 60_000 }).toBeGreaterThan(at + 4 * MiB);
+  await expect(card).toHaveAttribute('data-status', 'transferring');
+  await expect.poll(async () => (await wl(sender)).requests).toBeGreaterThan(requestsWhilePaused);
+  await senderHook(sender, s.id, { pace: 0 });
+  await expect(result(rx)).toHaveAttribute('data-result', 'completed', { timeout: 120_000 });
+  expect(await downloadAndHash(rx, nameOf(f.path))).toBe(f.sha256);
+  await sender.context().close();
+  await rx.context().close();
+});
+
 test('transfer: a corrupted block is NACKed and re-sent; the file still matches', async ({ browser, browserName }) => {
   test.setTimeout(120_000);
   const f = fixture('16M');

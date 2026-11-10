@@ -232,7 +232,10 @@
     "rx_connecting": "Connecting to the sender…",
     "rx_kept": "Files are kept in this browser for 24 hours so you can download them again.",
     "remove_failed": "Couldn’t remove {name}. Try again.",
-    "close_failed": "Couldn’t close the session. Try again."
+    "close_failed": "Couldn’t close the session. Try again.",
+    "rx_download_named": "Download {name}",
+    "pause_named": "Pause {name}",
+    "resume_named": "Resume {name}"
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -466,6 +469,9 @@
     "rx_connecting": "Đang kết nối với người gửi…",
     "rx_kept": "Tệp được giữ trong trình duyệt này 24 giờ để bạn có thể tải lại.",
     "remove_failed": "Không xóa được {name}. Hãy thử lại.",
-    "close_failed": "Không đóng được phiên. Hãy thử lại."
+    "close_failed": "Không đóng được phiên. Hãy thử lại.",
+    "rx_download_named": "Tải xuống {name}",
+    "pause_named": "Tạm dừng {name}",
+    "resume_named": "Tiếp tục {name}"
   }
 }

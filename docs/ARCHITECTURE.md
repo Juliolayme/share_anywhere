@@ -128,7 +128,7 @@ Remove (revoke capabilities, close the peer connection, free the slot), Block (r
 - Session: `CREATED → WAITING → ACTIVE → COMPLETED | PARTIALLY_COMPLETED | CLOSED | EXPIRED | CANCELLED`.
 - Join window: `OPEN → EXPIRED` (10 minutes) `| ENDED_FULL | ENDED_BY_SENDER`; `renew` from any of these except while full returns to `OPEN` with a new code. A session with an ended window and no receivers stays `WAITING` until the sender creates a new code, closes it, or it hits the idle or maximum lifetime.
 - Participant: `REQUESTED` (approval path only) `→ JOINED → LEFT | REMOVED | BLOCKED`; `REQUESTED → REJECTED | BLOCKED`.
-- Transfer (per file and receiver): `PENDING → CONNECTING → TRANSFERRING ⇄ PAUSED`, `TRANSFERRING → DISCONNECTED → RECONNECTING → RESUMING → TRANSFERRING`, terminal `COMPLETED | FAILED | CANCELLED`.
+- Transfer (per file and receiver): `PENDING → CONNECTING → TRANSFERRING ⇄ PAUSED` (`PAUSED → COMPLETED` only from the receiver with every byte verified), `TRANSFERRING → DISCONNECTED → RECONNECTING → RESUMING → TRANSFERRING`, terminal `COMPLETED | FAILED | CANCELLED`.
 
 All transitions are idempotent on the server and validated against the caller's role.
 

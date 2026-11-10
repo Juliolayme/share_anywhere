@@ -84,6 +84,17 @@ export function RouteChip({ route }: { route: Route | null }) {
   );
 }
 
+export type BarTone = 'send' | 'receive' | 'warning' | 'danger' | 'muted';
+
+/** Progress bar color per state, as in the design (Web App `BAR`): grey when paused, green when verifying. */
+export function barTone(state: string): BarTone {
+  if (state === 'paused' || state === 'cancelled' || state === 'removed') return 'muted';
+  if (state === 'verifying' || state === 'completed') return 'receive';
+  if (state === 'reconnecting') return 'warning';
+  if (state === 'failed') return 'danger';
+  return 'send';
+}
+
 export function ProgressBar({
   value,
   label,
@@ -92,11 +103,13 @@ export function ProgressBar({
 }: {
   value: number;
   label: string;
-  tone?: 'send' | 'receive' | 'warning' | 'danger';
+  tone?: BarTone;
   height?: 4 | 8 | 10;
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(value * 1000) / 10));
-  const fill = { send: 'bg-send', receive: 'bg-receive', warning: 'bg-warning', danger: 'bg-danger' }[tone];
+  const fill = { send: 'bg-send', receive: 'bg-receive', warning: 'bg-warning', danger: 'bg-danger', muted: 'bg-fg-3' }[
+    tone
+  ];
   const h = { 4: 'h-[4px]', 8: 'h-[8px]', 10: 'h-[10px]' }[height];
   return (
     <div

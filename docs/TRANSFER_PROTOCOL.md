@@ -104,7 +104,7 @@ The sender keeps its file handles and whole-file hash state across reconnects, b
   - on every state change;
   - at most every 2 s while bytes flow;
   - `COMPLETED` only after `DONE ok`.
-- The sender reports nothing except its own pause, resume, and cancel actions; the server refuses reports from the sender (`403 receiver_only`). Leaving `PAUSED` for an active state goes through `resume`, which checks a receiver's capability, so a report cannot skip it (`409 use_resume`).
+- The sender reports nothing except its own pause, resume, and cancel actions; the server refuses reports from the sender (`403 receiver_only`). Leaving `PAUSED` for an active state goes through `resume`, which checks a receiver's capability, so a report cannot skip it (`409 use_resume`). Reports never pass through `PAUSED` on the way elsewhere. The one report allowed out of `PAUSED` is `COMPLETED` from the receiver with every byte verified (Pause pressed during the final hash check, or the sender paused then); a reconnect while paused starts the new connection paused on both sides.
 - The route (`direct` or `relay`) comes from the selected ICE candidate pair (`getStats()`: `relay` when either local or remote candidate type is `relay`).
 - The keep-awake controller holds the screen on while any transfer is `CONNECTING`, `TRANSFERRING`, `RESUMING`, `RECONNECTING`, or verifying (`docs/ARCHITECTURE.md` §7).
 

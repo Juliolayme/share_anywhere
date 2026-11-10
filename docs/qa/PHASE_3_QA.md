@@ -69,6 +69,23 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 | Save-location radiogroup without arrow keys | P2 | Arrow keys move the choice (roving tab stop) |
 | Found while verifying: a receiver page closed mid-write could send a fatal storage error to the sender, which then showed the receiver as Failed although the next load resumed | — | The receiver suspends on `pagehide`: it closes the connection first, so errors from storage torn down with the page are neither sent nor reported; it reconnects if the page returns from the back-forward cache. Unit test added |
 
-## Round 3
+## Round 3 — commit 385b20e — FAIL
+
+0 P0, 3 P1, 5 P2. Every round-2 fix was confirmed in code and tests. Backend, web format, lint, types, 114 unit tests, production build, protocol, i18n and token checks passed. The transfer specs passed on chromium, firefox (stock 160) and webkit, plus both mobile projects. CI 42849540806 was green apart from the then-stale mobile baselines.
+
+### Resolution of round 3 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| After a receiver pause and a resume over a new connection, the sender stayed "Paused" and released its wake lock while bytes flowed | P1 | A `TRANSFER_UPDATED` that leaves `PAUSED` moves the sender's card back to transferring (or reconnecting without a channel). A new connection takes its paused state from the server record, so a pause by either side survives a reconnect (the sender pauses the new connection). New e2e on every desktop engine: receiver pauses, reloads and resumes; the sender card goes `transferring` and its wake lock is requested again |
+| Pause during verification left the server record `PAUSED` while both sides showed completed | P1 | The receiver may report `PAUSED → COMPLETED` with every byte verified (state table, shared `transfer-states.json`, Go and Vitest tests, ARCHITECTURE §4.5, API, TRANSFER_PROTOCOL §7). Pause is no longer offered while verifying (nothing is left to send), and a sender pause at that point still ends `COMPLETED` |
+| RX-6 and TR-6 bar colors differ from the design | P1 | `barTone()` follows the design's `BAR` map on both screens: grey paused, green verifying and done, amber reconnecting, red failed. Unit test |
+| Resume hook could override a sender's pause after Choose, Permission or Unreachable | P2 | `start()` and `retry()` stay paused when the server says so; a sender pause while unreachable moves the receiver to paused |
+| Sender held the wake lock indefinitely for a receiver that never returned | P2 | Sender reconnect window of 10 minutes, like the receiver's, then the card shows Waiting and stops holding the screen; a new connection picks the transfer up |
+| Stale report lines | P2 | Unit test count, CI and nightly runs, commit hashes |
+| Docs said production images never include the hooks | P2 | Reworded: the hooks cannot be reached without `VITE_TEST_HOOKS`; the code is still in the bundle |
+| Accessible names built by concatenation | P2 | `product.rx_download_named`, `product.pause_named`, `product.resume_named` (EN/VI) |
+
+## Round 4
 
 Pending.

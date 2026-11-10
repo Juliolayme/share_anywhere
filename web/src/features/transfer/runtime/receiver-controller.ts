@@ -223,12 +223,19 @@ export class ReceiverController extends Observable<RxState> {
     await this.d.store.putTarget(target);
     this.update({ target });
     this.log('product.log_receiving', { n: this.state_.files.length });
+    if (this.pausedOnServer()) return this.update({ phase: 'paused' });
     this.connect();
+  }
+
+  /** The sender (or this receiver before a reload) paused: stay paused rather than resume on our own. */
+  private pausedOnServer(): boolean {
+    return this.open().some((f) => this.reporter.current(f.transferId) === 'PAUSED');
   }
 
   pause(): void {
     if (rxFinal(this.state_.phase) || this.state_.phase === 'paused') return;
-    if (this.state_.phase === 'unreachable') return;
+    // Unreachable: nothing to pause. Verifying: every byte is here, only the local hash check remains.
+    if (this.state_.phase === 'unreachable' || this.state_.phase === 'verifying') return;
     // No open channel yet (connecting or reconnecting): stop dialling until Resume.
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
@@ -269,6 +276,7 @@ export class ReceiverController extends Observable<RxState> {
     if (this.state_.phase !== 'unreachable') return;
     this.attempt = 0;
     this.downSince = null;
+    if (this.pausedOnServer()) return this.update({ phase: 'paused' });
     this.connect();
   }
 
@@ -598,7 +606,11 @@ export class ReceiverController extends Observable<RxState> {
     const f = this.state_.files.find((x) => x.transferId === id);
     if (!f) return;
     this.reporter.seed(id, status, verified);
-    if (status === 'PAUSED' && rxActive(this.state_.phase)) this.update({ phase: 'paused' });
+    if (status === 'PAUSED' && (rxActive(this.state_.phase) || this.state_.phase === 'unreachable')) {
+      if (this.retryTimer) clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+      this.update({ phase: 'paused', eta: null });
+    }
     if (status === 'RESUMING' && this.state_.phase === 'paused') {
       if (this.conn && this.pc?.connectionState === 'connected') this.update({ phase: 'transferring' });
       else {

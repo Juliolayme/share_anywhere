@@ -284,6 +284,29 @@ func TestReportStateMachine(t *testing.T) {
 	}
 }
 
+// A receiver that verified every byte while paused (Pause pressed during the final hash check) still records
+// COMPLETED; a partial one cannot.
+func TestCompletedWhilePaused(t *testing.T) {
+	e := newEnv(t, 1000)
+	sender, rx := e.device("Minh"), e.device("Lan")
+	s := e.session(sender, false)
+	e.join(rx, s.Code)
+	l, _ := e.svc.List(ctx, rx.DeviceID, s.ID)
+	tr := byFile(l, 1000)
+	for _, r := range []Report{{Status: Connecting}, {Status: Transferring, VerifiedBytes: 1000}} {
+		if _, err := e.svc.Report(ctx, rx.DeviceID, tr.ID, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.svc.Action(ctx, rx.DeviceID, tr.ID, "pause", ""); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, mustErr(e.svc.Report(ctx, sender.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 1000})), "receiver_only")
+	if c, err := e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 1000}); err != nil || c.Status != Completed {
+		t.Fatalf("completed while paused: %+v %v", c, err)
+	}
+}
+
 func TestActionsAndCapability(t *testing.T) {
 	e := newEnv(t, 1000)
 	sender, rx := e.device("Minh"), e.device("Lan")
@@ -398,6 +421,7 @@ func TestTransitionTable(t *testing.T) {
 		{Transferring, Disconnected, true}, {Disconnected, Reconnecting, true}, {Reconnecting, Resuming, true},
 		{Resuming, Transferring, true}, {Transferring, Completed, true}, {Disconnected, Completed, false},
 		{Completed, Transferring, false}, {Cancelled, Pending, false}, {Transferring, Transferring, true},
+		{Paused, Completed, true},
 	}
 	for _, c := range cases {
 		if got := CanMove(c.from, c.to); got != c.ok {

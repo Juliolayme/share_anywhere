@@ -29,6 +29,7 @@ import {
 import {
   ConnectionLog,
   ProgressBar,
+  barTone,
   RouteChip,
   TransferChip,
   percent,
@@ -397,19 +398,7 @@ function ReceiverCard({
             </span>
           )}
         </div>
-        <ProgressBar
-          value={r.total ? r.verified / r.total : 1}
-          label={r.name}
-          tone={
-            r.status === 'completed'
-              ? 'receive'
-              : r.status === 'failed'
-                ? 'danger'
-                : r.status === 'reconnecting'
-                  ? 'warning'
-                  : 'send'
-          }
-        />
+        <ProgressBar value={r.total ? r.verified / r.total : 1} label={r.name} tone={barTone(r.status)} />
         <span className="font-mono text-[12px] text-fg-2">
           {t('product.bytes_of', { done: formatBytes(r.verified, locale), total: formatBytes(r.total, locale) })}
         </span>
@@ -419,12 +408,18 @@ function ReceiverCard({
       )}
       <div className="flex flex-wrap gap-[6px]">
         {txActive(r.status) && (
-          <Button size="sm" icon={Pause} onClick={onPause} aria-label={`${t('web.pause')} ${r.name}`}>
+          <Button size="sm" icon={Pause} onClick={onPause} aria-label={t('product.pause_named', { name: r.name })}>
             {t('web.pause')}
           </Button>
         )}
         {r.status === 'paused' && (
-          <Button size="sm" variant="send" icon={Play} onClick={onResume} aria-label={`${t('web.resume')} ${r.name}`}>
+          <Button
+            size="sm"
+            variant="send"
+            icon={Play}
+            onClick={onResume}
+            aria-label={t('product.resume_named', { name: r.name })}
+          >
             {t('web.resume')}
           </Button>
         )}

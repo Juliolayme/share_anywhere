@@ -33,7 +33,7 @@ var next = map[string][]string{
 	Pending:      {Connecting, Paused, Failed, Cancelled},
 	Connecting:   {Transferring, Resuming, Disconnected, Paused, Failed, Cancelled},
 	Transferring: {Paused, Disconnected, Completed, Failed, Cancelled},
-	Paused:       {Connecting, Resuming, Transferring, Failed, Cancelled},
+	Paused:       {Connecting, Resuming, Transferring, Completed, Failed, Cancelled},
 	Disconnected: {Reconnecting, Connecting, Paused, Failed, Cancelled},
 	Reconnecting: {Resuming, Connecting, Disconnected, Paused, Failed, Cancelled},
 	Resuming:     {Transferring, Disconnected, Paused, Completed, Failed, Cancelled},

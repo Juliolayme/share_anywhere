@@ -17,7 +17,14 @@
       "FAILED",
       "CANCELLED"
     ],
-    "PAUSED": ["CONNECTING", "RESUMING", "TRANSFERRING", "FAILED", "CANCELLED"],
+    "PAUSED": [
+      "CONNECTING",
+      "RESUMING",
+      "TRANSFERRING",
+      "COMPLETED",
+      "FAILED",
+      "CANCELLED"
+    ],
     "DISCONNECTED": [
       "RECONNECTING",
       "CONNECTING",

@@ -22,6 +22,7 @@ import { rxActive, rxFinal, type RxPhase } from '../../features/transfer/runtime
 import {
   ConnectionLog,
   ProgressBar,
+  barTone,
   RouteChip,
   TransferChip,
   percent,
@@ -111,7 +112,7 @@ export function ReceiveTransfer({
                 size="sm"
                 icon={Download}
                 onClick={() => void rx.save(f.index)}
-                aria-label={`${t('product.rx_download')} ${f.name}`}
+                aria-label={t('product.rx_download_named', { name: f.name })}
               >
                 {t('product.rx_download')}
               </Button>
@@ -213,7 +214,7 @@ export function ReceiveTransfer({
             value={s.total ? s.verified / s.total : 1}
             label={t('web.receiving')}
             height={10}
-            tone={s.phase === 'reconnecting' ? 'warning' : 'send'}
+            tone={barTone(s.phase)}
           />
           <div className="flex flex-wrap justify-between gap-3 font-mono text-[13px] text-fg-2">
             <span data-testid="rx-bytes">
@@ -255,7 +256,7 @@ export function ReceiveTransfer({
           )}
           {s.error && <Banner tone="warning" role="alert" title={t(s.error)} />}
           <div className="flex flex-wrap gap-2">
-            {s.phase === 'unreachable' ? null : running ? (
+            {s.phase === 'unreachable' || s.phase === 'verifying' ? null : running ? (
               <Button icon={Pause} onClick={() => rx.pause()}>
                 {t('web.pause')}
               </Button>

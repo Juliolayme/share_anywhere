@@ -112,6 +112,17 @@ describe('Reporter', () => {
     expect(r.current('t1')).toBe('TRANSFERRING');
   });
 
+  it('reports COMPLETED straight from PAUSED (every byte verified while paused), without the resume hook', async () => {
+    const { api, calls } = fakeApi();
+    const r = new Reporter(api);
+    const resume = vi.fn(async () => null);
+    r.resume = resume;
+    r.seed('t1', 'PAUSED', 10);
+    await r.state('t1', 'COMPLETED', 10);
+    expect(calls.map((c) => c[1])).toEqual(['COMPLETED']);
+    expect(resume).not.toHaveBeenCalled();
+  });
+
   it('stops at terminal states', async () => {
     const { api, calls } = fakeApi();
     const r = new Reporter(api);
@@ -183,5 +194,14 @@ describe('storage sweep', () => {
     expect(await sweepStorage(store, now)).toBe(1);
     expect(await store.get('old')).toBeUndefined();
     expect(await store.get('new')).toBeDefined();
+  });
+});
+
+describe('progress bar color', () => {
+  it('follows the design: grey paused, green verifying and done, amber reconnecting, red failed', async () => {
+    const { barTone } = await import('../ui');
+    expect(
+      ['transferring', 'paused', 'verifying', 'completed', 'reconnecting', 'failed', 'cancelled'].map(barTone),
+    ).toEqual(['send', 'muted', 'receive', 'receive', 'warning', 'danger', 'muted']);
   });
 });

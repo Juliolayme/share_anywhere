@@ -17,6 +17,8 @@ type ProtectedMode struct {
 	failures  []time.Time
 	until     time.Time
 	forced    *bool
+	// forcedUntil is reported while forced (display only).
+	forcedUntil time.Time
 }
 
 // NewProtectedMode returns a breaker that trips at threshold failures per minute.
@@ -50,7 +52,7 @@ func (p *ProtectedMode) Active() (bool, time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.forced != nil {
-		return *p.forced, p.until
+		return *p.forced, p.forcedUntil
 	}
 	return p.clock.Now().Before(p.until), p.until
 }
@@ -59,8 +61,7 @@ func (p *ProtectedMode) Active() (bool, time.Time) {
 func (p *ProtectedMode) Force(on *bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// Forcing never touches the automatic alarm window, so returning to automatic restores the real state.
 	p.forced = on
-	if on != nil && *on {
-		p.until = p.clock.Now().Add(ProtectedDuration)
-	}
+	p.forcedUntil = p.clock.Now().Add(ProtectedDuration)
 }

@@ -10,6 +10,11 @@ import HistoryPage from './pages/HistoryPage';
 import DevicesPage from './pages/DevicesPage';
 import SettingsPage from './pages/SettingsPage';
 import NotFound from './pages/NotFound';
+import SessionPage from './pages/send/SessionPage';
+import JoinLinkPage from './pages/receive/JoinLinkPage';
+import JoinPreviewPage from './pages/receive/JoinPreviewPage';
+import ReceiveSessionPage from './pages/receive/ReceiveSessionPage';
+import { flags } from './config/flags';
 
 // The brand preview is a development tool only; it is not part of the production bundle.
 const BrandPreview = import.meta.env.DEV ? lazy(() => import('./pages/BrandPreview')) : null;
@@ -34,6 +39,14 @@ export function App() {
         />
         <Route path="send" element={<SendPicker />} />
         <Route path="receive" element={<ReceiveEntry />} />
+        {flags.sharing && (
+          <>
+            <Route path="send/session/:id" element={<SessionPage />} />
+            <Route path="j/:token" element={<JoinLinkPage />} />
+            <Route path="join/preview" element={<JoinPreviewPage />} />
+            <Route path="receive/:sessionId" element={<ReceiveSessionPage />} />
+          </>
+        )}
         <Route path="history" element={<HistoryPage />} />
         <Route path="devices" element={<DevicesPage />} />
         <Route path="settings" element={<SettingsPage />} />

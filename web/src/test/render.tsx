@@ -7,6 +7,11 @@ import { HistoryProvider } from '../features/history/HistoryContext';
 import { ToastProvider } from '../components/Toast';
 import { DeviceClient } from '../lib/api/device-client';
 import type { HistoryStore } from '../features/history/store/history-store';
+import { SharingProvider } from '../features/sharing/SharingContext';
+import { KeepAwakeProvider } from '../lib/keepAwake/KeepAwakeContext';
+import type { KeepAwakeEnv } from '../lib/keepAwake/controller';
+
+export const noWakeLock: KeepAwakeEnv = { isSecure: true, isVisible: () => true, onVisibility: () => () => undefined };
 
 export const testDevice = {
   id: '6f1c2c1e-1111-4a5b-9c9d-000000000001',
@@ -63,11 +68,15 @@ export function renderApp(
   return render(
     <I18nProvider initial="en">
       <IdentityProvider client={client}>
-        <HistoryProvider store={store}>
-          <ToastProvider>
-            <MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>
-          </ToastProvider>
-        </HistoryProvider>
+        <SharingProvider>
+          <KeepAwakeProvider env={noWakeLock}>
+            <HistoryProvider store={store}>
+              <ToastProvider>
+                <MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>
+              </ToastProvider>
+            </HistoryProvider>
+          </KeepAwakeProvider>
+        </SharingProvider>
       </IdentityProvider>
     </I18nProvider>,
   );

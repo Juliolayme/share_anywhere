@@ -7,14 +7,13 @@ import { writePref } from '../lib/storage';
 import { parseShareLink } from './ReceiveEntry';
 
 describe('receive (RX-1) code entry', () => {
-  it('validates an incomplete code on blur, supports paste, and shows no join action while sharing is off', async () => {
+  it('validates an incomplete code on blur and on Continue, and supports paste', async () => {
     writePref('welcomed', '1');
     renderApp(<App />, { path: '/receive' });
     const first = await screen.findByLabelText('Digit 1 of 6');
     expect(document.querySelector('[data-screen="receive"]')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Open link' })).toBeNull();
-    expect(screen.queryByText(/Scan the sender/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open link' })).toBeInTheDocument();
     await userEvent.type(first, '4');
     await userEvent.click(document.body);
     expect(screen.getByRole('alert')).toHaveTextContent('Enter all 6 digits.');
@@ -35,7 +34,7 @@ describe('receive (RX-1) code entry', () => {
 });
 
 describe('send (TR-2/TR-3) picker', () => {
-  it('lists picked files with the total and shows no Create action while sharing is off', async () => {
+  it('lists picked files with the total and offers Create with Require approval', async () => {
     writePref('welcomed', '1');
     renderApp(<App />, { path: '/send' });
     const input = await screen.findByTestId('file-input');
@@ -43,7 +42,8 @@ describe('send (TR-2/TR-3) picker', () => {
     await userEvent.upload(input, file);
     expect(screen.getByText('notes.txt')).toBeInTheDocument();
     expect(screen.getByText('1 file')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Create share session/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Create share session/ })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Require approval' })).toHaveAttribute('aria-checked', 'false');
     await userEvent.click(screen.getByRole('button', { name: 'Remove notes.txt' }));
     expect(screen.queryByText('notes.txt')).toBeNull();
   });

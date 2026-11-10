@@ -12,8 +12,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useRef, useState, type DragEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { Banner, Button, Card, Screen } from '../components/ui';
+import { Link, useNavigate } from 'react-router-dom';
+import { Banner, Button, Card, Screen, Switch } from '../components/ui';
+import { useSharing } from '../features/sharing/SharingContext';
+import { useIdentity } from '../lib/identity/identity';
+import { ApiError } from '../lib/api/errors';
+import { formatWait } from '../lib/identity/identity';
 import { useI18n } from '../i18n/i18n';
 import { flags } from '../config/flags';
 import { formatBytes } from '../lib/format';
@@ -69,6 +73,12 @@ function Steps({ current }: { current: 1 | 2 | 3 }) {
 export default function SendPicker() {
   const { t, locale } = useI18n();
   const online = useOnline();
+  const navigate = useNavigate();
+  const { api } = useSharing();
+  const { status } = useIdentity();
+  const [approval, setApproval] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [files, setFiles] = useState<Picked[]>([]);
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,6 +89,26 @@ export default function SendPicker() {
     if (!list) return;
     const next = [...list].map((file) => ({ id: crypto.randomUUID(), file }));
     setFiles((cur) => [...cur, ...next]);
+  };
+  const create = async () => {
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const v = await api.create(
+        files.map(({ file }) => ({ name: file.name, size: file.size, mime: file.type })),
+        approval,
+      );
+      navigate(`/send/session/${v.id}`);
+    } catch (e) {
+      setCreateError(
+        e instanceof ApiError && e.status === 429
+          ? t('product.rate_limited', { time: formatWait(e.retryAfterS ?? 60) })
+          : e instanceof ApiError && e.code === 'too_many_open_sessions'
+            ? e.message
+            : t('product.error_generic'),
+      );
+      setCreating(false);
+    }
   };
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
@@ -176,6 +206,15 @@ export default function SendPicker() {
               );
             })}
           </ul>
+          {createError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 bg-danger-soft px-[18px] py-3 text-caption text-danger-ink"
+            >
+              <CircleAlert aria-hidden size={16} />
+              {createError}
+            </div>
+          )}
           {over && (
             <div
               role="alert"
@@ -190,10 +229,27 @@ export default function SendPicker() {
               {t('web.addmore')}
             </Button>
             {flags.sharing ? (
-              <Button variant="send" size="lg" disabled={over}>
-                {t('web.create')}
-                <ArrowRight aria-hidden size={18} />
-              </Button>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <Switch checked={approval} onChange={setApproval} label={t('web.reqappr')} />
+                  <span>
+                    <b className="text-[14px]">{t('web.reqappr')}</b>
+                    <span className="block text-[12px] text-fg-2">
+                      {t(approval ? 'product.appr_on' : 'product.appr_off')}
+                    </span>
+                  </span>
+                </div>
+                <Button
+                  variant="send"
+                  size="lg"
+                  disabled={over || !online || status.kind !== 'ready'}
+                  busy={creating}
+                  onClick={() => void create()}
+                >
+                  {creating ? t('product.creating') : t('web.create')}
+                  <ArrowRight aria-hidden size={18} />
+                </Button>
+              </div>
             ) : null}
           </div>
         </Card>

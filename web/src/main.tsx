@@ -7,6 +7,8 @@ import { I18nProvider } from './i18n/i18n';
 import { IdentityProvider } from './lib/identity/identity';
 import { HistoryProvider } from './features/history/HistoryContext';
 import { ToastProvider } from './components/Toast';
+import { SharingProvider } from './features/sharing/SharingContext';
+import { KeepAwakeProvider } from './lib/keepAwake/KeepAwakeContext';
 import './index.css';
 
 applyTheme(getThemePreference());
@@ -18,13 +20,17 @@ createRoot(root).render(
   <StrictMode>
     <I18nProvider>
       <IdentityProvider>
-        <HistoryProvider>
-          <ToastProvider>
-            <BrowserRouter>
-              <App />
-            </BrowserRouter>
-          </ToastProvider>
-        </HistoryProvider>
+        <SharingProvider>
+          <KeepAwakeProvider>
+            <HistoryProvider>
+              <ToastProvider>
+                <BrowserRouter>
+                  <App />
+                </BrowserRouter>
+              </ToastProvider>
+            </HistoryProvider>
+          </KeepAwakeProvider>
+        </SharingProvider>
       </IdentityProvider>
     </I18nProvider>
   </StrictMode>,

@@ -4,10 +4,11 @@ import { defineConfig, devices } from '@playwright/test';
 // http://localhost:8080 unless E2E_BASE_URL points elsewhere.
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  // One worker: pairing specs move the test server's clock and toggle protected mode, which are global.
+  workers: 1,
   reporter: process.env.CI
     ? [['list'], ['junit', { outputFile: 'test-results/junit.xml' }], ['html', { open: 'never' }]]
     : 'list',

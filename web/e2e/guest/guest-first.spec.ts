@@ -113,10 +113,10 @@ test('home: a rate-limited bootstrap shows the wait time and a disabled retry', 
   await expect(page.getByRole('heading', { name: 'History', level: 1 })).toBeVisible();
 });
 
-test('receive: code entry validates the six digits on blur and shows no join action yet', async ({ page }) => {
+test('receive: code entry validates the six digits on blur', async ({ page }) => {
   await openAsReturningGuest(page, '/receive');
   await expect(page.locator('[data-screen="receive"]')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Continue|Open link/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeVisible();
   await page.getByRole('textbox', { name: 'Digit 1 of 6' }).fill('4');
   await page.getByRole('textbox', { name: 'Or paste a share link' }).focus();
   await expect(page.getByRole('alert')).toHaveText('Enter all 6 digits.');

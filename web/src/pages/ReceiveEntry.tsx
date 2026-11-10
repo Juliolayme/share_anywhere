@@ -1,9 +1,12 @@
 import { ChevronLeft, CircleAlert, ScanLine } from 'lucide-react';
 import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button, Card } from '../components/ui';
 import { useI18n } from '../i18n/i18n';
 import { flags } from '../config/flags';
+import { useSharing } from '../features/sharing/SharingContext';
+import { joinErrorMessage } from '../features/sharing/errors';
+import { serverOffset } from '../features/sharing/api';
 
 /** Accepts an https link to this app's /j/<token> route with a base64url capability token (≥ 128 bits). */
 export function parseShareLink(raw: string, origin: string = window.location.origin): string | null {
@@ -25,6 +28,9 @@ export function parseShareLink(raw: string, origin: string = window.location.ori
  */
 export default function ReceiveEntry() {
   const { t } = useI18n();
+  const navigate = useNavigate();
+  const { api } = useSharing();
+  const [joining, setJoining] = useState(false);
   const [digits, setDigits] = useState<string[]>(Array(6).fill(''));
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState('');
@@ -55,24 +61,41 @@ export default function ReceiveEntry() {
     if (e.key === 'Backspace' && !digits[i] && i > 0) refs.current[i - 1]?.focus();
     if (e.key === 'ArrowLeft' && i > 0) refs.current[i - 1]?.focus();
     if (e.key === 'ArrowRight' && i < 5) refs.current[i + 1]?.focus();
-    if (e.key === 'Enter') submit();
+    if (e.key === 'Enter') void submit();
   };
   const onPaste = (i: number, e: ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     fill(i, e.clipboardData.getData('text'));
   };
-  const submit = () => {
+  const submit = async () => {
     if (!complete) {
       setError(t('product.code_incomplete'));
       refs.current[digits.findIndex((d) => !d)]?.focus();
+      return;
+    }
+    if (!flags.sharing) return;
+    setJoining(true);
+    try {
+      const preview = await api.resolveCode(digits.join(''));
+      navigate('/join/preview', { state: { preview, offset: serverOffset(preview.server_time) } });
+    } catch (e) {
+      setError(joinErrorMessage(t, e));
+    } finally {
+      setJoining(false);
     }
   };
   const checkLink = () => {
     if (!link.trim()) {
       setLinkError(null);
-      return;
+      return null;
     }
-    setLinkError(parseShareLink(link) !== null ? null : t('product.link_invalid'));
+    const token = parseShareLink(link);
+    setLinkError(token !== null ? null : t('product.link_invalid'));
+    return token;
+  };
+  const openLink = () => {
+    const token = checkLink();
+    if (token) navigate(`/j/${token}`);
   };
   // Validate when focus leaves the code group with some, but not all, digits entered.
   const groupRef = useRef<HTMLDivElement>(null);
@@ -129,8 +152,8 @@ export default function ReceiveEntry() {
           </div>
         )}
         {flags.sharing && (
-          <Button variant="receive" size="lg" onClick={submit}>
-            {t('web.cont')}
+          <Button variant="receive" size="lg" busy={joining} onClick={() => void submit()}>
+            {joining ? t('product.joining') : t('web.cont')}
           </Button>
         )}
       </Card>
@@ -149,14 +172,17 @@ export default function ReceiveEntry() {
             }}
             onBlur={checkLink}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') checkLink();
+              if (e.key === 'Enter') {
+                if (flags.sharing) openLink();
+                else checkLink();
+              }
             }}
             aria-invalid={linkError ? true : undefined}
             aria-describedby={linkError ? 'sa-link-error' : undefined}
             className="h-[44px] min-w-[200px] flex-1 rounded-md border border-border-strong bg-surface px-3 text-[14px] text-fg"
           />
           {flags.sharing && (
-            <Button variant="secondary" onClick={checkLink} disabled={!link.trim()}>
+            <Button variant="secondary" onClick={openLink} disabled={!link.trim()}>
               {t('product.open_link')}
             </Button>
           )}

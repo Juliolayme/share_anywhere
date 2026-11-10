@@ -1,7 +1,8 @@
 import { Trash2, User } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, ConfirmDialog, Segmented, Screen } from '../components/ui';
+import { Button, Card, ConfirmDialog, Segmented, Screen, Switch } from '../components/ui';
+import { useKeepScreenOnSetting } from '../lib/keepAwake/KeepAwakeContext';
 import { useToast } from '../components/Toast';
 import { useI18n, type Locale } from '../i18n/i18n';
 import { useIdentity } from '../lib/identity/identity';
@@ -31,6 +32,7 @@ export default function SettingsPage() {
   const { device } = useIdentity();
   const { refresh, clear, entries, error } = useHistory();
   const theme = useTheme();
+  const [keepOn, setKeepOn] = useKeepScreenOnSetting();
   const [retention, setRetention] = useRetention();
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -87,6 +89,15 @@ export default function SettingsPage() {
                 { value: 'vi', label: t('product.lang_vi') },
               ]}
             />
+          </div>
+        </Section>
+        <Section title={t('web_vv.k58')}>
+          <div className="flex items-center gap-3">
+            <span className="flex-1 text-[14px]">
+              {t('web_xx.wake_set')}
+              <span className="block text-caption text-fg-2">{t('web_xx.wake_set_p')}</span>
+            </span>
+            <Switch checked={keepOn} onChange={setKeepOn} label={t('web_xx.wake_set')} />
           </div>
         </Section>
         <Section title={t('web_vv.k69')}>

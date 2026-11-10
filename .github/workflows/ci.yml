@@ -246,8 +246,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Start CI stack (postgres, backend, web, coturn, caddy)
         run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
-      - name: Install ${{ matrix.browser }}
-        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps ${{ matrix.browser }}
+      - name: Install chromium and ${{ matrix.browser }}
+        # The pairing specs always run the sender in Chromium, whatever the receiver project.
+        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium ${{ matrix.browser }}
       - name: Guest Playwright suite
         env:
           E2E_BASE_URL: http://localhost:8080

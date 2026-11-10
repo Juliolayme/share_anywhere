@@ -45,4 +45,7 @@ func TestProtectedModeTripsAndClears(t *testing.T) {
 		t.Fatal("forced on")
 	}
 	p.Force(nil)
+	if a, _ := p.Active(); a {
+		t.Fatal("returning to automatic must restore the real (inactive) state")
+	}
 }

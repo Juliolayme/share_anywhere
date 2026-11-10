@@ -1,6 +1,6 @@
 # Phase 1 — Backend core, anonymous device identity, guest-first Web shell
 
-Read: `CLAUDE.md` §7, §8b; PRD §2 (guest-first, device identity, history, abuse controls), §4, §5.1, §5.6, §5.7, §5.8, §8.1, §8.4, §8.5, §11.2; `docs/TESTING_AND_CI.md` §3, §4.
+Read: `CLAUDE.md` §7, §8b; PRD §2 (guest-first, device identity, history, abuse controls), §4, §5.1, §5.6, §5.7, §5.8; `docs/SECURITY_MODEL.md` §4, §5, §8; `docs/ARCHITECTURE.md` §1–§3, §8; `docs/API.md` §1, §2.1, §3; `docs/UX_SCREEN_MAP.md` §2, §3, §6–§8; `docs/TESTING_AND_CI.md` §3, §4.
 
 No accounts in this phase. Everything built here must work for a user who never signs in, because that is the default user.
 
@@ -17,7 +17,7 @@ No accounts in this phase. Everything built here must work for a user who never 
   - Devices shows the "This device" card with rename and reset identity.
   - Settings shows the "Guest" identity header (no Sign in button while `accounts` is off), device name, theme system/light/dark, language EN/VI, local history retention and Clear history, privacy, about.
   - Access token in memory; refresh via the `sa_device` cookie and `X-SA-Refresh` header; silent refresh before expiry; 429 handling with `Retry-After` messaging.
-- `docs/ARCHITECTURE.md` first version (request flow, identity and token flow diagram, rate-limit placement); `docs/SECURITY_MODEL.md` first version with the anonymous-use rows of PRD §11.2 that apply to this phase; `docs/API.md` generated from OpenAPI with the access-level column.
+- Keep the planning docs current instead of writing new ones: update `docs/ARCHITECTURE.md` §3 and §8 and `docs/SECURITY_MODEL.md` §4, §5, §8 with what was actually built; make `shared/protocol/openapi.yaml` match `docs/API.md` §2.1 with `x-sa-access` on every operation, and add a `protocol` CI check that the access levels in `openapi.yaml` and `docs/API.md` agree.
 
 ## Out of scope
 Accounts, sign-in screens, share sessions, transfers, clipboard, Android, iOS.
@@ -31,7 +31,7 @@ Accounts, sign-in screens, share sessions, transfers, clipboard, Android, iOS.
 `e2e-web` job added with the five-project matrix and `docker-compose.ci.yml`. `protocol` job validates OpenAPI, checks every operation has `x-sa-access`, and checks generated clients are current.
 
 ## Exit gate
-All `ci.yml` jobs green; the guest Playwright suite green on all five projects; backend coverage ≥ 70 % for `devices` and the platform middleware; `docs/API.md` matches `openapi.yaml`; no account code or sign-in UI exists yet.
+All `ci.yml` jobs green; the guest Playwright suite green on all five projects; backend coverage ≥ 70 % for `devices` and the platform middleware; `openapi.yaml` and `docs/API.md` agree on every endpoint and access level; no account code or sign-in UI exists yet.
 
 ## Report
 Per `CLAUDE.md` §9, listing per browser project which guest flows ran.

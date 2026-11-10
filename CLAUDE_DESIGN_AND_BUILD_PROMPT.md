@@ -1,6 +1,6 @@
-# Share Anywhere — Master Design & Build Prompt for Claude (v3)
+# Share Anywhere — Master Design & Build Prompt for Claude (v4)
 
-> **Purpose:** Entry point for Claude Code sessions working on Share Anywhere. Version 1 of this file was a single 1,200-line brief covering every phase at once. Version 2 splits it into standing rules, product requirements, a testing/CI strategy, and one executable file per phase, and reorders the phases so that everything verifiable on GitHub Actions comes first. Version 3 makes file sharing **guest-first**: no account is needed to send or receive, and only Clipboard Sync and other account-wide features require signing in.
+> **Purpose:** Entry point for Claude Code sessions working on Share Anywhere. Version 1 of this file was a single 1,200-line brief covering every phase at once. Version 2 splits it into standing rules, product requirements, a testing/CI strategy, and one executable file per phase, and reorders the phases so that everything verifiable on GitHub Actions comes first. Version 3 makes file sharing **guest-first**: no account is needed to send or receive, and only Clipboard Sync and other account-wide features require signing in. Version 4 makes joining **open by default** (Require approval becomes an opt-in), keeps the screen on during transfers, and moves architecture, screen map, security model, and API into their own documents.
 >
 > **Product:** Share Anywhere — cross-platform peer-to-peer file sharing and clipboard synchronization.
 > **Repository:** https://github.com/Juliolayme/share_anywhere
@@ -29,7 +29,11 @@ Claude then reads the referenced sections of `docs/PRODUCT_REQUIREMENTS.md` and 
 | File | Role | Changes between sessions? |
 |---|---|---|
 | `CLAUDE.md` | Standing rules: role, mandatory rules, definition of done, toolchain pins, repo layout, security non-negotiables, CI expectations, report format | Rarely |
-| `docs/PRODUCT_REQUIREMENTS.md` | What to build: decisions, brand, IA, screens, transfer and clipboard behavior, domain model, API, security, acceptance matrix | Only via an ADR |
+| `docs/PRODUCT_REQUIREMENTS.md` | What to build: decisions, brand, IA, screen behavior rules, transfer and clipboard behavior, acceptance matrix | Only via an ADR |
+| `docs/ARCHITECTURE.md` | Components, identity and join flows, state machines, routes and TURN, keep-screen-on lifecycle, server data model | Updated by phases |
+| `docs/UX_SCREEN_MAP.md` | Every screen with destination, Guest vs Signed in content, primary action, platform differences | Updated by phases |
+| `docs/SECURITY_MODEL.md` | Join modes, tokens, rate limits, lifetimes, threat model, privacy | Extended by Phases 1, 2, 5, 8; reviewed in 9 |
+| `docs/API.md` | Endpoints, access levels, errors, WebSocket events; kept in agreement with `openapi.yaml` | Updated by phases |
 | `docs/TESTING_AND_CI.md` | GitHub Actions workflows, platform emulation (Playwright desktop + Pixel 7 + iPhone 14 WebKit profiles, Android emulator with KVM), test conventions, fixtures | Grows with phases |
 | `docs/phases/README.md` | Phase order and exit gates | Rarely |
 | `docs/phases/PHASE_0…9_*.md` | Scope, deliverables, tests, CI changes, exit gate for each phase | One file per phase |
@@ -42,7 +46,7 @@ Claude then reads the referenced sections of `docs/PRODUCT_REQUIREMENTS.md` and 
 |---|---|---|
 | 0 | Foundation, design system, brand, CI skeleton | CI jobs on docs and empty projects |
 | 1 | Backend core, anonymous device identity, guest-first Web shell | 5 Playwright projects, guest only |
-| 2 | Share sessions, pairing, approval, signaling: **first vertical slice, no account** | Web ↔ Web guests, mobile browser profiles for join page |
+| 2 | Share sessions, open join, signaling: **first vertical slice, no account** | Web ↔ Web guests, mobile browser profiles for join page |
 | 3 | Web ↔ Web P2P file transfer | Chromium, Firefox, WebKit desktop; Pixel 7 and iPhone 14 profiles |
 | 4 | Multi-receiver, reconnect, resume hardening | Web, nightly five-receiver run |
 | 5 | Accounts (5A) and Clipboard Sync v1 (5B) | Web; guest blocked from clipboard; granted and denied permission paths |
@@ -66,7 +70,7 @@ The reasoning for this order: a cloud CI environment can run Go, Node, five emul
 | Android foreground-service time limits on Android 15 not mentioned | PRD §2: `dataSync` budget handling with checkpoint/notify/resume; `JobScheduler` user-initiated transfer evaluated in Phase 6 |
 | No toolchain or Android SDK pins | `CLAUDE.md` §5: Node 22, pnpm, JDK 17, minSdk 26 / targetSdk 35, PostgreSQL 16, Caddy, Tailwind only |
 | PostgreSQL sequence ordering caveat raised without a solution | PRD §7.4: per-user advisory lock assigns `seq` so cursors are safe |
-| TURN credential handling vague | PRD §6.7: coturn `use-auth-secret` HMAC credentials for approved participants only; 30 min TTL and tighter limits for guests, 60 min for accounts |
+| TURN credential handling vague | `docs/ARCHITECTURE.md` §6: coturn `use-auth-secret` HMAC credentials for joined participants only; 30 min TTL and tighter limits for guests, 60 min for accounts |
 | No CI definition; testing described as a wish list | `docs/TESTING_AND_CI.md`: `ci.yml`, `nightly.yml`, reusable Android emulator workflow, path filters, required checks per phase, fixtures, reporting |
 | No iOS coverage statement | Native iOS app added as Phase 7 (SwiftUI, iOS 16+, verified on iOS Simulator in CI); Web app additionally verified on WebKit with an iPhone 14 profile for users without the app |
 | `backend/tests/` tree against Go conventions | Tests live beside code; integration tests tagged |
@@ -78,19 +82,31 @@ The reasoning for this order: a cloud CI environment can run Go, Node, five emul
 |---|---|---|---|
 | Who can send and receive | Accounts send; guests receive only | Everyone, no account | PRD §2, §5.3, §5.4 |
 | First launch | Welcome, sign-in, device registration, checklist | Welcome → **Get started** → Transfer home | PRD §5.1, §4 |
-| Identity | Cookie session (Web) or bearer token (Android) after sign-in | Anonymous server-signed device token for everyone; account adds an `acct` claim | PRD §8.1, `CLAUDE.md` §7 |
+| Identity | Cookie session (Web) or bearer token (Android) after sign-in | Anonymous server-signed device token for everyone; account adds an `acct` claim | `docs/SECURITY_MODEL.md` §4, `CLAUDE.md` §7 |
 | Account-only features | Everything except receiving | Clipboard Sync, account Devices list, cloud history, Cloud as sender | PRD §2 |
 | Clipboard tab for guests | Not reachable | Intro screen with Sign in / Create account; no clipboard access | PRD §5.9 |
 | History | Server-side per account | Local on device; optional encrypted cloud sync when signed in | PRD §2, §5.6 |
 | Settings for guests | n/a | "Guest" header with Sign in | PRD §5.8 |
 | Signing in | Gate before use | Optional; keeps the transfer running; choose to add the device and copy history | PRD §2 |
 | Signing out | Ends session | Removes device from account, issues a new anonymous identity | PRD §2 |
-| Database | `user_id` on sessions | `owner_device_id` required, `owner_user_id` nullable | PRD §8.2 |
-| API | Mostly authenticated | Five access levels declared per route in OpenAPI | PRD §8.5 |
-| Abuse controls | Login and code limits | IP + device limits on device creation, sessions, code lookup, joins, TURN, WebSocket; proof-of-work; TTLs | PRD §8.3, §8.4 |
+| Database | `user_id` on sessions | `owner_device_id` required, `owner_user_id` nullable | `docs/ARCHITECTURE.md` §8 |
+| API | Mostly authenticated | Five access levels declared per route in OpenAPI | `docs/API.md` |
+| Abuse controls | Login and code limits | IP + device limits on device creation, sessions, code lookup, joins, TURN, WebSocket; proof-of-work; TTLs | `docs/SECURITY_MODEL.md` §5, §6 |
 | Cloud Distribution | Consent only | Also requires a signed-in sender; guest receivers allowed | PRD §2, §6.6 |
-| Threat model | Generic | Anonymous-use abuse cases with mitigations and residual risk | PRD §11.2 |
+| Threat model | Generic | Anonymous-use abuse cases with mitigations and residual risk | `docs/SECURITY_MODEL.md` §7 |
 | Phase order | Accounts in Phase 1 | Accounts in Phase 5A, right before Clipboard; Phases 1–4 need no account | `docs/phases/README.md` |
+
+## v4 change: open join, keep screen on, split documents
+
+| Area | Before (v3) | Now (v4) | Where |
+|---|---|---|---|
+| Joining | Sender approves every receiver | Valid code, link, or QR joins immediately; **Require approval** is optional, default off; sender can Remove, Block, Stop accepting at any time | PRD §2, §5.3, §5.4; `docs/SECURITY_MODEL.md` §3 |
+| Six-digit code | Lookup key only | Short-lived access secret in open-join sessions: 5-min rotation, dies when full or not accepting, IP and device lockouts | `docs/SECURITY_MODEL.md` §3, §5 |
+| Guessing defense | Per-IP limits | Plus global **protected mode** forcing approval for code joins when guessing spikes; residual risk documented | `docs/SECURITY_MODEL.md` §3.1, §3.2 |
+| Block | Same device only | Device ID and IP /64 for the session | `docs/SECURITY_MODEL.md` §3.1 |
+| Participant states | `REQUESTED`, `APPROVED`, … | `REQUESTED` only when approval applies; `JOINED` grants access | `docs/ARCHITECTURE.md` §4.5 |
+| Screen during transfers | Not specified | Kept on while sending, receiving, or waiting: iOS idle timer, Web Wake Lock with re-request and fallback reminder, Android keep-screen-on flag plus foreground service; auto-release; setting default on; status row | PRD §2, §5.10; `docs/ARCHITECTURE.md` §7 |
+| Document layout | Architecture, API matrix, threat model inside the PRD | Separate `ARCHITECTURE.md`, `UX_SCREEN_MAP.md`, `SECURITY_MODEL.md`, `API.md`; PRD points to them | Document map above |
 
 ## Backlog outside current scope
 

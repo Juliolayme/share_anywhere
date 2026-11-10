@@ -6,7 +6,9 @@ This file is loaded into every Claude Code session in this repository. It holds 
 1. This file.
 2. `docs/phases/README.md` to find the current phase and its exit gate.
 3. The phase file you were asked to execute.
-4. Only the sections of `docs/PRODUCT_REQUIREMENTS.md` that the phase references.
+4. Only the sections of `docs/PRODUCT_REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/UX_SCREEN_MAP.md`, `docs/SECURITY_MODEL.md`, and `docs/API.md` that the phase references.
+
+Each fact lives in one document. Product decisions: PRD. Components, flows, data model, keep-screen-on lifecycle: ARCHITECTURE. Screens: UX_SCREEN_MAP. Join modes, tokens, lifetimes, rate limits, threat model: SECURITY_MODEL. Endpoints and access levels: API. When you change one, update the owner document and keep the others pointing to it.
 
 Never execute more than the phase you were given. Finishing a phase early is good; starting the next one unasked is not.
 
@@ -14,7 +16,7 @@ Never execute more than the phase you were given. Finishing a phase early is goo
 
 ## 1. Product in one paragraph
 
-Share Anywhere is a cross-platform peer-to-peer file sharing and clipboard synchronization product. Platforms in scope: **Android (native Kotlin)**, **iOS (native Swift/SwiftUI)**, and **Web (React + TypeScript) for PC and mobile browsers**. The backend is a **Go modular monolith** with **PostgreSQL**, **WebSocket** signaling, **WebRTC DataChannel** transport, and **coturn** for TURN relay. A Share Session has one sender and up to **five** receivers, each approved explicitly by the sender. **File sharing is guest-first:** sending and receiving never require an account; every installation gets an anonymous, server-signed device identity. **Only Clipboard Sync, the account-wide Devices list, cloud-synced history, and Cloud Distribution as a sender require signing in.** Clipboard Sync is text-only in v1 and end-to-end encrypted. There is **no desktop agent** in scope; PC users are served by the Web app. Mobile browsers remain supported as the join path for people without the apps installed.
+Share Anywhere is a cross-platform peer-to-peer file sharing and clipboard synchronization product. Platforms in scope: **Android (native Kotlin)**, **iOS (native Swift/SwiftUI)**, and **Web (React + TypeScript) for PC and mobile browsers**. The backend is a **Go modular monolith** with **PostgreSQL**, **WebSocket** signaling, **WebRTC DataChannel** transport, and **coturn** for TURN relay. A Share Session has one sender and up to **five** receivers. **Joining is open by default:** a valid six-digit code, link, or QR admits the receiver immediately; **Require approval** is an optional per-session setting (default off), and the sender can always Remove or Block a receiver. **File sharing is guest-first:** sending and receiving never require an account; every installation gets an anonymous, server-signed device identity. **Only Clipboard Sync, the account-wide Devices list, cloud-synced history, and Cloud Distribution as a sender require signing in.** Clipboard Sync is text-only in v1 and end-to-end encrypted. There is **no desktop agent** in scope; PC users are served by the Web app. Mobile browsers remain supported as the join path for people without the apps installed. While sending, receiving, or waiting for receivers, every client keeps the screen on unless the user turns that off.
 
 ## 2. Your role
 
@@ -40,6 +42,7 @@ Act as principal product designer, staff full-stack engineer, Android engineer, 
 ## 4. Definition of done (per feature)
 
 - UX states implemented: loading, empty, populated, error, offline, permission-denied, success, partial.
+- Any screen that sends, receives, or waits for a peer drives the keep-screen-on controller and shows its status row (`docs/ARCHITECTURE.md` §7).
 - Happy path works end-to-end on at least one tested platform.
 - API and data model documented (OpenAPI for REST, `shared/protocol/websocket-events.json` for WS).
 - Automated tests cover the critical logic and run in CI.
@@ -76,8 +79,8 @@ share_anywhere/
 │   ├── TESTING_AND_CI.md
 │   ├── phases/                    # PHASE_0 … PHASE_9, README.md
 │   ├── ADR/
-│   ├── ARCHITECTURE.md, SECURITY_MODEL.md, TRANSFER_PROTOCOL.md,
-│   │   CLIPBOARD_PROTOCOL.md, DESIGN_SYSTEM.md, UX_SCREEN_MAP.md, API.md   # produced by phases
+│   ├── ARCHITECTURE.md, UX_SCREEN_MAP.md, SECURITY_MODEL.md, API.md   # exist from planning; phases keep them current
+│   ├── TRANSFER_PROTOCOL.md, CLIPBOARD_PROTOCOL.md, DESIGN_SYSTEM.md   # produced by phases
 │   └── runbooks/
 ├── backend/
 │   ├── cmd/server/
@@ -104,18 +107,18 @@ Eight backend packages is the ceiling for MVP. Route selection, ETA, and fallbac
 ## 7. Security non-negotiables
 
 - **File sharing never requires an account.** Do not add sign-in gates, account checks, or "create an account to continue" prompts to any Transfer flow, onboarding, History, or Settings. Account-only features are exactly: Clipboard Sync, the account-wide Devices list, cloud history sync, and Cloud Distribution as a sender (PRD §2). Changing this needs an ADR.
-- Every client request carries a server-signed **device access token** (JWT, EdDSA/Ed25519 only, 15-minute TTL). Guests have one too; an account session only adds the `acct` claim. Refresh secrets rotate on every use with reuse detection (PRD §8.1).
-- Every route declares an access level (`public`, `device`, `participant`, `account`, `account+device`) in OpenAPI `x-sa-access`, and a test asserts the backend enforces it (PRD §8.5).
-- Rate limits keyed by IP **and** device protect device creation, session creation, code lookup, join requests, TURN credentials, and WebSockets (PRD §8.4). Never remove a limit to make a test pass; inject a test clock or test config instead.
+- Every client request carries a server-signed **device access token** (JWT, EdDSA/Ed25519 only, 15-minute TTL). Guests have one too; an account session only adds the `acct` claim. Refresh secrets rotate on every use with reuse detection (`docs/SECURITY_MODEL.md` §4).
+- Every route declares an access level (`public`, `device`, `participant`, `account`, `account+device`) in OpenAPI `x-sa-access` matching `docs/API.md`, and a test asserts the backend enforces it.
+- Rate limits keyed by IP **and** device protect device creation, session creation, code lookup and failed lookups, joins, TURN credentials, and WebSockets (`docs/SECURITY_MODEL.md` §5). Never remove a limit to make a test pass; inject a test clock or test config instead.
 - Server authorizes every resource access. Never trust client-supplied `user_id` or `device_id`; identities come only from the verified token.
-- Six-digit code is a lookup key, never an authorization secret. Share links and QR payloads carry a high-entropy, short-lived, revocable capability token.
-- Receivers, guest or signed in, get no file metadata beyond the join preview and no transfer access before sender approval. Both sides see the same verification words.
+- **Open join is the default, so the six-digit code admits people and must be treated as a short-lived secret:** 5-minute rotation, invalid once the session is full or not accepting, per-IP and per-device failed-lookup lockouts, and a global protected mode that forces approval for code joins when guessing spikes (`docs/SECURITY_MODEL.md` §3). Never lengthen the code lifetime or loosen these limits without an ADR. Share links and QR payloads carry a high-entropy (≥ 128-bit), short-lived, revocable capability token.
+- Receivers get file metadata beyond the join preview, signaling, TURN, and transfer access only once `JOINED` (immediately with open join, after approval when approval is required or protected mode applies). Both sides see the same verification words. Remove and Block revoke access at once; Block also covers the IP /64 for the session.
 - Max five receivers is enforced atomically in the database (row lock or constraint), never by client count.
 - WebSocket upgrade requires a one-time ticket (`POST /v1/ws/ticket`, 30 s) and checks `Origin` before joining any room.
 - API calls use the bearer access token on all clients. The Web keeps the refresh secret only in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to the refresh endpoint and requires a custom header on refresh; access tokens live in memory, never in localStorage. Android keeps the refresh secret in Keystore-backed storage, iOS in the Keychain (`ThisDeviceOnly`).
 - Clipboard content is encrypted client-side (AES-256-GCM, unique nonce, versioned keys). The server stores ciphertext and never logs payloads.
-- TURN credentials are HMAC time-limited (coturn `use-auth-secret`), TTL 30 min for guest devices and 60 min for account devices, issued only to the sender and approved receivers of an active session.
-- Cloud Distribution uploads require a signed-in sender; guest receivers may download from sessions they were approved into.
+- TURN credentials are HMAC time-limited (coturn `use-auth-secret`), TTL 30 min for guest devices and 60 min for account devices, issued only to the sender and joined receivers of an active session.
+- Cloud Distribution uploads require a signed-in sender; guest receivers may download from sessions they joined.
 - Parameterized SQL only. Validate all inputs. CSP and safe headers on Web.
 - Logs redact tokens, emails, and personal data.
 

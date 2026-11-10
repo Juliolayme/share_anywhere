@@ -1,9 +1,9 @@
 # Phase 9 — Hardening and release readiness
 
-Read: PRD §10, §11, §12, §13; `docs/TESTING_AND_CI.md`.
+Read: PRD §10, §11, §12, §13; `docs/SECURITY_MODEL.md` (all); `docs/API.md` §1; `docs/TESTING_AND_CI.md`.
 
 ## Scope
-- Security review against `docs/SECURITY_MODEL.md`, including every anonymous-use abuse case in PRD §11.2: IDOR sweep, access-level sweep (guest token against every `account`/`account+device` route), rate-limit soak test with a Go load generator (CGNAT-like shared IP with many devices, Sybil device creation, code enumeration), token lifetimes, WS origin, CSP report-only → enforce, dependency and image scanning results triaged, secrets scanning history check.
+- Security review against `docs/SECURITY_MODEL.md`, including every abuse case in its threat model and the open-join residual risk in §3.2: IDOR sweep, access-level sweep (guest token against every `account`/`account+device` route), rate-limit soak test with a Go load generator (CGNAT-like shared IP with many devices, Sybil device creation, distributed code guessing against open-join sessions with measurement of hit rate before protected mode trips, and tuning of `CODE_GUESS_ALARM_PER_MIN`), keep-screen-on battery review (lock never held after transfers end, across all three clients), token lifetimes, WS origin, CSP report-only → enforce, dependency and image scanning results triaged, secrets scanning history check.
 - Accessibility pass: axe-core in Playwright for every route and project, keyboard-only walkthrough spec, TalkBack review on emulator with Accessibility Scanner; VoiceOver audit on simulator with the Accessibility Inspector and an XCUITest `performAccessibilityAudit()` pass per screen.
 - Responsive and browser pass: visual snapshots for all five projects, light/dark, EN/VI.
 - Android lifecycle pass: process death during transfer restores from bitmap; permission revoked mid-transfer; storage full.

@@ -1,6 +1,6 @@
 # Phase 5 — Accounts and Clipboard Sync v1 (Web, protocol, crypto)
 
-Read: `CLAUDE.md` §7, §8b; PRD §2 (account-only features, authentication, signing in, signing out, history, account key bootstrap), §5.1b, §5.6–§5.9, §7, §8.1, §8.2, §8.4, §8.5, §11, §13 (Guest-first, Clipboard); `docs/TESTING_AND_CI.md` §3, §4.
+Read: `CLAUDE.md` §7, §8b; PRD §2 (account-only features, authentication, signing in, signing out, history, account key bootstrap), §5.1b, §5.6–§5.9, §7, §11; `docs/SECURITY_MODEL.md` §4, §5, §7; `docs/ARCHITECTURE.md` §3.3, §8; `docs/API.md` §2.4, §2.5; `docs/UX_SCREEN_MAP.md` §7–§10; §13 (Guest-first, Clipboard); `docs/TESTING_AND_CI.md` §3, §4.
 
 Accounts are introduced here, after the full guest file-sharing experience exists, because only account-only features need them. Run as two milestones, each with its own exit gate and report (`PHASE_5A_REPORT.md`, `PHASE_5B_REPORT.md`). 5B starts when 5A is green. Android (Phase 6) and iOS (Phase 7) build their account and clipboard UIs on the contracts frozen here.
 
@@ -14,7 +14,7 @@ Accounts are introduced here, after the full guest file-sharing experience exist
 - Account Data Key (PRD §7.5) in `web/src/lib/crypto/`: ADK generation at sign-up, HKDF subkeys, non-extractable WebCrypto storage in IndexedDB, 12-word recovery phrase (BIP-39 wordlist, Argon2id via WASM), device pairing by QR (camera via `BarcodeDetector` where available) or pasted pairing code, key rotation on revoke.
 - Cloud history sync: encrypted `history_entries` with per-user `seq`, Settings toggle, merge into the local History view, import of local history when the user chose "Copy this device's transfer history".
 - Web UI: `/signin`, `/signup`, `/reset` with `returnTo`; header identity chip with Sign in; Settings Guest header gains Sign in and Create account; account sections in Settings (history sync, manage devices; Cloud remains for Phase 8); Devices guest intro with Sign in, account device list, "Add this device"; History banner with Sign in / Turn on history sync; sign-out confirmation with keep/clear local history. Turn on the `accounts` flag.
-- `docs/SECURITY_MODEL.md` extended: account takeover, refresh-secret theft, guest-to-account linkability, history encryption.
+- Update `docs/SECURITY_MODEL.md` (account takeover, refresh-secret theft, guest-to-account linkability, history encryption), `docs/ARCHITECTURE.md` §3.3 and §8, and `docs/API.md` §2.4 with what was built; keep `openapi.yaml` in agreement.
 
 ### Tests to add
 - Backend: Argon2id parameters; sign-up/sign-in/sign-out; sign-in keeps the device ID; `dl` false when "add device" is off and account session expires in 24 h; sign-out returns a new device ID and revokes the old account session; every `account` and `account+device` route returns `403 account_required` for guest tokens and `403 device_not_added` for not-added devices (table-driven over the OpenAPI access levels); history `seq` ordering under 50 parallel inserts; revoked device cannot read new history; rate limits for sign-in, sign-up, reset.

@@ -1,6 +1,6 @@
-# Share Anywhere — Master Design & Build Prompt for Claude (v4)
+# Share Anywhere — Master Design & Build Prompt for Claude (v5)
 
-> **Purpose:** Entry point for Claude Code sessions working on Share Anywhere. Version 1 of this file was a single 1,200-line brief covering every phase at once. Version 2 splits it into standing rules, product requirements, a testing/CI strategy, and one executable file per phase, and reorders the phases so that everything verifiable on GitHub Actions comes first. Version 3 makes file sharing **guest-first**: no account is needed to send or receive, and only Clipboard Sync and other account-wide features require signing in. Version 4 makes joining **open by default** (Require approval becomes an opt-in), keeps the screen on during transfers, and moves architecture, screen map, security model, and API into their own documents.
+> **Purpose:** Entry point for Claude Code sessions working on Share Anywhere. Version 1 of this file was a single 1,200-line brief covering every phase at once. Version 2 splits it into standing rules, product requirements, a testing/CI strategy, and one executable file per phase, and reorders the phases so that everything verifiable on GitHub Actions comes first. Version 3 makes file sharing **guest-first**: no account is needed to send or receive, and only Clipboard Sync and other account-wide features require signing in. Version 4 makes joining **open by default** (Require approval becomes an opt-in), keeps the screen on during transfers, and moves architecture, screen map, security model, and API into their own documents. Version 5 replaces code rotation with a 10-minute join window renewed by the sender.
 >
 > **Product:** Share Anywhere — cross-platform peer-to-peer file sharing and clipboard synchronization.
 > **Repository:** https://github.com/Juliolayme/share_anywhere
@@ -101,12 +101,23 @@ The reasoning for this order: a cloud CI environment can run Go, Node, five emul
 | Area | Before (v3) | Now (v4) | Where |
 |---|---|---|---|
 | Joining | Sender approves every receiver | Valid code, link, or QR joins immediately; **Require approval** is optional, default off; sender can Remove, Block, Stop accepting at any time | PRD §2, §5.3, §5.4; `docs/SECURITY_MODEL.md` §3 |
-| Six-digit code | Lookup key only | Short-lived access secret in open-join sessions: 5-min rotation, dies when full or not accepting, IP and device lockouts | `docs/SECURITY_MODEL.md` §3, §5 |
+| Six-digit code | Lookup key only | Short-lived access secret in open-join sessions: 10-min join window shared with link and QR, renewed by Create new code, ends when full or not accepting, IP and device lockouts (window revised in v5) | `docs/SECURITY_MODEL.md` §3, §5 |
 | Guessing defense | Per-IP limits | Plus global **protected mode** forcing approval for code joins when guessing spikes; residual risk documented | `docs/SECURITY_MODEL.md` §3.1, §3.2 |
 | Block | Same device only | Device ID and IP /64 for the session | `docs/SECURITY_MODEL.md` §3.1 |
 | Participant states | `REQUESTED`, `APPROVED`, … | `REQUESTED` only when approval applies; `JOINED` grants access | `docs/ARCHITECTURE.md` §4.5 |
 | Screen during transfers | Not specified | Kept on while sending, receiving, or waiting: iOS idle timer, Web Wake Lock with re-request and fallback reminder, Android keep-screen-on flag plus foreground service; auto-release; setting default on; status row | PRD §2, §5.10; `docs/ARCHITECTURE.md` §7 |
 | Document layout | Architecture, API matrix, threat model inside the PRD | Separate `ARCHITECTURE.md`, `UX_SCREEN_MAP.md`, `SECURITY_MODEL.md`, `API.md`; PRD points to them | Document map above |
+
+## v5 change: 10-minute join window
+
+| Area | Before (v4) | Now (v5) | Where |
+|---|---|---|---|
+| Code lifetime | Code rotated every 5 min while the session accepted receivers; link and QR lasted 15 min; waiting sessions expired after 30 min | Code, link, and QR share one join window of at most 10 min; afterwards nobody can join until the sender taps **Create new code** for a fresh 10 min with a new code; no 30-min waiting expiry | `docs/SECURITY_MODEL.md` §3.0, §6 |
+| Joined receivers | — | Unaffected by the window; the session follows its 24 h guest / 72 h signed-in lifetime | `docs/SECURITY_MODEL.md` §3.0 |
+| Session screen | Rotation countdown | Countdown from 10:00, then "Code expired — Create new code" ("Mã đã hết hạn — Tạo mã mới"); "Session full" when 5 are in | `docs/UX_SCREEN_MAP.md` TR-4, PRD §5.3 |
+| Guessing risk | Exposure lasted as long as the session accepted receivers | At most 0.3 % per session per 10-min window at the protected-mode ceiling; recalculated model | `docs/SECURITY_MODEL.md` §3.2 |
+| API | `renew` rotated the link | `renew` = Create new code; `join_window_ends_at`, `server_time`, `410 join_window_expired` | `docs/API.md` §2.2, §3 |
+| Keep screen on while waiting | Up to the 30-min waiting expiry | Only while the join window is open, at most 10 min per window | `docs/ARCHITECTURE.md` §7.1 |
 
 ## Backlog outside current scope
 

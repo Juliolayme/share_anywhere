@@ -41,24 +41,45 @@ Every Share Session has a `require_approval` setting.
 | Who gets in | Anyone holding a valid code, link, or QR, up to 5 receivers | Same, but each receiver waits until the sender approves |
 | Receiver state on join | `JOINED` immediately; transfer starts | `REQUESTED` → `JOINED` on approval |
 | What the code is | A short-lived **access secret** | A lookup key; approval is the authorization |
-| Sender controls | Remove, Block, Stop accepting, turn on Require approval, Close | Approve, Reject, Block, Remove, Stop accepting, Close |
+| Sender controls | Remove, Block, Stop accepting, Create new code, turn on Require approval, Close | Approve, Reject, Block, Remove, Stop accepting, Create new code, Close |
 | Recommended for | Sharing with people in the same room or on a call | Sensitive files, sharing a code in a public place |
 
 The sender can turn Require approval on or off at any time during the session. The change applies to future joins only; people already joined stay joined.
 
+### 3.0 Join window
+- The six-digit code, the share link, and the QR code are issued together and share one **join window of at most 10 minutes**. Inside the window, a valid code, link, or QR lets a receiver join. When the window ends, nobody else can join with them.
+- The window ends at whichever comes first: 10 minutes after it opened; the fifth receiver joining (or being requested, when approval applies); or the sender tapping **Stop accepting**.
+- **Create new code** (renew) issues a brand-new code, link token, and QR, opens a fresh 10-minute window, and immediately invalidates the previous code, link, and QR. It works whether the old window is still open or has ended, and it is unavailable while 5 receivers are in the session.
+- The window controls **only joining**. Receivers who already joined keep transferring normally after it ends; the session itself follows its own lifetime (24 h guest sender, 72 h signed-in sender, §6).
+- Requests made inside the window when approval applies stay approvable after it ends.
+- A join ticket from a code or link lookup can never outlive the window: a receiver who resolved the code at 9:58 must tap Receive before 10:00.
+
 ### 3.1 Protections that make open join acceptable
-- **Short code lifetime:** the six-digit code rotates every 5 minutes and is accepted only while the session is accepting receivers and has a free slot. Once 5 receivers have joined, or the sender taps Stop accepting, the code stops working.
+- **Short join window:** at most 10 minutes per code, link, and QR, ending early when the session is full or the sender stops accepting (§3.0). There is no rotation inside the window and no automatic extension; only the sender can open a new window.
+- **Bounded exposure:** a session's code exists only while its window is open, so exposure is 10 minutes per window regardless of how long the session lasts. The previous design rotated the code every 5 minutes but kept *some* valid code for as long as the session accepted receivers, which could be hours.
 - **Lockout on guessing:** per-IP and per-device failed-lookup limits with 30-minute lockouts (§5).
 - **Protected mode (global circuit breaker):** when failed code lookups across the whole service exceed `CODE_GUESS_ALARM_PER_MIN` (default 300), the service enters protected mode for 30 minutes. In protected mode, every join **made with a six-digit code** lands in `REQUESTED` and needs the sender's approval, even in open-join sessions. Joins through a link or QR are unaffected because their token is high-entropy. Both sides see why ("Extra check: the sender needs to let you in").
 - **Five-receiver cap**, enforced atomically in the database.
 - **Verification words:** two words derived from the session and the receiver device (2048-word list, about 22 bits) appear next to each receiver on the sender's list and on the receiver's screen, so the sender can spot an unexpected device and remove it.
 - **Visible joins:** every join shows a toast on the sender's screen and, when the sender's app is in the background, a local notification ("Calm Otter joined and is receiving your files").
 - **Block:** removes the receiver, revokes its capabilities, and refuses rejoin from that device ID and from its IP /64 for the rest of the session.
-- **Link and QR tokens** carry at least 128 bits of entropy, are hashed at rest, expire after 15 minutes (renewable by the sender), and are revocable.
+- **Link and QR tokens** carry at least 128 bits of entropy, are hashed at rest, expire with the join window (at most 10 minutes), and are replaced by Create new code.
 - **Nudges:** after the first join the sender sees "Everyone here? Stop accepting new receivers". The Send review screen shows a hint to turn on Require approval for sensitive files.
 
 ### 3.2 Residual risk of open join
-A distributed attacker with many IP addresses can still guess a live code before protected mode trips. With 1,000 live open sessions, each guess has about a 0.1 % chance of hitting one. A successful guess admits the attacker as a receiver, and files may start flowing before the sender notices and removes them. This is the accepted trade-off for zero-friction sharing; the mitigation for sensitive content is Require approval or sharing by link/QR only. Phase 9 measures the real guess rate under the soak test and tunes the limits.
+A distributed attacker with many IP addresses can still guess a live code before protected mode trips. A successful guess admits the attacker as a receiver, and files may start flowing before the sender notices and removes them. This is the accepted trade-off for zero-friction sharing; the mitigation for sensitive content is Require approval or sharing by link/QR only.
+
+**Model.** The code space has 10^6 values and an attacker never repeats a guess. `N` is the number of join windows open at a moment. Guessing faster than `CODE_GUESS_ALARM_PER_MIN` (default 300 failed lookups per minute, service-wide) turns on protected mode, after which code joins wait for the sender and a correct guess no longer admits anyone. Per-IP limits allow at most about 10 failed guesses per hour per address (§5), so guessing at the ceiling of 300 per minute needs about 1,800 IP addresses. The alarm also counts honest typos, so the real headroom is smaller than these figures.
+
+| Question | Formula | Default values | Result |
+|---|---|---|---|
+| Chance one guess hits any open window | `N / 10^6` | `N` = 1,000 | 0.1 % |
+| Guesses an attacker can make during one 10-minute window without tripping protected mode | `300 × 10` | | 3,000 |
+| Chance a **specific** session's code is guessed during one window | `3,000 / 10^6` | | ≤ 0.3 % per window; each Create new code adds up to another 0.3 % |
+| Expected successful guesses across the service at the alarm ceiling | `300 × N / 10^6` per minute | `N` = 1,000 (about 100 new sessions per minute) | about 0.3 per minute, about 18 per hour |
+| Same, for an attacker with one IP address | `≈ 10 guesses per hour` | | about 1.7 guesses per window; ≤ 0.0002 % per session per window |
+
+Compared with the previous rotation design, the per-guess chance is the same for the same `N`, but each session's exposure is now capped at 10 minutes per window instead of lasting as long as the session accepted receivers, and `N` itself is smaller because codes no longer stay alive during long sessions. Phase 9 measures the real guess rate under the soak test and tunes `CODE_GUESS_ALARM_PER_MIN` and the per-IP limits.
 
 ## 4. Identity and tokens
 Implemented in Phase 1 (device identity) and Phase 5A (accounts). Flow diagrams in `docs/ARCHITECTURE.md` §3.
@@ -85,6 +106,7 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 | Session creation | Device: 10 / hour; IP: 30 / hour |
 | Concurrent open sessions | Guest device: 2; signed-in device: 5 |
 | Code lookup | IP: 10 / min; device: 5 / min |
+| Create new code | Device: 20 / hour |
 | Failed code lookups | IP: 10 / hour → 30-min lockout; device: 5 / 10 min → 30-min lockout; global: protected mode above `CODE_GUESS_ALARM_PER_MIN` (§3.1) |
 | Link / QR resolution | IP: 30 / min; device: 10 / min |
 | Joins | Device: 10 / min; per session at most 10 pending requests when approval is on |
@@ -100,10 +122,9 @@ Implemented in Phase 2.
 
 | Item | Lifetime |
 |---|---|
-| Six-digit code | Rotates every 5 min; valid only while accepting receivers with a free slot |
-| Join capability token (link / QR) | 15 min, renewable by the sender while accepting |
-| Join ticket from a code or link lookup | 5 min, single use |
-| Session `WAITING` with no joined receiver | Expires after 30 min |
+| Join window: six-digit code, link token, QR | At most 10 min from issue; ends early when 5 receivers are in or the sender taps Stop accepting; Create new code opens a fresh 10-min window and invalidates the old code, link, and QR |
+| Join ticket from a code or link lookup | 5 min, single use, never past the end of the join window |
+| Joined receivers after the window ends | Unaffected; they continue until the session ends |
 | Session idle (no connected participant) | Expires after 30 min |
 | Maximum session lifetime | Guest sender 24 h; signed-in sender 72 h |
 | Transfer capability | Bound to participant and device; valid until the session ends or the participant is removed |
@@ -115,10 +136,10 @@ Implemented in Phase 2.
 
 | Abuse case | Mitigations | Residual risk |
 |---|---|---|
-| Guessing a six-digit code to receive a stranger's files (open join) | 5-min code rotation, code dies when full or not accepting, IP and device lockouts, global protected mode forcing approval for code joins, 5-receiver cap, verification words, join toasts and notifications, Remove and Block | Distributed guessing can succeed before protected mode trips (§3.2); senders of sensitive files should turn on Require approval |
+| Guessing a six-digit code to receive a stranger's files (open join) | 10-min join window per code, window ends when full or not accepting, IP and device lockouts, global protected mode forcing approval for code joins, 5-receiver cap, verification words, join toasts and notifications, Remove and Block | Distributed guessing can succeed before protected mode trips (§3.2); senders of sensitive files should turn on Require approval |
 | Guessing a code to read the join preview | Same limits; preview shows only sender display name, badge, file names, sizes, count | File names leak to a lucky guesser |
-| Shoulder-surfing or overhearing a code | Short rotation, Stop accepting nudge, verification words, Remove/Block, Require approval option | Someone nearby can join within the code lifetime |
-| Leaked share link or QR photo | Token expiry 15 min, revocation, Stop accepting, 5-receiver cap | Anyone with the link inside the window can join an open session |
+| Shoulder-surfing or overhearing a code | 10-min join window, Stop accepting nudge, verification words, Remove/Block, Require approval option | Someone nearby can join within the remaining window |
+| Leaked share link or QR photo | Expires with the 10-min join window, replaced by Create new code, Stop accepting, 5-receiver cap | Anyone with the link inside the window can join an open session |
 | Removed or blocked receiver keeps receiving | Capabilities revoked, sender closes the peer connection, block covers device ID and IP /64, transfer protocol re-authenticates on every reconnect | TURN allocation stays valid until its credential expires but carries no new data |
 | Block evasion by resetting device identity | Block also covers IP /64 for the session; device creation is rate-limited | Attacker with many IPs |
 | Mass creation of anonymous devices (Sybil) | IP-keyed creation limit, proof-of-work, IP keys on every sensitive limit | Large botnets; CAPTCHA adapter available |
@@ -135,7 +156,7 @@ Implemented in Phase 2.
 | Rate limits hurting CGNAT users | Combined IP + device keys, generous IP bursts, clear 429 messages | Very busy shared IPs may hit limits |
 | Signaling denial of service | WebSocket caps, message rate limits, ticket requirement | Volumetric attacks need upstream protection |
 | Clipboard or history plaintext exposure | E2E encryption with the ADK, no plaintext logs, guests never touch clipboard APIs | Compromised endpoint device |
-| Keep-screen-on abuse draining battery | Held only during active transfer states and waiting sessions, released on completion, pause, cancel, close, or expiry; bounded by session TTLs; user setting | Long waits up to the 30-min waiting expiry |
+| Keep-screen-on abuse draining battery | Held only while a join window is open or transfers are active, released on window end, completion, pause, cancel, close, or expiry; user setting | Waiting is capped at 10 minutes per join window |
 
 ## 8. Privacy and logging
 - No file content, clipboard plaintext, or history plaintext in logs, metrics, or analytics.

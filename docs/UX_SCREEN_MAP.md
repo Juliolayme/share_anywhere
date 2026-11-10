@@ -43,7 +43,7 @@ flowchart LR
 | TR-1 | Transfer home | `/` | Send files, Receive files, active transfers, recent transfers from local history, header chip "Guest" + Sign in | Same, header chip shows account name | Send files / Receive files |
 | TR-2 | Select files | `/send` | Web picker + drag-and-drop; Android SAF; iOS document picker | Same | Continue |
 | TR-3 | Review selection | `/send/review` | Names, types, sizes, total; **Require approval** toggle (default off) with hint for sensitive files; Cloud option disabled with "Sign in to use Cloud transfer" (Phase 8) | Same, Cloud option enabled when consented (Phase 8) | Create session |
-| TR-4 | Session: share and waiting | `/send/session/:id` | QR, six-digit code with rotation countdown, link with copy/share, receiver slots "0 of 5", Require approval toggle, Stop accepting, keep-screen-on status | Same | Copy link / Stop accepting |
+| TR-4 | Session: share and waiting | `/send/session/:id` | QR, six-digit code, and link sharing one join window with a countdown from **10:00**; receiver slots "0 of 5"; Require approval toggle; Stop accepting; keep-screen-on status. **Expired state:** code, link, and QR hidden, "Code expired — Create new code" with the Create new code button; joined receivers keep transferring. **Full state:** "Session full", Create new code disabled until a slot frees | Same | Copy link / Create new code |
 | TR-5 | Participants and requests | `/send/session/:id` (panel) | Joined receivers with name, platform, Guest/Signed in badge, verification words, Remove, Block; when approval is on, request cards with Approve, Reject, Block; join toasts; "Everyone here? Stop accepting" nudge; protected-mode notice when active | Same | Remove / Approve |
 | TR-6 | Transfer dashboard | `/send/session/:id/transfers` | Per receiver and per file progress, speed, ETA with uncertainty, route badge, pause/resume/retry/cancel, error drawer, aggregate progress, keep-screen-on status | Same | Pause all / Close session |
 | TR-7 | Session result | `/send/session/:id/result` | Completed, partially completed, failed, cancelled; per-receiver summary; entry written to local history | Same, plus synced to cloud history when sync is on | Done / New session |
@@ -54,12 +54,12 @@ flowchart LR
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
 | RX-1 | Receive entry | `/receive` | Scan QR (camera permission asked just in time; simulator and desktop show code entry), enter code | Same | Scan / Enter code |
-| RX-2 | Code entry | `/join` | Six digits, validation, lockout message with wait time | Same | Continue |
+| RX-2 | Code entry | `/join` | Six digits, validation, lockout message with wait time, "This code has expired. Ask the sender for a new code." | Same | Continue |
 | RX-3 | Web join page | `/join/:token` | Opens the app when installed and verified; otherwise the Web flow | Same | — |
-| RX-4 | Join preview | `/join/preview` | Sender display name, Guest/Signed in badge, file names, sizes, count; browser capability check (Web); verification words shown after joining | Same | Receive (Web: choose save target first) |
+| RX-4 | Join preview | `/join/preview` | Sender display name, Guest/Signed in badge, file names, sizes, count; browser capability check (Web); "Join within m:ss" in the last minute of the join window; expired message if the window ends before Receive; verification words shown after joining | Same | Receive (Web: choose save target first) |
 | RX-5 | Waiting for approval | `/join/waiting` | Only when approval is on or protected mode applies; verification words; keep-screen-on status | Same | Cancel |
 | RX-6 | Receiving | `/receive/:sessionId` | Destination, per-file progress, verification, pause/resume/retry, keep-screen-on status, iOS hint "Locking your iPhone pauses the transfer" | Same | Pause |
-| RX-7 | Receive result | `/receive/:sessionId/result` | Completed, partial, failed; open, share, or locate files where the platform allows; removed/blocked/expired/session-full outcomes; entry written to local history | Same, plus cloud history when on | Open / Done |
+| RX-7 | Receive result | `/receive/:sessionId/result` | Completed, partial, failed; open, share, or locate files where the platform allows; removed/blocked/code-expired/session-expired/session-full outcomes; entry written to local history | Same, plus cloud history when on | Open / Done |
 
 ## 6. History
 

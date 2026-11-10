@@ -71,7 +71,10 @@ The client refreshes shortly before expiry with `POST /v1/devices/token`. The se
 ## 4. Share session and join flows
 
 ### 4.1 Create
-Sender selects files → `POST /v1/sessions` with file metadata and `require_approval` (default `false`) → server returns a six-digit code (rotating every 5 min), a link token, and a QR payload. The session is `WAITING`; the sender's keep-awake controller becomes active (§7).
+Sender selects files → `POST /v1/sessions` with file metadata and `require_approval` (default `false`) → server returns a six-digit code, a link token, a QR payload, and `join_window_ends_at` (10 minutes later). The session is `WAITING` with an open join window; the sender's keep-awake controller becomes active (§7).
+
+### 4.1b Join window
+Code, link, and QR share one join window (`docs/SECURITY_MODEL.md` §3.0). The server checks the window on `resolve-code`, `resolve-link`, and `join`, and caps the join ticket at the window end. A background job and the `join` path both close the window when it times out, when the fifth receiver arrives, or on Stop accepting, and emit `SESSION_UPDATED`. `renew` (Create new code) replaces the code HMAC and the link token and opens a new window. Clients count down from `join_window_ends_at` using server time offsets from the API response, never only the local clock. Joined receivers, signaling, TURN, and transfers do not depend on the window.
 
 ### 4.2 Open join (default)
 
@@ -95,10 +98,11 @@ sequenceDiagram
 Same as above until `join`, which returns `REQUESTED`. The sender sees a request card with verification words and approves, rejects, or blocks. On approval the participant becomes `JOINED` and signaling starts. Protected mode (`docs/SECURITY_MODEL.md` §3.1) forces this path for joins made with a six-digit code, in every session, while it is active.
 
 ### 4.4 Sender controls
-Remove (revoke capabilities, close the peer connection, free the slot), Block (remove + refuse rejoin from device ID and IP /64), Stop accepting (code and link stop admitting), toggle Require approval (future joins only), Close session.
+Remove (revoke capabilities, close the peer connection, free the slot), Block (remove + refuse rejoin from device ID and IP /64), Stop accepting (ends the join window now), Create new code (new code, link, and QR with a fresh 10-minute window; old ones invalid), toggle Require approval (future joins only), Close session.
 
 ### 4.5 State machines
 - Session: `CREATED → WAITING → ACTIVE → COMPLETED | PARTIALLY_COMPLETED | CLOSED | EXPIRED | CANCELLED`.
+- Join window: `OPEN → EXPIRED` (10 minutes) `| ENDED_FULL | ENDED_BY_SENDER`; `renew` from any of these except while full returns to `OPEN` with a new code. A session with an ended window and no receivers stays `WAITING` until the sender creates a new code, closes it, or it hits the idle or maximum lifetime.
 - Participant: `REQUESTED` (approval path only) `→ JOINED → LEFT | REMOVED | BLOCKED`; `REQUESTED → REJECTED | BLOCKED`.
 - Transfer (per file and receiver): `PENDING → CONNECTING → TRANSFERRING ⇄ PAUSED`, `TRANSFERRING → DISCONNECTED → RECONNECTING → RESUMING → TRANSFERRING`, terminal `COMPLETED | FAILED | CANCELLED`.
 
@@ -114,11 +118,11 @@ The client picks the route per receiver: Direct P2P → TURN UDP → TURN TCP/TL
 
 ### 7.1 When the screen is kept on
 A single **keep-awake controller** per client decides, from transfer and session state, whether to hold the screen on. It holds while any of these is true and the setting **Keep screen on during transfers** (default on, stored locally per device) is on:
-- the user is a sender with a session in `WAITING` or `ACTIVE` that is accepting receivers or has transfers in progress;
+- the user is a sender whose session has an **open join window** (waiting for receivers, at most 10 minutes per window) or has transfers in progress;
 - any transfer this device takes part in is `CONNECTING`, `TRANSFERRING`, `RESUMING`, `RECONNECTING`, or verifying;
 - the user is a receiver waiting for approval (approval on or protected mode).
 
-It releases as soon as none is true: every transfer is completed, failed, cancelled, or paused; the session is closed or expired; the receiver left or was removed; or the setting is turned off. Session lifetimes bound how long it can be held (waiting sessions expire after 30 min).
+It releases as soon as none is true: every transfer is completed, failed, cancelled, or paused; the session is closed or expired; the join window ended with no transfer in progress; the receiver left or was removed; or the setting is turned off. Waiting for receivers therefore holds the screen for at most 10 minutes per join window.
 
 ### 7.2 Platform mechanics
 
@@ -139,7 +143,7 @@ Implemented across Phases 1, 2, 5A, 5B, 8. Lifetimes and purge rules in `docs/SE
 
 Core (guest and account):
 - `devices(id, kind anonymous|account, user_id NULL, display_name, platform, refresh_secret_hash, refresh_generation, created_at, last_seen_at, expires_at, revoked_at)` with `CHECK ((kind = 'account') = (user_id IS NOT NULL))`.
-- `share_sessions(id, owner_device_id NOT NULL, owner_user_id NULL, status, require_approval DEFAULT false, accepting_receivers, code_hmac NULL, code_expires_at, created_at, expires_at, ended_at, purge_after)`. `owner_user_id` is set only when the sender was signed in at creation and is used for Cloud and per-account limits, never required.
+- `share_sessions(id, owner_device_id NOT NULL, owner_user_id NULL, status, require_approval DEFAULT false, join_window_state OPEN|EXPIRED|ENDED_FULL|ENDED_BY_SENDER, join_window_opened_at, join_window_ends_at, code_hmac NULL, created_at, expires_at, ended_at, purge_after)`. `owner_user_id` is set only when the sender was signed in at creation and is used for Cloud and per-account limits, never required.
 - `session_participants(id, session_id, device_id NOT NULL, user_id NULL, role sender|receiver, status, verification_words, joined_via code|link, joined_at, decided_at)` with `UNIQUE (session_id, device_id)`.
 - `session_blocks(session_id, device_id, ip_prefix)`.
 - `shared_files`, `transfers(participant_id, file_id, status, verified_bytes, route, …)`, `session_events`.
@@ -152,7 +156,7 @@ Account-only:
 Constraints:
 - Atomic five-receiver cap: `SELECT … FOR UPDATE` on the session row, count `REQUESTED` + `JOINED` receivers, then insert.
 - At most 10 `REQUESTED` participants per session.
-- Six-digit code stored as an HMAC with a server pepper, unique among live sessions.
+- Six-digit code stored as an HMAC with a server pepper, unique among open join windows; link and QR join tokens are `capability_tokens` with `purpose = join` and `expires_at = join_window_ends_at`, revoked by `renew`.
 - Capability tokens hashed at rest, single-purpose, expiring, revocable.
 - Per-user `seq` for clipboard and history assigned under `pg_advisory_xact_lock(hashtext(user_id))` so `seq` order equals commit order.
 - Idempotent state transitions; authorization on every resource; identities only from verified tokens.

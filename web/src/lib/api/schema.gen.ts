@@ -274,6 +274,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sessions/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Sender or JOINED receiver. */
+        get: operations["listSessionFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sessions/{id}/join": {
         parameters: {
             query?: never;
@@ -312,6 +331,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sessions/{id}/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Sender sees every transfer and each receiver's capability hash; a JOINED receiver sees its own transfers and its transfer capability. */
+        get: operations["listTransfers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sessions/resolve-code": {
         parameters: {
             query?: never;
@@ -340,6 +378,101 @@ export interface paths {
         put?: never;
         /** Look up a link or QR token. */
         post: operations["resolveLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transfers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** The sender or that transfer's JOINED receiver. */
+        get: operations["getTransfer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transfers/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel; terminal. */
+        post: operations["cancelTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transfers/{id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause from any active state. */
+        post: operations["pauseTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transfers/{id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** State, verified bytes and route from the client engine. Transitions are validated; only the receiver completes, with every byte verified. */
+        post: operations["reportTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transfers/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume a paused transfer; a receiver must send its transfer capability. */
+        post: operations["resumeTransfer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -585,6 +718,55 @@ export interface components {
             /** Format: int64 */
             size: number;
         };
+        Transfer: {
+            /** Format: uuid */
+            file_id: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** @enum {string|null} */
+            route: "direct" | "relay" | "cloud" | null;
+            /** Format: uuid */
+            session_id: string;
+            /** Format: int64 */
+            size: number;
+            status: components["schemas"]["TransferStatus"];
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: int64 */
+            verified_bytes: number;
+        };
+        TransferAction: {
+            capability?: string;
+        };
+        TransferList: {
+            /** @description The calling receiver's transfer capability (docs/TRANSFER_PROTOCOL.md). */
+            capability?: string;
+            peers?: components["schemas"]["TransferPeer"][];
+            /** @enum {string} */
+            role: "sender" | "receiver";
+            /** Format: date-time */
+            server_time: string;
+            transfers: components["schemas"]["Transfer"][];
+        };
+        TransferPeer: {
+            /** @description Hex SHA-256 of a JOINED receiver's transfer capability. */
+            capability_hash?: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** @enum {string} */
+            status: "REQUESTED" | "JOINED" | "LEFT" | "REMOVED" | "BLOCKED" | "REJECTED";
+        };
+        TransferReport: {
+            /** @enum {string} */
+            route?: "direct" | "relay" | "cloud";
+            status: components["schemas"]["TransferStatus"];
+            /** Format: int64 */
+            verified_bytes: number;
+        };
+        /** @enum {string} */
+        TransferStatus: "PENDING" | "CONNECTING" | "TRANSFERRING" | "PAUSED" | "DISCONNECTED" | "RECONNECTING" | "RESUMING" | "COMPLETED" | "FAILED" | "CANCELLED";
         TurnCredentials: {
             credential: string;
             /** Format: date-time */
@@ -1130,6 +1312,32 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listSessionFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Files in the session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        files: components["schemas"]["SharedFile"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     joinSession: {
         parameters: {
             query?: never;
@@ -1191,6 +1399,30 @@ export interface operations {
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
             429: components["responses"]["RateLimited"];
+        };
+    };
+    listTransfers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Transfers in the session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     resolveCode: {
@@ -1256,6 +1488,154 @@ export interface operations {
             404: components["responses"]["NotFound"];
             410: components["responses"]["Gone"];
             429: components["responses"]["RateLimited"];
+        };
+    };
+    getTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    cancelTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TransferAction"];
+            };
+        };
+        responses: {
+            /** @description The updated transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    pauseTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TransferAction"];
+            };
+        };
+        responses: {
+            /** @description The updated transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    reportTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferReport"];
+            };
+        };
+        responses: {
+            /** @description The updated transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    resumeTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TransferAction"];
+            };
+        };
+        responses: {
+            /** @description The updated transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     createTurnCredentials: {

@@ -36,6 +36,7 @@ type Limits struct {
 	Renew                  *ratelimit.Limiter
 	TurnGuest, TurnAccount *ratelimit.Limiter
 	TurnIP                 *ratelimit.Limiter
+	TransferReport         *ratelimit.Limiter // per device, transfers package
 }
 
 // ScaledLimits returns the defaults multiplied by m (m > 1 only on test stacks, see config).
@@ -54,6 +55,7 @@ func ScaledLimits(c clock.Clock, m int) Limits {
 		Join: r(10, time.Minute), JoinIP: r(30, time.Minute),
 		Renew:     r(20, time.Hour),
 		TurnGuest: r(20, time.Hour), TurnAccount: r(60, time.Hour), TurnIP: r(120, time.Hour),
+		TransferReport: r(300, time.Minute),
 	}
 }
 

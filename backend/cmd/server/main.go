@@ -29,6 +29,7 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/ws"
 	"github.com/juliolayme/share_anywhere/backend/internal/sharing"
 	"github.com/juliolayme/share_anywhere/backend/internal/signaling"
+	"github.com/juliolayme/share_anywhere/backend/internal/transfers"
 	"github.com/juliolayme/share_anywhere/backend/internal/turncreds"
 	"github.com/juliolayme/share_anywhere/backend/migrations"
 )
@@ -210,11 +211,13 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 		GuestLimit: limits.TurnGuest, AcctLimit: limits.TurnAccount, Log: log,
 		IPLimit: limits.TurnIP, IPKey: func(r *http.Request) string { return clientip.Key(ips.FromRequest(r)) },
 	})
+	xfers := transfers.New(transfers.Config{Pool: pool, Clock: clk, Sessions: shareSvc, Notify: hub, Metrics: reg, ReportLimit: limits.TransferReport})
 	modules := []func(*access.Router){
 		devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure).Register,
 		hub.Register,
 		sharing.NewHTTP(shareSvc, ips, lookup).Register,
 		turn.Register,
+		transfers.NewHTTP(xfers, log).Register,
 	}
 	modules = append(modules, testHooks(cfg, clk, shareSvc, protected)...)
 	h, router := httpserver.New(httpserver.Options{

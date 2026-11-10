@@ -103,7 +103,7 @@ Implemented in Phase 1 (device identity) and Phase 5A (accounts). Flow diagrams 
 
 ## 5. Rate limits and lockouts
 
-Implemented in Phase 1 (framework, device creation), Phase 2 (sessions, codes, joins, TURN, WebSocket), Phase 5A (accounts), Phase 5B (clipboard). Defaults. In Phase 1 the values are constants in code (`backend/internal/devices/service.go`, `backend/internal/platform/ws`); test stacks scale them with `SA_RATE_LIMIT_MULTIPLIER` (`.env.example`). Making individual limits configurable is backlog.
+Implemented in Phase 1 (framework, device creation), Phase 2 (sessions, codes, joins, TURN, WebSocket), Phase 3 (transfer reports), Phase 5A (accounts), Phase 5B (clipboard). Defaults. In Phase 1 the values are constants in code (`backend/internal/devices/service.go`, `backend/internal/platform/ws`); test stacks scale them with `SA_RATE_LIMIT_MULTIPLIER` (`.env.example`). Making individual limits configurable is backlog.
 
 Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X-Forwarded-For` only when the request arrives from the trusted Caddy proxy (**as built:** `SA_TRUSTED_PROXIES` lists the trusted peers; the resolver walks `X-Forwarded-For` from the right and stops at the first untrusted address, `backend/internal/platform/clientip`). Automated test stacks may raise every limit with `SA_RATE_LIMIT_MULTIPLIER`, which the backend accepts only with `SA_ENV=test`; it never switches a limit off. Responses are `429 rate_limited` with `Retry-After`; clients show the wait time. The MVP keeps buckets in process memory on a single backend instance; going multi-instance requires a shared store and an ADR.
 
@@ -119,6 +119,7 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 | Link / QR resolution | IP: 30 / min; device: 10 / min. **Built in Phase 2** |
 | Joins | Device: 10 / min; IP: 30 / min. Pending requests count toward the five receiver slots, so at most 5 people can be waiting. **Built in Phase 2** |
 | TURN credentials | Guest device: 20 / hour; account device: 60 / hour; IP: 120 / hour. **Built in Phase 2** |
+| Transfer reports | Device: 300 / min (clients throttle progress reports to one every 2 s per transfer plus state changes). **Built in Phase 3** |
 | WebSocket | IP: 20 concurrent; device: 3 concurrent; 50 messages / s per socket; tickets: 30 / min per device. **Built in Phase 1** |
 | Sign-in | IP + email: 5 / 15 min; IP: 30 / hour |
 | Sign-up | IP: 5 / hour |
@@ -160,7 +161,7 @@ Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests dr
 | Stolen access token | 15-min TTL, device-bound | Short misuse window |
 | Stolen refresh secret | Rotation with reuse detection, platform secure storage, `HttpOnly` cookie | Use before the legitimate device refreshes |
 | CSRF on the Web refresh cookie | `SameSite=Strict`, path scope, custom header, CORS allowlist | — |
-| Unauthorized resume or transfer takeover | Transfer capability bound to participant and device; re-handshake on reconnect | — |
+| Unauthorized resume or transfer takeover | Transfer capability (256-bit HMAC of participant, device and join time, `backend/internal/sharing/member.go`) shown only to that JOINED receiver; the sender gets only its SHA-256 and checks it in HELLO on every connect (`docs/TRANSFER_PROTOCOL.md`); Remove, Block, Leave and rejoin invalidate it; resuming over REST needs it | — |
 | Linking guest activity to an account | New anonymous identity on sign-out; server session records purged after 7 days | Before purge, the server can correlate pre-sign-in sessions from one device ID |
 | Rate limits hurting CGNAT users | Combined IP + device keys, generous IP bursts, clear 429 messages | Very busy shared IPs may hit limits |
 | Signaling denial of service | WebSocket caps, message rate limits, ticket requirement | Volumetric attacks need upstream protection |

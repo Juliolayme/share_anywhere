@@ -4,9 +4,7 @@
   "title": "Share Anywhere WebSocket events",
   "description": "Server-to-client and client-to-server WebSocket messages (docs/API.md §4). Every message is a JSON text frame with a `type`. Messages carry metadata only, never file bytes, clipboard text, or ciphertext. `x-sa-phase` is the phase that delivers the event; later phases add events here before using them.",
   "type": "object",
-  "required": [
-    "type"
-  ],
+  "required": ["type"],
   "oneOf": [
     {
       "$ref": "#/$defs/Welcome"
@@ -64,6 +62,9 @@
     },
     {
       "$ref": "#/$defs/Error"
+    },
+    {
+      "$ref": "#/$defs/TransferUpdated"
     }
   ],
   "$defs": {
@@ -73,11 +74,7 @@
       "description": "First message on every connection, sent after the ticket is consumed. `server_time` lets clients correct clock skew for countdowns.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "device_id",
-        "server_time"
-      ],
+      "required": ["type", "device_id", "server_time"],
       "properties": {
         "type": {
           "const": "WELCOME"
@@ -111,10 +108,7 @@
           "format": "uuid"
         },
         "role": {
-          "enum": [
-            "sender",
-            "receiver"
-          ]
+          "enum": ["sender", "receiver"]
         },
         "status": {
           "enum": [
@@ -144,16 +138,10 @@
           "maxItems": 3
         },
         "joined_via": {
-          "enum": [
-            "code",
-            "link"
-          ]
+          "enum": ["code", "link"]
         },
         "request_reason": {
-          "enum": [
-            "approval",
-            "protected_mode"
-          ]
+          "enum": ["approval", "protected_mode"]
         },
         "joined_at": {
           "type": "string",
@@ -166,11 +154,7 @@
       "x-sa-direction": "server-to-client",
       "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "participant"
-      ],
+      "required": ["type", "session_id", "participant"],
       "properties": {
         "type": {
           "const": "PARTICIPANT_JOINED"
@@ -189,11 +173,7 @@
       "x-sa-direction": "server-to-client",
       "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "participant"
-      ],
+      "required": ["type", "session_id", "participant"],
       "properties": {
         "type": {
           "const": "PARTICIPANT_REQUESTED"
@@ -212,11 +192,7 @@
       "x-sa-direction": "server-to-client",
       "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "participant"
-      ],
+      "required": ["type", "session_id", "participant"],
       "properties": {
         "type": {
           "const": "PARTICIPANT_APPROVED"
@@ -235,11 +211,7 @@
       "x-sa-direction": "server-to-client",
       "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "participant"
-      ],
+      "required": ["type", "session_id", "participant"],
       "properties": {
         "type": {
           "const": "PARTICIPANT_REJECTED"
@@ -258,11 +230,7 @@
       "x-sa-direction": "server-to-client",
       "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "participant"
-      ],
+      "required": ["type", "session_id", "participant"],
       "properties": {
         "type": {
           "const": "PARTICIPANT_REMOVED"
@@ -281,11 +249,7 @@
       "x-sa-direction": "server-to-client",
       "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "participant"
-      ],
+      "required": ["type", "session_id", "participant"],
       "properties": {
         "type": {
           "const": "PARTICIPANT_BLOCKED"
@@ -304,11 +268,7 @@
       "x-sa-direction": "server-to-client",
       "description": "To the sender; the affected receiver also gets its own status changes (approved, rejected, removed, blocked).",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "participant"
-      ],
+      "required": ["type", "session_id", "participant"],
       "properties": {
         "type": {
           "const": "PARTICIPANT_LEFT"
@@ -352,20 +312,10 @@
         },
         "join_window": {
           "type": "object",
-          "required": [
-            "state",
-            "opened_at",
-            "ends_at",
-            "seq"
-          ],
+          "required": ["state", "opened_at", "ends_at", "seq"],
           "properties": {
             "state": {
-              "enum": [
-                "OPEN",
-                "EXPIRED",
-                "ENDED_FULL",
-                "ENDED_BY_SENDER"
-              ]
+              "enum": ["OPEN", "EXPIRED", "ENDED_FULL", "ENDED_BY_SENDER"]
             },
             "opened_at": {
               "type": "string",
@@ -382,11 +332,7 @@
         },
         "capacity": {
           "type": "object",
-          "required": [
-            "joined",
-            "requested",
-            "max"
-          ],
+          "required": ["joined", "requested", "max"],
           "properties": {
             "joined": {
               "type": "integer"
@@ -410,10 +356,7 @@
       "x-sa-direction": "server-to-client",
       "description": "The sender closed the session. To all live participants.",
       "type": "object",
-      "required": [
-        "type",
-        "session_id"
-      ],
+      "required": ["type", "session_id"],
       "properties": {
         "type": {
           "const": "SESSION_CLOSED"
@@ -432,10 +375,7 @@
       "x-sa-direction": "server-to-client",
       "description": "Idle or maximum lifetime reached (reason idle or max_lifetime). To all live participants.",
       "type": "object",
-      "required": [
-        "type",
-        "session_id"
-      ],
+      "required": ["type", "session_id"],
       "properties": {
         "type": {
           "const": "SESSION_EXPIRED"
@@ -454,11 +394,7 @@
       "x-sa-direction": "server-to-client",
       "description": "Broadcast when protected mode turns on or off.",
       "type": "object",
-      "required": [
-        "type",
-        "active",
-        "until"
-      ],
+      "required": ["type", "active", "until"],
       "properties": {
         "type": {
           "const": "PROTECTED_MODE"
@@ -477,12 +413,7 @@
       "x-sa-direction": "client-to-server",
       "description": "Relayed only between the sender and a JOINED receiver of the same live session. Payload at most 32 KiB, opaque to the server.",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "to",
-        "payload"
-      ],
+      "required": ["type", "session_id", "to", "payload"],
       "properties": {
         "type": {
           "const": "OFFER"
@@ -507,12 +438,7 @@
       "x-sa-direction": "server-to-client",
       "description": "Delivered to the target participant's device.",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "from",
-        "payload"
-      ],
+      "required": ["type", "session_id", "from", "payload"],
       "properties": {
         "type": {
           "const": "OFFER"
@@ -534,12 +460,7 @@
       "x-sa-direction": "client-to-server",
       "description": "Relayed only between the sender and a JOINED receiver of the same live session. Payload at most 32 KiB, opaque to the server.",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "to",
-        "payload"
-      ],
+      "required": ["type", "session_id", "to", "payload"],
       "properties": {
         "type": {
           "const": "ANSWER"
@@ -564,12 +485,7 @@
       "x-sa-direction": "server-to-client",
       "description": "Delivered to the target participant's device.",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "from",
-        "payload"
-      ],
+      "required": ["type", "session_id", "from", "payload"],
       "properties": {
         "type": {
           "const": "ANSWER"
@@ -591,12 +507,7 @@
       "x-sa-direction": "client-to-server",
       "description": "Relayed only between the sender and a JOINED receiver of the same live session. Payload at most 32 KiB, opaque to the server.",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "to",
-        "payload"
-      ],
+      "required": ["type", "session_id", "to", "payload"],
       "properties": {
         "type": {
           "const": "ICE_CANDIDATE"
@@ -621,12 +532,7 @@
       "x-sa-direction": "server-to-client",
       "description": "Delivered to the target participant's device.",
       "type": "object",
-      "required": [
-        "type",
-        "session_id",
-        "from",
-        "payload"
-      ],
+      "required": ["type", "session_id", "from", "payload"],
       "properties": {
         "type": {
           "const": "ICE_CANDIDATE"
@@ -648,10 +554,7 @@
       "x-sa-direction": "server-to-client",
       "description": "Reply to a client message that could not be handled: bad_message, unknown_type, not_found, peer_offline, payload_too_large, internal. ref echoes the message ref.",
       "type": "object",
-      "required": [
-        "type",
-        "code"
-      ],
+      "required": ["type", "code"],
       "properties": {
         "type": {
           "const": "ERROR"
@@ -661,6 +564,89 @@
         },
         "ref": {
           "type": "string"
+        }
+      }
+    },
+    "Transfer": {
+      "x-sa-phase": 3,
+      "x-sa-direction": "shared",
+      "description": "Same shape as the REST Transfer schema (shared/protocol/openapi.yaml).",
+      "type": "object",
+      "required": [
+        "id",
+        "session_id",
+        "participant_id",
+        "file_id",
+        "status",
+        "verified_bytes",
+        "size",
+        "route",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participant_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "file_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "CONNECTING",
+            "TRANSFERRING",
+            "PAUSED",
+            "DISCONNECTED",
+            "RECONNECTING",
+            "RESUMING",
+            "COMPLETED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "verified_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "route": {
+          "enum": ["direct", "relay", "cloud", null]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "TransferUpdated": {
+      "x-sa-phase": 3,
+      "x-sa-direction": "server-to-client",
+      "description": "To the sender and to the transfer's receiver whenever a report or a control (pause, resume, cancel) changes a transfer. Bytes never pass through the server.",
+      "type": "object",
+      "required": ["type", "session_id", "transfer"],
+      "properties": {
+        "type": {
+          "const": "TRANSFER_UPDATED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "transfer": {
+          "$ref": "#/$defs/Transfer"
         }
       }
     }

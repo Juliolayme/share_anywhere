@@ -143,28 +143,28 @@ func (e ParticipantRole) Valid() bool {
 
 // Defines values for ParticipantStatus.
 const (
-	BLOCKED   ParticipantStatus = "BLOCKED"
-	JOINED    ParticipantStatus = "JOINED"
-	LEFT      ParticipantStatus = "LEFT"
-	REJECTED  ParticipantStatus = "REJECTED"
-	REMOVED   ParticipantStatus = "REMOVED"
-	REQUESTED ParticipantStatus = "REQUESTED"
+	ParticipantStatusBLOCKED   ParticipantStatus = "BLOCKED"
+	ParticipantStatusJOINED    ParticipantStatus = "JOINED"
+	ParticipantStatusLEFT      ParticipantStatus = "LEFT"
+	ParticipantStatusREJECTED  ParticipantStatus = "REJECTED"
+	ParticipantStatusREMOVED   ParticipantStatus = "REMOVED"
+	ParticipantStatusREQUESTED ParticipantStatus = "REQUESTED"
 )
 
 // Valid indicates whether the value is a known member of the ParticipantStatus enum.
 func (e ParticipantStatus) Valid() bool {
 	switch e {
-	case BLOCKED:
+	case ParticipantStatusBLOCKED:
 		return true
-	case JOINED:
+	case ParticipantStatusJOINED:
 		return true
-	case LEFT:
+	case ParticipantStatusLEFT:
 		return true
-	case REJECTED:
+	case ParticipantStatusREJECTED:
 		return true
-	case REMOVED:
+	case ParticipantStatusREMOVED:
 		return true
-	case REQUESTED:
+	case ParticipantStatusREQUESTED:
 		return true
 	default:
 		return false
@@ -252,6 +252,138 @@ func (e SessionViewStatus) Valid() bool {
 	case SessionViewStatusPARTIALLYCOMPLETED:
 		return true
 	case SessionViewStatusWAITING:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TransferRoute.
+const (
+	TransferRouteCloud  TransferRoute = "cloud"
+	TransferRouteDirect TransferRoute = "direct"
+	TransferRouteRelay  TransferRoute = "relay"
+)
+
+// Valid indicates whether the value is a known member of the TransferRoute enum.
+func (e TransferRoute) Valid() bool {
+	switch e {
+	case TransferRouteCloud:
+		return true
+	case TransferRouteDirect:
+		return true
+	case TransferRouteRelay:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TransferListRole.
+const (
+	TransferListRoleReceiver TransferListRole = "receiver"
+	TransferListRoleSender   TransferListRole = "sender"
+)
+
+// Valid indicates whether the value is a known member of the TransferListRole enum.
+func (e TransferListRole) Valid() bool {
+	switch e {
+	case TransferListRoleReceiver:
+		return true
+	case TransferListRoleSender:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TransferPeerStatus.
+const (
+	TransferPeerStatusBLOCKED   TransferPeerStatus = "BLOCKED"
+	TransferPeerStatusJOINED    TransferPeerStatus = "JOINED"
+	TransferPeerStatusLEFT      TransferPeerStatus = "LEFT"
+	TransferPeerStatusREJECTED  TransferPeerStatus = "REJECTED"
+	TransferPeerStatusREMOVED   TransferPeerStatus = "REMOVED"
+	TransferPeerStatusREQUESTED TransferPeerStatus = "REQUESTED"
+)
+
+// Valid indicates whether the value is a known member of the TransferPeerStatus enum.
+func (e TransferPeerStatus) Valid() bool {
+	switch e {
+	case TransferPeerStatusBLOCKED:
+		return true
+	case TransferPeerStatusJOINED:
+		return true
+	case TransferPeerStatusLEFT:
+		return true
+	case TransferPeerStatusREJECTED:
+		return true
+	case TransferPeerStatusREMOVED:
+		return true
+	case TransferPeerStatusREQUESTED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TransferReportRoute.
+const (
+	TransferReportRouteCloud  TransferReportRoute = "cloud"
+	TransferReportRouteDirect TransferReportRoute = "direct"
+	TransferReportRouteRelay  TransferReportRoute = "relay"
+)
+
+// Valid indicates whether the value is a known member of the TransferReportRoute enum.
+func (e TransferReportRoute) Valid() bool {
+	switch e {
+	case TransferReportRouteCloud:
+		return true
+	case TransferReportRouteDirect:
+		return true
+	case TransferReportRouteRelay:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TransferStatus.
+const (
+	TransferStatusCANCELLED    TransferStatus = "CANCELLED"
+	TransferStatusCOMPLETED    TransferStatus = "COMPLETED"
+	TransferStatusCONNECTING   TransferStatus = "CONNECTING"
+	TransferStatusDISCONNECTED TransferStatus = "DISCONNECTED"
+	TransferStatusFAILED       TransferStatus = "FAILED"
+	TransferStatusPAUSED       TransferStatus = "PAUSED"
+	TransferStatusPENDING      TransferStatus = "PENDING"
+	TransferStatusRECONNECTING TransferStatus = "RECONNECTING"
+	TransferStatusRESUMING     TransferStatus = "RESUMING"
+	TransferStatusTRANSFERRING TransferStatus = "TRANSFERRING"
+)
+
+// Valid indicates whether the value is a known member of the TransferStatus enum.
+func (e TransferStatus) Valid() bool {
+	switch e {
+	case TransferStatusCANCELLED:
+		return true
+	case TransferStatusCOMPLETED:
+		return true
+	case TransferStatusCONNECTING:
+		return true
+	case TransferStatusDISCONNECTED:
+		return true
+	case TransferStatusFAILED:
+		return true
+	case TransferStatusPAUSED:
+		return true
+	case TransferStatusPENDING:
+		return true
+	case TransferStatusRECONNECTING:
+		return true
+	case TransferStatusRESUMING:
+		return true
+	case TransferStatusTRANSFERRING:
 		return true
 	default:
 		return false
@@ -524,6 +656,64 @@ type SharedFile struct {
 	Size int64              `json:"size"`
 }
 
+// Transfer defines model for Transfer.
+type Transfer struct {
+	FileId        openapi_types.UUID `json:"file_id"`
+	Id            openapi_types.UUID `json:"id"`
+	ParticipantId openapi_types.UUID `json:"participant_id"`
+	Route         *TransferRoute     `json:"route"`
+	SessionId     openapi_types.UUID `json:"session_id"`
+	Size          int64              `json:"size"`
+	Status        TransferStatus     `json:"status"`
+	UpdatedAt     time.Time          `json:"updated_at"`
+	VerifiedBytes int64              `json:"verified_bytes"`
+}
+
+// TransferRoute defines model for Transfer.Route.
+type TransferRoute string
+
+// TransferAction defines model for TransferAction.
+type TransferAction struct {
+	Capability *string `json:"capability,omitempty"`
+}
+
+// TransferList defines model for TransferList.
+type TransferList struct {
+	// Capability The calling receiver's transfer capability (docs/TRANSFER_PROTOCOL.md).
+	Capability *string          `json:"capability,omitempty"`
+	Peers      *[]TransferPeer  `json:"peers,omitempty"`
+	Role       TransferListRole `json:"role"`
+	ServerTime time.Time        `json:"server_time"`
+	Transfers  []Transfer       `json:"transfers"`
+}
+
+// TransferListRole defines model for TransferList.Role.
+type TransferListRole string
+
+// TransferPeer defines model for TransferPeer.
+type TransferPeer struct {
+	// CapabilityHash Hex SHA-256 of a JOINED receiver's transfer capability.
+	CapabilityHash *string            `json:"capability_hash,omitempty"`
+	ParticipantId  openapi_types.UUID `json:"participant_id"`
+	Status         TransferPeerStatus `json:"status"`
+}
+
+// TransferPeerStatus defines model for TransferPeer.Status.
+type TransferPeerStatus string
+
+// TransferReport defines model for TransferReport.
+type TransferReport struct {
+	Route         *TransferReportRoute `json:"route,omitempty"`
+	Status        TransferStatus       `json:"status"`
+	VerifiedBytes int64                `json:"verified_bytes"`
+}
+
+// TransferReportRoute defines model for TransferReport.Route.
+type TransferReportRoute string
+
+// TransferStatus defines model for TransferStatus.
+type TransferStatus string
+
 // TurnCredentials defines model for TurnCredentials.
 type TurnCredentials struct {
 	Credential string    `json:"credential"`
@@ -631,6 +821,18 @@ type UpdateSessionJSONRequestBody = UpdateSessionRequest
 
 // JoinSessionJSONRequestBody defines body for JoinSession for application/json ContentType.
 type JoinSessionJSONRequestBody JoinSessionJSONBody
+
+// CancelTransferJSONRequestBody defines body for CancelTransfer for application/json ContentType.
+type CancelTransferJSONRequestBody = TransferAction
+
+// PauseTransferJSONRequestBody defines body for PauseTransfer for application/json ContentType.
+type PauseTransferJSONRequestBody = TransferAction
+
+// ReportTransferJSONRequestBody defines body for ReportTransfer for application/json ContentType.
+type ReportTransferJSONRequestBody = TransferReport
+
+// ResumeTransferJSONRequestBody defines body for ResumeTransfer for application/json ContentType.
+type ResumeTransferJSONRequestBody = TransferAction
 
 // CreateTurnCredentialsJSONRequestBody defines body for CreateTurnCredentials for application/json ContentType.
 type CreateTurnCredentialsJSONRequestBody CreateTurnCredentialsJSONBody

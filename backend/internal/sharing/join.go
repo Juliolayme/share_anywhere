@@ -332,14 +332,16 @@ func (s *Service) Join(ctx context.Context, c Caller, sessionID, ticket string) 
 	return JoinResult{SessionID: sessionID, Participant: out.view(), ServerTime: now}, nil
 }
 
-// activate marks the session ACTIVE and creates PENDING transfer records for a newly joined receiver.
+// activate marks the session ACTIVE and creates PENDING transfer records for a newly joined receiver (a
+// receiver rejoining after Remove gets its cancelled or failed transfers back as PENDING).
 func activate(ctx context.Context, tx pgx.Tx, sessionID, participantID string, now time.Time) error {
 	if _, err := tx.Exec(ctx, `UPDATE share_sessions SET status = 'ACTIVE', last_activity_at = $2 WHERE id = $1::uuid AND status = 'WAITING'`, sessionID, now); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO transfers (id, session_id, participant_id, file_id, status, updated_at)
 		SELECT gen_random_uuid(), $1::uuid, $2::uuid, f.id, 'PENDING', $3 FROM shared_files f WHERE f.session_id = $1::uuid
-		ON CONFLICT (participant_id, file_id) DO NOTHING`, sessionID, participantID, now)
+		ON CONFLICT (participant_id, file_id) DO UPDATE SET status = 'PENDING', verified_bytes = 0, route = NULL, updated_at = EXCLUDED.updated_at
+		WHERE transfers.status IN ('CANCELLED', 'FAILED')`, sessionID, participantID, now) // a rejoin after Remove starts over
 	return err
 }
 

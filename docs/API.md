@@ -53,15 +53,16 @@ A backend test generated from `openapi.yaml` calls every operation with no token
 
 **As built (Phase 2):** `POST /v1/sessions` and `GET /v1/sessions/{id}` return `SessionView` (`shared/protocol/openapi.yaml`), whose fields depend on the caller: the sender sees `code`, `link_token`, `join_url` (also the QR payload) while the join window is open, plus `capacity` and `participants`; a `JOINED` receiver sees `files`, `sender`, and `me` with its security words; a `REQUESTED` receiver sees the preview and its own status; a receiver that left or was removed, rejected, or blocked sees only `me`. Resolve endpoints return `JoinPreview`. Join tickets are single use (`410 join_ticket_invalid` when reused); joining again while already in returns the existing participant when presented with a fresh ticket. `POST /v1/turn/credentials` takes `{"session_id"}` and returns `username`, `credential`, `uris`, `ttl`. Participant actions take no body.
 
-### 2.3 Files and transfers (Phases 2–4)
+### 2.3 Files and transfers (Phase 3)
 
 | Endpoint | Level | Notes |
 |---|---|---|
-| `POST /v1/sessions/{id}/files`, `DELETE /v1/files/{id}` | participant (sender) | |
 | `GET /v1/sessions/{id}/files` | participant | Sender or `JOINED` receiver |
 | `GET /v1/sessions/{id}/transfers`, `GET /v1/transfers/{id}` | participant | Sender or `JOINED` receiver; a receiver sees only its own transfers |
 | `POST /v1/transfers/{id}/pause`, `/resume`, `/cancel` | participant | Resume also requires the transfer capability |
 | `POST /v1/transfers/{id}/report` | participant | State, verified bytes, route type (metrics) |
+
+**As built (Phase 3):** `GET /v1/sessions/{id}/transfers` returns `TransferList`: the sender gets every transfer plus `peers` (each receiver's status and, while `JOINED`, the hex SHA-256 of its transfer capability); a `JOINED` receiver gets its own transfers plus `capability`. Others get `404`. `report` takes `{status, verified_bytes, route?}` and validates the transition (`docs/ARCHITECTURE.md` §4.5): verified bytes never decrease or exceed the file size, only the receiver may report `COMPLETED` and only with every byte verified, terminal states accept only the same state again (idempotent), and an ended session refuses changes (`409 session_ended`). Errors: `invalid_status`, `invalid_route`, `invalid_bytes` (400), `invalid_transition`, `not_verified` (409), `capability_required` (403), `rate_limited` (429, 300 reports / min per device). `pause`, `resume` (from `PAUSED` to `RESUMING`), and `cancel` take an optional `{capability}`; a receiver resuming must send it. Every change sends `TRANSFER_UPDATED` to the sender and that receiver. A receiver that rejoins after Remove gets its cancelled transfers back as `PENDING` with a new capability.
 
 ### 2.4 Accounts, devices, keys, history (Phase 5A)
 
@@ -92,6 +93,14 @@ A backend test generated from `openapi.yaml` calls every operation with no token
 | `GET /v1/cloud/settings`, `PUT /v1/cloud/settings` | account | Consent, budget cap |
 | `GET /v1/cloud/objects/{id}` | participant | Download URL for a `JOINED` receiver, guest or signed in |
 
+### 2.7 Session files after creation (backlog, not scheduled)
+
+Files are chosen before the session is created (`POST /v1/sessions` carries their metadata, PRD §5.3). Adding or removing files in a live session is not part of any phase yet; these rows reserve the shape.
+
+| Endpoint | Level | Notes |
+|---|---|---|
+| `POST /v1/sessions/{id}/files`, `DELETE /v1/files/{id}` | participant (sender) | Would create or cancel transfers for every JOINED receiver |
+
 ## 3. Errors
 
 All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": <int, optional>}`.
@@ -100,12 +109,14 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 |---|---|---|
 | 400 | `invalid_request` | Malformed body, unknown field, or a non-empty body without `Content-Type: application/json` |
 | 400 | `over_limit` | Session over 20 GB or 1,000 files |
+| 400 | `invalid_status`, `invalid_route`, `invalid_bytes` | Transfer report with an unknown status or route, or verified bytes that decrease or exceed the file size |
 | 401 | `device_token_invalid`, `device_token_expired` | Missing, malformed, wrong `alg`/`kid`, tampered, or expired token |
 | 401 | `refresh_invalid`, `refresh_reused` | Unknown, expired or revoked refresh secret; a consumed secret presented again (the device is revoked) |
 | 401 | `ticket_invalid` | WebSocket ticket missing, used, or expired |
 | 403 | `account_required` | Account endpoint with a guest token |
 | 403 | `device_not_added` | Keys, clipboard, or history with a signed-in but not-added device |
 | 403 | `blocked` | Device or IP /64 blocked from this session |
+| 403 | `capability_required` | A receiver resumed a transfer without its transfer capability |
 | 403 | `cloud_requires_account`, `cloud_consent_required` | Cloud Distribution preconditions |
 | 403 | `csrf_header_missing` | Cookie refresh without `X-SA-Refresh: 1` |
 | 403 | `origin_not_allowed` | WebSocket upgrade from an origin outside `SA_ALLOWED_ORIGINS` |
@@ -115,6 +126,7 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 405 | `method_not_allowed` | Known path, wrong method; `Allow` header lists the methods |
 | 409 | `session_full` | Five receivers already joined or requested |
 | 409 | `too_many_open_sessions` | Guest device already has 2 open sessions (signed in: 5) |
+| 409 | `invalid_transition`, `not_verified`, `session_ended` | Transfer state change not allowed now; `COMPLETED` from the sender or before every byte is verified; changes after the session ended |
 | 409 | `invalid_state`, `own_session`, `session_not_active` | Action does not apply to the current state; resolving your own code; TURN before a receiver joined |
 | 410 | `join_window_expired` | The 10-minute join window for this code, link, or QR has ended or was replaced by Create new code |
 | 410 | `session_not_accepting`, `session_expired` | Sender tapped Stop accepting, or the session lifetime ended |
@@ -135,6 +147,7 @@ Connect to `/v1/ws?ticket=<one-time ticket>`. The server checks `Origin`, consum
 | `OFFER`, `ANSWER`, `ICE_CANDIDATE` | The two participants of a sender–receiver pair, only after the receiver is `JOINED`. Client sends `{type, ref?, session_id, to: participant_id, payload}`; the target gets `{type, session_id, from: participant_id, payload}` |
 | `PARTICIPANT_JOINED`, `PARTICIPANT_REQUESTED`, `PARTICIPANT_APPROVED`, `PARTICIPANT_REJECTED`, `PARTICIPANT_REMOVED`, `PARTICIPANT_BLOCKED`, `PARTICIPANT_LEFT` | Sender; the affected receiver gets its own status changes |
 | `SESSION_UPDATED` (require approval; `join_window.state` and `join_window.ends_at`, including expiry and Create new code), `SESSION_CLOSED`, `SESSION_EXPIRED`, `PROTECTED_MODE` | All participants of the session |
+| `TRANSFER_UPDATED` (`transfer`: status, verified bytes, route) | The sender and that transfer's receiver, after a report or a pause, resume, or cancel (Phase 3) |
 | `CLIPBOARD_EVENT_CREATED`, `CLIPBOARD_EVENT_DELETED`, `CLIPBOARD_HISTORY_CLEARED`, `CLIPBOARD_SETTINGS_UPDATED` | `account+device` sockets of that account |
 | `HISTORY_ENTRY_CREATED`, `HISTORY_ENTRY_DELETED`, `DEVICE_CONNECTED`, `DEVICE_DISCONNECTED` | `account+device` sockets of that account |
 

@@ -29,6 +29,7 @@ type keys struct {
 	enc  []byte // AES-256-GCM for the sender's copy of code and link
 	word []byte // HMAC for security words
 	ip   []byte // HMAC for stored address keys (blocks)
+	xfer []byte // HMAC for transfer capabilities
 }
 
 func deriveKeys(secret []byte) keys {
@@ -37,7 +38,7 @@ func deriveKeys(secret []byte) keys {
 		m.Write([]byte("sharing:" + label))
 		return m.Sum(nil)
 	}
-	return keys{code: d("code"), enc: d("enc"), word: d("words"), ip: d("ip")}
+	return keys{code: d("code"), enc: d("enc"), word: d("words"), ip: d("ip"), xfer: d("transfer")}
 }
 
 // newCode returns a uniformly random six-digit code.

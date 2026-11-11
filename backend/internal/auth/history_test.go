@@ -32,6 +32,14 @@ func TestHistorySeqParallel(t *testing.T) {
 	go func() {
 		after := int64(0)
 		for {
+			// Note whether every insert had committed BEFORE reading the page: only an empty page read after
+			// that point proves the reader saw everything (checking after the read could stop one entry early).
+			finished := false
+			select {
+			case <-done:
+				finished = true
+			default:
+			}
 			page, err := e.svc.Entries(ctx, idB, after, 7)
 			if err != nil {
 				readerErr <- err
@@ -46,13 +54,9 @@ func TestHistorySeqParallel(t *testing.T) {
 				order = append(order, en.Seq)
 			}
 			after = page.NextAfter
-			select {
-			case <-done:
-				if len(page.Entries) == 0 {
-					readerErr <- nil
-					return
-				}
-			default:
+			if finished && len(page.Entries) == 0 {
+				readerErr <- nil
+				return
 			}
 		}
 	}()

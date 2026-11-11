@@ -1,6 +1,6 @@
 # Phase 5A report: accounts, device linking, Devices list, cloud history
 
-Status: implemented and tested on the Web; QA rounds 1 (two P0s), 2 (two P1s) and 3 (one P0) failed; every P0/P1 is fixed, QA round 4 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
+Status: implemented and tested on the Web; QA rounds 1 (two P0s), 2 (two P1s), 3 (one P0) and 4 (two P1s) failed; every P0/P1 is fixed, QA round 5 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -99,7 +99,7 @@ Guest suites (`pairing`, `transfer`, `history`, `keep-awake`, `guest`) still pas
 
 Latest local run (CI runs and the phase's CI history are listed at the top of `docs/qa/PHASE_5A_QA.md`):
 
-- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 47 files, 354 tests passed.
+- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 47 files, 358 tests passed.
 - `pnpm -C web build`: main JS 114,781 bytes gzip (budget 122,880).
 - `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md`: pass.
 - `go test ./...` with `TEST_DATABASE_URL` (PostgreSQL 16, go1.27.4): pass. `golangci-lint run ./...`: 0 issues. `govulncheck`: nothing reachable.
@@ -117,7 +117,7 @@ New: `SA_MAIL_SINK` (`console`, `smtp`, `memory`), `SA_SMTP_ADDR`, `SA_SMTP_USER
 - Pairing is not anchored on a device that holds no account key yet: a dishonest server could hand such a device a fabricated account key (`docs/CLIPBOARD_PROTOCOL.md` §1.13). Devices that hold keys, rotation pickup and recovery are verified.
 - In-origin script (XSS) can read raw account key bytes while it runs; non-extractable storage protects only the KEK, subkeys and the device private key.
 - A device whose proof is older than the current version when a rotation happens is left out and must pair again.
-- Accounts whose keys were set up before migration 0007 are "legacy" (pre-release data only) and must be recreated.
+- Accounts whose keys were set up before migration 0007 (no verify keys) or before migration 0009 (no recovery key signature) are "legacy" (pre-release data only): they cannot rotate and must be recreated (ADR 0012, ADR 0015).
 - The refresh grace window lets a thief who uses a copied secret within 30 seconds of the legitimate refresh hold a session until the legitimate device's next refresh revokes it (ADR 0011).
 - Losing every added device and the recovery phrase makes synced history unrecoverable, by design.
 - Mobile visual baselines changed (header Sign in chip) and are regenerated on the CI runner.
@@ -151,4 +151,5 @@ On `claude/practical-lovelace-avlb5g`:
 - 3987ac8: e2e first-block wait
 - 4446bee: QA round 1 fixes (key authenticity, session hardening)
 - f585651: QA round 2 fixes (current-version proofs, owed rotation, anchored pairing)
-- the QA round 3 fix commit that follows them (authenticated recovery key)
+- 79f6446: QA round 3 fixes (authenticated recovery key)
+- the QA round 4 fix commit that follows them (revoke/rotation serialization, history test)

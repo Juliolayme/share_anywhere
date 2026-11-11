@@ -121,7 +121,12 @@ func (s *Service) Keys(ctx context.Context, id access.Identity) (KeysState, erro
 		return KeysState{}, err
 	}
 	rows, err = s.cfg.Pool.Query(ctx,
-		`SELECT key_version, blob, from_device_id::text FROM device_key_blobs WHERE device_id = $1::uuid AND user_id = $2::uuid ORDER BY key_version`,
+		// Only a device that still has a registered key for this account gets its blobs: a blob left for a
+		// device that has since left (and maybe signed in again) is never delivered.
+		`SELECT b.key_version, b.blob, b.from_device_id::text FROM device_key_blobs b
+		  WHERE b.device_id = $1::uuid AND b.user_id = $2::uuid
+		    AND EXISTS (SELECT 1 FROM device_keys k WHERE k.device_id = b.device_id AND k.user_id = b.user_id)
+		  ORDER BY b.key_version`,
 		se.DeviceID, se.UserID)
 	if err != nil {
 		return KeysState{}, err

@@ -154,9 +154,18 @@ func (s *Service) detach(ctx context.Context, tx pgx.Tx, now time.Time, f detach
 	// A device with a registered (proven) wrapping key held the ADK: its account now owes a rotation
 	// (docs/ADR/0014-current-version-proofs.md). Every way of leaving an account runs through here, so the
 	// flag is set in the same transaction as the departure, before the key row that shows it is deleted.
+	// The account_keys rows are locked FOR UPDATE first (the lock Rotate takes), so a departure and a
+	// concurrent rotation serialize: either the rotation sees the device gone, or the departure runs after
+	// the rotation committed, sets rotation_due again and deletes the blob the rotation wrapped for it.
+	if _, err := tx.Exec(ctx,
+		`SELECT 1 FROM account_keys
+		  WHERE user_id IN (SELECT user_id FROM device_keys WHERE device_id = ANY($1::uuid[]))
+		  ORDER BY user_id FOR UPDATE`, ids); err != nil {
+		return nil, err
+	}
 	for _, q := range []string{
 		`UPDATE account_keys SET rotation_due = true
-		  WHERE user_id IN (SELECT user_id FROM device_keys WHERE device_id = ANY($1::uuid[])) AND NOT rotation_due`,
+		  WHERE user_id IN (SELECT user_id FROM device_keys WHERE device_id = ANY($1::uuid[]))`,
 		`DELETE FROM device_keys WHERE device_id = ANY($1::uuid[])`,
 		`DELETE FROM device_key_blobs WHERE device_id = ANY($1::uuid[])`,
 		`DELETE FROM device_pairings WHERE new_device_id = ANY($1::uuid[])`,

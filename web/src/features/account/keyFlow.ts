@@ -386,6 +386,36 @@ export function rotateKeys(
   });
 }
 
+/**
+ * QA round 4 P2-1: a remembered exclusion whose revoke never reached the server (the request got no answer) would
+ * make every rotation from this browser fail with `devices_changed` listing it as `missing`. When that happens, ask
+ * the server for the account's devices: a remembered device still in the account was never revoked, so it is
+ * forgotten here and gets its blob on the retry (the user can revoke it again). IDs the caller passed in this call
+ * (a revoke that just succeeded) are never dropped.
+ */
+async function dropUnrevoked(
+  api: AccountApi,
+  userId: string,
+  excluded: string[],
+  body: unknown,
+  explicit: readonly string[],
+): Promise<void> {
+  const missing = lower(
+    body && typeof body === 'object' && Array.isArray((body as { missing?: unknown }).missing)
+      ? ((body as { missing: unknown[] }).missing.filter((x) => typeof x === 'string') as string[])
+      : [],
+  );
+  const keep = new Set(lower([...explicit]));
+  const candidates = missing.filter((id) => excluded.includes(id) && !keep.has(id));
+  if (candidates.length === 0) return;
+  const { devices } = await api.devices();
+  const present = new Set(lower(devices.map((d) => d.id)));
+  const stillThere = candidates.filter((id) => present.has(id));
+  if (stillThere.length === 0) return;
+  await forgetRevoked(userId, stillThere).catch(() => undefined);
+  for (const id of stillThere) excluded.splice(excluded.indexOf(id), 1);
+}
+
 async function rotateNow(
   api: AccountApi,
   userId: string,
@@ -401,7 +431,10 @@ async function rotateNow(
   for (let attempt = 0; ; attempt++) {
     const check = await checkKeysNow(api, userId, deviceId);
     const { state } = check;
-    if (state.key_version === 0 || !state.recovery || (owed && !state.rotation_due)) return 'none';
+    if (state.key_version === 0 || (owed && !state.rotation_due)) return 'none';
+    // An account with keys always has a signed recovery key; a server that omits it cannot silently suppress the
+    // rotation a revoke needs (QA round 4 P2-2).
+    if (!state.recovery) throw new KeyStateError('rejected');
     if (conflictedFrom !== null && state.key_version > conflictedFrom && !state.rotation_due) return 'rotated';
     if (check.status === 'rejected' || check.status === 'refused' || check.status === 'legacy') {
       throw new KeyStateError(check.status);
@@ -427,6 +460,7 @@ async function rotateNow(
         // the truth: a device that left drops out, one that re-proved at the current version gets a blob, and this
         // device re-proves first if it was behind.
         if (e.code === 'key_version_conflict') conflictedFrom = state.key_version;
+        if (e.code === 'devices_changed') await dropUnrevoked(api, userId, excluded, e.body, exclude);
         continue;
       }
       throw e;

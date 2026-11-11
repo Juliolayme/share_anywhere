@@ -10,6 +10,7 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [42962832188](https://github.com/Juliolayme/share_anywhere/actions/runs/42962832188) on 5fdffe0: every job green, `security` included. One WebKit test (`p2p.spec.ts` reconnect) passed on retry: it waited only the default 5 s for the first verified block. 3987ac8 gives it 30 s like the other specs in the file.
 - [42967732687](https://github.com/Juliolayme/share_anywhere/actions/runs/42967732687) on 4446bee (QA round 1 fixes): every job green, e2e first attempt in all five projects (chromium 63, firefox 62, webkit 63, android-chrome 56, ios-safari 56).
 - [42974283806](https://github.com/Juliolayme/share_anywhere/actions/runs/42974283806) on f585651 (QA round 2 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
+- [42980800030](https://github.com/Juliolayme/share_anywhere/actions/runs/42980800030) on 79f6446 (QA round 3 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - Nightly [42961754657](https://github.com/Juliolayme/share_anywhere/actions/runs/42961754657) on e3289ba: every job passed. It generated the new mobile snapshot baselines (header Sign in chip), committed in 9874e3f.
 
 ## Round 1 — commit e3289ba — FAIL
@@ -117,3 +118,34 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 | `importChain` stores older versions unchecked | P2 | Checks the verify key and the signed chain link |
 | Unregistered departing device does not set `rotation_due` | P2 | Documented |
 | Report §9 hash, CI for HEAD | P2 | Report and CI history updated |
+
+## Round 4 — commit 79f6446 — FAIL
+
+0 P0, 2 P1, 5 P2 findings.
+
+Every Web, root and lint command passed. The account e2e suite passed 19 tests in each of the five projects. The round-3 P0 is verified fixed (live and in unit tests). The round-3 P2s are verified fixed client-side, and earlier rounds did not regress.
+
+**What held up under review:**
+
+- every key input is authenticated by something the device already holds: the recovery key signature, device proofs, rotation signatures, chain imports, pending pickup, and pairing and recovery;
+- automatic actions are bounded;
+- the current-version history rule holds under concurrency (`FOR SHARE`);
+- state handling for left-behind, refused, `not_ready` and remembered exclusions;
+- guest-first, flags, i18n, tokens and the bundle budget.
+
+**Why it failed:**
+
+- **P1-1:** a revoke racing another device's owed rotation (with `rotation_due` already true) could leave the revoked device a deliverable blob for the new version while `rotation_due` was cleared. `detach`'s conditional update skipped the locked row instead of waiting for it. This was reproduced live, 4 of 12 tries.
+- **P1-2:** the required `TestHistorySeqParallel` was flaky (about 10 %). The reader checked "writers finished" after reading a page, so it could stop one entry early. The flakiness was in the test, not the product.
+
+### Resolution of round 4 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Revoke racing an owed rotation | P1 | `detach` locks the affected `account_keys` rows `FOR UPDATE` (the rotation's lock) before deleting anything, and sets `rotation_due` unconditionally. Pending blobs are delivered only to a device that still has a registered key. `TestRevokeRacingOwedRotation` (40 concurrent iterations) and `TestPendingOnlyForRegisteredDevice` both fail on the old code and pass now |
+| Flaky `TestHistorySeqParallel` | P1 | The reader notes "writers finished" before each query and stops only on an empty page read after that. 80 of 80 runs pass |
+| Remembered exclusion can block every rotation | P2 | On `devices_changed` listing a remembered device as missing, the client checks `GET /v1/devices` and forgets it if it is still in the account. IDs revoked in the current call are never dropped |
+| `rotateNow` silently skips when `recovery` is null | P2 | Gives `rejected` |
+| Chain-import authenticity scope | P2 | Documented as holding against parties without a newer ADK |
+| Report legacy wording; CI entry | P2 | Report §6 covers migrations 0007 and 0009; CI history updated |
+| History 409 path bypasses the throttle | P2 | Documented as bounded (at most two rotations per tick, denial of service only) |

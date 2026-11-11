@@ -642,3 +642,60 @@ describe('QA round 3: authenticated recovery key, left-behind state, no double r
     expect(await store.allVersions()).toEqual([2]);
   });
 });
+
+describe('QA round 4: stuck exclusions and a missing recovery key', () => {
+  /** A server that lists OTHER, proven at v1, and requires a blob for it (OTHER is still in the account). */
+  async function withOtherListed() {
+    const { fake } = await readyAtV1();
+    const other = await generateX25519();
+    const proof = await deviceKeyProof(adk1.raw, 1, OTHER, other.publicKey);
+    const srv = fakeApi({
+      state: { ...fake.state, devices: [...fake.state.devices, { device_id: OTHER, ...proof }] },
+      rotate: (req) => {
+        if (!req.device_blobs.some((b) => b.device_id === OTHER)) {
+          throw new ApiError(409, 'devices_changed', 'changed', undefined, { missing: [OTHER], unexpected: [] });
+        }
+      },
+    });
+    const devices = vi.fn(async () => ({ devices: [{ id: DEVICE }, { id: OTHER }] }));
+    (srv.api as unknown as { devices: typeof devices }).devices = devices;
+    return { srv, devices };
+  }
+
+  it('P2-1: a remembered device whose revoke never reached the server is forgotten once the server still lists it', async () => {
+    const { srv, devices } = await withOtherListed();
+    await syncMeta().setExcluded(USER, [OTHER]); // the revoke request got no answer
+    expect(await rotateKeys(srv.api, USER, DEVICE)).toBe('rotated');
+    expect(devices).toHaveBeenCalledTimes(1);
+    expect(
+      srv.calls.rotate
+        .at(-1)
+        ?.device_blobs.map((b) => b.device_id)
+        .sort(),
+    ).toEqual([DEVICE, OTHER].sort());
+    expect(await syncMeta().excluded(USER)).toEqual([]);
+  });
+
+  it('P2-1: a device the caller just revoked is never re-included, even if the server lists it as missing', async () => {
+    const { srv, devices } = await withOtherListed();
+    await expect(rotateKeys(srv.api, USER, DEVICE, [OTHER])).rejects.toMatchObject({ code: 'devices_changed' });
+    expect(devices).not.toHaveBeenCalled();
+    expect(srv.calls.rotate).toHaveLength(0); // both attempts refused, nothing wrapped to OTHER
+    expect(await syncMeta().excluded(USER)).toEqual([OTHER]);
+  });
+
+  it('P2-1: a remembered device no longer in the account stays excluded', async () => {
+    const { srv, devices } = await withOtherListed();
+    devices.mockImplementation(async () => ({ devices: [{ id: DEVICE }] }));
+    await syncMeta().setExcluded(USER, [OTHER]);
+    await expect(rotateKeys(srv.api, USER, DEVICE)).rejects.toMatchObject({ code: 'devices_changed' });
+    expect(await syncMeta().excluded(USER)).toEqual([OTHER]);
+  });
+
+  it('P2-2: an account with keys but no recovery key in GET /v1/keys is rejected, not silently skipped', async () => {
+    const { fake } = await readyAtV1();
+    fake.setState({ recovery: null });
+    await expect(rotateKeys(fake.api, USER, DEVICE, [OTHER])).rejects.toMatchObject({ code: 'rejected' });
+    expect(fake.api.rotate).not.toHaveBeenCalled();
+  });
+});

@@ -315,4 +315,13 @@ describe('cloud history sync', () => {
     expect(await entryUuid('tx:s1', 'dev-a')).toBe(u);
     expect(await entryUuid('tx:s1', 'dev-b')).not.toBe(u);
   });
+
+  it('entry ids are stable: golden vectors computed with the formatting used before QA round 1', async () => {
+    // SHA-256("<local id>|<device id>")[0..16], version 8 and RFC 4122 variant bits, lowercase 8-4-4-4-12 hex.
+    // Computed independently (Python hashlib) with the pre-round-1 formatting; entries already uploaded keep their id.
+    expect(await entryUuid('tx:s1', 'dev-a')).toBe('7a5d57b0-b8bd-8bc7-a32a-f410125dee16');
+    expect(await entryUuid('rx:6f1e1b5a-3c1d-4a7e-9b2f-0c8d5e4a3b21', '6f1c2c1e-1111-4a5b-9c9d-000000000001')).toBe(
+      '1456cc5c-0804-82e3-8216-4016fc912494',
+    );
+  });
 });

@@ -1,11 +1,12 @@
 import type { RemoteClipboardEvent } from './api';
 
 /**
- * Clipboard Sync data kept in this browser (docs/CLIPBOARD_PROTOCOL.md §2.8), in IndexedDB `share-anywhere-clipboard`:
+ * Clipboard Sync data kept in this browser (docs/CLIPBOARD_PROTOCOL.md §2.9), in IndexedDB `share-anywhere-clipboard`:
  * - `events`: the account's live events exactly as the server sent them (ciphertext only, never plaintext), so the
  *   timeline opens offline; decrypted in memory when shown;
  * - `queue`: captures encrypted on this device and not yet acknowledged by the server (the offline queue);
- * - `meta`: the account's `seq` cursor (the highest seq applied), when it last caught up, and the store generation.
+ * - `meta`: the account's `seq` cursor (the highest seq applied), when it last caught up, the store generation, and
+ *   the pending deletes: events deleted on this device whose `DELETE` has not been confirmed yet (§2.9).
  * Records carry the account ID, and everything is erased with the key store when the device leaves the account.
  * Never in Web Storage.
  *
@@ -30,6 +31,20 @@ export interface QueuedEvent {
 }
 
 /**
+ * An event deleted on this device that may exist on the server (it was queued, so its create may have reached the
+ * server or still be in flight in some tab). The `DELETE` is retried with the queue until it answers 204, or 404 once
+ * `at + DELETE_GRACE_MS` has passed (docs/CLIPBOARD_PROTOCOL.md §2.9).
+ */
+export interface PendingDelete {
+  userId: string;
+  event_id: string;
+  /** Epoch ms when it was deleted here. */
+  at: number;
+  /** Epoch ms of the next attempt. */
+  due: number;
+}
+
+/**
  * Write methods take the generation the caller read with `generation()`. They resolve `true` when they wrote, and
  * `false` without writing anything when a wipe (in any tab) replaced the generation since.
  */
@@ -49,6 +64,17 @@ export interface ClipboardStore {
   queue(userId: string): Promise<QueuedEvent[]>;
   enqueue(item: QueuedEvent, gen: string): Promise<boolean>;
   dequeue(userId: string, eventId: string, gen: string): Promise<boolean>;
+  /** Pending deletes of the account. */
+  deletes(userId: string): Promise<PendingDelete[]>;
+  /**
+   * One transaction per call: stores (or updates) each pending delete and drops the same event from the queue and the
+   * cache, so a deleted capture is never in the queue and never shown again, in any tab.
+   */
+  markDeleted(userId: string, items: PendingDelete[], gen: string): Promise<boolean>;
+  /** The `DELETE` was confirmed: forgets the pending delete. */
+  forgetDelete(userId: string, eventId: string, gen: string): Promise<boolean>;
+  /** Whether the event is still in the queue and whether it has a pending delete (another tab may have changed both). */
+  pendingState(userId: string, eventId: string): Promise<{ queued: boolean; deleted: boolean }>;
   /** Erases every record of every account (sign-out, session end, key wipe) and starts a new generation. */
   wipe(): Promise<void>;
   /**
@@ -109,6 +135,8 @@ export function openClipboardStore(factory: IDBFactory = indexedDB): ClipboardSt
 
   const cursorKey = (userId: string) => `cursor:${userId}`;
   const syncedKey = (userId: string) => `synced:${userId}`;
+  const deleteKey = (userId: string, eventId: string) => `delete:${userId}:${eventId}`;
+  const deleteRange = (userId: string) => IDBKeyRange.bound(`delete:${userId}:`, `delete:${userId}:￿`);
 
   /** Moves the cursor forward inside the caller's transaction (plain callbacks keep the transaction active). */
   const writeCursor = (store: IDBObjectStore, userId: string, cursor: number) => {
@@ -181,6 +209,31 @@ export function openClipboardStore(factory: IDBFactory = indexedDB): ClipboardSt
     },
     dequeue(userId, eventId, gen) {
       return guarded([QUEUE], gen, (tx) => tx.objectStore(QUEUE).delete([userId, eventId]));
+    },
+    async deletes(userId) {
+      const tx = (await db()).transaction(META, 'readonly');
+      const all = await req(tx.objectStore(META).getAll(deleteRange(userId)) as IDBRequest<PendingDelete[]>);
+      return all.filter((d) => d && typeof d.event_id === 'string' && d.userId === userId);
+    },
+    markDeleted(userId, items, gen) {
+      return guarded([QUEUE, EVENTS], gen, (tx) => {
+        for (const d of items) {
+          tx.objectStore(QUEUE).delete([userId, d.event_id]);
+          tx.objectStore(EVENTS).delete([userId, d.event_id]);
+          tx.objectStore(META).put({ ...d, userId }, deleteKey(userId, d.event_id));
+        }
+      });
+    },
+    forgetDelete(userId, eventId, gen) {
+      return guarded([], gen, (tx) => tx.objectStore(META).delete(deleteKey(userId, eventId)));
+    },
+    async pendingState(userId, eventId) {
+      const tx = (await db()).transaction([QUEUE, META], 'readonly');
+      const [q, d] = await Promise.all([
+        req(tx.objectStore(QUEUE).getKey([userId, eventId])),
+        req(tx.objectStore(META).getKey(deleteKey(userId, eventId))),
+      ]);
+      return { queued: q !== undefined, deleted: d !== undefined };
     },
     async generation() {
       // Read-or-create in one readwrite transaction, so two tabs starting together agree on one token.

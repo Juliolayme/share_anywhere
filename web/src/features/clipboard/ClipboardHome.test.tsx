@@ -98,8 +98,8 @@ describe('Clipboard home (CB-4)', () => {
     expect(screen.getByTestId('cb-status-title')).toHaveTextContent('Automatic capture is best-effort');
     await userEvent.click(screen.getByRole('button', { name: 'Sync Clipboard' }));
     expect(await screen.findByTestId('cb-item-text')).toHaveTextContent('hello from the test');
-    expect(posts).toHaveLength(1);
     expect(await screen.findByText('Clipboard synced · encrypted')).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
     expect(within(screen.getByTestId('cb-item')).getByText('This browser')).toBeInTheDocument();
   });
 

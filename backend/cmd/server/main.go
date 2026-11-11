@@ -126,6 +126,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// The hub's presence workers stop on every way out of run (after the HTTP server on shutdown).
+	defer a.hub.Close()
 	go a.devices.RunPurger(ctx, time.Hour)
 	go a.sharing.Run(ctx, 5*time.Second)
 	go a.auth.Run(ctx, 5*time.Minute)
@@ -196,7 +198,8 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 	}
 	ips := clientip.New(cfg.TrustedProxies)
 	deviceSvc := devices.NewService(store, tokens, devices.NewPoW(cfg.ServerSecret, cfg.PoWDifficulty, clk), clk, devices.ScaledLimits(clk, cfg.RateLimitMultiplier), log)
-	hub := ws.NewHub(ws.Config{AllowedOrigins: cfg.AllowedOrigins, Clock: clk, IPs: ips, Log: log})
+	reg := metrics.New()
+	hub := ws.NewHub(ws.Config{AllowedOrigins: cfg.AllowedOrigins, Clock: clk, IPs: ips, Log: log, Metrics: reg})
 	deviceSvc.OnRevoke(hub.DisconnectDevice)
 
 	mailer, memMail := newMailer(cfg, log)
@@ -219,7 +222,6 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 
 	limits := sharing.ScaledLimits(clk, cfg.RateLimitMultiplier)
 	protected := sharing.NewProtectedMode(clk, cfg.CodeGuessAlarmPerMin)
-	reg := metrics.New()
 	shareSvc := sharing.NewService(sharing.Config{
 		Pool: pool, Clock: clk, Secret: cfg.ServerSecret, Notify: hub, Limits: limits,
 		Protected: protected, PublicURL: cfg.PublicURL, Log: log, Metrics: reg,

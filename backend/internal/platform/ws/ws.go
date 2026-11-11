@@ -22,6 +22,7 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clientip"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clock"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/httpx"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/metrics"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/ratelimit"
 )
 
@@ -35,9 +36,11 @@ const (
 	maxMessageBytes  = 64 << 10
 	writeTimeout     = 10 * time.Second
 	ticketsPerMinute = 30
-	// Presence hooks run off the handshake on presenceShards workers (a device always maps to the same one,
-	// so its connect and disconnect stay in order), each with a queue of presenceQueue events; an event that
-	// finds its queue full is dropped and logged rather than holding up a socket.
+	// Presence hooks run off the handshake on presenceShards workers (a device always maps to the same one),
+	// each with a queue of presenceQueue events. Events are queued under the hub lock at the moment the
+	// device's socket count changes, so one device's CONNECTED and DISCONNECTED reach the hooks in the order
+	// the changes happened, across sockets. An event that finds its queue full is dropped, logged and counted
+	// (sa_ws_presence_dropped_total) rather than holding up a socket.
 	presenceShards = 4
 	presenceQueue  = 256
 )
@@ -48,6 +51,7 @@ type Config struct {
 	Clock          clock.Clock
 	IPs            *clientip.Resolver
 	Log            *slog.Logger
+	Metrics        *metrics.Registry // optional: sa_ws_presence_dropped_total
 }
 
 type ticket struct {
@@ -68,6 +72,12 @@ type Hub struct {
 	handlers  map[string]Handler
 	presence  []func(deviceID string, connected bool)
 	presenceQ []chan presenceEvent // started by the first OnPresence
+	// presenceCap is the queue size per worker (presenceQueue; tests change it before OnPresence).
+	presenceCap  int
+	presenceStop chan struct{} // closed by Close
+	presenceWG   sync.WaitGroup
+	closed       bool
+	dropped      *metrics.Counter
 }
 
 type presenceEvent struct {
@@ -97,16 +107,26 @@ const sendQueue = 64
 
 // NewHub returns a hub.
 func NewHub(cfg Config) *Hub {
+	dropped := new(metrics.Counter)
+	if cfg.Metrics != nil {
+		dropped = cfg.Metrics.Counter("sa_ws_presence_dropped_total",
+			"Device presence events dropped because a presence worker queue was full.")
+	}
 	return &Hub{
-		cfg:        cfg,
-		ticketRate: ratelimit.New(ratelimit.Rule{Limit: ticketsPerMinute, Window: time.Minute}, cfg.Clock),
-		tickets:    map[string]ticket{},
-		byDevice:   map[string]int{},
-		byAddress:  map[string]int{},
-		conns:      map[string]map[*conn]struct{}{},
-		handlers:   map[string]Handler{},
+		cfg:         cfg,
+		presenceCap: presenceQueue,
+		dropped:     dropped,
+		ticketRate:  ratelimit.New(ratelimit.Rule{Limit: ticketsPerMinute, Window: time.Minute}, cfg.Clock),
+		tickets:     map[string]ticket{},
+		byDevice:    map[string]int{},
+		byAddress:   map[string]int{},
+		conns:       map[string]map[*conn]struct{}{},
+		handlers:    map[string]Handler{},
 	}
 }
+
+// PresenceDropped returns how many presence events were dropped because a worker queue was full.
+func (h *Hub) PresenceDropped() int64 { return h.dropped.Value() }
 
 // Handle registers the handler for client messages of type t (e.g. OFFER, ANSWER, ICE_CANDIDATE).
 func (h *Hub) Handle(t string, fn Handler) {
@@ -117,72 +137,114 @@ func (h *Hub) Handle(t string, fn Handler) {
 
 // OnPresence registers fn to run when a device opens its first socket (connected true) or closes its last one
 // (connected false). It runs asynchronously on a hub worker, outside the hub lock and never on the handshake
-// (WELCOME does not wait for it); one device's events reach fn in order. fn must bound its own work (the
-// workers are shared). Register before serving.
+// (WELCOME does not wait for it); one device's events reach fn in the order its socket count changed, across
+// sockets. fn must bound its own work (the workers are shared). Register before serving; Close stops the
+// workers.
 func (h *Hub) OnPresence(fn func(deviceID string, connected bool)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.presence = append(h.presence, fn)
-	if h.presenceQ == nil {
+	if h.presenceQ == nil && !h.closed {
+		h.presenceStop = make(chan struct{})
 		h.presenceQ = make([]chan presenceEvent, presenceShards)
 		for i := range h.presenceQ {
-			q := make(chan presenceEvent, presenceQueue)
+			q := make(chan presenceEvent, h.presenceCap)
 			h.presenceQ[i] = q
-			go h.presenceWorker(q)
+			h.presenceWG.Add(1)
+			go h.presenceWorker(q, h.presenceStop)
 		}
 	}
 }
 
-func (h *Hub) presenceWorker(q <-chan presenceEvent) {
-	for ev := range q {
-		h.mu.Lock()
-		fns := append([]func(string, bool){}, h.presence...)
-		h.mu.Unlock()
-		for _, fn := range fns {
-			fn(ev.deviceID, ev.connected)
-		}
-	}
-}
-
-// add tracks a socket and reports whether it is the device's first open one.
-func (h *Hub) add(c *conn) bool {
+// Close stops the presence workers (server shutdown, tests) and waits for them: a hook running now finishes
+// first (hooks bound their own work), queued events not yet delivered are discarded, and later socket changes
+// announce nothing. Sockets are not closed. Safe to call more than once.
+func (h *Hub) Close() {
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	if !h.closed {
+		h.closed = true
+		if h.presenceStop != nil {
+			close(h.presenceStop)
+		}
+	}
+	h.mu.Unlock()
+	h.presenceWG.Wait()
+}
+
+func (h *Hub) presenceWorker(q <-chan presenceEvent, stop <-chan struct{}) {
+	defer h.presenceWG.Done()
+	for {
+		select {
+		case <-stop:
+			return
+		case ev := <-q:
+			select {
+			case <-stop: // stopping wins over a queued event
+				return
+			default:
+			}
+			h.mu.Lock()
+			fns := append([]func(string, bool){}, h.presence...)
+			h.mu.Unlock()
+			for _, fn := range fns {
+				fn(ev.deviceID, ev.connected)
+			}
+		}
+	}
+}
+
+// add tracks a socket; when it is the device's first open one, DEVICE presence (connected) is queued in the
+// same critical section, so it is ordered with the device's other presence changes.
+func (h *Hub) add(c *conn) {
+	h.mu.Lock()
 	if h.conns[c.deviceID] == nil {
 		h.conns[c.deviceID] = map[*conn]struct{}{}
 	}
 	h.conns[c.deviceID][c] = struct{}{}
-	return len(h.conns[c.deviceID]) == 1
+	dropped := len(h.conns[c.deviceID]) == 1 && !h.queuePresenceLocked(c.deviceID, true)
+	h.mu.Unlock()
+	if dropped {
+		h.logDropped(true)
+	}
 }
 
-// remove forgets a socket and reports whether it was the device's last open one.
-func (h *Hub) remove(c *conn) bool {
+// remove forgets a socket; when it was the device's last open one, presence (disconnected) is queued in the
+// same critical section.
+func (h *Hub) remove(c *conn) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	delete(h.conns[c.deviceID], c)
+	dropped := false
 	if len(h.conns[c.deviceID]) == 0 {
 		delete(h.conns, c.deviceID)
-		return true
+		dropped = !h.queuePresenceLocked(c.deviceID, false)
 	}
-	return false
+	h.mu.Unlock()
+	if dropped {
+		h.logDropped(false)
+	}
 }
 
-// notifyPresence queues a presence event for the hooks without blocking the caller.
-func (h *Hub) notifyPresence(deviceID string, connected bool) {
-	h.mu.Lock()
-	qs := h.presenceQ
-	h.mu.Unlock()
-	if len(qs) == 0 {
-		return
+// queuePresenceLocked queues a presence event for the hooks without blocking (the caller holds h.mu). It
+// reports false when the event was dropped because the device's worker queue is full; no hooks or a closed
+// hub queue nothing and report true.
+func (h *Hub) queuePresenceLocked(deviceID string, connected bool) bool {
+	if len(h.presenceQ) == 0 || h.closed {
+		return true
 	}
 	f := fnv.New32a()
 	_, _ = f.Write([]byte(deviceID))
 	select {
-	case qs[f.Sum32()%presenceShards] <- presenceEvent{deviceID: deviceID, connected: connected}:
+	case h.presenceQ[f.Sum32()%presenceShards] <- presenceEvent{deviceID: deviceID, connected: connected}:
+		return true
 	default:
-		if h.cfg.Log != nil {
-			h.cfg.Log.Warn("websocket presence queue full; event dropped", "connected", connected)
-		}
+		h.dropped.Inc()
+		return false
+	}
+}
+
+func (h *Hub) logDropped(connected bool) {
+	if h.cfg.Log != nil {
+		h.cfg.Log.Warn("websocket presence queue full; event dropped", "connected", connected, "dropped_total", h.dropped.Value())
 	}
 }
 
@@ -360,20 +422,13 @@ func (h *Hub) upgrade(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	c := &conn{deviceID: deviceID, out: make(chan []byte, sendQueue), cancel: cancel}
-	first := h.add(c)
-	defer func() {
-		if h.remove(c) {
-			h.notifyPresence(deviceID, false)
-		}
-	}()
+	// Presence (a database lookup in the clipboard hook) is queued by add and remove and runs on a hub worker,
+	// so the handshake never waits for it; other devices hear of this arrival shortly after.
+	h.add(c)
+	defer h.remove(c)
 	go h.writer(ctx, ws, c)
 	welcome, _ := json.Marshal(Welcome{Type: "WELCOME", DeviceID: deviceID, ServerTime: h.cfg.Clock.Now().UTC()})
 	c.enqueue(welcome)
-	// Presence (a database lookup in the clipboard hook) runs after WELCOME on a hub worker, so the handshake
-	// never waits for it; other devices hear of this arrival shortly after.
-	if first {
-		h.notifyPresence(deviceID, true)
-	}
 	go h.heartbeat(ctx, ws, cancel)
 
 	limiter := ratelimit.New(ratelimit.Rule{Limit: MessagesPerSec, Window: time.Second}, h.cfg.Clock)

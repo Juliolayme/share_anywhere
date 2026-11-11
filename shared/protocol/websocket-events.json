@@ -698,7 +698,9 @@
         },
         "event_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "Lowercase canonical 8-4-4-4-12 text, exactly as in OpenAPI and the AAD (docs/CLIPBOARD_PROTOCOL.md §1.3)."
         },
         "seq": {
           "type": "integer",
@@ -736,7 +738,9 @@
         },
         "event_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "Lowercase canonical 8-4-4-4-12 text, exactly as in OpenAPI and the AAD (docs/CLIPBOARD_PROTOCOL.md §1.3)."
         },
         "seq": {
           "type": "integer",

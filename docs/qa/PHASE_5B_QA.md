@@ -8,6 +8,9 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [43012316305](https://github.com/Juliolayme/share_anywhere/actions/runs/43012316305) on b956f0f (clipboard backend): every job green.
 - [43021399182](https://github.com/Juliolayme/share_anywhere/actions/runs/43021399182) on fab4866 (Web Clipboard): every job green, e2e first attempt in all five projects (chromium 69, firefox 67, webkit 68, android-chrome 61, ios-safari 61). Nightly [43021413838](https://github.com/Juliolayme/share_anywhere/actions/runs/43021413838) green; it produced the mobile snapshot baselines for the fifth tab, committed in de39866.
 
+- [43025957764](https://github.com/Juliolayme/share_anywhere/actions/runs/43025957764) on 8d2cb0e (QA round 1 backend fixes): every job green.
+- [43029093517](https://github.com/Juliolayme/share_anywhere/actions/runs/43029093517) on 726c0a2 (QA round 1 Web fixes): every job green, e2e first attempt in all five projects (chromium 69, firefox 67, webkit 68, android-chrome 61, ios-safari 61).
+
 ## Round 1 — commit fab4866 — FAIL
 
 0 P0, 2 P1 and 13 P2 findings.
@@ -55,3 +58,28 @@ Every command passed. The clipboard and account e2e suites passed in all five pr
 | Reads not rate-limited | P2 | Per-device read limit |
 | Presence query delays WELCOME | P2 | Presence runs after WELCOME |
 | `choices.spec.ts` navigates twice | P2 | Single navigation |
+
+## Round 2 — commit 726c0a2 — FAIL
+
+0 P0, 1 P1 and 7 P2 findings.
+
+Every command passed. `TestClearRacingSweep` passed 25 times, plus 5 more under `-race`. The clipboard and account e2e suites passed in all five projects; the one local WebKit failure was a browser internal error on navigation, and it passed 3 of 3 on rerun. Live probes confirmed the canonical-id and size rules, and found no errors under a burst of mixed writes.
+
+All 15 round-1 resolutions hold. Changing the history id formatting keeps every existing id (5,000 derived ids compared, 0 differences).
+
+**Why it failed:**
+
+- **P1-1:** the round-1 late-ack fix treated "no longer queued" as "deleted here" and re-sent a DELETE. A cursor pull also removes an event from the queue when it sees the event live, and the server sends `CLIPBOARD_EVENT_CREATED` before the 201, so the pull can win the race. When it did, a correctly synced item was deleted on every device. QA reproduced this with the repo's fake server, including three queued items flushed after a reconnect.
+
+### Resolution of round 2 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| A late create ack deletes a synced item | P1 | Local deletions are recorded explicitly, in a durable pending-delete list, and only those re-send DELETE. An ack for an event a pull already acknowledged is a plain success. Regression tests come from QA's harness |
+| Deleting a queued item while offline brings it back | P2 | Pending deletes are kept in IndexedDB and retried with the queue until 204 or 404 |
+| Clear history keeps queued items | P2 | Clear also drops the queue |
+| Presence workers: no shutdown, cross-socket ordering, silent drops | P2 | Stop path for the workers, ordering preserved per device, drops logged and counted; tests added |
+| Timestamp precision differs between create and read | P2 | Rounded to microseconds before insert |
+| Docs: read limit in §2.6, a sentence break, WS `event_id` pattern | P2 | Fixed |
+| Report and QA log hashes and CI | P2 | Added |
+| No golden vector for `entryUuid` | P2 | Golden vector test added |

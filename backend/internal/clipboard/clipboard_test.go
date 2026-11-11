@@ -239,6 +239,40 @@ func TestIdempotentEventsTombstonesAndValidation(t *testing.T) {
 
 // TestPayloadLimits: payload_size above 256 KB, ciphertext above 256 KB + tag, or a body too large to hold
 // either is 413 payload_too_large; exactly 256 KB is accepted.
+// TestTimestampsRoundedToMicroseconds: created_at and expires_at are rounded to microseconds before the insert,
+// so the 201, a repeated create, GET /events and GET /history all report the same instants (QA 5B round 2).
+func TestTimestampsRoundedToMicroseconds(t *testing.T) {
+	e := newEnv(t, 100)
+	_, tok := e.signup("micro@example.com")
+	e.clk.Advance(123456789 * time.Nanosecond) // t0 + 0.123456789 s: below PostgreSQL's precision
+	id := newID()
+	created := e.do("POST", "/v1/clipboard/events", tok, eventBody(id, 1, 8))
+	e.want(created, 201, "")
+	wantCreated := t0.Add(123457 * time.Microsecond) // rounded, not truncated
+	wantExpires := wantCreated.Add(7 * 24 * time.Hour)
+	if c, x := created.str("created_at"), created.str("expires_at"); c != wantCreated.Format(time.RFC3339Nano) || x != wantExpires.Format(time.RFC3339Nano) {
+		t.Fatalf("201: created_at %s expires_at %s", c, x)
+	}
+	again := e.do("POST", "/v1/clipboard/events", tok, eventBody(id, 1, 8))
+	e.want(again, 201, "")
+	page := e.do("GET", "/v1/clipboard/events?cursor=0", tok, nil)
+	e.want(page, 200, "")
+	hist := e.do("GET", "/v1/clipboard/history", tok, nil)
+	e.want(hist, 200, "")
+	for name, r := range map[string]resp{"repeat": again, "events": page, "history": hist} {
+		var c, x string
+		if evs, ok := r.body["events"].([]any); ok {
+			ev := evs[0].(map[string]any)
+			c, x = ev["created_at"].(string), ev["expires_at"].(string)
+		} else {
+			c, x = r.str("created_at"), r.str("expires_at")
+		}
+		if c != created.str("created_at") || x != created.str("expires_at") {
+			t.Fatalf("%s: created_at %s expires_at %s, 201 said %s %s", name, c, x, created.str("created_at"), created.str("expires_at"))
+		}
+	}
+}
+
 func TestPayloadLimits(t *testing.T) {
 	e := newEnv(t, 100)
 	_, tok := e.signup("dee@example.com")

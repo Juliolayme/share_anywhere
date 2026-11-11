@@ -1,14 +1,18 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +21,7 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clientip"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clock"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/metrics"
 )
 
 type okVerifier struct{}
@@ -40,6 +45,7 @@ func newServer(t *testing.T, c clock.Clock) (*Hub, *httptest.Server) {
 	router.Finalize()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	t.Cleanup(hub.Close)
 	return hub, srv
 }
 
@@ -308,5 +314,241 @@ func TestPresenceHooks(t *testing.T) {
 	_ = c2.Close(websocket.StatusNormalClosure, "")
 	if e := next(); e != "-dev-p" {
 		t.Fatalf("last socket: %s", e)
+	}
+}
+
+// syncBuffer is a log sink safe for concurrent writes.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func bareHub(log io.Writer, reg *metrics.Registry) *Hub {
+	return NewHub(Config{Clock: clock.Real{}, IPs: clientip.New([]netip.Prefix{}), Log: slog.New(slog.NewTextHandler(log, nil)), Metrics: reg})
+}
+
+func bareConn(deviceID string) *conn {
+	return &conn{deviceID: deviceID, out: make(chan []byte, 1), cancel: func() {}}
+}
+
+// TestPresenceOrderAcrossSockets: sockets of one device opening and closing concurrently (a reconnect racing
+// the old socket's close) announce strictly alternating connected/disconnected, in the order the device's
+// socket count changed, and the last event matches the final state: a stale DISCONNECTED never follows a
+// newer CONNECTED (QA 5B round 2, P2-3).
+func TestPresenceOrderAcrossSockets(t *testing.T) {
+	hub := bareHub(io.Discard, nil)
+	hub.presenceCap = 1 << 16 // this test checks ordering, not dropping
+	t.Cleanup(hub.Close)
+	var mu sync.Mutex
+	seen := map[string][]bool{}
+	hub.OnPresence(func(deviceID string, connected bool) {
+		mu.Lock()
+		seen[deviceID] = append(seen[deviceID], connected)
+		mu.Unlock()
+	})
+	devices := []string{"dev-a", "dev-b", "dev-c"}
+	var wg sync.WaitGroup
+	for _, d := range devices {
+		for g := 0; g < 8; g++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 200; i++ {
+					c := bareConn(d)
+					hub.add(c)
+					if i%3 == 0 {
+						runtime.Gosched()
+					}
+					hub.remove(c)
+				}
+			}()
+		}
+	}
+	wg.Wait()
+	// One device left connected at the end: its last event must say so.
+	last := bareConn("dev-a")
+	hub.add(last)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		evs := append([]bool(nil), seen["dev-a"]...)
+		mu.Unlock()
+		if len(evs) > 0 && evs[len(evs)-1] {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("dev-a never announced its final connection (%d events)", len(evs))
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := hub.PresenceDropped(); n != 0 {
+		t.Fatalf("dropped %d events with a large queue", n)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, d := range devices {
+		evs := seen[d]
+		if len(evs) == 0 {
+			t.Fatalf("%s: no events", d)
+		}
+		for i, connected := range evs {
+			if connected != (i%2 == 0) {
+				t.Fatalf("%s: event %d is %v; events must alternate starting with connected (%v)", d, i, connected, evs[max(0, i-3):i+1])
+			}
+		}
+	}
+	if evs := seen["dev-b"]; evs[len(evs)-1] {
+		t.Fatal("dev-b closed all its sockets but its last event says connected")
+	}
+}
+
+// TestPresenceDropWhenFull: a full worker queue drops the event without blocking the socket, logs it and counts
+// it in sa_ws_presence_dropped_total.
+func TestPresenceDropWhenFull(t *testing.T) {
+	logs := &syncBuffer{}
+	reg := metrics.New()
+	hub := bareHub(logs, reg)
+	hub.presenceCap = 1
+	t.Cleanup(hub.Close)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var got []string
+	hub.OnPresence(func(deviceID string, connected bool) {
+		mu.Lock()
+		got = append(got, fmt.Sprintf("%s %v", deviceID, connected))
+		mu.Unlock()
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-release
+	})
+	c1 := bareConn("dev-full")
+	hub.add(c1) // taken by the worker, which then blocks in the hook
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("hook never ran")
+	}
+	done := make(chan struct{})
+	go func() {
+		hub.remove(c1)                // fills the queue (capacity 1)
+		hub.add(bareConn("dev-full")) // dropped
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a full presence queue blocked the socket")
+	}
+	if n := hub.PresenceDropped(); n != 1 {
+		t.Fatalf("dropped = %d, want 1", n)
+	}
+	if v := reg.Counter("sa_ws_presence_dropped_total", "").Value(); v != 1 {
+		t.Fatalf("metric = %d, want 1", v)
+	}
+	if !strings.Contains(logs.String(), "presence queue full") {
+		t.Fatalf("drop not logged: %q", logs.String())
+	}
+	if strings.Contains(logs.String(), "dev-full") {
+		t.Fatal("the log line must not carry the device id")
+	}
+	close(release)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		mu.Lock()
+		n := len(got)
+		mu.Unlock()
+		if n == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("queued event not delivered after release (%d)", n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got[0] != "dev-full true" || got[1] != "dev-full false" {
+		t.Fatalf("delivered %v", got)
+	}
+}
+
+// TestPresenceCloseStopsWorkers: Close waits for a running hook, stops every worker (no goroutine left
+// behind), discards queued events, makes later socket changes announce nothing, and can be called twice.
+func TestPresenceCloseStopsWorkers(t *testing.T) {
+	base := runtime.NumGoroutine()
+	hub := bareHub(io.Discard, nil)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var mu sync.Mutex
+	calls := 0
+	hub.OnPresence(func(string, bool) {
+		mu.Lock()
+		calls++
+		first := calls == 1
+		mu.Unlock()
+		if first {
+			close(started)
+			<-release
+		}
+	})
+	if n := runtime.NumGoroutine(); n < base+presenceShards {
+		t.Fatalf("workers not started: %d goroutines, base %d", n, base)
+	}
+	c := bareConn("dev-x")
+	hub.add(c)
+	<-started
+	hub.remove(c) // queued behind the running hook, then discarded by Close
+	closed := make(chan struct{})
+	go func() {
+		hub.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while a hook was still running")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close did not return")
+	}
+	hub.Close() // idempotent
+	hub.add(bareConn("dev-y"))
+	hub.remove(bareConn("dev-y"))
+	deadline := time.Now().Add(3 * time.Second)
+	for runtime.NumGoroutine() > base {
+		if time.Now().After(deadline) {
+			t.Fatalf("goroutines leaked: %d, base %d", runtime.NumGoroutine(), base)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("hook ran %d times; events after Close must be discarded", calls)
+	}
+	// A hub closed before any hook was registered starts no workers.
+	idle := bareHub(io.Discard, nil)
+	idle.Close()
+	idle.OnPresence(func(string, bool) {})
+	if idle.presenceQ != nil {
+		t.Fatal("workers started after Close")
 	}
 }

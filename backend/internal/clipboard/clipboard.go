@@ -311,7 +311,8 @@ func (s *Service) Create(ctx context.Context, id access.Identity, in EventInput)
 		if in.KeyVersion != current {
 			return ErrKeyVersion
 		}
-		now := s.cfg.Clock.Now()
+		// PostgreSQL keeps microseconds: round first, so the 201 and every later read carry the same instants.
+		now := s.cfg.Clock.Now().Round(time.Microsecond)
 		out = Created{Seq: last + 1, CreatedAt: now, ExpiresAt: now.Add(time.Duration(st.RetentionDays) * 24 * time.Hour)}
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO clipboard_events (user_id, event_id, seq, origin_device_id, event_type, mime_type, key_version, nonce,

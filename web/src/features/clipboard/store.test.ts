@@ -30,7 +30,7 @@ const q = (userId: string, id: string, at: number): QueuedEvent => ({
   queuedAt: at,
 });
 
-describe('clipboard store (IndexedDB, docs/CLIPBOARD_PROTOCOL.md §2.8)', () => {
+describe('clipboard store (IndexedDB, docs/CLIPBOARD_PROTOCOL.md §2.9)', () => {
   it('keeps accounts apart, never moves the cursor backwards, and orders the queue by capture time', async () => {
     const s = openClipboardStore(new IDBFactory());
     const g = await s.generation();
@@ -78,6 +78,36 @@ describe('clipboard store (IndexedDB, docs/CLIPBOARD_PROTOCOL.md §2.8)', () => 
     // A runtime started after the wipe writes normally.
     expect(await tabA.enqueue(q('u1', 'after', 3), gB)).toBe(true);
     expect((await tabB.queue('u1')).map((e) => e.event_id)).toEqual(['after']);
+  });
+
+  it('pending deletes: one transaction takes the event out of the queue and the cache; guarded and wiped like the rest', async () => {
+    const factory = new IDBFactory();
+    const tabA = openClipboardStore(factory);
+    const tabB = openClipboardStore(factory);
+    const g = await tabA.generation();
+    await tabA.enqueue(q('u1', 'queued', 1), g);
+    await tabA.apply('u1', { put: [ev('queued', 4), ev('kept', 5)] }, g);
+    expect(await tabB.pendingState('u1', 'queued')).toEqual({ queued: true, deleted: false });
+    const del = { userId: 'u1', event_id: 'queued', at: 100, due: 100 };
+    expect(await tabA.markDeleted('u1', [del], g)).toBe(true);
+    // The other tab sees it gone from the queue and marked as deleted.
+    expect(await tabB.pendingState('u1', 'queued')).toEqual({ queued: false, deleted: true });
+    expect(await tabB.queue('u1')).toEqual([]);
+    expect((await tabB.events('u1')).map((e) => e.event_id)).toEqual(['kept']);
+    expect(await tabB.deletes('u1')).toEqual([del]);
+    expect(await tabB.deletes('u2')).toEqual([]);
+    // Updating it (a new due time) keeps one record.
+    await tabA.markDeleted('u1', [{ ...del, due: 500 }], g);
+    expect(await tabB.deletes('u1')).toEqual([{ ...del, due: 500 }]);
+    expect(await tabA.forgetDelete('u1', 'queued', g)).toBe(true);
+    expect(await tabB.deletes('u1')).toEqual([]);
+    // After a wipe, a runtime started before it can neither add nor forget one; the wipe erased them all.
+    await tabA.markDeleted('u1', [del], g);
+    await tabB.wipe();
+    expect(await tabB.deletes('u1')).toEqual([]);
+    expect(await tabA.markDeleted('u1', [del], g)).toBe(false);
+    expect(await tabA.forgetDelete('u1', 'queued', g)).toBe(false);
+    expect(await tabB.deletes('u1')).toEqual([]);
   });
 
   it('leaving the account (wipeAccountData) erases the clipboard cache, queue and cursor too', async () => {

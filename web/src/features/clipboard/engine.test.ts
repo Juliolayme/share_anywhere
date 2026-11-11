@@ -14,7 +14,7 @@ import {
 } from '../../lib/crypto';
 import { ApiError, NetworkError } from '../../lib/api/errors';
 import type { ClipboardApi, ClipboardEventRequest, ClipboardSettings, RemoteClipboardEvent } from './api';
-import { ClipboardEngine, type EngineDeps } from './engine';
+import { ClipboardEngine, DELETE_GRACE_MS, type EngineDeps } from './engine';
 import { openClipboardStore, type ClipboardStore } from './store';
 
 const USER = 'u1';
@@ -739,5 +739,336 @@ describe('ClipboardEngine', () => {
     timers.shift()?.();
     await vi.waitFor(() => expect(e.snapshot().synced).toBe(true));
     expect(e.snapshot().loadError).toBeNull();
+  });
+
+  // QA round 2 (Phase 5B): the server notifies CLIPBOARD_EVENT_CREATED before it answers the create, and the runtime
+  // refreshes on it, so a cursor pull can acknowledge an event before its own create response arrives. That late
+  // acknowledgement is plain success; only events deleted on this device ever get a DELETE again.
+  const deletedRows = (server: ReturnType<typeof fakeServer>) => [...server.rows.values()].filter((r) => r.deleted);
+
+  it('QA r2: a refresh that pulls the event while its create response is held does not delete it', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const removes: string[] = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    let hold = false;
+    const { e } = engine(server, a, {
+      api: {
+        ...server.api,
+        create: async (req) => {
+          server.as('dev-a');
+          const res = await server.api.create(req); // committed on the server
+          if (hold) await gate; // the 201 is still on the wire
+          return res;
+        },
+        remove: async (id) => {
+          removes.push(id);
+          return server.api.remove(id);
+        },
+      },
+    });
+    await e.start();
+    hold = true;
+    const cap = e.capture('hello world', 'manual');
+    await vi.waitFor(() => expect(server.rows.size).toBe(1));
+    await e.refresh(); // the WebSocket notification won the race
+    expect(e.snapshot().queued).toBe(0);
+    release();
+    expect(await cap).toMatchObject({ kind: 'synced' });
+    await e.flush();
+    await vi.waitFor(() => expect(e.snapshot().syncing).toBe(false));
+    expect(removes).toEqual([]);
+    expect(deletedRows(server)).toEqual([]);
+    expect(texts(e)).toEqual(['hello world']);
+    expect(await a.store.queue(USER)).toEqual([]);
+    expect(await a.store.deletes(USER)).toEqual([]);
+  });
+
+  it('QA r2: three captures queued offline, flushed online while each create triggers a refresh, stay on the server', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    let eng: ClipboardEngine | null = null;
+    let notify = false;
+    const { e } = engine(server, a, {
+      api: {
+        ...server.api,
+        create: async (req) => {
+          server.as('dev-a');
+          const res = await server.api.create(req);
+          if (notify) void eng?.refresh(); // CLIPBOARD_EVENT_CREATED arrives before the 201
+          await new Promise((r) => setTimeout(r, 5));
+          return res;
+        },
+      },
+    });
+    eng = e;
+    await e.start();
+    server.setOffline(true);
+    for (const t of ['one', 'two', 'three']) await e.capture(t, 'manual');
+    expect(e.snapshot().queued).toBe(3);
+    server.setOffline(false);
+    notify = true;
+    await e.flush();
+    await vi.waitFor(() => expect(e.snapshot().syncing).toBe(false));
+    await e.refresh();
+    expect(server.rows.size).toBe(3);
+    expect(deletedRows(server)).toEqual([]);
+    expect(texts(e)).toEqual(['three', 'two', 'one']);
+    expect(e.snapshot().queued).toBe(0);
+  });
+
+  it('QA r2: two tabs sending the same queued capture never delete it', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const removes: string[] = [];
+    const spy = { ...server.api, remove: async (id: string) => (removes.push(id), server.api.remove(id)) };
+    const { e: tabA } = engine(server, a, {
+      api: { ...spy, create: (r) => (server.as('dev-a'), server.api.create(r)) },
+    });
+    await tabA.start();
+    server.setOffline(true);
+    await tabA.capture('typed offline', 'manual');
+    // Tab B opens on the same browser profile (same IndexedDB) and reads the same queue; its creates are answered
+    // after a refresh it triggers itself, so its pull acknowledges first.
+    let tabBRef: ClipboardEngine | null = null;
+    const { e: tabB } = engine(
+      server,
+      { ...a, store: openClipboardStore(a.factory) },
+      {
+        api: {
+          ...spy,
+          create: async (r) => {
+            server.as('dev-a');
+            const res = await server.api.create(r);
+            await tabBRef?.refresh();
+            return res;
+          },
+        },
+      },
+    );
+    tabBRef = tabB;
+    await tabB.start();
+    expect(tabB.snapshot().queued).toBe(1);
+    server.setOffline(false);
+    await Promise.all([tabA.flush(), tabB.flush()]);
+    await Promise.all([tabA.refresh(), tabB.refresh()]);
+    expect(server.rows.size).toBe(1);
+    expect(removes).toEqual([]);
+    expect(deletedRows(server)).toEqual([]);
+    expect(texts(tabA)).toEqual(['typed offline']);
+    expect(texts(tabB)).toEqual(['typed offline']);
+    expect(await a.store.queue(USER)).toEqual([]);
+  });
+
+  it('a queued capture deleted here while its create is in flight is deleted again when the create lands late', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    let hold = false;
+    const { e } = engine(server, a, {
+      api: {
+        ...server.api,
+        create: async (req) => {
+          if (hold) await gate; // not committed yet when the DELETE arrives
+          server.as('dev-a');
+          return server.api.create(req);
+        },
+      },
+    });
+    await e.start();
+    hold = true;
+    const cap = e.capture('oops', 'manual');
+    await vi.waitFor(() => expect(e.snapshot().items).toHaveLength(1));
+    const id = e.snapshot().items[0]?.id ?? '';
+    const removing = e.remove(id); // DELETE answers 404: nothing on the server yet
+    await vi.waitFor(async () => expect(await a.store.deletes(USER)).toHaveLength(1));
+    release();
+    await cap;
+    await removing;
+    await vi.waitFor(() => expect(server.rows.get(id)?.deleted).toBe(true));
+    await e.refresh();
+    expect(e.snapshot().items).toEqual([]);
+    expect(await a.store.deletes(USER)).toEqual([]);
+  });
+
+  it('QA r2: deleting a queued capture offline keeps a durable pending delete, retried until 204', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    let loseNext = true;
+    const create = async (req: ClipboardEventRequest) => {
+      server.as('dev-a');
+      const res = await server.api.create(req);
+      if (loseNext) {
+        loseNext = false;
+        throw new NetworkError(); // stored on the server, the response is lost
+      }
+      return res;
+    };
+    const { e } = engine(server, a, { api: { ...server.api, create } });
+    await e.start();
+    const r = await e.capture('stored but unacknowledged', 'manual');
+    expect(r.kind).toBe('queued');
+    const id = (r as { id: string }).id;
+    server.setOffline(true);
+    await e.remove(id);
+    expect(texts(e)).toEqual([]);
+    expect(await a.store.queue(USER)).toEqual([]);
+    expect((await a.store.deletes(USER)).map((d) => d.event_id)).toEqual([id]);
+    e.stop();
+    // A reload while still offline: the pending delete is read back, the row stays hidden; back online, a refresh that
+    // sees the row live does not bring it back, and the retried DELETE removes it everywhere.
+    const { e: again } = engine(server, a, { api: { ...server.api, create } });
+    await again.start();
+    expect(texts(again)).toEqual([]);
+    server.setOffline(false);
+    await again.refresh();
+    expect(texts(again)).toEqual([]);
+    await again.flush();
+    await vi.waitFor(() => expect(server.rows.get(id)?.deleted).toBe(true));
+    expect(await a.store.deletes(USER)).toEqual([]);
+    await again.refresh();
+    expect(texts(again)).toEqual([]);
+  });
+
+  it('a pending delete answered 404 is kept for the grace period, then settled by one last DELETE', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    let clock = Date.now();
+    const removes: string[] = [];
+    const { e } = engine(server, a, {
+      now: () => clock,
+      api: { ...server.api, remove: async (id) => (removes.push(id), server.api.remove(id)) },
+    });
+    await e.start();
+    server.setOffline(true);
+    await e.capture('never reached the server', 'manual');
+    const id = e.snapshot().items[0]?.id ?? '';
+    await e.remove(id);
+    expect(removes).toEqual([id]); // tried at once, offline
+    server.setOffline(false);
+    await e.flush();
+    expect(removes).toEqual([id, id]); // 404: a create could still be in flight in another tab
+    expect((await a.store.deletes(USER))[0]?.due).toBe(clock + DELETE_GRACE_MS);
+    await e.flush();
+    expect(removes).toHaveLength(2);
+    clock += DELETE_GRACE_MS;
+    await e.flush();
+    expect(removes).toEqual([id, id, id]);
+    expect(await a.store.deletes(USER)).toEqual([]);
+    expect(server.rows.size).toBe(0);
+    expect(server.posts).toHaveLength(0);
+  });
+
+  it('a pending delete refused for now (5xx) is retried later and does not hold up the queue', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    let failDeletes = true;
+    let clock = Date.now();
+    const { e, timers } = engine(server, a, {
+      now: () => clock,
+      api: {
+        ...server.api,
+        remove: async (id) => {
+          if (failDeletes) throw new ApiError(503, 'unavailable', 'busy');
+          return server.api.remove(id);
+        },
+      },
+    });
+    await e.start();
+    server.setOffline(true);
+    await e.capture('delete me', 'manual');
+    const id = e.snapshot().items[0]?.id ?? '';
+    server.setOffline(false);
+    await e.remove(id); // 503
+    expect(server.posts).toHaveLength(0);
+    expect(await a.store.deletes(USER)).toHaveLength(1);
+    expect(await e.capture('sent anyway', 'manual')).toMatchObject({ kind: 'synced' });
+    expect(timers.length).toBeGreaterThan(0);
+    failDeletes = false;
+    clock += DELETE_GRACE_MS; // the create never reached the server: its 404 settles it once the grace has passed
+    for (const t of timers.splice(0)) t();
+    await vi.waitFor(async () => expect(await a.store.deletes(USER)).toEqual([]));
+    expect(server.rows.has(id)).toBe(false);
+    expect(texts(e)).toEqual(['sent anyway']);
+  });
+
+  it('QA r2: Clear history drops queued captures; none is sent after it, even after sync resumes', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    let clock = Date.now();
+    const { e, timers } = engine(server, a, { now: () => clock });
+    await e.start();
+    await e.capture('synced one', 'manual');
+    server.setOffline(true);
+    expect(await e.capture('queued offline', 'manual')).toMatchObject({ kind: 'queued' });
+    server.setOffline(false);
+    server.setPaused(true); // the account was paused elsewhere: the next capture stays queued with 409
+    expect(await e.capture('queued while paused', 'manual')).toMatchObject({ kind: 'queued', reason: 'paused' });
+    server.setPaused(false);
+    const postsBefore = server.posts.length;
+    await e.clear();
+    expect(e.snapshot().items).toEqual([]);
+    expect(e.snapshot().queued).toBe(0);
+    expect(await a.store.queue(USER)).toEqual([]);
+    e.applySettings({ paused: false, retention_days: 7, sensitive_skip: true });
+    for (const t of timers.splice(0)) t();
+    await e.flush();
+    clock += DELETE_GRACE_MS;
+    await e.flush();
+    await e.refresh();
+    expect(server.posts).toHaveLength(postsBefore); // nothing queued was sent after the clear
+    expect(server.rows.size).toBe(1); // only "synced one" ever reached the server (the paused 409 stored nothing)
+    expect([...server.rows.values()].every((r) => r.deleted)).toBe(true);
+    expect(e.snapshot().items).toEqual([]);
+    expect(await a.store.deletes(USER)).toEqual([]);
+  });
+
+  it('Clear history in one tab: another tab holding the same queue does not send it afterwards', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const { e: tabA } = engine(server, a);
+    await tabA.start();
+    server.setOffline(true);
+    await tabA.capture('queued in both tabs', 'manual');
+    const { e: tabB } = engine(server, { ...a, store: openClipboardStore(a.factory) });
+    await tabB.start();
+    await tabB.flush(); // its first pass ran offline
+    expect(tabB.snapshot().queued).toBe(1);
+    server.setOffline(false);
+    await tabA.clear();
+    await tabB.flush();
+    expect(server.posts).toHaveLength(0);
+    expect(tabB.snapshot().queued).toBe(0);
+    expect(tabB.snapshot().items).toEqual([]);
+  });
+
+  it('a capture made while Clear history runs is kept and sent after it', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const { e } = engine(server, a, {
+      api: {
+        ...server.api,
+        create: (r) => (server.as('dev-a'), server.api.create(r)),
+        clear: async () => {
+          await gate;
+          return server.api.clear();
+        },
+      },
+    });
+    await e.start();
+    await e.capture('before the clear', 'manual');
+    const clearing = e.clear();
+    expect(await e.capture('during the clear', 'manual')).toMatchObject({ kind: 'queued' });
+    expect(server.posts).toHaveLength(1);
+    release();
+    await clearing;
+    await e.flush();
+    await e.refresh();
+    expect(texts(e)).toEqual(['during the clear']);
+    expect([...server.rows.values()].filter((r) => !r.deleted)).toHaveLength(1);
   });
 });

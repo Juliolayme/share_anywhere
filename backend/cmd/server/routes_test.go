@@ -34,6 +34,7 @@ func testApp(t *testing.T) *app {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(a.hub.Close)
 	return a
 }
 

@@ -100,6 +100,7 @@ func newEnv(t *testing.T, mult int) *env {
 	svc := New(Config{Pool: pool, Clock: clk, Accounts: authSvc, Notify: hub, Limits: ScaledLimits(clk, mult), Log: discard()})
 	authSvc.OnSweep("clipboard", svc.RunSweep)
 	hub.OnPresence(svc.Presence)
+	t.Cleanup(hub.Close) // presence workers stop with the test
 	mux := http.NewServeMux()
 	router := access.NewRouter(mux, dev)
 	devHTTP := devices.NewHTTP(dev, ips, clk, true)

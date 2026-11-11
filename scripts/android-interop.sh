@@ -17,10 +17,17 @@ adb install -r -g "$APP" >/dev/null
 adb install -r -g "$TEST_APK" >/dev/null
 pw() { pnpm --filter @share-anywhere/web exec playwright test e2e/nightly/android-interop.spec.ts --project=chromium-desktop --retries=0 --trace retain-on-failure "$@"; }
 instrument() {
-  # am instrument exits 0 even when a test fails; the result block says OK only when every test passed.
+  # am instrument exits 0 even when a test fails; the result block says OK only when every test passed. The output is
+  # printed (not tee'd to /dev/stderr, which is not openable on the hosted runner), and on failure the app's logcat too.
   local out
-  out=$(adb shell am instrument -w -e backend http://10.0.2.2:8080 -e class "app.shareanywhere.InteropTest#$1" "${@:2}" "$RUNNER" | tee /dev/stderr)
-  grep -q "^OK (1 test)" <<<"$out"
+  out=$(adb shell am instrument -w -e backend http://10.0.2.2:8080 -e class "app.shareanywhere.InteropTest#$1" "${@:2}" "$RUNNER" 2>&1 || true)
+  echo "$out"
+  if grep -q "^OK (1 test)" <<<"$out"; then return 0; fi
+  adb logcat -d > "$INTEROP_DIR/logcat-$1.txt" 2>&1 || true
+  echo "-- logcat (app, last 200 lines) --"
+  pid=$(adb shell pidof app.shareanywhere 2>/dev/null | tr -d '\r' || true)
+  grep -E "app.shareanywhere|AndroidRuntime|org.webrtc|TestRunner${pid:+| $pid }" "$INTEROP_DIR/logcat-$1.txt" | tail -200 || true
+  return 1
 }
 status=0
 
@@ -33,6 +40,7 @@ if [ -s "$INTEROP_DIR/web-session.json" ]; then
   sha=$(node -p "require('$INTEROP_DIR/web-session.json').sha256")
   id=$(node -p "require('$INTEROP_DIR/web-session.json').id")
   adb shell pm clear app.shareanywhere >/dev/null
+  adb logcat -c
   instrument receivesFromTheWeb -e interop receive -e code "$code" -e sha256 "$sha" -e session "$id" || status=1
 else
   echo "the Web sender never created a session"; status=1

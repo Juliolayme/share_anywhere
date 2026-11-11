@@ -21,7 +21,6 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +50,12 @@ class KeepScreenOnTest {
     fun wake() {
         device.wakeUp()
         runBlocking { Backend.entry().settingsRepository().setKeepScreenOn(true) }
+    }
+
+    private fun windowKeepsOn(scenario: ActivityScenario<MainActivity>): Boolean {
+        var on = false
+        scenario.onActivity { on = it.keepsScreenOn() }
+        return on
     }
 
     /** Starts a receive of [size] bytes from a second device; returns once `rx-progress` shows. */
@@ -85,11 +90,12 @@ class KeepScreenOnTest {
             receive(peer, 64 * 1024 * 1024) { id, scenario ->
                 compose.waitForTag("rx.pause", 60_000)
                 compose.waitUntil(10_000) { entry.keepAwake().screenOn.value }
-                scenario.onActivity { assertTrue("kept on while bytes move", it.keepsScreenOn()) }
+                compose.waitUntil(5_000) { windowKeepsOn(scenario) == true }
 
                 compose.onNodeWithTag("rx.pause").tap()
                 compose.waitUntil(10_000) { !entry.keepAwake().screenOn.value }
-                scenario.onActivity { assertFalse("released on pause", it.keepsScreenOn()) }
+                // The window flag follows on the next composition.
+                compose.waitUntil(5_000) { windowKeepsOn(scenario) == false }
 
                 compose.waitForTag("rx.resume", 10_000)
                 compose.onNodeWithTag("rx.resume").tap()
@@ -103,7 +109,7 @@ class KeepScreenOnTest {
                     compose.onNodeWithTag("dialog.confirm").tap()
                     compose.waitUntil(20_000) { !entry.keepAwake().screenOn.value }
                 }
-                scenario.onActivity { assertFalse("released on cancel or completion", it.keepsScreenOn()) }
+                compose.waitUntil(5_000) { windowKeepsOn(scenario) == false }
             }
         }
     }

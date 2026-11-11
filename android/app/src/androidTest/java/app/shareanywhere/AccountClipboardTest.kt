@@ -88,7 +88,7 @@ class AccountClipboardTest {
                 compose.onNodeWithTag("checklist.clipboard").tap()
                 compose.waitForTag("clipboard.home", 30_000)
                 compose.waitUntil(30_000) { entry.clipboardRuntime().ui.value.snapshot.synced }
-                compose.waitForTag("clipboard.empty", 30_000)
+                assertTrue("a new account's clipboard is empty", entry.clipboardRuntime().ui.value.snapshot.items.isEmpty())
 
                 // Foreground capture: a copy made while the app is in front is encrypted and synced.
                 compose.waitUntil(10_000) { entry.clipboardRuntime().listening.value }

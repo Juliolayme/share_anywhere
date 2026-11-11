@@ -117,6 +117,8 @@ type Service struct {
 	cfg Config
 	// background runs work that must not delay or shape the response (reset mail); tests run it inline.
 	background func(func())
+	// sweepers are extra maintenance tasks run after each account sweep (OnSweep).
+	sweepers []sweeper
 }
 
 // New returns the account service.

@@ -9,6 +9,66 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for ClipboardEventEventType.
+const (
+	ClipboardEventEventTypeTEXT ClipboardEventEventType = "TEXT"
+)
+
+// Valid indicates whether the value is a known member of the ClipboardEventEventType enum.
+func (e ClipboardEventEventType) Valid() bool {
+	switch e {
+	case ClipboardEventEventTypeTEXT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClipboardEventMimeType.
+const (
+	ClipboardEventMimeTypeTextplain ClipboardEventMimeType = "text/plain"
+)
+
+// Valid indicates whether the value is a known member of the ClipboardEventMimeType enum.
+func (e ClipboardEventMimeType) Valid() bool {
+	switch e {
+	case ClipboardEventMimeTypeTextplain:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClipboardEventRequestEventType.
+const (
+	ClipboardEventRequestEventTypeTEXT ClipboardEventRequestEventType = "TEXT"
+)
+
+// Valid indicates whether the value is a known member of the ClipboardEventRequestEventType enum.
+func (e ClipboardEventRequestEventType) Valid() bool {
+	switch e {
+	case ClipboardEventRequestEventTypeTEXT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClipboardEventRequestMimeType.
+const (
+	ClipboardEventRequestMimeTypeTextplain ClipboardEventRequestMimeType = "text/plain"
+)
+
+// Valid indicates whether the value is a known member of the ClipboardEventRequestMimeType enum.
+func (e ClipboardEventRequestMimeType) Valid() bool {
+	switch e {
+	case ClipboardEventRequestMimeTypeTextplain:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateDeviceRequestTransport.
 const (
 	Body   CreateDeviceRequestTransport = "body"
@@ -524,6 +584,91 @@ type ChainLink struct {
 	// Blob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
 	Blob       WrappedBlob `json:"blob"`
 	KeyVersion int         `json:"key_version"`
+}
+
+// ClipboardEvent defines model for ClipboardEvent.
+type ClipboardEvent struct {
+	// Ciphertext Base64url; null on tombstones.
+	Ciphertext *string                 `json:"ciphertext"`
+	CreatedAt  time.Time               `json:"created_at"`
+	Deleted    bool                    `json:"deleted"`
+	EventId    openapi_types.UUID      `json:"event_id"`
+	EventType  ClipboardEventEventType `json:"event_type"`
+	ExpiresAt  time.Time               `json:"expires_at"`
+	KeyVersion int                     `json:"key_version"`
+	MimeType   ClipboardEventMimeType  `json:"mime_type"`
+
+	// Nonce Base64url, 12 bytes; null on tombstones.
+	Nonce          *string            `json:"nonce"`
+	OriginDeviceId openapi_types.UUID `json:"origin_device_id"`
+	PayloadSize    int                `json:"payload_size"`
+	Seq            int64              `json:"seq"`
+}
+
+// ClipboardEventEventType defines model for ClipboardEvent.EventType.
+type ClipboardEventEventType string
+
+// ClipboardEventMimeType defines model for ClipboardEvent.MimeType.
+type ClipboardEventMimeType string
+
+// ClipboardEventCreated defines model for ClipboardEventCreated.
+type ClipboardEventCreated struct {
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Seq       int64     `json:"seq"`
+}
+
+// ClipboardEventPage defines model for ClipboardEventPage.
+type ClipboardEventPage struct {
+	Events []ClipboardEvent `json:"events"`
+
+	// NextCursor The seq of the last event returned, or the cursor sent when there are none.
+	NextCursor int64 `json:"next_cursor"`
+}
+
+// ClipboardEventRequest defines model for ClipboardEventRequest.
+type ClipboardEventRequest struct {
+	// Ciphertext AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; 17 to 262160 bytes decoded (413 payload_too_large above).
+	Ciphertext Base64Url `json:"ciphertext"`
+
+	// EventId Client-generated; the idempotency key.
+	EventId   openapi_types.UUID              `json:"event_id"`
+	EventType *ClipboardEventRequestEventType `json:"event_type,omitempty"`
+
+	// KeyVersion The account's current key version (409 key_version_conflict otherwise).
+	KeyVersion int                            `json:"key_version"`
+	MimeType   *ClipboardEventRequestMimeType `json:"mime_type,omitempty"`
+
+	// Nonce 12 bytes.
+	Nonce Base64Url `json:"nonce"`
+
+	// PayloadSize UTF-8 byte length of the plaintext (413 payload_too_large above 262144).
+	PayloadSize int `json:"payload_size"`
+}
+
+// ClipboardEventRequestEventType defines model for ClipboardEventRequest.EventType.
+type ClipboardEventRequestEventType string
+
+// ClipboardEventRequestMimeType defines model for ClipboardEventRequest.MimeType.
+type ClipboardEventRequestMimeType string
+
+// ClipboardHistory defines model for ClipboardHistory.
+type ClipboardHistory struct {
+	// Cursor The account's highest seq (0 if none); follow GET /v1/clipboard/events from it.
+	Cursor int64 `json:"cursor"`
+
+	// Events Live events, newest first.
+	Events []ClipboardEvent `json:"events"`
+}
+
+// ClipboardSettings defines model for ClipboardSettings.
+type ClipboardSettings struct {
+	// Paused When true, POST /v1/clipboard/events answers 409 clipboard_paused.
+	Paused        bool `json:"paused"`
+	RetentionDays int  `json:"retention_days"`
+
+	// SensitiveSkip Clients skip capturing possibly sensitive text (best effort).
+	SensitiveSkip bool `json:"sensitive_skip"`
 }
 
 // CreateDeviceRequest defines model for CreateDeviceRequest.
@@ -1142,6 +1287,17 @@ type RequestPasswordResetJSONBody struct {
 	Email string `json:"email"`
 }
 
+// ListClipboardEventsParams defines parameters for ListClipboardEvents.
+type ListClipboardEventsParams struct {
+	Cursor *int64 `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int   `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetClipboardHistoryParams defines parameters for GetClipboardHistory.
+type GetClipboardHistoryParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // AddCurrentDeviceJSONBody defines parameters for AddCurrentDevice.
 type AddCurrentDeviceJSONBody struct {
 	// CopyHistory The client imports its local history with POST /v1/history/entries; the server only accepts the flag.
@@ -1232,6 +1388,12 @@ type SignInJSONRequestBody = CredentialsRequest
 
 // SignUpJSONRequestBody defines body for SignUp for application/json ContentType.
 type SignUpJSONRequestBody = CredentialsRequest
+
+// CreateClipboardEventJSONRequestBody defines body for CreateClipboardEvent for application/json ContentType.
+type CreateClipboardEventJSONRequestBody = ClipboardEventRequest
+
+// PutClipboardSettingsJSONRequestBody defines body for PutClipboardSettings for application/json ContentType.
+type PutClipboardSettingsJSONRequestBody = ClipboardSettings
 
 // CreateAnonymousDeviceJSONRequestBody defines body for CreateAnonymousDevice for application/json ContentType.
 type CreateAnonymousDeviceJSONRequestBody = CreateDeviceRequest

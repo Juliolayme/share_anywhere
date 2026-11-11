@@ -60,6 +60,7 @@ type Hub struct {
 	byAddress map[string]int
 	conns     map[string]map[*conn]struct{}
 	handlers  map[string]Handler
+	presence  []func(deviceID string, connected bool)
 }
 
 // Handler processes one client message of a registered type for the authenticated device. A returned
@@ -102,21 +103,43 @@ func (h *Hub) Handle(t string, fn Handler) {
 	h.handlers[t] = fn
 }
 
-func (h *Hub) add(c *conn) {
+// OnPresence registers fn to run when a device opens its first socket (connected true) or closes its last one
+// (connected false). It runs on the socket's goroutine, outside the hub lock; register before serving.
+func (h *Hub) OnPresence(fn func(deviceID string, connected bool)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.presence = append(h.presence, fn)
+}
+
+// add tracks a socket and reports whether it is the device's first open one.
+func (h *Hub) add(c *conn) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.conns[c.deviceID] == nil {
 		h.conns[c.deviceID] = map[*conn]struct{}{}
 	}
 	h.conns[c.deviceID][c] = struct{}{}
+	return len(h.conns[c.deviceID]) == 1
 }
 
-func (h *Hub) remove(c *conn) {
+// remove forgets a socket and reports whether it was the device's last open one.
+func (h *Hub) remove(c *conn) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.conns[c.deviceID], c)
 	if len(h.conns[c.deviceID]) == 0 {
 		delete(h.conns, c.deviceID)
+		return true
+	}
+	return false
+}
+
+func (h *Hub) notifyPresence(deviceID string, connected bool) {
+	h.mu.Lock()
+	fns := append([]func(string, bool){}, h.presence...)
+	h.mu.Unlock()
+	for _, fn := range fns {
+		fn(deviceID, connected)
 	}
 }
 
@@ -294,9 +317,17 @@ func (h *Hub) upgrade(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	c := &conn{deviceID: deviceID, out: make(chan []byte, sendQueue), cancel: cancel}
-	h.add(c)
-	defer h.remove(c)
+	first := h.add(c)
+	defer func() {
+		if h.remove(c) {
+			h.notifyPresence(deviceID, false)
+		}
+	}()
 	go h.writer(ctx, ws, c)
+	// Presence runs before WELCOME, so once a client sees WELCOME its arrival has been announced.
+	if first {
+		h.notifyPresence(deviceID, true)
+	}
 	welcome, _ := json.Marshal(Welcome{Type: "WELCOME", DeviceID: deviceID, ServerTime: h.cfg.Clock.Now().UTC()})
 	c.enqueue(welcome)
 	go h.heartbeat(ctx, ws, cancel)

@@ -127,6 +127,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/clipboard/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Events and tombstones with seq greater than cursor, in seq order; records cursor as what this device has applied.
+         * @description The call records the calling device's cursor (the cursor it sent, i.e. what it has applied) in
+         *     clipboard_device_cursors; the recorded cursor never moves backwards and never passes the account's highest
+         *     seq. Live events past expires_at are left out. Clients call this on every CLIPBOARD_* WebSocket message and
+         *     on reconnect.
+         */
+        get: operations["listClipboardEvents"];
+        put?: never;
+        /**
+         * Store an encrypted clipboard event. Idempotent on event_id (the stored seq is returned).
+         * @description Repeating an event_id returns the stored seq, created_at, and expires_at and changes nothing (a deleted
+         *     event is not restored). A new event must use the account's current key_version. Inserting beyond 100 live
+         *     events tombstones the oldest live one in the same transaction. expires_at is created_at plus the account's
+         *     retention (default 7 days). Limited per device (60 / min) and per account (240 / min).
+         */
+        post: operations["createClipboardEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clipboard/events/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Turn an event into a tombstone with a new seq (deleting a tombstone again changes nothing). */
+        delete: operations["deleteClipboardEvent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clipboard/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live events, newest first, with the account's current highest seq for the initial load.
+         * @description Read from one snapshot. The client then follows GET /v1/clipboard/events?cursor=<cursor>.
+         */
+        get: operations["getClipboardHistory"];
+        put?: never;
+        post?: never;
+        /** Tombstone every live event of the account, each with a new seq. */
+        delete: operations["clearClipboardHistory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clipboard/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The account's clipboard settings (defaults until stored - paused false, retention_days 7, sensitive_skip true). */
+        get: operations["getClipboardSettings"];
+        /** Replace the account's clipboard settings (all fields required). A new retention applies to events created afterwards. */
+        put: operations["putClipboardSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/devices": {
         parameters: {
             query?: never;
@@ -1024,6 +1112,86 @@ export interface components {
             blob: components["schemas"]["WrappedBlob"];
             key_version: number;
         };
+        ClipboardEvent: {
+            /** @description Base64url; null on tombstones. */
+            ciphertext: string | null;
+            /** Format: date-time */
+            created_at: string;
+            deleted: boolean;
+            /** Format: uuid */
+            event_id: string;
+            /** @enum {string} */
+            event_type: "TEXT";
+            /** Format: date-time */
+            expires_at: string;
+            key_version: number;
+            /** @enum {string} */
+            mime_type: "text/plain";
+            /** @description Base64url, 12 bytes; null on tombstones. */
+            nonce: string | null;
+            /** Format: uuid */
+            origin_device_id: string;
+            payload_size: number;
+            /** Format: int64 */
+            seq: number;
+        };
+        ClipboardEventCreated: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: int64 */
+            seq: number;
+        };
+        ClipboardEventPage: {
+            events: components["schemas"]["ClipboardEvent"][];
+            /**
+             * Format: int64
+             * @description The seq of the last event returned, or the cursor sent when there are none.
+             */
+            next_cursor: number;
+        };
+        ClipboardEventRequest: {
+            /** @description AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; 17 to 262160 bytes decoded (413 payload_too_large above). */
+            ciphertext: components["schemas"]["Base64Url"];
+            /**
+             * Format: uuid
+             * @description Client-generated; the idempotency key.
+             */
+            event_id: string;
+            /**
+             * @default TEXT
+             * @enum {string}
+             */
+            event_type: "TEXT";
+            /** @description The account's current key version (409 key_version_conflict otherwise). */
+            key_version: number;
+            /**
+             * @default text/plain
+             * @enum {string}
+             */
+            mime_type: "text/plain";
+            /** @description 12 bytes. */
+            nonce: components["schemas"]["Base64Url"];
+            /** @description UTF-8 byte length of the plaintext (413 payload_too_large above 262144). */
+            payload_size: number;
+        };
+        ClipboardHistory: {
+            /**
+             * Format: int64
+             * @description The account's highest seq (0 if none); follow GET /v1/clipboard/events from it.
+             */
+            cursor: number;
+            /** @description Live events, newest first. */
+            events: components["schemas"]["ClipboardEvent"][];
+        };
+        ClipboardSettings: {
+            /** @description When true, POST /v1/clipboard/events answers 409 clipboard_paused. */
+            paused: boolean;
+            retention_days: number;
+            /** @description Clients skip capturing possibly sensitive text (best effort). */
+            sensitive_skip: boolean;
+        };
         CreateDeviceRequest: {
             display_name?: string;
             /** @example Chrome on macOS */
@@ -1771,6 +1939,198 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    listClipboardEvents: {
+        parameters: {
+            query?: {
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page; resume with next_cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipboardEventPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createClipboardEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClipboardEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Stored (or already stored). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipboardEventCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description key_version_conflict (key_version is not the account's current version) or clipboard_paused (the account paused Clipboard Sync). Nothing is stored. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description payload_too_large (payload_size above 262144, ciphertext above 262160 bytes, or a body too large to hold them). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    deleteClipboardEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    getClipboardHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The live events and the cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipboardHistory"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    clearClipboardHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cleared. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    getClipboardSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipboardSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    putClipboardSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClipboardSettings"];
+            };
+        };
+        responses: {
+            /** @description The stored settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipboardSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             429: components["responses"]["RateLimited"];
         };
     };

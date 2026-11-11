@@ -135,6 +135,39 @@ func (s *Service) checkLiveSession(ctx context.Context, tx pgx.Tx, se session) e
 	return err
 }
 
+// Caller is a verified account session of an added device, for the account-only modules built on this one
+// (internal/clipboard).
+type Caller struct {
+	SessionID string
+	UserID    string
+	DeviceID  string
+}
+
+// RequireAdded loads the caller's live account session and requires the device to be added
+// (ErrAccountRequired, ErrTokenStale, ErrDeviceNotAdded otherwise), like the history endpoints.
+func (s *Service) RequireAdded(ctx context.Context, id access.Identity) (Caller, error) {
+	se, err := s.require(ctx, id, true)
+	if err != nil {
+		return Caller{}, err
+	}
+	return Caller{SessionID: se.ID, UserID: se.UserID, DeviceID: se.DeviceID}, nil
+}
+
+// HoldKeys runs inside a write transaction of an account-only module: it holds the account's account_keys row
+// FOR SHARE until tx ends (so a rotation or a departure, which lock it FOR UPDATE, waits), then re-checks that
+// the caller's account session is still live (ErrTokenStale otherwise; checkLiveSession). It returns the
+// account's current key version.
+func (s *Service) HoldKeys(ctx context.Context, tx pgx.Tx, c Caller) (int, error) {
+	var current int
+	if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, c.UserID).Scan(&current); err != nil {
+		return 0, err
+	}
+	if err := s.checkLiveSession(ctx, tx, session{ID: c.SessionID, UserID: c.UserID, DeviceID: c.DeviceID, Added: true}); err != nil {
+		return 0, err
+	}
+	return current, nil
+}
+
 // detachFilter selects account sessions to end.
 type detachFilter struct {
 	Device      string // only this device
@@ -192,6 +225,8 @@ func (s *Service) detach(ctx context.Context, tx pgx.Tx, now time.Time, f detach
 		`DELETE FROM device_keys WHERE device_id = ANY($1::uuid[])`,
 		`DELETE FROM device_key_blobs WHERE device_id = ANY($1::uuid[])`,
 		`DELETE FROM device_pairings WHERE new_device_id = ANY($1::uuid[])`,
+		// Clipboard Sync (Phase 5B): the leaving device's cursor goes with it.
+		`DELETE FROM clipboard_device_cursors WHERE device_id = ANY($1::uuid[])`,
 	} {
 		if _, err := tx.Exec(ctx, q, ids); err != nil {
 			return nil, err
@@ -418,7 +453,18 @@ func (s *Service) Sweep(ctx context.Context) error {
 	return err
 }
 
-// Run sweeps every interval until ctx ends.
+// OnSweep adds a maintenance task of an account-only module (the clipboard retention sweep) to the account
+// sweep loop. Register before Run starts.
+func (s *Service) OnSweep(name string, fn func(context.Context) error) {
+	s.sweepers = append(s.sweepers, sweeper{name: name, fn: fn})
+}
+
+type sweeper struct {
+	name string
+	fn   func(context.Context) error
+}
+
+// Run sweeps every interval until ctx ends: the account sweep, then every task added with OnSweep.
 func (s *Service) Run(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -429,6 +475,11 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 		case <-t.C:
 			if err := s.Sweep(ctx); err != nil && ctx.Err() == nil {
 				s.cfg.Log.Error("account sweep failed", "error", err.Error())
+			}
+			for _, sw := range s.sweepers {
+				if err := sw.fn(ctx); err != nil && ctx.Err() == nil {
+					s.cfg.Log.Error("maintenance task failed", "task", sw.name, "error", err.Error())
+				}
 			}
 		}
 	}

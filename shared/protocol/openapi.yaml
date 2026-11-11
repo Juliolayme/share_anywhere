@@ -2,12 +2,13 @@ openapi: 3.0.3
 info:
   title: Share Anywhere API
   version: 0.1.0
-  x-sa-api-sections: ["2.1", "2.2", "2.3", "2.4"]
+  x-sa-api-sections: ["2.1", "2.2", "2.3", "2.4", "2.5"]
   description: |
     Machine-readable contract. Every operation declares `x-sa-access` (public, device, participant,
     account, account+device), which must match docs/API.md and is enforced by the backend
     (docs/SECURITY_MODEL.md, CLAUDE.md §7). Phase 1 covers health and anonymous device identity; Phase 5A
-    adds accounts, the account Devices list, account keys (opaque wrapped blobs), and encrypted history.
+    adds accounts, the account Devices list, account keys (opaque wrapped blobs), and encrypted history;
+    Phase 5B adds Clipboard Sync (end-to-end encrypted text events, settings).
 servers:
   - url: /
 security:
@@ -1324,6 +1325,138 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/clipboard/events:
+    get:
+      operationId: listClipboardEvents
+      x-sa-access: account+device
+      summary: Events and tombstones with seq greater than cursor, in seq order; records cursor as what this device has applied.
+      description: |
+        The call records the calling device's cursor (the cursor it sent, i.e. what it has applied) in
+        clipboard_device_cursors; the recorded cursor never moves backwards and never passes the account's highest
+        seq. Live events past expires_at are left out. Clients call this on every CLIPBOARD_* WebSocket message and
+        on reconnect.
+      parameters:
+        - { name: cursor, in: query, required: false, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+      responses:
+        "200":
+          description: A page; resume with next_cursor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClipboardEventPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createClipboardEvent
+      x-sa-access: account+device
+      summary: Store an encrypted clipboard event. Idempotent on event_id (the stored seq is returned).
+      description: |
+        Repeating an event_id returns the stored seq, created_at, and expires_at and changes nothing (a deleted
+        event is not restored). A new event must use the account's current key_version. Inserting beyond 100 live
+        events tombstones the oldest live one in the same transaction. expires_at is created_at plus the account's
+        retention (default 7 days). Limited per device (60 / min) and per account (240 / min).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClipboardEventRequest" }
+      responses:
+        "201":
+          description: Stored (or already stored).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClipboardEventCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: key_version_conflict (key_version is not the account's current version) or clipboard_paused (the account paused Clipboard Sync). Nothing is stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "413":
+          description: payload_too_large (payload_size above 262144, ciphertext above 262160 bytes, or a body too large to hold them).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/clipboard/events/{event_id}:
+    parameters:
+      - {
+          name: event_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    delete:
+      operationId: deleteClipboardEvent
+      x-sa-access: account+device
+      summary: Turn an event into a tombstone with a new seq (deleting a tombstone again changes nothing).
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/clipboard/history:
+    get:
+      operationId: getClipboardHistory
+      x-sa-access: account+device
+      summary: Live events, newest first, with the account's current highest seq for the initial load.
+      description: Read from one snapshot. The client then follows GET /v1/clipboard/events?cursor=<cursor>.
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        "200":
+          description: The live events and the cursor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClipboardHistory" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      operationId: clearClipboardHistory
+      x-sa-access: account+device
+      summary: Tombstone every live event of the account, each with a new seq.
+      responses:
+        "204": { description: Cleared. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/clipboard/settings:
+    get:
+      operationId: getClipboardSettings
+      x-sa-access: account+device
+      summary: The account's clipboard settings (defaults until stored - paused false, retention_days 7, sensitive_skip true).
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClipboardSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      operationId: putClipboardSettings
+      x-sa-access: account+device
+      summary: Replace the account's clipboard settings (all fields required). A new retention applies to events created afterwards.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClipboardSettings" }
+      responses:
+        "200":
+          description: The stored settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClipboardSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 components:
   securitySchemes:
     deviceToken:
@@ -2122,3 +2255,65 @@ components:
           type: array
           items: { $ref: "#/components/schemas/HistoryEntry" }
         next_after: { type: integer, format: int64 }
+    ClipboardEventRequest:
+      type: object
+      required: [event_id, key_version, nonce, ciphertext, payload_size]
+      additionalProperties: false
+      properties:
+        event_id: { type: string, format: uuid, description: Client-generated; the idempotency key. }
+        key_version: { type: integer, minimum: 1, description: "The account's current key version (409 key_version_conflict otherwise)." }
+        nonce: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: 12 bytes. }
+        ciphertext:
+          allOf: [{ $ref: "#/components/schemas/Base64Url" }]
+          description: "AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; 17 to 262160 bytes decoded (413 payload_too_large above)."
+        payload_size: { type: integer, minimum: 1, maximum: 262144, description: "UTF-8 byte length of the plaintext (413 payload_too_large above 262144)." }
+        event_type: { type: string, enum: [TEXT], default: TEXT }
+        mime_type: { type: string, enum: [text/plain], default: text/plain }
+    ClipboardEventCreated:
+      type: object
+      required: [seq, created_at, expires_at]
+      properties:
+        seq: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    ClipboardEvent:
+      type: object
+      required: [event_id, seq, origin_device_id, event_type, mime_type, key_version, nonce, ciphertext, payload_size, created_at, expires_at, deleted]
+      properties:
+        event_id: { type: string, format: uuid }
+        seq: { type: integer, format: int64 }
+        origin_device_id: { type: string, format: uuid }
+        event_type: { type: string, enum: [TEXT] }
+        mime_type: { type: string, enum: [text/plain] }
+        key_version: { type: integer }
+        nonce: { type: string, nullable: true, description: "Base64url, 12 bytes; null on tombstones." }
+        ciphertext: { type: string, nullable: true, description: Base64url; null on tombstones. }
+        payload_size: { type: integer }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        deleted: { type: boolean }
+    ClipboardEventPage:
+      type: object
+      required: [events, next_cursor]
+      properties:
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ClipboardEvent" }
+        next_cursor: { type: integer, format: int64, description: "The seq of the last event returned, or the cursor sent when there are none." }
+    ClipboardHistory:
+      type: object
+      required: [events, cursor]
+      properties:
+        events:
+          type: array
+          description: Live events, newest first.
+          items: { $ref: "#/components/schemas/ClipboardEvent" }
+        cursor: { type: integer, format: int64, description: "The account's highest seq (0 if none); follow GET /v1/clipboard/events from it." }
+    ClipboardSettings:
+      type: object
+      required: [paused, retention_days, sensitive_skip]
+      additionalProperties: false
+      properties:
+        paused: { type: boolean, description: "When true, POST /v1/clipboard/events answers 409 clipboard_paused." }
+        retention_days: { type: integer, minimum: 1, maximum: 7 }
+        sensitive_skip: { type: boolean, description: Clients skip capturing possibly sensitive text (best effort). }

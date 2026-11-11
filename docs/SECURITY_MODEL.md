@@ -137,7 +137,8 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 | Password change | Account: 5 failed current-password checks / 15 min. **Built in Phase 5A** |
 | Device pairing | Create: device 10 / hour; code lookup: device 30 / 10 min; IP (create and lookup): 60 / 10 min. **Built in Phase 5A** |
 | History writes | Device: 600 / min (entry creation, deletion, clear). **Built in Phase 5A** |
-| Clipboard event creation | Device: 120 / min |
+| Clipboard event creation | Device: 60 / min; account: 240 / min (both checked; idempotent retries count). **Built in Phase 5B** (`backend/internal/clipboard/clipboard.go`, `ScaledLimits`) |
+| Clipboard deletions, clear, settings changes | Device: 600 / min. **Built in Phase 5B** |
 
 ## 6. Session and token lifetimes
 
@@ -157,6 +158,8 @@ Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests dr
 | Account session, signed in but not added | 24 h after sign-in, never extended; on the Web also ends with the browser session (`sa_acct`, §4). **Built in Phase 5A** |
 | Password-reset link | 30 min, single use. **Built in Phase 5A** |
 | Device pairing code and wrapped blob | 10 min; the blob is deleted at pickup. **Built in Phase 5A** |
+| Clipboard event | `retention_days` (account setting 1–7, default 7) after creation, then hard-deleted by the account maintenance loop (every 5 min); at most 100 live events per account (the oldest becomes a tombstone). **Built in Phase 5B** |
+| Clipboard tombstone (deleted event: no nonce, no ciphertext) | 7 days after deletion. **Built in Phase 5B** |
 | Protected mode | 30 min after the alarm condition clears |
 
 ## 7. Threat model
@@ -192,7 +195,7 @@ Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests dr
 | Rate limits hurting CGNAT users | Combined IP + device keys, generous IP bursts, clear 429 messages | Very busy shared IPs may hit limits |
 | Signaling denial of service | WebSocket caps, message rate limits, ticket requirement | Volumetric attacks need upstream protection |
 | Script running in the Web origin (XSS, malicious extension with page access) (Phase 5A) | CSP `script-src 'self'`, no third-party scripts; the device KEK, the history and clipboard subkeys, and the device X25519 private key (WebCrypto backend) are non-extractable `CryptoKey`s | While it runs, in-origin script can call the same code the app uses and read raw ADK bytes when the client unwraps them (for example to wrap a pairing or rotation blob, `unwrapAdkRaw`); non-extractability protects only the KEK, the subkeys, and the device private key, not the ADK itself. On the fallback X25519 backend it can also read the device private scalar (`docs/CLIPBOARD_PROTOCOL.md` §1.11) |
-| Clipboard or history plaintext exposure | E2E encryption with the ADK, no plaintext logs, guests never touch clipboard APIs. History (Phase 5A): AES-256-GCM under the `history-v1` subkey with the entry ID and key version as AAD; the server stores ciphertext, nonce, key version, origin device, and timestamps; deletions become tombstones that drop nonce and ciphertext; a revoked device's session ends at once and the next ADK version is wrapped only for remaining devices | Compromised endpoint device; the server learns entry counts, sizes, timing, and which device wrote each entry; a revoked device keeps whatever it already decrypted and old ADK versions |
+| Clipboard or history plaintext exposure | E2E encryption with the ADK, no plaintext logs, guests never touch clipboard APIs. History (Phase 5A): AES-256-GCM under the `history-v1` subkey with the entry ID and key version as AAD; the server stores ciphertext, nonce, key version, origin device, and timestamps; deletions become tombstones that drop nonce and ciphertext; a revoked device's session ends at once and the next ADK version is wrapped only for remaining devices Clipboard (Phase 5B): AES-256-GCM under the `clipboard-v1` subkey with the event ID and key version as AAD; the server stores ciphertext, nonce, key version, declared plaintext size, origin device, and timestamps, and a backend test dumps the clipboard tables to check that an encrypted marker never appears; tombstones drop nonce and ciphertext; a new event must use the current key version, so after a revoke and rotation new events are unreadable to the revoked device; WebSocket notifications carry metadata only and go only to devices with a live added session at send time | Compromised endpoint device; the server learns entry and event counts, sizes (clipboard: the declared plaintext length), timing, and which device wrote each; a revoked device keeps whatever it already decrypted and old ADK versions |
 | Keep-screen-on abuse draining battery | Held only while a join window is open or transfers are active, released on window end, completion, pause, cancel, close, or expiry; user setting | Waiting is capped at 10 minutes per join window |
 
 ## 8. Privacy and logging

@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/juliolayme/share_anywhere/backend/internal/auth"
+	"github.com/juliolayme/share_anywhere/backend/internal/clipboard"
 	"github.com/juliolayme/share_anywhere/backend/internal/devices"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clientip"
@@ -208,6 +209,14 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 	deviceSvc.OnRevoke(authSvc.DeviceRevoked)
 	deviceHTTP := devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure)
 
+	// Clipboard Sync (Phase 5B) builds on the account layer; it sweeps from the account maintenance loop and
+	// announces added devices' sockets to the account's other added devices.
+	clipSvc := clipboard.New(clipboard.Config{
+		Pool: pool, Clock: clk, Accounts: authSvc, Notify: hub, Limits: clipboard.ScaledLimits(clk, cfg.RateLimitMultiplier), Log: log,
+	})
+	authSvc.OnSweep("clipboard", clipSvc.RunSweep)
+	hub.OnPresence(clipSvc.Presence)
+
 	limits := sharing.ScaledLimits(clk, cfg.RateLimitMultiplier)
 	protected := sharing.NewProtectedMode(clk, cfg.CodeGuessAlarmPerMin)
 	reg := metrics.New()
@@ -229,6 +238,7 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 	modules := []func(*access.Router){
 		deviceHTTP.Register,
 		auth.NewHTTP(authSvc, ips, deviceHTTP).Register,
+		clipboard.NewHTTP(clipSvc).Register,
 		hub.Register,
 		sharing.NewHTTP(shareSvc, ips, lookup).Register,
 		turn.Register,

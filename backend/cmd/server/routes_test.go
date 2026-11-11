@@ -190,11 +190,20 @@ func TestAccountLevelsFromOpenAPI(t *testing.T) {
 			continue
 		}
 		counts[level]++
+		if strings.HasPrefix(path, "/v1/clipboard/") {
+			counts["clipboard"]++
+			if level != "account+device" {
+				t.Errorf("%s: every clipboard route is account+device, openapi.yaml says %s", key, level)
+			}
+		}
+	}
+	if counts["clipboard"] != 7 {
+		t.Errorf("openapi.yaml declares %d clipboard operations, want 7 (docs/API.md §2.5)", counts["clipboard"])
 	}
 	// Phase 5A declares 5 account and 18 account+device operations (PATCH /v1/me and PATCH /v1/devices/{id}
-	// are account+device since QA round 1: a not-added session is read-only); the test must not pass
-	// vacuously.
-	if counts["account"] < 5 || counts["account+device"] < 18 {
+	// are account+device since QA round 1: a not-added session is read-only); Phase 5B adds the 7 clipboard
+	// operations. The test must not pass vacuously.
+	if counts["account"] < 5 || counts["account+device"] < 25 {
 		t.Fatalf("too few account routes in openapi.yaml: %v", counts)
 	}
 }

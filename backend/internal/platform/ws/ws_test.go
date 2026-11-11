@@ -265,3 +265,48 @@ func TestDispatchSendAndDisconnect(t *testing.T) {
 		t.Fatal("registry not cleared")
 	}
 }
+
+// TestPresenceHooks: the presence hook fires when a device opens its first socket and when it closes its last
+// one, never for a second socket of the same device (Phase 5B DEVICE_CONNECTED / DEVICE_DISCONNECTED).
+func TestPresenceHooks(t *testing.T) {
+	hub, srv := newServer(t, clock.Real{})
+	events := make(chan string, 10)
+	hub.OnPresence(func(deviceID string, connected bool) {
+		if connected {
+			events <- "+" + deviceID
+		} else {
+			events <- "-" + deviceID
+		}
+	})
+	next := func() string {
+		select {
+		case e := <-events:
+			return e
+		case <-time.After(3 * time.Second):
+			return "timeout"
+		}
+	}
+	c1, _, err := dial(t, wsURL(srv, hub.IssueTicket("dev-p")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = readJSON(t, c1)
+	if e := next(); e != "+dev-p" {
+		t.Fatalf("first socket: %s", e)
+	}
+	c2, _, err := dial(t, wsURL(srv, hub.IssueTicket("dev-p")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = readJSON(t, c2)
+	_ = c1.Close(websocket.StatusNormalClosure, "")
+	select {
+	case e := <-events:
+		t.Fatalf("a second socket opening or one of two closing must not fire: %s", e)
+	case <-time.After(300 * time.Millisecond):
+	}
+	_ = c2.Close(websocket.StatusNormalClosure, "")
+	if e := next(); e != "-dev-p" {
+		t.Fatalf("last socket: %s", e)
+	}
+}

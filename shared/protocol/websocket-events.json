@@ -65,6 +65,24 @@
     },
     {
       "$ref": "#/$defs/TransferUpdated"
+    },
+    {
+      "$ref": "#/$defs/ClipboardEventCreated"
+    },
+    {
+      "$ref": "#/$defs/ClipboardEventDeleted"
+    },
+    {
+      "$ref": "#/$defs/ClipboardHistoryCleared"
+    },
+    {
+      "$ref": "#/$defs/ClipboardSettingsUpdated"
+    },
+    {
+      "$ref": "#/$defs/DeviceConnected"
+    },
+    {
+      "$ref": "#/$defs/DeviceDisconnected"
     }
   ],
   "$defs": {
@@ -656,6 +674,148 @@
         },
         "transfer": {
           "$ref": "#/$defs/Transfer"
+        }
+      }
+    },
+    "ClipboardEventCreated": {
+      "x-sa-phase": 5,
+      "x-sa-direction": "server-to-client",
+      "description": "A clipboard event was stored. To every open socket of the account's devices that have a live added account session at send time, the origin device included (docs/API.md §2.5). Metadata only: clients fetch ciphertext with GET /v1/clipboard/events?cursor=.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "event_id",
+        "seq",
+        "origin_device_id",
+        "created_at",
+        "payload_size",
+        "key_version"
+      ],
+      "properties": {
+        "type": {
+          "const": "CLIPBOARD_EVENT_CREATED"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "origin_device_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144
+        },
+        "key_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ClipboardEventDeleted": {
+      "x-sa-phase": 5,
+      "x-sa-direction": "server-to-client",
+      "description": "A clipboard event became a tombstone with a new seq (a deletion or the 100-item cap). To every open socket of the account's devices that have a live added account session at send time, the origin device included (docs/API.md §2.5). Metadata only: clients fetch ciphertext with GET /v1/clipboard/events?cursor=.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "event_id", "seq"],
+      "properties": {
+        "type": {
+          "const": "CLIPBOARD_EVENT_DELETED"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ClipboardHistoryCleared": {
+      "x-sa-phase": 5,
+      "x-sa-direction": "server-to-client",
+      "description": "Every live clipboard event became a tombstone; seq is the highest tombstone seq. Sent only when something was cleared. To every open socket of the account's devices that have a live added account session at send time, the origin device included (docs/API.md §2.5). Metadata only: clients fetch ciphertext with GET /v1/clipboard/events?cursor=.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "seq"],
+      "properties": {
+        "type": {
+          "const": "CLIPBOARD_HISTORY_CLEARED"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ClipboardSettingsUpdated": {
+      "x-sa-phase": 5,
+      "x-sa-direction": "server-to-client",
+      "description": "The account's clipboard settings changed. To every open socket of the account's devices that have a live added account session at send time, the origin device included (docs/API.md §2.5). Metadata only: clients fetch ciphertext with GET /v1/clipboard/events?cursor=.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "paused", "retention_days", "sensitive_skip"],
+      "properties": {
+        "type": {
+          "const": "CLIPBOARD_SETTINGS_UPDATED"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "sensitive_skip": {
+          "type": "boolean"
+        }
+      }
+    },
+    "DeviceConnected": {
+      "x-sa-phase": 5,
+      "x-sa-direction": "server-to-client",
+      "description": "Another added device of the account opened its first socket. Sent to the account's other added devices; guests, not-added, and departed devices announce nothing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "device_id"],
+      "properties": {
+        "type": {
+          "const": "DEVICE_CONNECTED"
+        },
+        "device_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "DeviceDisconnected": {
+      "x-sa-phase": 5,
+      "x-sa-direction": "server-to-client",
+      "description": "Another added device of the account closed its last socket. Sent to the account's other added devices.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "device_id"],
+      "properties": {
+        "type": {
+          "const": "DEVICE_DISCONNECTED"
+        },
+        "device_id": {
+          "type": "string",
+          "format": "uuid"
         }
       }
     }

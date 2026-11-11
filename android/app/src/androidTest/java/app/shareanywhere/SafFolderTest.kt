@@ -29,8 +29,8 @@ import org.junit.runner.RunWith
 
 /**
  * RX-5b Choose folder through the system picker (Storage Access Framework, `ACTION_OPEN_DOCUMENT_TREE`) driven with
- * UiAutomator: a folder in Download is chosen with Use this folder and Allow, and the received file lands there through
- * the tree URI with a matching SHA-256.
+ * UiAutomator: a new folder is made in the picker, chosen with Use this folder and Allow, and the received file lands there
+ * through the tree URI with a matching SHA-256.
  */
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = 30)
@@ -81,15 +81,21 @@ class SafFolderTest {
                     compose.waitForTag("rx.choose-folder", 30_000)
                     compose.onNodeWithTag("rx.choose-folder").tap()
 
-                    // DocumentsUI: the device storage root (its row says how much is free) → Download → the folder, made up
-                    // front with the shell (the tree picker does not offer New folder at the Downloads root).
+                    // DocumentsUI opens in a folder that allows new folders: New folder (a toolbar action, or under More options),
+                    // name it, open it, then Use this folder and Allow.
                     assertTrue("system picker opened", device.wait(Until.hasObject(By.pkg(picker)), 20_000))
                     val name = "SA-${System.currentTimeMillis() % 100000}"
-                    device.executeShellCommand("mkdir -p /sdcard/Download/$name")
-                    find(By.desc(Pattern.compile("Show roots", Pattern.CASE_INSENSITIVE)), "Show roots").click()
-                    find(By.textContains("free"), "storage root").click()
-                    find(text("^Download$"), "Download").click()
-                    find(text("^${Pattern.quote(name)}$"), "the folder").click()
+                    val newFolder = By.res(Pattern.compile(".*:id/option_menu_create_dir"))
+                    val direct = device.wait(Until.findObject(newFolder), 5_000)
+                    if (direct != null) {
+                        direct.click()
+                    } else {
+                        find(By.desc(Pattern.compile("More options", Pattern.CASE_INSENSITIVE)), "More options").click()
+                        find(text("^New folder$"), "New folder").click()
+                    }
+                    find(By.clazz("android.widget.EditText"), "folder name field").text = name
+                    find(By.res("android:id/button1"), "OK").click()
+                    find(text("^${Pattern.quote(name)}$"), "the new folder").click()
                     find(text("^Use this folder$"), "Use this folder").click()
                     find(text("^Allow$"), "Allow").click()
 
@@ -105,6 +111,7 @@ class SafFolderTest {
                         uri.startsWith("content://com.android.externalstorage.documents/tree/")
                     )
                     assertEquals(sum, TestPeer.sha256(peer.context, uri.toUri()))
+                    deleteReceived(view.id)
                     runBlocking { runCatching { peer.peer.api.close(view.id) } }
                 }
             }

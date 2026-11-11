@@ -143,6 +143,7 @@ class TransferTest {
                     val got =
                         runBlocking { withTimeout(10_000) { entry.historyRepository().observe("rx:${view.id}").first { it != null } } }
                     assertEquals(HistoryStatus.COMPLETED, got!!.status)
+                    deleteReceived(view.id)
                     runBlocking { peer.peer.api.close(view.id) }
                 }
             }

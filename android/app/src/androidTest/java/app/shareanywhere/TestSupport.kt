@@ -58,3 +58,22 @@ fun waitForReceiveEnd(sessionId: String, timeoutMs: Long) = kotlinx.coroutines.r
 fun waitForSendEnd(sessionId: String, timeoutMs: Long) = kotlinx.coroutines.runBlocking {
     kotlinx.coroutines.withTimeout(timeoutMs) { Backend.entry().transferRuntime().sender(sessionId).state.first { it.final != null } }
 }
+
+/**
+ * Deletes what a test received (files in Download/Share Anywhere outlive clearPackageData, and a few large receives
+ * would fill the emulator's storage for the next tests).
+ */
+fun deleteReceived(sessionId: String) {
+    val rx = Backend.entry().transferRuntime().existingReceiver(sessionId) ?: return
+    val resolver = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().contentResolver
+    for (f in rx.state.value.files) {
+        val uri = f.documentUri?.let(android.net.Uri::parse) ?: continue
+        runCatching {
+            if (android.provider.DocumentsContract.isDocumentUri(androidx.test.core.app.ApplicationProvider.getApplicationContext(), uri)) {
+                android.provider.DocumentsContract.deleteDocument(resolver, uri)
+            } else {
+                resolver.delete(uri, null, null)
+            }
+        }
+    }
+}

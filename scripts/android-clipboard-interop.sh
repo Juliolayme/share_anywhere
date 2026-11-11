@@ -31,7 +31,7 @@ else
   for _ in $(seq 1 300); do
     pair=$(adb logcat -d -s SA-CLIP:I | grep -o 'pair=[^ ]*' | tail -1 | sed 's/^pair=//' || true)
     [ -n "$pair" ] && [ ! -s "$CLIP_INTEROP_DIR/android-pairing.txt" ] && echo "$pair" > "$CLIP_INTEROP_DIR/android-pairing.txt"
-    m=$(adb logcat -d -s SA-CLIP:I | grep -o 'marker=[^ ]*' | tail -1 | sed 's/^marker=//' || true)
+    m=$(adb logcat -d -s SA-CLIP:I | grep -o 'marker=.*$' | tail -1 | sed 's/^marker=//; s/\r$//' || true)
     if [ -n "$m" ]; then echo "$m" > "$CLIP_INTEROP_DIR/android-marker.txt"; break; fi
     kill -0 "$android" 2>/dev/null || break
     sleep 2

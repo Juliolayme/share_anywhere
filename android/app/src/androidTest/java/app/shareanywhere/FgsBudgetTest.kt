@@ -47,12 +47,15 @@ class FgsBudgetTest {
     @After
     fun restore() {
         device.executeShellCommand("device_config delete activity_manager data_sync_fgs_timeout_duration")
+        device.executeShellCommand("am compat reset FGS_INTRODUCE_TIME_LIMITS app.shareanywhere")
     }
 
     @Test
     fun theBudgetEndingPausesTheTransferWhichResumes() {
         Backend.assume()
         Backend.markWelcomed()
+        // Android's documented test setup for the dataSync limit: the compat change on for this app, and a short budget.
+        device.executeShellCommand("am compat enable FGS_INTRODUCE_TIME_LIMITS app.shareanywhere")
         device.executeShellCommand("device_config put activity_manager data_sync_fgs_timeout_duration 4000")
         val entry = Backend.entry()
         val (file, sum) = TestPeer.file("budget-${System.nanoTime()}.bin", 160 * 1024 * 1024)
@@ -78,6 +81,7 @@ class FgsBudgetTest {
                     }
 
                     // The budget only runs while the app is in the background (being in front resets it).
+                    compose.waitUntil(15_000) { TransferService.running }
                     device.pressHome()
                     val paused = runBlocking {
                         withTimeout(60_000) {
@@ -111,6 +115,7 @@ class FgsBudgetTest {
                     }
                     assertEquals(RxPhase.Completed, done.phase)
                     assertEquals(sum, TestPeer.sha256(peer.context, done.files.single().documentUri!!.toUri()))
+                    deleteReceived(view.id)
                     runBlocking { runCatching { peer.peer.api.close(view.id) } }
                 }
             }

@@ -33,6 +33,14 @@ import org.junit.runner.RunWith
 class ScreenshotTest {
     @get:Rule val compose = createEmptyComposeRule()
 
+    // The session screen asks for notification permission; the system dialog would cover the app.
+    @get:Rule val notifications: androidx.test.rule.GrantPermissionRule =
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            androidx.test.rule.GrantPermissionRule.grant(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            androidx.test.rule.GrantPermissionRule.grant()
+        }
+
     private val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
     @After

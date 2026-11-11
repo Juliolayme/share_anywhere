@@ -2,9 +2,10 @@ package app.shareanywhere
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -97,7 +98,8 @@ class AccountClipboardTest {
                     it.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("test", marker))
                 }
                 compose.waitUntil(30_000) { entry.clipboardRuntime().ui.value.snapshot.items.any { i -> i.text == marker && !i.pending } }
-                compose.waitUntil(10_000) { compose.onAllNodesWithTag("clip-row").fetchSemanticsNodes().isNotEmpty() }
+                // The row may sit below the fold of a small screen: scroll the list to it.
+                compose.onNodeWithTag("clipboard.home").performScrollToNode(hasTestTag("clip-row"))
                 val synced = entry.clipboardRuntime().ui.value.snapshot.items.first { it.text == marker }
                 assertNotNull(synced.seq)
 

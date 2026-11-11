@@ -71,7 +71,8 @@ class ClipboardInteropTest {
                     }
                 }
                 // This device's item, for the Web to decrypt.
-                val mine = "from-android-${System.currentTimeMillis()}"
+                // Ordinary words: a single token-like string would be skipped as possibly sensitive (as it should).
+                val mine = "Hello from Android at ${System.currentTimeMillis()}"
                 val r = runtime.capture(mine, CaptureSource.MANUAL)
                 assertTrue("synced: $r", r is CaptureResult.Synced)
                 Log.i("SA-CLIP", "marker=$mine")

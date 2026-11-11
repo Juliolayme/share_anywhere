@@ -63,22 +63,26 @@ class KeepScreenOnTest {
         val (file, _) = TestPeer.file("keep-${System.nanoTime()}.bin", size)
         val view = runBlocking { peer.peer.api.create(listOf(FileInput(file.name, file.length(), "application/octet-stream")), false) }
         runBlocking { peer.sender(view.id, file, view.files!!.single().id, "application/octet-stream") }
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            compose.dumpOnFailure {
-                compose.waitForTag(ScreenIds.HOME)
-                compose.onNodeWithTag("home.receive").performClick()
-                compose.onNodeWithTag("receive.tab-code").performClick()
-                compose.waitForTag(ScreenIds.RECEIVE_CODE)
-                compose.onNodeWithTag("receive.code-input").performTextInput(view.code!!)
-                compose.onNodeWithTag("receive.continue").performClick()
-                compose.waitForTag(ScreenIds.RX_PREVIEW, 30_000)
-                compose.onNodeWithTag("preview.receive").tap()
-                compose.waitForTag("rx.start", 30_000)
-                compose.onNodeWithTag("rx.start").tap()
-                block(view.id, scenario)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                compose.dumpOnFailure {
+                    compose.waitForTag(ScreenIds.HOME)
+                    compose.onNodeWithTag("home.receive").performClick()
+                    compose.onNodeWithTag("receive.tab-code").performClick()
+                    compose.waitForTag(ScreenIds.RECEIVE_CODE)
+                    compose.onNodeWithTag("receive.code-input").performTextInput(view.code!!)
+                    compose.onNodeWithTag("receive.continue").performClick()
+                    compose.waitForTag(ScreenIds.RX_PREVIEW, 30_000)
+                    compose.onNodeWithTag("preview.receive").tap()
+                    compose.waitForTag("rx.start", 30_000)
+                    compose.onNodeWithTag("rx.start").tap()
+                    block(view.id, scenario)
+                }
             }
+        } finally {
+            deleteReceived(view.id)
+            runBlocking { runCatching { peer.peer.api.close(view.id) } }
         }
-        runBlocking { runCatching { peer.peer.api.close(view.id) } }
     }
 
     @Test

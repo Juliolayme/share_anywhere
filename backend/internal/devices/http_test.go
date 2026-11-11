@@ -212,7 +212,8 @@ func TestRefreshOverHTTP(t *testing.T) {
 	if next == nil || next.Value == c.Value || decode[sessionBody](t, rec).RefreshSecret != nil {
 		t.Fatal("refresh must rotate the cookie and keep the secret out of the body")
 	}
-	// Reusing the old cookie revokes the device and clears the cookie.
+	// Reusing the old cookie after the grace window revokes the device and clears the cookie.
+	h.clk.Advance(RefreshReuseGrace + time.Second)
 	rec = h.do("POST", "/v1/devices/token", "", withCookie(c.Value), withHeader("X-SA-Refresh", "1"))
 	if rec.Code != 401 || !strings.Contains(rec.Body.String(), "refresh_reused") {
 		t.Fatalf("reuse: %d %s", rec.Code, rec.Body)

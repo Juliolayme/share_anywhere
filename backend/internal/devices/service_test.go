@@ -240,3 +240,77 @@ func TestGenerateNameAndCleanText(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestRefreshReuseGraceMem(t *testing.T) {
+	testReuseGrace(t, nil)
+}
+
+// testReuseGrace: the immediately previous secret is accepted once within RefreshReuseGrace of its first
+// use (the rotated cookie was lost); the lost secret is retired; every other reuse revokes the device.
+func testReuseGrace(t *testing.T, store Store) {
+	t.Helper()
+	t.Run("lost cookie recovers once", func(t *testing.T) {
+		f := newFixture(t, store)
+		s0, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
+		lost, err := f.svc.Refresh(ctx, s0.Secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.clk.Advance(5 * time.Second)
+		s2, err := f.svc.Refresh(ctx, s0.Secret)
+		if err != nil || s2.Device.ID != s0.Device.ID || s2.Device.Generation != 2 {
+			t.Fatalf("grace refresh: %+v %v", s2.Device, err)
+		}
+		// The same old secret a second time is reuse, even inside the window.
+		if _, err := f.svc.Refresh(ctx, s0.Secret); !errors.Is(err, ErrSecretReused) {
+			t.Fatalf("second grace use: %v", err)
+		}
+		if _, err := f.svc.Refresh(ctx, s2.Secret); !errors.Is(err, ErrSecretUnknown) {
+			t.Fatalf("device must be revoked: %v", err)
+		}
+		_ = lost
+	})
+	t.Run("lost secret is retired", func(t *testing.T) {
+		f := newFixture(t, store)
+		s0, _ := f.svc.Create(ctx, "b", CreateInput{Transport: TransportCookie, Platform: "Web"})
+		lost, _ := f.svc.Refresh(ctx, s0.Secret)
+		s2, err := f.svc.Refresh(ctx, s0.Secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.clk.Advance(RefreshReuseGrace + time.Second)
+		if _, err := f.svc.Refresh(ctx, lost.Secret); !errors.Is(err, ErrSecretReused) {
+			t.Fatalf("retired secret after the window: %v", err)
+		}
+		if _, err := f.svc.Refresh(ctx, s2.Secret); !errors.Is(err, ErrSecretUnknown) {
+			t.Fatalf("device must be revoked: %v", err)
+		}
+	})
+	t.Run("after the window is reuse", func(t *testing.T) {
+		f := newFixture(t, store)
+		s0, _ := f.svc.Create(ctx, "c", CreateInput{Transport: TransportCookie, Platform: "Web"})
+		s1, _ := f.svc.Refresh(ctx, s0.Secret)
+		f.clk.Advance(RefreshReuseGrace + time.Second)
+		if _, err := f.svc.Refresh(ctx, s0.Secret); !errors.Is(err, ErrSecretReused) {
+			t.Fatalf("late reuse: %v", err)
+		}
+		if _, err := f.svc.Refresh(ctx, s1.Secret); !errors.Is(err, ErrSecretUnknown) {
+			t.Fatalf("device must be revoked: %v", err)
+		}
+	})
+	t.Run("two steps back is reuse", func(t *testing.T) {
+		f := newFixture(t, store)
+		s0, _ := f.svc.Create(ctx, "d", CreateInput{Transport: TransportCookie, Platform: "Web"})
+		s1, _ := f.svc.Refresh(ctx, s0.Secret)
+		s2, err := f.svc.Refresh(ctx, s1.Secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.svc.Refresh(ctx, s0.Secret); !errors.Is(err, ErrSecretReused) {
+			t.Fatalf("older secret: %v", err)
+		}
+		if _, err := f.svc.Refresh(ctx, s2.Secret); !errors.Is(err, ErrSecretUnknown) {
+			t.Fatalf("device must be revoked: %v", err)
+		}
+	})
+}

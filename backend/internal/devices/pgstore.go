@@ -60,10 +60,11 @@ func (s *PGStore) RotateSecret(ctx context.Context, oldHash, newHash []byte, now
 	reused := false
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var deviceID string
+		var generation int
 		var usedAt *time.Time
 		err := tx.QueryRow(ctx,
-			`SELECT device_id::text, used_at FROM device_refresh_secrets WHERE secret_hash = $1 FOR UPDATE`, oldHash,
-		).Scan(&deviceID, &usedAt)
+			`SELECT device_id::text, generation, used_at FROM device_refresh_secrets WHERE secret_hash = $1 FOR UPDATE`, oldHash,
+		).Scan(&deviceID, &generation, &usedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrSecretUnknown
 		}
@@ -73,6 +74,15 @@ func (s *PGStore) RotateSecret(ctx context.Context, oldHash, newHash []byte, now
 		d, err := scanDevice(tx.QueryRow(ctx, `SELECT `+deviceColumns+` FROM devices WHERE id = $1::uuid FOR UPDATE`, deviceID))
 		if err != nil {
 			return err
+		}
+		if usedAt != nil && inReuseGrace(*usedAt, generation, d, now) {
+			// The newer secret never reached the client: retire it and rotate again from this one.
+			if _, err := tx.Exec(ctx,
+				`UPDATE device_refresh_secrets SET used_at = $3 WHERE device_id = $1::uuid AND generation = $2 AND used_at IS NULL`,
+				deviceID, d.Generation, now); err != nil {
+				return err
+			}
+			usedAt = nil
 		}
 		if usedAt != nil {
 			// Reuse of a consumed secret: revoke the device and drop its secrets (committed, then reported).
@@ -88,7 +98,8 @@ func (s *PGStore) RotateSecret(ctx context.Context, oldHash, newHash []byte, now
 		if !d.Active(now) {
 			return ErrDeviceInactive
 		}
-		if _, err := tx.Exec(ctx, `UPDATE device_refresh_secrets SET used_at = $2 WHERE secret_hash = $1`, oldHash, now); err != nil {
+		// COALESCE keeps the first use time, so a grace rotation cannot extend the grace window.
+		if _, err := tx.Exec(ctx, `UPDATE device_refresh_secrets SET used_at = COALESCE(used_at, $2) WHERE secret_hash = $1`, oldHash, now); err != nil {
 			return err
 		}
 		out, err = scanDevice(tx.QueryRow(ctx,

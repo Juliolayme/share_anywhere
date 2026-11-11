@@ -14,3 +14,4 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0008](0008-device-token-format.md) | Device access token format and lifetimes | Accepted |
 | [0009](0009-argon2id-passwords.md) | Argon2id parameters for account passwords | Accepted |
 | [0010](0010-account-sessions.md) | Account sessions layered on device identity | Accepted |
+| [0011](0011-refresh-reuse-grace.md) | Grace window for the previous refresh secret | Accepted |

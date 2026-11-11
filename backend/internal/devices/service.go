@@ -26,6 +26,11 @@ const (
 	AccountLifetime   = 90 * 24 * time.Hour
 	RevokedRetention  = 24 * time.Hour
 	activeCacheTTL    = 30 * time.Second
+	// RefreshReuseGrace: the immediately previous refresh secret is still accepted for this long after it was
+	// used, once, when the newer secret was lost in transit (page closed or reloaded before the browser stored
+	// the rotated cookie). The newer secret is retired, so the device never holds two live secrets. Any other
+	// reuse revokes the device (docs/ADR/0011-refresh-reuse-grace.md).
+	RefreshReuseGrace = 30 * time.Second
 )
 
 // Limits are the rate limits this package enforces (docs/SECURITY_MODEL.md §5).

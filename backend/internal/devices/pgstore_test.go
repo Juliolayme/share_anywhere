@@ -75,6 +75,7 @@ func TestPGStoreLifecycle(t *testing.T) {
 	if d, err := f.svc.Rename(ctx, s1.Device.ID, "Sofa"); err != nil || d.DisplayName != "Sofa" {
 		t.Fatalf("rename: %v", err)
 	}
+	f.clk.Advance(RefreshReuseGrace + time.Second)
 	if _, err := f.svc.Refresh(ctx, s0.Secret); !errors.Is(err, ErrSecretReused) {
 		t.Fatalf("reuse: %v", err)
 	}
@@ -118,31 +119,48 @@ func TestPGStoreLifecycle(t *testing.T) {
 	}
 }
 
-// TestPGStoreConcurrentRefresh: two refreshes racing with the same secret cannot both succeed;
-// the loser is treated as reuse and the device is revoked.
+// TestPGStoreConcurrentRefresh: two refreshes racing with the same secret are serialized by the row lock.
+// The second one is the reuse-grace case: it succeeds and retires the first one's secret, so exactly one
+// secret stays live and presenting the retired one later revokes the device.
 func TestPGStoreConcurrentRefresh(t *testing.T) {
 	store := newPGStore(t)
 	f := newFixture(t, store)
 	s, _ := f.svc.Create(ctx, "a", CreateInput{Transport: TransportCookie, Platform: "Web"})
 	var wg sync.WaitGroup
-	results := make([]error, 2)
+	results := make([]Session, 2)
+	errs := make([]error, 2)
 	for i := range results {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, results[i] = f.svc.Refresh(ctx, s.Secret)
+			results[i], errs[i] = f.svc.Refresh(ctx, s.Secret)
 		}(i)
 	}
 	wg.Wait()
-	ok := 0
-	for _, err := range results {
-		if err == nil {
-			ok++
-		} else if !errors.Is(err, ErrSecretReused) {
-			t.Fatalf("unexpected error %v", err)
-		}
+	if errs[0] != nil || errs[1] != nil {
+		t.Fatalf("both refreshes must succeed inside the grace window: %v", errs)
 	}
-	if ok != 1 {
-		t.Fatalf("exactly one refresh must win, got %d (%v)", ok, results)
+	live, retired := results[0], results[1]
+	if retired.Device.Generation > live.Device.Generation {
+		live, retired = retired, live
 	}
+	if live.Device.Generation != 2 || retired.Device.Generation != 1 {
+		t.Fatalf("generations %d and %d", live.Device.Generation, retired.Device.Generation)
+	}
+	f.clk.Advance(RefreshReuseGrace + time.Second)
+	next, err := f.svc.Refresh(ctx, live.Secret)
+	if err != nil {
+		t.Fatalf("the newest secret must stay live: %v", err)
+	}
+	if _, err := f.svc.Refresh(ctx, retired.Secret); !errors.Is(err, ErrSecretReused) {
+		t.Fatalf("the retired secret is reuse: %v", err)
+	}
+	if _, err := f.svc.Refresh(ctx, next.Secret); !errors.Is(err, ErrSecretUnknown) {
+		t.Fatalf("reuse revokes the device: %v", err)
+	}
+}
+
+// TestPGStoreReuseGrace runs the grace rules against PostgreSQL.
+func TestPGStoreReuseGrace(t *testing.T) {
+	testReuseGrace(t, newPGStore(t))
 }

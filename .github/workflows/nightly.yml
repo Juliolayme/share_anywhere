@@ -114,7 +114,7 @@ jobs:
           FIREFOX_VERSION: '160.0'
           FIREFOX_SHA256: fde774e9757c8878534c05ec210db592bf6a1b244c57941ffb2e364c04f35fcd
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/firefox.tar.xz" "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz"
+          curl -fsSL --retry 4 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/firefox.tar.xz" "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz"
           echo "${FIREFOX_SHA256}  $RUNNER_TEMP/firefox.tar.xz" | sha256sum -c -
           tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP"
           echo "E2E_FIREFOX_BIN=$RUNNER_TEMP/firefox/firefox" >> "$GITHUB_ENV"

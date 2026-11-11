@@ -205,11 +205,31 @@ function statusFromServer(ts: TransferStatus[]): TxStatus | null {
   return 'waiting';
 }
 
+/** Web Lock held by the tab that has a session's files (docs/TRANSFER_PROTOCOL.md §5.1). */
+export const filesLockName = (sessionId: string) => `sa-sender-files:${sessionId}`;
+
+type Locks = { request?: LockManager['request']; query?: LockManager['query'] };
+const locks = (): Locks | undefined => (globalThis.navigator as (Navigator & { locks?: Locks }) | undefined)?.locks;
+
+/** Whether another tab of this browser holds the files for the session (false when Web Locks are missing). */
+export async function filesHeldElsewhere(sessionId: string): Promise<boolean> {
+  const l = locks();
+  if (!l?.query) return false;
+  try {
+    const state = await l.query();
+    return (state.held ?? []).some((h) => h.name === filesLockName(sessionId));
+  } catch {
+    return false;
+  }
+}
+
 /** Serves every receiver of one session from this tab (docs/TRANSFER_PROTOCOL.md). */
 export class SenderController extends Observable<TxState> {
   private peers = new Map<string, Peer>();
   /** Receivers no longer JOINED (left, removed, blocked): never served again. */
   private gone = new Set<string>();
+  /** Releases the files Web Lock (filesLockName) held while this tab has the picked files. */
+  private releaseFilesLock: (() => void) | undefined;
   private transfers = new Map<string, Transfer>();
   private downTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private resuming = new Set<string>();
@@ -230,7 +250,6 @@ export class SenderController extends Observable<TxState> {
   private sampler: ReturnType<typeof setInterval> | null = null;
   /** What the History entry last recorded, so it is rewritten (same id) only when the result changes. */
   private historyKey = '';
-  private historyWritten = false;
   private historyChain: Promise<void> = Promise.resolve();
   /** When the first verified byte reached any receiver (History duration). */
   private startedAt: number | undefined;
@@ -276,6 +295,16 @@ export class SenderController extends Observable<TxState> {
       for (const f of this.senderFiles) this.hashes.set(f.index, new FileHash(f.source));
     }
     this.update({ files, hasFiles: this.senderFiles.length === files.length && files.length > 0 });
+    // Signaling reaches every tab of this device. The tab with the files says so with a Web Lock, so another
+    // tab open on the same session (from History or the open-sessions list) leaves the offers to it.
+    const l = locks();
+    if (this.state_.hasFiles && l?.request)
+      void l
+        .request(
+          filesLockName(this.d.sessionId),
+          () => new Promise<void>((release) => (this.releaseFilesLock = release)),
+        )
+        .catch(() => undefined);
     this.unsub = this.d.socket.subscribe((e) => this.onSocket(e));
     await this.refresh(view);
     this.sampler = setInterval(() => this.sample(), 500);
@@ -407,6 +436,8 @@ export class SenderController extends Observable<TxState> {
 
   dispose(): void {
     this.unsub?.();
+    this.releaseFilesLock?.();
+    this.releaseFilesLock = undefined;
     for (const t of this.downTimers.values()) clearTimeout(t);
     this.downTimers.clear();
     this.pendingIce.clear();
@@ -515,6 +546,11 @@ export class SenderController extends Observable<TxState> {
 
   private async onOffer(pid: string, payload: SdpPayload): Promise<void> {
     if (Date.now() < this.refusing) return;
+    // Without the files, answer only when no other tab has them (after a reload: tell the receiver at once).
+    if (!this.state_.hasFiles && (await filesHeldElsewhere(this.d.sessionId))) {
+      pushDiag(this.diag, `offer from ${pid.slice(0, 8)} left to the tab with the files`);
+      return;
+    }
     if (!this.state_.receivers.some((r) => r.participantId === pid && !this.gone.has(pid))) await this.refresh();
     const r = this.state_.receivers.find((x) => x.participantId === pid);
     if (!r || this.gone.has(pid)) return;
@@ -743,19 +779,17 @@ export class SenderController extends Observable<TxState> {
       status,
       createdAt: Date.now(),
     };
-    // Writes run one after another. The entry keeps its first creation time and start time across rewrites and
-    // reloads, and an entry the user deleted after this tab wrote it is not brought back.
+    // Writes run one after another, and the entry keeps its first creation time and start time across rewrites
+    // and reloads. An entry the user deleted is not brought back: the History store refuses it.
     this.historyChain = this.historyChain
       .then(async () => {
         const prev = (await history.list()).find((e) => e.id === entry.id);
-        if (!prev && this.historyWritten) return;
         const startedAt = this.startedAt ?? prev?.startedAt;
         await history.add({
           ...entry,
           createdAt: prev?.createdAt ?? entry.createdAt,
           ...(startedAt ? { startedAt } : {}),
         });
-        this.historyWritten = true;
       })
       .catch(() => undefined);
   }

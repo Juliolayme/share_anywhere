@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   entryPeers,
   filterHistory,
@@ -24,6 +24,8 @@ const entry = (id: string, ageDays: number, over: Partial<HistoryEntry> = {}): H
   createdAt: NOW - ageDays * DAY,
   ...over,
 });
+
+beforeEach(() => localStorage.clear());
 
 describe('history store', () => {
   it('adds, lists newest first, deletes, and clears', async () => {
@@ -135,5 +137,31 @@ describe('history filters with Phase 4 fields', () => {
     expect(back?.files).toHaveLength(3);
     expect(back?.peers).toEqual(['Minh’s Pixel 7', 'Lan’s MacBook']);
     expect(back?.route).toBe('mixed');
+  });
+});
+
+describe('deleted entries stay deleted', () => {
+  it('a deleted or cleared entry is not written again, by this store or a new one (another tab, a reload)', async () => {
+    const factory = new IDBFactory();
+    const store = openHistoryStore(factory);
+    await store.add(entry('tx:s1', 0));
+    await store.add(entry('tx:s2', 0));
+    await store.remove('tx:s1');
+    await store.add({ ...entry('tx:s1', 0), status: 'partial' }); // the live session rewrites its result
+    expect((await store.list()).map((e) => e.id)).toEqual(['tx:s2']);
+    await store.clear();
+    const reloaded = openHistoryStore(factory);
+    await reloaded.add(entry('tx:s2', 0));
+    await reloaded.add(entry('tx:s1', 0));
+    expect(await reloaded.list()).toEqual([]);
+    await reloaded.add(entry('tx:s3', 0)); // a new transfer is recorded
+    expect((await reloaded.list()).map((e) => e.id)).toEqual(['tx:s3']);
+  });
+  it('without storage nothing is remembered, and the store still works', async () => {
+    const store = openHistoryStore(new IDBFactory(), null);
+    await store.add(entry('a', 0));
+    await store.remove('a');
+    await store.add(entry('a', 0));
+    expect((await store.list()).map((e) => e.id)).toEqual(['a']);
   });
 });

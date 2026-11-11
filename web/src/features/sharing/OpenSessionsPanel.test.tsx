@@ -130,6 +130,10 @@ describe('open sessions panel', () => {
     expect(onClosed).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('open-sessions-closed')).toHaveTextContent('Session closed');
     expect(screen.queryByRole('dialog')).toBeNull();
+    // Focus stays in the panel after the row disappears.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Your open sessions' })),
+    );
   });
 
   it('a failed close stays listed with an error; Cancel closes nothing', async () => {

@@ -1,5 +1,6 @@
 // Local transfer history in IndexedDB (PRD §2 "History", docs/UX_SCREEN_MAP.md HI-1). Guest history never
 // leaves this device; Phase 5A adds optional encrypted sync for signed-in users.
+import { readPref, writePref } from '../../../lib/storage';
 
 export type Direction = 'sent' | 'received';
 export type HistoryStatus = 'completed' | 'partial' | 'failed' | 'cancelled';
@@ -71,7 +72,48 @@ function done(tx: IDBTransaction): Promise<void> {
   });
 }
 
-export function openHistoryStore(factory: IDBFactory = indexedDB): HistoryStore {
+const REMOVED_KEY = 'history.removed';
+const REMOVED_MAX = 500;
+
+/**
+ * Ids the user deleted (one by one or with Clear all), kept in localStorage so a live session that rewrites its
+ * entry (`tx:<session>`, docs/ARCHITECTURE.md §4.5) does not bring it back, in this tab or another, or after a
+ * reload. Bounded to the most recent REMOVED_MAX ids; without storage nothing is remembered.
+ */
+/** Where deleted ids are kept: the UI preference storage (src/lib/storage.ts), or nothing. */
+export interface PrefStorage {
+  read(key: string): string | null;
+  write(key: string, value: string): void;
+}
+
+function removedIds(storage: PrefStorage | null) {
+  const read = (): Record<string, number> => {
+    try {
+      const v = JSON.parse(storage?.read(REMOVED_KEY) ?? '{}') as unknown;
+      return v && typeof v === 'object' ? (v as Record<string, number>) : {};
+    } catch {
+      return {};
+    }
+  };
+  return {
+    has: (id: string) => id in read(),
+    add(ids: string[]) {
+      if (!storage || !ids.length) return;
+      const now = Date.now();
+      const all = { ...read(), ...Object.fromEntries(ids.map((id) => [id, now])) };
+      const kept = Object.entries(all)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, REMOVED_MAX);
+      storage.write(REMOVED_KEY, JSON.stringify(Object.fromEntries(kept))); // ignores full or blocked storage
+    },
+  };
+}
+
+export function openHistoryStore(
+  factory: IDBFactory = indexedDB,
+  storage: PrefStorage | null = { read: readPref, write: writePref },
+): HistoryStore {
+  const removed = removedIds(storage);
   let dbPromise: Promise<IDBDatabase> | null = null;
   const db = () => {
     dbPromise ??= new Promise<IDBDatabase>((resolve, reject) => {
@@ -96,14 +138,23 @@ export function openHistoryStore(factory: IDBFactory = indexedDB): HistoryStore 
   }
 
   return {
-    add: (entry) => write((s) => s.put(entry)),
+    // An entry the user deleted is not written again (a live session rewriting its result).
+    add: async (entry) => (removed.has(entry.id) ? undefined : write((s) => s.put(entry))),
     async list() {
       const tx = (await db()).transaction(STORE, 'readonly');
       const all = await promisify(tx.objectStore(STORE).index('createdAt').getAll());
       return (all as HistoryEntry[]).reverse();
     },
-    remove: (id) => write((s) => s.delete(id)),
-    clear: () => write((s) => s.clear()),
+    async remove(id) {
+      removed.add([id]);
+      await write((s) => s.delete(id));
+    },
+    async clear() {
+      const tx = (await db()).transaction(STORE, 'readonly');
+      const ids = (await promisify(tx.objectStore(STORE).getAllKeys())) as string[];
+      removed.add(ids);
+      await write((s) => s.clear());
+    },
     async sweep(retention, now = Date.now()) {
       const days = RETENTION_DAYS[retention];
       const tx = (await db()).transaction(STORE, 'readwrite');

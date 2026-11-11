@@ -87,3 +87,23 @@ Nightly [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/
 | `/result` could render TR-6 | P2 | `/result` without a result redirects to `/transfers` |
 | A receiver whose WebSocket upgrade is refused waits without explanation | P2 | Pre-existing; backlog |
 | Report commit table omitted dd5e363 | P2 | Added |
+
+## Round 4 — commit 50a13c8 — FAIL
+
+0 P0, 1 P1, 6 P2 findings. The round-3 findings were confirmed resolved. CI e2e on b8b4405 and 50a13c8 passed in every project with no retries.
+
+**Why it failed:**
+
+- a second tab of the sender's device on the same session, without the picked files, answered receivers' offers and made them fail. The new open-sessions list's Open made this easy to reach. QA reproduced it 4 times out of 4.
+
+### Resolution of round 4 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| A file-less second tab (Open from the panel, History) answered offers, so receivers got "The sender no longer has these files" or stalled | P1 | The tab with the files holds the Web Lock `sa-sender-files:<session>`. A tab without the files ignores offers while it is held, and keeps the fail-fast answer when no tab holds it (after a reload). TRANSFER_PROTOCOL §5.1.<br>Unit test: offers ignored while the lock is held, answered once it is released.<br>e2e `multi.spec`: sender tab plus a second tab of the same device; the receiver completes and its SHA-256 matches. It passed 9 of 9 locally (3 runs on each of chromium, firefox and webkit) and failed 3 of 3 against the previous code |
+| P2-1 The deleted-entry guard worked only within one tab; its test proved nothing | P2 | The History store remembers deleted ids (one by one and those removed by Clear all) in localStorage and refuses to write them again, in any tab or after a reload; a new transfer is still recorded. Store tests cover both; the controller's in-tab guard and its empty test were removed |
+| P2-2 Focus lost after Close in the panel | P2 | Focus moves to the panel heading after the list refreshes; component test |
+| P2-3 Row meta built from fragments with a hard-coded separator | P2 | One key, `product.open_session_meta` (EN/VI); the two fragment keys removed |
+| P2-4 UX_SCREEN_MAP lacked the cap-reached state | P2 | TR-3 rows list the state and the panel |
+| P2-5 No green nightly on the final backend; the Firefox download had no retry | P2 | `curl --retry 4 --retry-all-errors` in ci.yml and nightly.yml; nightly re-dispatched on the final commit and linked in the report |
+| P2-6 `display: contents` live region; report nits | P2 | The live region is a normal block inside the heading group; report counts corrected (24 sharing tests; open-sessions ran in all 5 projects in CI) |

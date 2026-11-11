@@ -6,6 +6,7 @@ import { Throughput } from '../engine/eta';
 import type { HistoryStore } from '../../history/store/history-store';
 import {
   SenderController,
+  filesLockName,
   finalOf,
   groupEta,
   resultOf,
@@ -348,7 +349,7 @@ describe('SenderController', () => {
     expect(writes).toHaveLength(2);
     tx.dispose();
   });
-  it('History: a reload keeps the creation and start time; an entry deleted after it was written stays deleted', async () => {
+  it('History: after a reload the rewritten entry keeps its creation and start time', async () => {
     const transfers = [
       { id: 't1', participant_id: 'p1', file_id: 'f1', status: 'COMPLETED', verified_bytes: 10 },
       { id: 't2', participant_id: 'p1', file_id: 'f2', status: 'FAILED', verified_bytes: 3 },
@@ -393,13 +394,6 @@ describe('SenderController', () => {
     await tx.init();
     expect(tx.state.final).toBe('partial');
     await vi.waitFor(() => expect(stored.get('tx:s1')).toMatchObject({ createdAt: 1000, startedAt: 900 }));
-    // The user deletes the entry; a later change (the receiver is blocked) does not bring it back.
-    await new Promise((r) => setTimeout(r, 10));
-    stored.clear();
-    participants[0] = { ...participants[0], status: 'BLOCKED' } as (typeof participants)[number];
-    await tx.refresh();
-    await new Promise((r) => setTimeout(r, 10));
-    expect(stored.size).toBe(0);
     tx.dispose();
   });
   it('when the session ends mid-transfer, receivers still going show cancelled and the result is final', async () => {
@@ -429,5 +423,44 @@ describe('SenderController', () => {
       expect(t.tx.state.receivers[0]?.joined).toBe(false);
     }
     t.tx.dispose();
+  });
+  it('a tab without the files leaves offers to the tab that holds them (Web Lock), and answers when none does', async () => {
+    let peers = 0;
+    const t = setup('TRANSFERRING', () => {
+      peers++;
+      return {
+        connectionState: 'new',
+        setRemoteDescription: async () => undefined,
+        createAnswer: async () => ({ type: 'answer', sdp: '' }),
+        setLocalDescription: async () => undefined,
+        localDescription: { toJSON: () => ({ type: 'answer', sdp: '' }) },
+        addIceCandidate: async () => undefined,
+        addEventListener: () => undefined,
+        close: () => undefined,
+      } as unknown as RTCPeerConnection;
+    });
+    let held: { name: string }[] = [{ name: filesLockName('s1') }];
+    Object.defineProperty(globalThis.navigator, 'locks', {
+      configurable: true,
+      value: { query: async () => ({ held, pending: [] }) },
+    });
+    try {
+      await t.tx.init();
+      const offer = (conn: string) =>
+        t.emit({
+          type: 'OFFER',
+          from: 'p1',
+          payload: { conn, sdp: { type: 'offer', sdp: '' } },
+        } as unknown as SocketEvent);
+      offer('c1');
+      await new Promise((r) => setTimeout(r, 20));
+      expect(peers).toBe(0);
+      held = []; // the tab with the files went away (closed or reloaded)
+      offer('c2');
+      await vi.waitFor(() => expect(peers).toBe(1));
+    } finally {
+      delete (globalThis.navigator as { locks?: unknown }).locks;
+      t.tx.dispose();
+    }
   });
 });

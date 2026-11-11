@@ -214,3 +214,23 @@ test('a receiver who joins after the result: the dashboard comes back, then New 
   // Receivers that already have their files keep their result.
   for (const rx of [first, late]) await expect(result(rx)).toHaveAttribute('data-result', 'completed');
 });
+
+test('a second tab of the sender on the same session leaves the transfer to the tab with the files', async ({
+  browser,
+  browserName,
+}) => {
+  test.setTimeout(150_000);
+  const f = fixture('8M');
+  const name = f.path.split('/').pop() ?? '';
+  const sender = track(await senderPage());
+  const s = await createSession(sender, { files: [f.path] });
+  // The same device opens the session again in another tab (as from History or the open-sessions list).
+  const second = track(await sender.context().newPage());
+  await second.goto(`/send/session/${s.id}`);
+  await expect(second.getByTestId('session-code')).toBeVisible();
+  const rx = await receiver(browser, browserName, 'Receiver Tabs');
+  await joinToSave(rx, s.code);
+  await startInBrowser(rx);
+  await expect(result(rx)).toHaveAttribute('data-result', 'completed', { timeout: 90_000 });
+  expect(await downloadAndHash(rx, name)).toBe(f.sha256);
+});

@@ -1,5 +1,5 @@
 import { CircleAlert, CircleCheck, Share2 } from 'lucide-react';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, ConfirmDialog } from '../../components/ui';
 import { useI18n, type Translate } from '../../i18n/i18n';
@@ -63,6 +63,7 @@ export function OpenSessionsPanel({ onClosed }: { onClosed?: () => void }) {
     void refresh();
   }, [refresh]);
 
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const close = async (s: OpenSession) => {
     setClosing(true);
     setCloseError(null);
@@ -82,26 +83,28 @@ export function OpenSessionsPanel({ onClosed }: { onClosed?: () => void }) {
     setClosed(true);
     onClosed?.();
     await refresh();
+    // The closed row and its focused button are gone: keep keyboard focus in the panel.
+    headingRef.current?.focus();
   };
 
   return (
     <Card className="flex flex-col gap-3 p-[18px]" as="div">
       <div data-testid="open-sessions" aria-labelledby={headingId} role="region" className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
-          <h2 id={headingId} className="m-0 text-[17px] font-semibold">
+          <h2 id={headingId} ref={headingRef} tabIndex={-1} className="m-0 text-[17px] font-semibold outline-none">
             {t('product.open_sessions_h')}
           </h2>
           {load.kind === 'ready' && (
             <p className="m-0 text-caption text-fg-2">{t('product.open_sessions_p', { max: load.list.max_open })}</p>
           )}
-        </div>
-        <div aria-live="polite" className="contents">
-          {closed && (
-            <p data-testid="open-sessions-closed" className="m-0 flex items-center gap-2 text-caption text-success">
-              <CircleCheck aria-hidden size={16} />
-              {t('product.open_session_closed')}
-            </p>
-          )}
+          <div aria-live="polite">
+            {closed && (
+              <p data-testid="open-sessions-closed" className="m-0 flex items-center gap-2 text-caption text-success">
+                <CircleCheck aria-hidden size={16} />
+                {t('product.open_session_closed')}
+              </p>
+            )}
+          </div>
         </div>
         {load.kind === 'loading' && (
           <p role="status" className="m-0 flex items-center gap-2 text-caption text-fg-2">
@@ -151,13 +154,12 @@ export function OpenSessionsPanel({ onClosed }: { onClosed?: () => void }) {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[14px] font-semibold">{title}</div>
                     <div className="text-[12px] text-fg-2">
-                      {t('product.open_session_started', {
+                      {t('product.open_session_meta', {
                         time: formatWhen(Date.parse(s.created_at), locale, Date.now() + load.offset),
+                        joined: s.capacity.joined,
+                        max: s.capacity.max,
+                        window: windowLabel(t, s, locale),
                       })}
-                      {' · '}
-                      {t('product.open_session_receivers', { joined: s.capacity.joined, max: s.capacity.max })}
-                      {' · '}
-                      {windowLabel(t, s, locale)}
                     </div>
                     {closeError === s.id && (
                       <p role="alert" className="m-0 mt-1 text-[12px] text-danger-ink">

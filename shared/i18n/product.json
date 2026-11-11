@@ -255,14 +255,13 @@
     "open_sessions_loading": "Loading your open sessions…",
     "open_sessions_error": "Couldn’t load your open sessions.",
     "open_sessions_empty": "No sessions are open now. You can create the new one.",
-    "open_session_started": "Started {time}",
-    "open_session_receivers": "{joined}/{max} receivers",
     "open_session_window_open": "Code open until {time}",
     "open_session_window_expired": "Code expired",
     "open_session_window_full": "Session full",
     "open_session_open_named": "Open {name}",
     "open_session_close_named": "Close {name}",
-    "open_session_closed": "Session closed. You can create the new session now."
+    "open_session_closed": "Session closed. You can create the new session now.",
+    "open_session_meta": "Started {time} · {joined}/{max} receivers · {window}"
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -519,13 +518,12 @@
     "open_sessions_loading": "Đang tải các phiên đang mở…",
     "open_sessions_error": "Không tải được các phiên đang mở.",
     "open_sessions_empty": "Hiện không còn phiên nào đang mở. Bạn có thể tạo phiên mới.",
-    "open_session_started": "Bắt đầu {time}",
-    "open_session_receivers": "{joined}/{max} người nhận",
     "open_session_window_open": "Mã còn hiệu lực đến {time}",
     "open_session_window_expired": "Mã đã hết hạn",
     "open_session_window_full": "Phiên đã đủ người",
     "open_session_open_named": "Mở {name}",
     "open_session_close_named": "Đóng {name}",
-    "open_session_closed": "Đã đóng phiên. Bây giờ bạn có thể tạo phiên mới."
+    "open_session_closed": "Đã đóng phiên. Bây giờ bạn có thể tạo phiên mới.",
+    "open_session_meta": "Bắt đầu {time} · {joined}/{max} người nhận · {window}"
   }
 }

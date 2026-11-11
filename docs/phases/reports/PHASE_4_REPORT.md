@@ -1,6 +1,6 @@
 # Phase 4 report: multi-receiver, reconnect and resume hardening
 
-Status: implemented; QA rounds 1–3 failed, all P0/P1 findings fixed; round 4 pending (`docs/qa/PHASE_4_QA.md`). Everything here is guest-only and Web-only; Android and iOS come in Phases 6 and 7.
+Status: implemented; QA rounds 1–4 failed, all P0/P1 findings fixed; round 5 pending (`docs/qa/PHASE_4_QA.md`). Everything here is guest-only and Web-only; Android and iOS come in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -17,6 +17,7 @@ Status: implemented; QA rounds 1–3 failed, all P0/P1 findings fixed; round 4 p
   - TR-7 and RX-7 come from each client's own transfers, with the same counting rule on the sender (`finalOf`). While the session is live the sender's result is provisional: a late receiver brings back TR-6, and the History entry is rewritten when the result changes.
   - TR-7 "New transfer" closes the finished session (confirming while the window is open); "Back to the session" leads to the code and Create new code. If the sender leaves another way and Create later hits the open-session cap, the send screen lists the device's open sessions (`GET /v1/sessions`, new) with Open and Close.
   - The sender's result counts files, like the server and the receiver: one file of two is partial.
+  - Only the tab with the picked files serves receivers (Web Lock); another tab of the same device on that session leaves offers to it. Deleted History entries stay deleted across tabs and reloads.
   - Tests: the rule over every combination of receiver and transfer states (576,601 inputs), and database scenarios: delivery then window expiry (session live, Renew, late receiver completes), idle end completed/partial/expired, removed and blocked excluded, max lifetime mid-transfer, Close, lifetime end racing final reports.
 - **Cleanup**: the maintenance job cancels orphan transfers (ended session or departed receiver) and counts them; purge on the existing 7-day schedule, now tested. Transfer reports lock the session row before the transfer row, serializing them with Remove, Leave, Close and the lifetime end.
 - **Reconnect hardening**: receiver redial backoff with ±25 % jitter (tested); the WebSocket already reconnects with jitter and a fresh one-time ticket; bitmap exchange and duplicate tolerance unchanged from Phase 3.
@@ -47,7 +48,8 @@ TR-4/TR-5 session (reachable from TR-6/TR-7 by "Back to the session"; Create new
 | A receiver joins after the result: TR-6 returns, then New transfer closes the session (code refused) and both receivers keep RX-7 | CI [42920840711](https://github.com/Juliolayme/share_anywhere/actions/runs/42920840711) and locally: chromium-desktop, firefox-desktop, webkit-desktop |
 | Five receivers (3 Chromium, Firefox, WebKit), sixth join refused with 409 `session_full` | Nightly [42920858447](https://github.com/Juliolayme/share_anywhere/actions/runs/42920858447) on b247af7 (final backend), earlier [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/42913806192) (06e9211) and [42916660410](https://github.com/Juliolayme/share_anywhere/actions/runs/42916660410) (546873f, with the strict sixth-join check); locally |
 | History search, filters, detail, delete, clear | CI and locally: all five projects |
-| Open-session cap reached: the send screen lists open sessions; Close one, then Create succeeds; Open goes to the session | CI [42925255350](https://github.com/Juliolayme/share_anywhere/actions/runs/42925255350) and locally: chromium-desktop, firefox-desktop, webkit-desktop |
+| A second tab of the sender on the same session (no files) leaves the transfer to the tab with the files; the receiver completes, hash verified | Locally: chromium-desktop, firefox-desktop, webkit-desktop (3 runs each); CI pending |
+| Open-session cap reached: the send screen lists open sessions; Close one, then Create succeeds; Open goes to the session | CI [42925255350](https://github.com/Juliolayme/share_anywhere/actions/runs/42925255350): all five projects; locally: chromium-desktop, firefox-desktop, webkit-desktop |
 | Phase 3 transfer and pairing specs (including Create new code after expiry) | CI and locally: all five projects |
 
 ## 4. Commands and results
@@ -55,7 +57,7 @@ TR-4/TR-5 session (reachable from TR-6/TR-7 by "Back to the session"; Create new
 | Command | Result |
 |---|---|
 | `go vet ./...`, `golangci-lint run ./...` | Clean, 0 issues |
-| `go test -race -count=1 ./...` with the test database | All packages pass (sharing 22, transfers 20 top-level tests, none skipped) |
+| `go test -race -count=1 ./...` with the test database | All packages pass (sharing 24, transfers 20 top-level tests, none skipped) |
 | `pnpm -C web format:check`, `lint`, `exec tsc -b`, `test --run` | Pass; 176 unit tests |
 | `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md` | Pass (32 operations; 1,800 keys each) |
 | Playwright, all five projects locally (ac7a284) | 197 passed, 61 skipped (project-specific); the 2 Android screenshot comparisons differ by local fonts (baselines are made on the runner) |
@@ -103,3 +105,4 @@ Unchanged from Phase 3. New: `VITE_BLOCK_CACHE_MB` (optional, build time, in `.e
 | dd5e363 | Report links |
 | 0c4a20d | QA round 3: e2e context cleanup, result over files, History times |
 | b8b4405 | QA round 3: open-sessions list when the cap is reached (`GET /v1/sessions`) |
+| 50a13c8 | Report links |

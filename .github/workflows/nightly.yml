@@ -33,7 +33,14 @@ jobs:
       - name: Start CI stack
         run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium
-        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium
+        # Runner apt mirrors fail intermittently ("Temporary failure resolving", "Some index files failed"); only
+        # the dependency install is retried, never a test.
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
       - name: Free disk check
         run: df -h /tmp .
       - name: 2 GB transfer
@@ -74,7 +81,14 @@ jobs:
       - name: Start CI stack
         run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium and webkit
-        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium webkit
+        # Runner apt mirrors fail intermittently ("Temporary failure resolving", "Some index files failed"); only
+        # the dependency install is retried, never a test.
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium webkit && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
       - name: Generate baselines
         env:
           E2E_BASE_URL: http://localhost:8080
@@ -108,7 +122,14 @@ jobs:
       - name: Start CI stack
         run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium, firefox and webkit
-        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium firefox webkit
+        # Runner apt mirrors fail intermittently ("Temporary failure resolving", "Some index files failed"); only
+        # the dependency install is retried, never a test.
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium firefox webkit && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
       - name: Stock Firefox for WebRTC (pinned, checksum verified)
         env:
           FIREFOX_VERSION: '160.0'

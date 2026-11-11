@@ -250,7 +250,14 @@ jobs:
         run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium and ${{ matrix.browser }}
         # The pairing specs always run the sender in Chromium, whatever the receiver project.
-        run: pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium ${{ matrix.browser }}
+        # Runner apt mirrors fail intermittently ("Temporary failure resolving", "Some index files failed"); only
+        # the dependency install is retried, never a test.
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium ${{ matrix.browser }} && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
       - name: Stock Firefox for WebRTC (pinned, checksum verified)
         # Playwright's patched Firefox never gathers ICE candidates; the Firefox project drives a stock
         # Firefox over WebDriver BiDi instead (docs/TESTING_AND_CI.md §3).

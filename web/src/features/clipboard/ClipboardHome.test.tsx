@@ -6,6 +6,7 @@ import { Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateAdk, openKeyStore } from '../../lib/crypto';
 import type { DeviceClient } from '../../lib/api/device-client';
+import { ApiError, NetworkError } from '../../lib/api/errors';
 import { renderApp } from '../../test/render';
 import type { ClipboardApi, ClipboardEventRequest, ClipboardSettings } from './api';
 import ClipboardHome from './ClipboardHome';
@@ -48,7 +49,7 @@ beforeEach(() => {
   });
 });
 
-async function setup(settings: Partial<ClipboardSettings> = {}) {
+async function setup(settings: Partial<ClipboardSettings> = {}, over: Partial<ClipboardApi> = {}) {
   const factory = new IDBFactory();
   const keys = await openKeyStore({ factory });
   await keys.saveAdk(1, generateAdk(1).raw);
@@ -67,6 +68,7 @@ async function setup(settings: Partial<ClipboardSettings> = {}) {
     clear: async () => undefined,
     settings: async () => current,
     saveSettings: async (s) => (current = s),
+    ...over,
   };
   const rt = await createRuntime({
     client: {} as DeviceClient,
@@ -158,5 +160,67 @@ describe('Clipboard home (CB-4)', () => {
     await waitFor(() => expect(screen.queryByTestId('cb-detail')).toBeNull());
     await userEvent.clear(screen.getByRole('searchbox', { name: 'Search clipboard' }));
     expect(screen.getAllByTestId('cb-item')).toHaveLength(1);
+  });
+
+  it('first load offline with nothing cached: the offline state, not "No clipboard items yet"; Sync says offline', async () => {
+    await setup(
+      {},
+      {
+        history: async () => {
+          throw new NetworkError();
+        },
+        create: async () => {
+          throw new NetworkError();
+        },
+      },
+    );
+    const offline = await screen.findByTestId('cb-offline');
+    expect(offline).toHaveTextContent('You’re offline');
+    expect(offline).toHaveTextContent('loads when you reconnect');
+    expect(screen.queryByTestId('cb-empty')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Sync Clipboard' }));
+    expect(await screen.findByText('Encrypted and queued — will send when online')).toBeInTheDocument();
+    // The queued row replaces the offline state.
+    expect(await screen.findByTestId('cb-item-text')).toHaveTextContent('hello from the test');
+    expect(screen.queryByTestId('cb-offline')).toBeNull();
+  });
+
+  it('first load failing with nothing cached: the error state with Retry, then the real empty state', async () => {
+    let fail = true;
+    await setup(
+      {},
+      {
+        history: async () => {
+          if (fail) throw new ApiError(500, 'internal', 'boom');
+          return { events: [], cursor: 0 };
+        },
+      },
+    );
+    const error = await screen.findByTestId('cb-load-error');
+    expect(error).toHaveTextContent('Couldn’t load your clipboard history.');
+    expect(screen.queryByTestId('cb-empty')).toBeNull();
+    fail = false;
+    await userEvent.click(within(error).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByTestId('cb-empty')).toBeInTheDocument();
+    expect(screen.queryByTestId('cb-load-error')).toBeNull();
+  });
+
+  it('the queued toast states the real cause: server busy (5xx) or rate limited (429), not "offline"', async () => {
+    const failures = [new ApiError(503, 'unavailable', 'busy'), new ApiError(429, 'rate_limited', 'slow down', 30)];
+    await setup(
+      {},
+      {
+        create: async () => {
+          throw failures.shift() ?? new ApiError(503, 'unavailable', 'busy');
+        },
+      },
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync Clipboard' }));
+    expect(await screen.findByText(/the server is busy right now/)).toBeInTheDocument();
+    expect(screen.queryByText('Encrypted and queued — will send when online')).toBeNull();
+    browser.text = 'second text';
+    await userEvent.click(screen.getByRole('button', { name: 'Sync Clipboard' }));
+    expect(await screen.findByText(/too many items at once\. It will be sent again shortly/)).toBeInTheDocument();
+    expect(screen.queryByText('Encrypted and queued — will send when online')).toBeNull();
   });
 });

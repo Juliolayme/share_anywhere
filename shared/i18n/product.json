@@ -463,7 +463,13 @@
     "cb_retention_p": "Applies to new items. At most 100 items are kept.",
     "cb_auto_off_p": "Automatic capture is off on this browser. Click Sync Clipboard to send what you copied.",
     "cb_auto_off_h": "Manual capture",
-    "cb_account_unknown": "Can’t reach your account right now. Clipboard Sync continues when you’re back online."
+    "cb_account_unknown": "Can’t reach your account right now. Clipboard Sync continues when you’re back online.",
+    "cb_queued": "Encrypted and queued on this device — it will be sent as soon as possible.",
+    "cb_queued_busy": "Encrypted and queued — the server is busy right now. It will be sent again shortly.",
+    "cb_queued_rate_limited": "Encrypted and queued — too many items at once. It will be sent again shortly.",
+    "cb_queued_key": "Encrypted and queued — your account has a newer key that this device doesn’t hold. Pair this device again to send it.",
+    "cb_queued_paused": "Encrypted and queued — sync is paused. It will be sent when you resume.",
+    "cb_offline_empty_p": "Your clipboard history loads when you reconnect. Items you sync now are encrypted and queued on this device."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -928,6 +934,12 @@
     "cb_retention_p": "Áp dụng cho mục mới. Giữ tối đa 100 mục.",
     "cb_auto_off_p": "Tự động ghi nhận đang tắt trên trình duyệt này. Bấm Đồng bộ Clipboard để gửi nội dung đã sao chép.",
     "cb_auto_off_h": "Ghi nhận thủ công",
-    "cb_account_unknown": "Hiện không kết nối được tài khoản. Đồng bộ Clipboard sẽ tiếp tục khi bạn có mạng lại."
+    "cb_account_unknown": "Hiện không kết nối được tài khoản. Đồng bộ Clipboard sẽ tiếp tục khi bạn có mạng lại.",
+    "cb_queued": "Đã mã hóa và xếp hàng trên thiết bị này — sẽ được gửi sớm nhất có thể.",
+    "cb_queued_busy": "Đã mã hóa và xếp hàng — máy chủ đang bận. Mục sẽ được gửi lại sau ít phút.",
+    "cb_queued_rate_limited": "Đã mã hóa và xếp hàng — quá nhiều mục cùng lúc. Mục sẽ được gửi lại sau ít phút.",
+    "cb_queued_key": "Đã mã hóa và xếp hàng — tài khoản có khoá mới hơn mà thiết bị này chưa có. Hãy ghép nối lại thiết bị để gửi.",
+    "cb_queued_paused": "Đã mã hóa và xếp hàng — đồng bộ đang tạm dừng. Mục sẽ được gửi khi bạn tiếp tục.",
+    "cb_offline_empty_p": "Lịch sử clipboard sẽ tải khi bạn kết nối lại. Các mục bạn đồng bộ lúc này được mã hóa và xếp hàng trên thiết bị này."
   }
 }

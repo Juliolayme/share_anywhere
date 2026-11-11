@@ -75,7 +75,11 @@ export async function signUp(
   email: string,
   opts: Choices & { from?: string } = {},
 ): Promise<string | null> {
-  await open(page, opts.from ?? '/signup');
+  // Already on `from` (the spec opened it to check that screen first): no second navigation, which could race the
+  // first one still settling (identity bootstrap, lazy chunks).
+  const here = opts.from !== undefined && new URL(page.url()).pathname === opts.from;
+  if (here) await expect(page.locator('#main')).toBeVisible();
+  else await open(page, opts.from ?? '/signup');
   if (opts.from) await page.getByRole('link', { name: 'Create account' }).first().click();
   await expect(screen(page, 'signup')).toBeVisible();
   await fillCredentials(page, email, PASSWORD);

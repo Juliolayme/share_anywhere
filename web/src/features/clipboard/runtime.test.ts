@@ -192,6 +192,53 @@ describe('clipboard runtime', () => {
     p.remove();
   });
 
+  it('in-page copies follow the status panel: skipped when it says manual only (unsupported, denied) or paused', async () => {
+    const select = (text: string) => {
+      const p = document.createElement('p');
+      p.textContent = text;
+      document.body.appendChild(p);
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
+      return p;
+    };
+    // Firefox/Safari: the panel says "This browser can't read the clipboard automatically".
+    queryThrows = true;
+    const first = await runtime();
+    current = first.rt;
+    expect(first.rt.state().status).toBe('unsupported');
+    const p1 = select('copied on an unsupported browser');
+    document.dispatchEvent(new Event('copy'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(first.posts).toHaveLength(0);
+    first.rt.stop();
+    p1.remove();
+
+    // Permission denied, then paused: still nothing; best-effort (permission not decided) with the toggle on: captured.
+    queryThrows = false;
+    permission.state = 'denied';
+    const { rt, posts } = await runtime();
+    current = rt;
+    expect(rt.state().status).toBe('denied');
+    const p2 = select('copied while denied');
+    document.dispatchEvent(new Event('copy'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(posts).toHaveLength(0);
+    permission.state = 'prompt';
+    for (const l of permission.listeners) l();
+    rt.onSocket({ type: 'CLIPBOARD_SETTINGS_UPDATED', paused: true, retention_days: 7, sensitive_skip: true });
+    expect(rt.state().status).toBe('paused');
+    document.dispatchEvent(new Event('copy'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(posts).toHaveLength(0);
+    rt.onSocket({ type: 'CLIPBOARD_SETTINGS_UPDATED', paused: false, retention_days: 7, sensitive_skip: true });
+    expect(rt.state().status).toBe('besteffort');
+    document.dispatchEvent(new Event('copy'));
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
+    p2.remove();
+  });
+
   it('Copy writes the decrypted text with writeText and marks it as the clipboard text (not captured back)', async () => {
     const { rt, posts } = await runtime();
     current = rt;

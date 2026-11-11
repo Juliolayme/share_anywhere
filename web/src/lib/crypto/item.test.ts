@@ -3,7 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { deriveSubkey, generateAdk } from './adk';
 import { CryptoError } from './errors';
 import { hex } from './encoding';
-import { decryptItem, decryptItemText, encryptItem, itemAad, itemFromWire, itemToWire } from './item';
+import {
+  decryptItem,
+  decryptItemText,
+  encryptItem,
+  isItemId,
+  itemAad,
+  itemFromWire,
+  itemIdFromBytes,
+  itemToWire,
+  newItemId,
+  toItemId,
+} from './item';
 
 const ID = '6f1e1b5a-3c1d-4a7e-9b2f-0c8d5e4a3b21';
 
@@ -66,5 +77,25 @@ describe('item encryption', () => {
     expect(wire.nonce).toMatch(/^[A-Za-z0-9_-]{16}$/);
     expect(await decryptItemText(k, ID, 1, itemFromWire(wire))).toBe('wire');
     expect(() => itemFromWire({ nonce: 'AAAA', ciphertext: wire.ciphertext })).toThrow(CryptoError);
+  });
+
+  it('item ids are lowercase canonical 8-4-4-4-12 hex UUIDs, and the AAD uses exactly that text (§1.3)', async () => {
+    for (let i = 0; i < 200; i++) {
+      const id = newItemId();
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(isItemId(id)).toBe(true);
+    }
+    expect(toItemId(ID.toUpperCase())).toBe(ID);
+    for (const bad of [`{${ID}}`, ID.replace(/-/g, ''), `urn:uuid:${ID}`, `${ID} `, 'evt-1', ''])
+      expect(() => toItemId(bad)).toThrow(CryptoError);
+    expect(isItemId(ID.toUpperCase())).toBe(false);
+    const bytes = Uint8Array.from({ length: 16 }, (_, i) => 0xa0 + i);
+    expect(itemIdFromBytes(bytes)).toBe('a0a1a2a3-a4a5-a6a7-a8a9-aaabacadaeaf');
+    expect(() => itemIdFromBytes(bytes.slice(0, 15))).toThrow(CryptoError);
+    // Another text form of the same UUID is another AAD: it never authenticates (the server rejects it with 400 too).
+    const k = await key('clipboard');
+    const enc = await encryptItem(k, ID, 1, 'same uuid, other text');
+    await expectDecryptFailed(decryptItemText(k, ID.toUpperCase(), 1, enc));
+    expect(new TextDecoder().decode(itemAad(ID, 1))).toBe(`${ID}|1`);
   });
 });

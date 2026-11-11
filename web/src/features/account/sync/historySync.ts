@@ -1,6 +1,13 @@
 // Encrypted cloud history sync (PRD §2 "History", §7.5; docs/API.md §2.4 "History"). Loaded on demand with the
 // crypto library.
-import { decryptItemText, encryptItem, itemFromWire, itemToWire, type KeyStore } from '../../../lib/crypto';
+import {
+  decryptItemText,
+  encryptItem,
+  itemFromWire,
+  itemIdFromBytes,
+  itemToWire,
+  type KeyStore,
+} from '../../../lib/crypto';
 import { ApiError } from '../../../lib/api/errors';
 import type { HistoryEntry, HistoryStore } from '../../history/store/history-store';
 import type { AccountApi } from '../api';
@@ -21,8 +28,8 @@ export async function entryUuid(localId: string, deviceId: string): Promise<stri
   ).slice(0, 16);
   digest[6] = ((digest[6] ?? 0) & 0x0f) | 0x80;
   digest[8] = ((digest[8] ?? 0) & 0x3f) | 0x80;
-  const hex = [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  // Lowercase canonical 8-4-4-4-12 text: exactly what goes into the AAD and onto the wire (CLIPBOARD_PROTOCOL §1.3).
+  return itemIdFromBytes(digest);
 }
 
 const omit = (rec: Record<string, string>, keys: string[]) =>

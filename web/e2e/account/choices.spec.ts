@@ -11,8 +11,10 @@ test('sign up from Devices with "Add this device" on: key setup, checklist, back
   test.setTimeout(120_000);
   const page = await guestPage(browser);
   const email = uniqueEmail('add');
+  // One navigation: signUp starts from the Devices page already open (and settled) here.
   await open(page, '/devices');
   await expect(page.getByRole('heading', { name: 'Sync your device list' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Create account' }).first()).toBeVisible();
   const phrase = await signUp(page, email, { from: '/devices' });
   expect(phrase?.split(' ')).toHaveLength(12);
   // returnTo brought the flow back to Devices, now the account list with this device marked.

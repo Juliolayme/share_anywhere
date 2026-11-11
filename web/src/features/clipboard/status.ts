@@ -48,3 +48,14 @@ export function deriveCaptureStatus(i: CaptureInputs): CaptureStatus {
 export function mayAutoRead(i: CaptureInputs): boolean {
   return deriveCaptureStatus({ ...i, online: true }) === 'auto';
 }
+
+/**
+ * In-page `copy` events are captured only when the panel says capture is automatic or best-effort with the toggle on,
+ * so the page never does more than the panel states: not when it says manual only (`unsupported`, `denied`, toggle
+ * off), `paused` or `insecure`. Offline they are still captured and queued, like automatic reads.
+ */
+export function mayCaptureCopy(i: CaptureInputs): boolean {
+  if (!i.autoCapture) return false;
+  const status = deriveCaptureStatus({ ...i, online: true });
+  return status === 'auto' || status === 'besteffort';
+}

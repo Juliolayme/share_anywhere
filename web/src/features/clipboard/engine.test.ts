@@ -540,7 +540,7 @@ describe('ClipboardEngine', () => {
         deleted: false,
       });
     }
-    await a.store.replace(USER, rows, 102);
+    await a.store.replace(USER, rows, 102, await a.store.generation());
     server.setOffline(true);
     const { e } = engine(server, a);
     await e.start();
@@ -548,5 +548,196 @@ describe('ClipboardEngine', () => {
     expect(shown).toHaveLength(100);
     expect(shown[0]?.text).toBe('item 101');
     expect(shown.some((i) => i.text === 'item 102')).toBe(false);
+  });
+
+  it('event ids are lowercase canonical UUID text, on the wire and in the AAD (§1.3)', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const { e } = engine(server, a);
+    await e.start();
+    await e.capture('default id', 'manual');
+    // An id source that answers in upper case is normalized before anything is encrypted or queued.
+    const upper = 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D';
+    const { e: e2 } = engine(server, a, { uuid: () => upper });
+    await e2.start();
+    await e2.capture('upper-case source', 'manual');
+    const canonical = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    expect(server.posts.map((p) => p.event_id).every((id) => canonical.test(id))).toBe(true);
+    expect(server.posts[1]?.event_id).toBe(upper.toLowerCase());
+    const row = server.rows.get(upper.toLowerCase());
+    const key = await a.keys.loadSubkeys(1, 'clipboard');
+    const wire = itemFromWire({ nonce: row?.nonce ?? '', ciphertext: row?.ciphertext ?? '' });
+    expect(await decryptItemText(key, upper.toLowerCase(), 1, wire)).toBe('upper-case source');
+    await expect(decryptItemText(key, upper, 1, wire)).rejects.toMatchObject({ code: 'decrypt_failed' });
+    // v1: the ciphertext is exactly payload_size + 16 bytes (the server checks this).
+    for (const p of server.posts) expect(b64uDecode(p.ciphertext)).toHaveLength(p.payload_size + 16);
+    // An id source that does not produce a UUID is refused instead of sending a form the server rejects.
+    const { e: e3 } = engine(server, a, { uuid: () => 'evt-1' });
+    await e3.start();
+    await expect(e3.capture('bad id', 'manual')).rejects.toMatchObject({ code: 'invalid_input' });
+    expect(server.posts).toHaveLength(2);
+  });
+
+  it('QA: create reaches the server but the response is lost, another device deletes it: no ghost row', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const b = await device('dev-b', [adk1]);
+    let loseNext = true;
+    const { e: ea, timers } = engine(server, a, {
+      api: {
+        ...server.api,
+        create: async (req) => {
+          server.as('dev-a');
+          const res = await server.api.create(req);
+          if (loseNext) {
+            loseNext = false;
+            throw new NetworkError();
+          }
+          return res;
+        },
+      },
+    });
+    const { e: eb } = engine(server, b);
+    await ea.start();
+    await eb.start();
+    // The create is stored, but A never hears back: the event stays queued on A.
+    expect((await ea.capture('delete me elsewhere', 'manual')).kind).toBe('queued');
+    expect(server.rows.size).toBe(1);
+    const id = server.posts[0]?.event_id ?? '';
+    // B sees it and deletes it.
+    await eb.refresh();
+    expect(texts(eb)).toEqual(['delete me elsewhere']);
+    await eb.remove(id);
+    expect(server.rows.get(id)?.deleted).toBe(true);
+    // A pulls the tombstone while the event is still queued: it leaves the queue (memory and IndexedDB).
+    await ea.refresh();
+    expect(ea.snapshot().items).toEqual([]);
+    expect(ea.snapshot().queued).toBe(0);
+    expect(await a.store.queue(USER)).toEqual([]);
+    // The retry timer fires: nothing is sent again and the row does not come back, here or after a reload.
+    const posts = server.posts.length;
+    timers.shift()?.();
+    await ea.flush();
+    expect(server.posts).toHaveLength(posts);
+    expect(ea.snapshot().items).toEqual([]);
+    ea.stop();
+    const { e: again } = engine(server, a);
+    await again.start();
+    expect(again.snapshot().items).toEqual([]);
+    expect(server.rows.get(id)?.deleted).toBe(true);
+  });
+
+  it('QA: a retry acknowledged after the delete (tombstone not pulled yet) does not leave the row behind', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const b = await device('dev-b', [adk1]);
+    let loseNext = true;
+    const { e: ea, timers } = engine(server, a, {
+      api: {
+        ...server.api,
+        create: async (req) => {
+          server.as('dev-a');
+          const res = await server.api.create(req);
+          if (loseNext) {
+            loseNext = false;
+            throw new NetworkError();
+          }
+          return res;
+        },
+      },
+    });
+    const { e: eb } = engine(server, b);
+    await ea.start();
+    await eb.start();
+    await ea.capture('gone before the retry', 'manual');
+    const id = server.posts[0]?.event_id ?? '';
+    await eb.refresh();
+    await eb.remove(id);
+    // The retry runs first: the server answers the idempotent repeat (201, tombstone seq) without restoring it, and
+    // A catches up with its cursor right after, which removes the row it briefly acknowledged.
+    timers.shift()?.();
+    await ea.flush();
+    await vi.waitFor(() => expect(ea.snapshot().syncing).toBe(false));
+    expect(ea.snapshot().items).toEqual([]);
+    expect(await a.store.events(USER)).toEqual([]);
+    expect(await a.store.queue(USER)).toEqual([]);
+  });
+
+  it("a wipe in another tab stops this tab's running engine from writing anything back", async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const { e } = engine(server, a);
+    await e.start();
+    await e.capture('kept before', 'manual');
+    expect(await a.store.events(USER)).toHaveLength(1);
+    // Another tab of the same browser (its own connection to the same database) signs out and wipes.
+    const otherTab = openClipboardStore(a.factory);
+    await otherTab.wipe();
+    // This tab's engine keeps running: a capture, a refresh with new events, and a queued send write nothing.
+    server.as('dev-b');
+    await server.api.create({
+      ...(server.posts[0] as ClipboardEventRequest),
+      event_id: '11111111-2222-4333-8444-555555555555',
+    });
+    await e.refresh();
+    server.setOffline(true);
+    await e.capture('typed in the stale tab', 'manual');
+    expect(await otherTab.events(USER)).toEqual([]);
+    expect(await otherTab.queue(USER)).toEqual([]);
+    expect(await otherTab.cursor(USER)).toBeNull();
+    expect(JSON.stringify(await otherTab.events(USER))).not.toContain('ciphertext');
+  });
+
+  it('a queued capture says why: offline, server busy (5xx) or rate limited (429), or paused', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const { e } = engine(server, a);
+    await e.start();
+    server.setOffline(true);
+    expect(await e.capture('one', 'manual')).toMatchObject({ kind: 'queued', reason: 'offline' });
+    server.setOffline(false);
+    await e.flush();
+    await e.refresh();
+    server.failOnce(new ApiError(503, 'unavailable', 'busy'));
+    expect(await e.capture('two', 'manual')).toMatchObject({ kind: 'queued', reason: 'busy' });
+    await e.flush();
+    await e.refresh();
+    server.failOnce(new ApiError(429, 'rate_limited', 'slow down'));
+    expect(await e.capture('three', 'manual')).toMatchObject({ kind: 'queued', reason: 'rate_limited' });
+    await e.flush();
+    await e.refresh();
+    server.setPaused(true);
+    expect(await e.capture('four', 'manual')).toMatchObject({ kind: 'queued', reason: 'paused' });
+  });
+
+  it('a read refused with 429 (GET rate limit) is retried after Retry-After, not shown as a load failure', async () => {
+    const server = fakeServer();
+    const a = await device('dev-a', [adk1]);
+    const delays: number[] = [];
+    const timers: (() => void)[] = [];
+    let limited = true;
+    const { e } = engine(server, a, {
+      api: {
+        ...server.api,
+        history: async () => {
+          if (limited) {
+            limited = false;
+            throw new ApiError(429, 'rate_limited', 'slow down', 7);
+          }
+          return server.api.history();
+        },
+      },
+      setTimer: (fn, ms) => {
+        delays.push(ms);
+        timers.push(fn);
+      },
+    });
+    await e.start();
+    expect(e.snapshot().loadError).toBeNull();
+    expect(e.snapshot().synced).toBe(false);
+    expect(delays).toEqual([7000]);
+    timers.shift()?.();
+    await vi.waitFor(() => expect(e.snapshot().synced).toBe(true));
+    expect(e.snapshot().loadError).toBeNull();
   });
 });

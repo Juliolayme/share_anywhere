@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { deriveCaptureStatus, mayAutoRead, type CaptureInputs } from './status';
+import { deriveCaptureStatus, mayAutoRead, mayCaptureCopy, type CaptureInputs } from './status';
 
 const base: CaptureInputs = {
   secure: true,
@@ -39,5 +39,21 @@ describe('capture status (docs/UX_SCREEN_MAP.md §12 clipboardStatus)', () => {
       expect(mayAutoRead({ ...base, ...over })).toBe(false);
     // Offline, an automatic capture is still read, encrypted and queued.
     expect(mayAutoRead({ ...base, permission: 'granted', online: false })).toBe(true);
+  });
+
+  it('captures in-page copies only when the panel says automatic or best-effort with the toggle on', () => {
+    expect(mayCaptureCopy({ ...base, permission: 'granted' })).toBe(true); // auto
+    expect(mayCaptureCopy({ ...base, permission: 'prompt' })).toBe(true); // besteffort, toggle on
+    expect(mayCaptureCopy({ ...base, permission: 'granted', online: false })).toBe(true); // queued offline
+    for (const over of [
+      { permission: 'granted' as const, autoCapture: false }, // "Manual capture"
+      { permission: 'prompt' as const, autoCapture: false },
+      { permission: 'denied' as const }, // "Clipboard permission denied"
+      { permission: 'unsupported' as const }, // Firefox, Safari: "can't read the clipboard automatically"
+      { permission: 'granted' as const, hasRead: false },
+      { permission: 'granted' as const, paused: true },
+      { permission: 'granted' as const, secure: false },
+    ])
+      expect(mayCaptureCopy({ ...base, ...over })).toBe(false);
   });
 });

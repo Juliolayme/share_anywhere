@@ -24,7 +24,7 @@ import {
   type KeySource,
 } from './engine';
 import { getAutoCapture, subscribeAutoCapture } from './prefs';
-import { deriveCaptureStatus, mayAutoRead, type CaptureStatus, type ReadPermission } from './status';
+import { deriveCaptureStatus, mayAutoRead, mayCaptureCopy, type CaptureStatus, type ReadPermission } from './status';
 import { clipboardStore, type ClipboardStore } from './store';
 
 export interface RuntimeState {
@@ -140,19 +140,20 @@ export async function createRuntime(opts: RuntimeOptions): Promise<ClipboardRunt
     }
   };
 
+  const captureInputs = () => ({
+    secure,
+    hasRead,
+    permission,
+    autoCapture,
+    online: true,
+    paused: engine.snapshot().settings?.paused === true,
+  });
+
   // Automatic capture: an opportunistic read when the tab gains focus or becomes visible, only while the site's
   // clipboard-read permission is already granted and the toggle is on (status `auto`). Never polling, never prompting.
   const autoRead = async () => {
     if (stopped || reading) return;
-    const may = mayAutoRead({
-      secure,
-      hasRead,
-      permission,
-      autoCapture,
-      online: true,
-      paused: current.snapshot.settings?.paused === true,
-    });
-    if (!may) return;
+    if (!mayAutoRead(captureInputs())) return;
     reading = true;
     try {
       const text = await readClipboardText();
@@ -195,8 +196,9 @@ export async function createRuntime(opts: RuntimeOptions): Promise<ClipboardRunt
     }),
   );
   cleanups.push(
+    // In-page copies follow the status panel: captured only while it says automatic or best-effort (toggle on).
     onInPageCopy((text) => {
-      if (autoCapture && !current.snapshot.settings?.paused) void engine.capture(text, 'copy');
+      if (!stopped && mayCaptureCopy(captureInputs())) void engine.capture(text, 'copy');
     }),
   );
 

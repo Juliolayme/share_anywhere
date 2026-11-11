@@ -1,7 +1,15 @@
 // Clipboard Sync runtime for one account on this device (docs/CLIPBOARD_PROTOCOL.md §2, PRD §7.4–§7.6). Loaded on
 // demand, only for a signed-in account whose device is added and holds the key. Holds the decrypted timeline in
 // memory, the encrypted cache and offline queue in IndexedDB, and follows the account's `seq` cursor.
-import { decryptItemText, encryptItem, itemFromWire, itemToWire, type KeyStore } from '../../lib/crypto';
+import {
+  decryptItemText,
+  encryptItem,
+  itemFromWire,
+  itemToWire,
+  newItemId,
+  toItemId,
+  type KeyStore,
+} from '../../lib/crypto';
 import { ApiError, NetworkError } from '../../lib/api/errors';
 import {
   MAX_EVENTS,
@@ -27,6 +35,7 @@ export interface EngineDeps {
    */
   onKeyConflict?: () => Promise<unknown>;
   now?: () => number;
+  /** New event ids; normalized to the lowercase canonical UUID text (docs/CLIPBOARD_PROTOCOL.md §1.3). */
   uuid?: () => string;
   /** Retry timer for the offline queue (tests inject a manual one). */
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -66,6 +75,8 @@ export type SendError = 'offline' | 'key' | 'rate_limited' | 'error' | 'rejected
 export interface ClipboardSnapshot {
   /** The cached timeline was read (it may still be refreshing). */
   loaded: boolean;
+  /** A refresh from the server succeeded since this page started (an empty timeline is then really empty). */
+  synced: boolean;
   /** The last refresh from the server failed (the cached timeline stays visible). */
   loadError: 'offline' | 'error' | null;
   /** A refresh from the server is running. */
@@ -82,8 +93,16 @@ export interface ClipboardSnapshot {
 
 export type CaptureSource = 'manual' | 'auto' | 'copy';
 
+/**
+ * Why a capture stayed in the queue, for the toast: `offline` (no network), `busy` (server error, retried),
+ * `rate_limited` (429, retried after Retry-After), `key` (pair again), `paused` (sent when sync resumes), `pending`
+ * (waiting for another reason, e.g. the account session is ending).
+ */
+export type QueueReason = 'offline' | 'busy' | 'rate_limited' | 'key' | 'paused' | 'pending';
+
 export type CaptureResult =
-  | { kind: 'synced' | 'queued'; id: string }
+  | { kind: 'synced'; id: string }
+  | { kind: 'queued'; id: string; reason: QueueReason }
   | { kind: 'sensitive'; sensitive: SensitiveKind }
   | { kind: 'duplicate' | 'empty' | 'too_large' | 'paused' | 'not_ready' };
 
@@ -111,27 +130,41 @@ export class ClipboardEngine {
   private settings: ClipboardSettings | null = null;
   private settingsError = false;
   private loaded = false;
+  private synced = false;
   private loadError: ClipboardSnapshot['loadError'] = null;
   private sendError: SendError | null = null;
   private refreshing: Promise<void> | null = null;
   private refreshAgain = false;
   private flushing: Promise<void> | null = null;
+  private flushAgain = false;
+  /**
+   * Events this page saw as tombstones. A queued event deleted elsewhere after its create reached the server (response
+   * lost) is dropped from the queue, and a late acknowledgement for it never brings the row back.
+   */
+  private tombstoned = new Set<string>();
+  /** Queued events that may already have reached the server (sent before, or queued by an earlier page). */
+  private attempted = new Set<string>();
   private retryTimer: unknown = null;
+  /** A refresh refused with 429 (reads are rate limited too) runs again after Retry-After. */
+  private refreshTimer: unknown = null;
   private retryDelay = RETRY_MIN_MS;
   private lastText: string | null = null;
   private lastSkipped: string | null = null;
   private stopped = false;
-  private readonly generation: number;
+  /** The store generation read at construction; null when it could not be read (then nothing is written). */
+  private readonly generation: Promise<string | null>;
+  /** A wipe (in this tab or another) replaced the generation: this engine writes nothing more. */
+  private wiped = false;
 
   constructor(deps: EngineDeps) {
     this.d = {
       now: () => Date.now(),
-      uuid: () => crypto.randomUUID(),
+      uuid: newItemId,
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
       ...deps,
     };
-    this.generation = this.d.store.generation();
+    this.generation = this.d.store.generation().catch(() => null);
     this.snap = this.build();
   }
 
@@ -196,6 +229,7 @@ export class ClipboardEngine {
     items.sort((a, b) => (a.pending !== b.pending ? (a.pending ? -1 : 1) : b.createdAt - a.createdAt));
     return {
       loaded: this.loaded,
+      synced: this.synced,
       loadError: this.loadError,
       syncing: this.refreshing !== null,
       items,
@@ -209,13 +243,17 @@ export class ClipboardEngine {
   }
 
   /**
-   * Writes to the local store unless this engine was stopped or the store was wiped since it started (sign-out or the
-   * account session ending while a request was in flight must not leave records behind). Storage errors are ignored:
-   * the cache and queue are best effort, the server is the source of truth.
+   * Writes to the local store unless this engine was stopped or the store was wiped since it started, in this tab or
+   * another one (sign-out or the account session ending while a request was in flight must not leave records behind).
+   * The store checks the generation inside each write transaction. Storage errors are ignored: the cache and queue
+   * are best effort, the server is the source of truth.
    */
-  private async persist(fn: (s: ClipboardStore) => Promise<void>): Promise<void> {
-    if (this.stopped || this.d.store.generation() !== this.generation) return;
-    await fn(this.d.store).catch(() => undefined);
+  private async persist(fn: (s: ClipboardStore, gen: string) => Promise<boolean>): Promise<void> {
+    if (this.stopped || this.wiped) return;
+    const gen = await this.generation;
+    if (gen === null || this.stopped) return;
+    const wrote = await fn(this.d.store, gen).catch(() => true);
+    if (!wrote) this.wiped = true;
   }
 
   /** Reads the cache and the queue, then refreshes from the server, loads the settings and sends what is queued. */
@@ -226,7 +264,10 @@ export class ClipboardEngine {
         this.d.store.queue(this.d.userId),
       ]);
       for (const e of cached) if (!e.deleted && e.ciphertext && e.nonce) this.events.set(e.event_id, e);
-      for (const q of queue) this.queued.set(q.event_id, q);
+      for (const q of queue) {
+        this.queued.set(q.event_id, q);
+        this.attempted.add(q.event_id);
+      }
       await this.decryptMissing();
     } catch {
       /* the cache is a convenience: the server refresh below fills the timeline */
@@ -241,7 +282,9 @@ export class ClipboardEngine {
     this.stopped = true;
     this.listeners.clear();
     if (this.retryTimer !== null) this.d.clearTimer(this.retryTimer);
+    if (this.refreshTimer !== null) this.d.clearTimer(this.refreshTimer);
     this.retryTimer = null;
+    this.refreshTimer = null;
   }
 
   private async decrypt(id: string, keyVersion: number, nonce: string, ciphertext: string): Promise<string | null> {
@@ -313,7 +356,7 @@ export class ClipboardEngine {
       if (cursor === null) {
         const h = await api.history();
         const live = h.events.filter((e) => !e.deleted && e.ciphertext && e.nonce);
-        await this.persist((s) => s.replace(userId, live, h.cursor));
+        await this.persist((s, g) => s.replace(userId, live, h.cursor, g));
         this.events = new Map(live.map((e) => [e.event_id, e]));
         for (const id of this.queued.keys()) if (this.events.has(id)) await this.acked(id);
         cursor = h.cursor;
@@ -327,8 +370,12 @@ export class ClipboardEngine {
           if (e.deleted || !e.ciphertext || !e.nonce) {
             remove.push(e.event_id);
             this.events.delete(e.event_id);
-            this.texts.delete(e.event_id);
             this.incoming.delete(e.event_id);
+            this.tombstoned.add(e.event_id);
+            // Deleted on another device while still queued here (its create reached the server but the response was
+            // lost): drop it, so the retry cannot bring it back.
+            if (this.queued.has(e.event_id)) await this.dropQueued(e.event_id);
+            this.texts.delete(e.event_id);
             continue;
           }
           put.push(e);
@@ -338,22 +385,47 @@ export class ClipboardEngine {
           if (this.queued.has(e.event_id)) await this.acked(e.event_id);
         }
         const next = Math.max(cursor, next_cursor, ...events.map((e) => e.seq));
-        await this.persist((s) => s.apply(userId, { put, remove, cursor: next }));
+        await this.persist((s, g) => s.apply(userId, { put, remove, cursor: next }, g));
         if (next <= cursor) break;
         cursor = next;
       }
       await this.decryptMissing();
       this.loadError = null;
+      this.synced = true;
     } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        // Reads are rate limited (600/min per device): like the other 429s, try again after Retry-After. The state
+        // stays what it was (loading, or the cached timeline), it is not reported as a failure.
+        this.scheduleRefresh((e.retryAfterS ?? 5) * 1000);
+        return;
+      }
       this.loadError = e instanceof NetworkError ? 'offline' : 'error';
     }
+  }
+
+  private scheduleRefresh(ms: number) {
+    if (this.stopped || this.refreshTimer !== null) return;
+    this.refreshTimer = this.d.setTimer(
+      () => {
+        this.refreshTimer = null;
+        void this.refresh();
+      },
+      Math.min(Math.max(ms, 1000), RETRY_MAX_MS),
+    );
   }
 
   private async acked(id: string) {
     const text = this.texts.get(id);
     this.queued.delete(id);
     if (text !== undefined) this.texts.set(id, text);
-    await this.persist((s) => s.dequeue(this.d.userId, id));
+    await this.persist((s, g) => s.dequeue(this.d.userId, id, g));
+  }
+
+  /** Drops a queued event locally (never sent again). */
+  private async dropQueued(id: string) {
+    this.queued.delete(id);
+    this.attempted.delete(id);
+    await this.persist((s, g) => s.dequeue(this.d.userId, id, g));
   }
 
   async loadSettings(): Promise<void> {
@@ -418,7 +490,8 @@ export class ClipboardEngine {
     }
     const version = await this.d.keys.currentVersion();
     if (version <= 0) return { kind: 'not_ready' };
-    const id = this.d.uuid();
+    // Lowercase canonical UUID text: the exact AAD and wire form (the server rejects any other form with 400).
+    const id = toItemId(this.d.uuid());
     const key = await this.d.keys.loadSubkeys(version, 'clipboard');
     const wire = itemToWire(await encryptItem(key, id, version, text));
     const item: QueuedEvent = {
@@ -432,16 +505,48 @@ export class ClipboardEngine {
     this.lastText = text;
     this.texts.set(id, text);
     this.queued.set(id, item);
-    await this.persist((s) => s.enqueue(item));
+    await this.persist((s, g) => s.enqueue(item, g));
     this.emit();
     await this.flush();
-    return { kind: this.queued.has(id) ? 'queued' : 'synced', id };
+    return this.queued.has(id) ? { kind: 'queued', id, reason: this.queueReason() } : { kind: 'synced', id };
   }
 
-  /** Sends queued events in capture order. Idempotent by `event_id`, so a retry never duplicates an event. */
+  /** The real reason the queue is waiting (offline versus server busy, rate limited, key, paused). */
+  private queueReason(): QueueReason {
+    if (this.settings?.paused) return 'paused';
+    switch (this.sendError) {
+      case 'offline':
+        return 'offline';
+      case 'rate_limited':
+        return 'rate_limited';
+      case 'error':
+        return 'busy';
+      case 'key':
+        return 'key';
+      default:
+        return 'pending';
+    }
+  }
+
+  /**
+   * Sends queued events in capture order. Idempotent by `event_id`, so a retry never duplicates an event. A call while
+   * a pass runs causes one more pass, so an event queued meanwhile is not left waiting for the next retry.
+   */
   flush(): Promise<void> {
-    if (this.flushing) return this.flushing;
-    const run = this.sendAll().finally(() => {
+    if (this.flushing) {
+      this.flushAgain = true;
+      return this.flushing;
+    }
+    const run = (async () => {
+      let resync = false;
+      do {
+        this.flushAgain = false;
+        if (await this.sendAll()) resync = true;
+      } while (this.flushAgain && !this.stopped);
+      // An event that may have reached the server before (lost response) was acknowledged: catch up with the cursor,
+      // which carries its tombstone if another device deleted it meanwhile.
+      if (resync && !this.stopped) void this.refresh();
+    })().finally(() => {
       this.flushing = null;
       this.emit();
     });
@@ -459,22 +564,29 @@ export class ClipboardEngine {
     }, delay);
   }
 
-  private async sendAll() {
-    if (this.settings?.paused) return;
+  /** One pass over the queue. True when an event that may have reached the server before was acknowledged. */
+  private async sendAll(): Promise<boolean> {
+    if (this.settings?.paused) return false;
     const pending = [...this.queued.values()].sort((a, b) => a.queuedAt - b.queuedAt);
     let rejected = false;
+    let resync = false;
     for (const item of pending) {
-      if (this.stopped) return;
+      if (this.stopped) return resync;
+      // Deleted (here or through a tombstone) while this pass waited on an earlier item.
+      if (!this.queued.has(item.event_id)) continue;
+      const retry = this.attempted.has(item.event_id);
       const outcome = await this.sendOne(item);
       if (outcome === 'stop') {
         this.scheduleRetry();
-        return;
+        return resync;
       }
-      if (outcome === 'halt') return;
+      if (outcome === 'halt') return resync;
       if (outcome === 'rejected') rejected = true;
+      if (outcome === 'ok' && retry) resync = true;
     }
     if (pending.length) this.sendError = rejected ? 'rejected' : null;
     this.retryDelay = RETRY_MIN_MS;
+    return resync;
   }
 
   /**
@@ -485,6 +597,7 @@ export class ClipboardEngine {
     let item = first;
     for (let attempt = 0; ; attempt++) {
       try {
+        this.attempted.add(item.event_id);
         const res = await this.d.api.create({
           event_id: item.event_id,
           key_version: item.key_version,
@@ -508,9 +621,19 @@ export class ClipboardEngine {
           expires_at: res.expires_at,
           deleted: false,
         };
+        if (this.tombstoned.has(e.event_id) || !this.queued.has(e.event_id)) {
+          // Deleted meanwhile (a tombstone arrived, or the user deleted it here): acknowledged, but not a row again.
+          // A local delete may have reached the server before this create did, so it is sent once more.
+          if (!this.tombstoned.has(e.event_id)) void this.d.api.remove(e.event_id).catch(() => undefined);
+          await this.dropQueued(e.event_id);
+          this.texts.delete(e.event_id);
+          this.emit();
+          return 'ok';
+        }
         this.events.set(e.event_id, e);
-        await this.persist((s) => s.apply(this.d.userId, { put: [e] }));
+        await this.persist((s, g) => s.apply(this.d.userId, { put: [e] }, g));
         await this.acked(item.event_id);
+        this.attempted.delete(item.event_id);
         this.emit();
         return 'ok';
       } catch (err) {
@@ -547,9 +670,8 @@ export class ClipboardEngine {
         }
         if (err.status === 413 || err.status === 400) {
           // The server will never take this one (too large, malformed): drop it instead of retrying forever.
-          this.queued.delete(item.event_id);
+          await this.dropQueued(item.event_id);
           this.texts.delete(item.event_id);
-          await this.persist((s) => s.dequeue(this.d.userId, item.event_id));
           this.emit();
           return 'rejected';
         }
@@ -575,17 +697,14 @@ export class ClipboardEngine {
       ...itemToWire(await encryptItem(key, item.event_id, version, text)),
     };
     this.queued.set(next.event_id, next);
-    await this.persist((s) => s.enqueue(next));
+    await this.persist((s, g) => s.enqueue(next, g));
     return next;
   }
 
   /** Deletes one event on every device (a queued one is simply dropped here and deleted in case it reached the server). */
   async remove(id: string): Promise<void> {
     const wasQueued = this.queued.has(id);
-    if (wasQueued) {
-      this.queued.delete(id);
-      await this.persist((s) => s.dequeue(this.d.userId, id));
-    }
+    if (wasQueued) await this.dropQueued(id);
     try {
       await this.d.api.remove(id);
     } catch (e) {
@@ -595,7 +714,7 @@ export class ClipboardEngine {
     this.events.delete(id);
     this.texts.delete(id);
     this.incoming.delete(id);
-    await this.persist((s) => s.apply(this.d.userId, { remove: [id] }));
+    await this.persist((s, g) => s.apply(this.d.userId, { remove: [id] }, g));
     this.emit();
     void this.refresh();
   }
@@ -607,7 +726,7 @@ export class ClipboardEngine {
     this.events.clear();
     this.incoming.clear();
     for (const id of ids) this.texts.delete(id);
-    await this.persist((s) => s.apply(this.d.userId, { remove: ids }));
+    await this.persist((s, g) => s.apply(this.d.userId, { remove: ids }, g));
     this.emit();
     void this.refresh();
   }

@@ -32,6 +32,8 @@ Every clipboard event and history entry is encrypted on its own:
 
 - AES-256-GCM with the subkey of the ADK version named by `key_version`, a fresh random 12-byte nonce per item, and a 16-byte tag appended to the ciphertext.
 - AAD = UTF-8 of `<id>|<key_version>` in decimal, where id is the history `entry_id` or the clipboard `event_id` (UUIDs chosen by the client). An id never contains `|`.
+- **Canonical id text.** `entry_id` and `event_id` are always written as the lowercase canonical 8-4-4-4-12 hex form of the UUID (36 characters, `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), and that exact text goes into the AAD and onto the wire. Clients generate ids in this form (Web: `crypto.randomUUID()` for clipboard events, the SHA-256-derived version-8 UUID for history entries, both checked by `newItemId`/`itemIdFromBytes` in `web/src/lib/crypto/item.ts`). The server rejects any other form (upper case, braces, missing hyphens, URN prefix) with `400` instead of normalizing it, so the id a reader puts in the AAD is byte-for-byte the id the writer used.
+- **Ciphertext length (v1).** The plaintext is the item itself and GCM adds only the tag, so `len(ciphertext) == payload_size + 16` for clipboard events, where `payload_size` is the plaintext's UTF-8 byte length. The server enforces this equality on create (`400` otherwise).
 - Wire fields: `nonce` (12 bytes) and `ciphertext` (ciphertext ‖ tag), base64url without padding. History payloads are at most 64 KB of ciphertext (`docs/API.md`).
 - Writers always use the newest ADK version they hold. Readers pick the subkey from the row's `key_version`; a row whose version they lack shows as "locked on this device" until pairing, rotation pickup, or chain import supplies it.
 
@@ -197,7 +199,7 @@ Each capture is one immutable event. Fields on the wire (JSON; binary fields bas
 
 | Field | Set by | Meaning |
 |---|---|---|
-| `event_id` | client | UUID chosen by the capturing device; the idempotency key and part of the AAD. Never contains `\|` |
+| `event_id` | client | UUID chosen by the capturing device, as lowercase canonical 8-4-4-4-12 hex text (§1.3); the idempotency key and, in exactly that text, part of the AAD. Any other form is rejected with `400` |
 | `seq` | server | Per-account strictly increasing integer (§2.3) |
 | `origin_device_id` | server | The device that posted it, taken from the verified token, never from the body |
 | `event_type` | client | `TEXT` (the only value in v1) |
@@ -205,7 +207,7 @@ Each capture is one immutable event. Fields on the wire (JSON; binary fields bas
 | `key_version` | client | ADK version whose `clipboard-v1` subkey encrypted it; must be the account's current version on create |
 | `nonce` | client | 12 random bytes; `null` on a tombstone |
 | `ciphertext` | client | AES-256-GCM ciphertext ‖ 16-byte tag; `null` on a tombstone |
-| `payload_size` | client | UTF-8 byte length of the plaintext, 1…262,144 (declared; the server cannot check it) |
+| `payload_size` | client | UTF-8 byte length of the plaintext, 1…262,144. The server cannot read the plaintext, but in v1 it checks the declaration against the ciphertext: `len(ciphertext)` must equal `payload_size + 16` (`400` otherwise) |
 | `created_at`, `expires_at` | server | Insert time; `created_at` + the account's `retention_days` at insert time |
 | `deleted` | server | `true` for a tombstone (deleted, cleared, or pushed out by the cap) |
 
@@ -213,7 +215,7 @@ Plaintext is the UTF-8 text exactly as read from the clipboard (no trimming, no 
 
 ### 2.2 Encryption
 
-Item encryption is §1.3 with id = `event_id`: AES-256-GCM under the `clipboard-v1` subkey of ADK(`key_version`), a fresh random 12-byte nonce per event, AAD = UTF-8 of `<event_id>|<key_version>`. The shared vectors (`shared/protocol/schemas/clipboard-vectors.json`, `items`) fix one example. Writers always use the newest version they hold. A reader that lacks the row's version, or whose decryption fails (a ciphertext moved to another row, a relabelled version, any changed byte), shows the row as **locked on this device** and never shows other text; locked rows are retried when the device stores a version it did not hold (rotation pickup, pairing, recovery, chain import).
+Item encryption is §1.3 with id = `event_id`: AES-256-GCM under the `clipboard-v1` subkey of ADK(`key_version`), a fresh random 12-byte nonce per event, AAD = UTF-8 of `<event_id>|<key_version>` with `event_id` in its lowercase canonical text (§1.3). The plaintext is the UTF-8 text with no framing or padding, so `len(ciphertext) == payload_size + 16` (the GCM tag); the server rejects a create that breaks this with `400`. The shared vectors (`shared/protocol/schemas/clipboard-vectors.json`, `items`) fix one example. Writers always use the newest version they hold. A reader that lacks the row's version, or whose decryption fails (a ciphertext moved to another row, a relabelled version, any changed byte), shows the row as **locked on this device** and never shows other text; locked rows are retried when the device stores a version it did not hold (rotation pickup, pairing, recovery, chain import).
 
 ### 2.3 `seq` and cursors
 
@@ -228,7 +230,7 @@ Item encryption is §1.3 with id = `event_id`: AES-256-GCM under the `clipboard-
 - `POST /v1/clipboard/events` is idempotent on (account, `event_id`): a repeat returns the stored `seq`, `created_at`, `expires_at` with `201` and stores nothing new; re-posting a deleted event returns its tombstone `seq` and does not restore it. A client retries an unacknowledged event with the **same** `event_id`, so a lost response never duplicates an event.
 - `409 key_version_conflict`: the account rotated to a key this device has not picked up. The client runs a key check (rotation pickup, §1.13), re-encrypts the same plaintext under the newest held version with the same `event_id`, and retries once. A second conflict leaves the event queued and tells the user to pair this device again.
 - `409 clipboard_paused`: nothing was stored; the client shows the paused state (§2.7) and keeps the event queued until sync resumes.
-- `413 payload_too_large` or `400`: the server will never accept this event; the client drops it from its queue and says so. `429 rate_limited`: retried after `Retry-After`. Network errors and `5xx`: retried with backoff (Web: 5 s doubling to 60 s), on reconnect, and when the browser reports it is online again. `401`/`403` (the device left the account): the client stops; the account layer erases local data (§2.9).
+- `413 payload_too_large` or `400`: the server will never accept this event; the client drops it from its queue and says so. `429 rate_limited`: retried after `Retry-After`; reads (`GET /v1/clipboard/events`, `GET /v1/clipboard/history`) are rate limited too and a refused read is likewise retried after `Retry-After` (Web keeps showing the loading state or the cached timeline, not a load failure). A `DELETE` by a malformed id is `400`. Network errors and `5xx`: retried with backoff (Web: 5 s doubling to 60 s), on reconnect, and when the browser reports it is online again. `401`/`403` (the device left the account): the client stops; the account layer erases local data (§2.9).
 
 ### 2.5 WebSocket notifications
 
@@ -246,7 +248,7 @@ Messages carry metadata only: no ciphertext and no plaintext ever goes over the 
 
 ### 2.6 Limits: size, cap, retention, rate
 
-- Text only; `payload_size` ≤ 262,144 bytes of UTF-8 (256 KB), checked by the client before encryption and by the server (`413`); ciphertext ≤ 262,160 bytes.
+- Text only; `payload_size` ≤ 262,144 bytes of UTF-8 (256 KB), checked by the client before encryption and by the server (`413`); ciphertext ≤ 262,160 bytes and exactly `payload_size + 16` bytes (§2.2, `400` otherwise).
 - At most 100 live events per account: inserting the 101st tombstones the oldest live one in the same transaction.
 - Retention: `retention_days` 1…7 (default 7) applies to events created afterwards (`expires_at` at insert). The server's maintenance loop hard-deletes events past `expires_at` and tombstones older than 7 days. Clients hide expired rows and show the limit ("Kept for 7 days or 100 items").
 - Creation: 60 per minute per device and 240 per minute per account (`429`); deletions, clear, and settings changes: 600 per minute per device (`docs/SECURITY_MODEL.md` §5).
@@ -267,9 +269,9 @@ When the account setting `sensitive_skip` is true (default), clients run best-ef
 
 ### 2.9 Offline queue and local data
 
-- A capture is encrypted first, then written to the offline queue, then sent; the queue keeps only the encrypted request fields (`event_id`, `key_version`, `nonce`, `ciphertext`, `payload_size`) and the capture time, never plaintext. Queued events show at the top of the timeline as **Queued** (decrypted in memory) and are sent in capture order, idempotently (§2.4), when the network returns. Deleting a queued event drops it locally (and deletes it on the server in case it arrived).
+- A capture is encrypted first, then written to the offline queue, then sent; the queue keeps only the encrypted request fields (`event_id`, `key_version`, `nonce`, `ciphertext`, `payload_size`) and the capture time, never plaintext. Queued events show at the top of the timeline as **Queued** (decrypted in memory) and are sent in capture order, idempotently (§2.4), when the network returns. Deleting a queued event drops it locally (and deletes it on the server in case it arrived). A tombstone pulled for an event that is still queued (it reached the server, the response was lost, and another device deleted it) drops it from the queue too, and an acknowledgement that arrives for an event already seen as a tombstone is not added to the timeline, so a retry never brings a deleted row back.
 - Web storage: IndexedDB `share-anywhere-clipboard` with stores `events` (the account's live events exactly as the server returned them: ciphertext only, so the timeline opens offline), `queue`, and `meta` (cursor and last catch-up time), every record keyed by account. Never Web Storage: `storage.ts` holds only the per-browser automatic capture on/off preference. Decrypted text exists only in memory while the page is open.
-- Sign-out, revocation, an ended account session, or a key wipe erase the clipboard store together with the key store and sync bookkeeping (`wipeAccountData`), and the running clipboard runtime stops at once.
+- Sign-out, revocation, an ended account session, or a key wipe erase the clipboard store together with the key store and sync bookkeeping (`wipeAccountData`), and the running clipboard runtime stops at once. Every wipe writes a new random generation token into `meta` in the same transaction that clears the stores; a runtime reads the token when it starts, and every later write checks it inside its own write transaction and writes nothing when it changed. A runtime still running in another tab of the same browser therefore cannot write ciphertext, a queued event, or a cursor back after any tab wiped.
 
 ### 2.10 Web capture rules and browser constraints
 
@@ -279,7 +281,7 @@ What a website can and cannot do (PRD §7.2), and what the Web client does:
 - **Secure context required.** On plain HTTP browsers offer neither the clipboard API nor WebCrypto; Clipboard shows "HTTPS required" and nothing else works.
 - **Manual Sync** calls `navigator.clipboard.readText()` directly in the click handler (user gesture). Where the browser shows its own Paste UI (Firefox, Safari) or asks for permission (Chromium), that is the browser's prompt, answered by the user. If the read is refused, unsupported, or still pending after 4 s, a paste field opens (Ctrl+V, ⌘V, or long-press → Paste): pasted text is captured from the field. The browser is never asked again until the next click, so there is no prompt loop.
 - **Automatic capture** (per-browser toggle, default on) reads opportunistically on window `focus` and `visibilitychange` (visible) only when `navigator.permissions.query({name: 'clipboard-read'})` already reports `granted`. `permissions.query` never prompts; where the browser does not expose that permission (Firefox, Safari) automatic capture is not attempted. Never polling, never on a timer. Offline it still reads and queues.
-- **In-page copies**: while automatic capture is on, the `copy` event of this page captures the selected text (or the field selection, or data the page set) of copies made inside Share Anywhere. Copies made in other apps are invisible to a website while it is not in front; the UI never claims otherwise.
+- **In-page copies**: only while the capture status (below) is `auto` or `besteffort` with the toggle on (secure context, the browser exposes the clipboard-read permission and has not denied it, sync not paused; offline they are still captured and queued, like automatic reads), the `copy` event of this page captures the selected text (or the field selection, or data the page set) of copies made inside Share Anywhere. Copies made in other apps are invisible to a website while it is not in front; the UI never claims otherwise. When the panel says capture is manual (`unsupported`, `denied`, the toggle off) or `paused`, in-page copies are not captured either, so the page never does more than the panel states.
 - **Dedupe**: identical consecutive text is not sent twice (the newest row already holds it, or this tab already saw it, including text it wrote with Copy).
 - **Copy** writes with `navigator.clipboard.writeText()` from the click; if that is missing or refused it falls back to selecting a hidden field and `document.execCommand('copy')` (not captured again); if both fail, the item drawer selects the text and says to press Ctrl+C. Nothing is ever written to the clipboard without a click (no automatic remote write).
 - **Status**: the capture status panel (`clipboardStatus`, `docs/UX_SCREEN_MAP.md` §12) is derived from capability detection only: `insecure` (no secure context), `paused`, `offline`, `denied` (permission denied), `unsupported` (no `readText`, or no clipboard-read permission state: manual only), `auto` (granted and toggle on), `besteffort` (otherwise).

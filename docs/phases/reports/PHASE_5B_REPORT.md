@@ -1,6 +1,6 @@
 # Phase 5B report: Clipboard Sync v1
 
-Status: implemented and tested on the Web; QA pending (`docs/qa/PHASE_5B_QA.md`). File sharing stays guest-first. Guests see the Clipboard intro and the app makes no clipboard API calls for them. Android and iOS build their clipboard UIs on this protocol in Phases 6 and 7.
+Status: implemented and tested on the Web; QA round 1 failed on two P1s (missing protocol tag, unspecified UUID text form in the AAD), both fixed; QA round 2 pending (`docs/qa/PHASE_5B_QA.md`). File sharing stays guest-first. Guests see the Clipboard intro and the app makes no clipboard API calls for them. Android and iOS build their clipboard UIs on this protocol in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -79,8 +79,8 @@ Exact counts per project and CI links are in §4 and `docs/qa/PHASE_5B_QA.md`.
 
 Latest local run (CI runs are listed at the top of `docs/qa/PHASE_5B_QA.md`):
 
-- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 55 files, 417 tests passed.
-- `pnpm -C web build`: main JS 117,136 bytes gzip (budget 122,880).
+- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 55 files, 430 tests passed.
+- `pnpm -C web build`: main JS 117,265 bytes gzip (budget 122,880).
 - `pnpm protocol:check` (66 operations), `i18n:check` (2001 keys each), `tokens:check`, `lint:md`, `storage:check`, `test:scripts`: pass.
 - `go test ./...` with `TEST_DATABASE_URL` (PostgreSQL 16, go1.27.4): pass. `golangci-lint run ./...`: 0 issues. `govulncheck`: nothing reachable.
 - Playwright `e2e/clipboard` + `e2e/account` (`--retries=0`): chromium-desktop 24 passed, 1 skipped; firefox-desktop, webkit-desktop, android-chrome and ios-safari 23 passed, 2 skipped each.
@@ -122,4 +122,9 @@ On `claude/practical-lovelace-avlb5g`:
 
 - 063de1d: CI storage guard
 - b956f0f: clipboard backend
-- the Web commit that follows them
+- fab4866: Web Clipboard
+- de39866: mobile snapshot baselines (fifth tab)
+- 8d2cb0e: QA round 1 backend fixes (canonical ids, sweep, size check, read limit)
+- the QA round 1 Web fix commit that follows them
+
+The annotated tag `clipboard-protocol-v1` is created at the commit that passes QA (the exit gate in `docs/phases/PHASE_5_ACCOUNTS_CLIPBOARD.md`) and pushed with it.

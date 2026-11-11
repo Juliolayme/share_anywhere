@@ -21,6 +21,39 @@ export interface EncryptedItemWire {
   ciphertext: string;
 }
 
+/**
+ * Item ids (history `entry_id`, clipboard `event_id`) are the lowercase canonical 8-4-4-4-12 hex text of a UUID
+ * (docs/CLIPBOARD_PROTOCOL.md §1.3). That exact text goes into the AAD and onto the wire; the server rejects any other
+ * form, so a reader always rebuilds the AAD the writer used.
+ */
+export const ITEM_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function isItemId(id: string): boolean {
+  return ITEM_ID_PATTERN.test(id);
+}
+
+/**
+ * Normalizes a freshly generated UUID to the canonical item id text (lower case) and checks its shape. Only for ids this
+ * device creates: ids received from the server are used exactly as sent, never normalized.
+ */
+export function toItemId(uuid: string): string {
+  const id = uuid.toLowerCase();
+  if (!isItemId(id)) throw invalid('item id must be a canonical 8-4-4-4-12 hex UUID');
+  return id;
+}
+
+/** A new random item id (`crypto.randomUUID()`, lower case). */
+export function newItemId(): string {
+  return toItemId(crypto.randomUUID());
+}
+
+/** The canonical item id text of 16 UUID bytes (version and variant bits already set by the caller). */
+export function itemIdFromBytes(bytes: Uint8Array): string {
+  assertLength(bytes, 16, 'uuid');
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return toItemId(`${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`);
+}
+
 export function itemAad(id: string, keyVersion: number): Bytes {
   if (!id || id.includes('|')) throw invalid('item id must be non-empty and must not contain "|"');
   assertVersion(keyVersion);

@@ -86,7 +86,7 @@ export function CaptureStatusPanel({
               type="button"
               disabled={busy}
               onClick={() => onPause(false)}
-              className="inline-flex h-[34px] items-center rounded-sm bg-send px-3 text-caption font-semibold text-on-send hover:bg-send-hover disabled:opacity-50"
+              className="inline-flex h-[34px] min-h-touch items-center rounded-sm bg-send px-3 rail:min-h-0 text-caption font-semibold text-on-send hover:bg-send-hover disabled:opacity-50"
             >
               {t('product.cb_resume')}
             </button>
@@ -95,7 +95,7 @@ export function CaptureStatusPanel({
               type="button"
               disabled={busy}
               onClick={() => onPause(true)}
-              className="inline-flex h-[34px] items-center gap-[6px] rounded-sm px-[10px] text-caption font-semibold text-fg-2 hover:bg-surface disabled:opacity-50"
+              className="inline-flex h-[34px] min-h-touch items-center gap-[6px] rounded-sm px-[10px] rail:min-h-0 text-caption font-semibold text-fg-2 hover:bg-surface disabled:opacity-50"
             >
               <Pause aria-hidden size={14} />
               {t('product.cb_pause')}

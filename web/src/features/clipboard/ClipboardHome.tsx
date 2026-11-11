@@ -1,5 +1,6 @@
 import {
   Check,
+  CircleAlert,
   Clipboard,
   Clock,
   Copy,
@@ -10,6 +11,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -22,7 +24,7 @@ import { useIdentity } from '../../lib/identity/identity';
 import { useClipboardState } from './ClipboardContext';
 import { CaptureStatusPanel } from './CaptureStatusPanel';
 import { ClipboardDetail } from './ClipboardDetail';
-import type { CaptureResult, ClipItem } from './engine';
+import type { CaptureResult, ClipItem, QueueReason } from './engine';
 import { setAutoCapture } from './prefs';
 import type { ClipboardRuntime } from './runtime';
 import type { ReadFailure } from './capture';
@@ -39,6 +41,16 @@ const NOTICE_KEY: Record<Notice, string> = {
   too_large: 'product.cb_too_large',
   paused: 'phrases.resume_sync_first',
   not_ready: 'product.cb_runtime_failed',
+};
+
+/** The queued toast states the real cause (offline versus server busy, rate limited, key, paused). */
+const QUEUED_KEY: Record<QueueReason, string> = {
+  offline: 'phrases.encrypted_and_queued_will_send_when_online',
+  busy: 'product.cb_queued_busy',
+  rate_limited: 'product.cb_queued_rate_limited',
+  key: 'product.cb_queued_key',
+  paused: 'product.cb_queued_paused',
+  pending: 'product.cb_queued',
 };
 
 /** The paste fallback: why the clipboard could not be read (or `pending` while the browser shows its own Paste UI). */
@@ -116,7 +128,7 @@ export default function ClipboardHome({ runtime }: { runtime: ClipboardRuntime }
           toast.show(t('phrases.clipboard_synced_encrypted'));
           return true;
         case 'queued':
-          toast.show(t('phrases.encrypted_and_queued_will_send_when_online'));
+          toast.show(t(QUEUED_KEY[r.reason]));
           return true;
         case 'sensitive':
           setSensitive(text);
@@ -336,7 +348,7 @@ export default function ClipboardHome({ runtime }: { runtime: ClipboardRuntime }
         </form>
       )}
 
-      {snapshot.loadError === 'error' && (
+      {snapshot.loadError === 'error' && items.length > 0 && (
         <Banner
           tone="danger"
           role="alert"
@@ -412,7 +424,7 @@ export default function ClipboardHome({ runtime }: { runtime: ClipboardRuntime }
               type="button"
               aria-pressed={filter === f.value}
               onClick={() => setFilter(f.value)}
-              className={`h-[36px] rounded-full border px-3 text-caption font-semibold ${filter === f.value ? 'border-fg bg-fg text-bg' : 'border-border-strong bg-surface text-fg-2'}`}
+              className={`h-[36px] min-h-touch rounded-full border px-3 text-caption font-semibold rail:min-h-0 ${filter === f.value ? 'border-fg bg-fg text-bg' : 'border-border-strong bg-surface text-fg-2'}`}
             >
               {f.label}
             </button>
@@ -436,7 +448,7 @@ export default function ClipboardHome({ runtime }: { runtime: ClipboardRuntime }
                 type="button"
                 onClick={() => runtime.engine.dismissSkipped(s.id)}
                 aria-label={t('product.cb_dismiss')}
-                className="flex h-[36px] w-[36px] flex-none items-center justify-center rounded-md not-italic hover:bg-surface-2"
+                className="flex h-[36px] min-h-touch w-[36px] min-w-touch flex-none items-center justify-center rounded-md not-italic hover:bg-surface-2 rail:min-h-0 rail:min-w-0"
               >
                 <X aria-hidden size={16} />
               </button>
@@ -445,11 +457,51 @@ export default function ClipboardHome({ runtime }: { runtime: ClipboardRuntime }
         </ul>
       )}
 
-      {!snapshot.loaded ? (
+      {!snapshot.loaded || (items.length === 0 && !snapshot.synced && !snapshot.loadError) ? (
+        // Still reading the cache, or (nothing cached) the first refresh is running: not "empty" yet.
         <div role="status" aria-busy="true" className="flex flex-col gap-[10px]">
           <span className="sr-only">{t('product.cb_loading')}</span>
           <div aria-hidden className="h-[72px] animate-pulse rounded-lg bg-surface-2" />
           <div aria-hidden className="h-[72px] animate-pulse rounded-lg bg-surface-2" />
+        </div>
+      ) : items.length === 0 && snapshot.loadError === 'offline' ? (
+        // First load while offline with nothing cached: the timeline is unknown, not empty.
+        <div
+          role="status"
+          data-testid="cb-offline"
+          className="flex flex-col items-center gap-2 rounded-[16px] border border-dashed border-border-strong bg-surface px-[20px] py-[40px] text-center"
+        >
+          <span
+            aria-hidden
+            className="flex h-[48px] w-[48px] items-center justify-center rounded-lg bg-warning-soft text-warning-ink"
+          >
+            <WifiOff size={22} />
+          </span>
+          <b>{t('common.off_h')}</b>
+          <span className="max-w-[380px] text-[14px] leading-[1.5] text-fg-2">{t('product.cb_offline_empty_p')}</span>
+        </div>
+      ) : items.length === 0 && snapshot.loadError === 'error' ? (
+        <div
+          role="alert"
+          data-testid="cb-load-error"
+          className="flex flex-col items-center gap-2 rounded-[16px] border border-dashed border-border-strong bg-surface px-[20px] py-[40px] text-center"
+        >
+          <span
+            aria-hidden
+            className="flex h-[48px] w-[48px] items-center justify-center rounded-lg bg-danger-soft text-danger-ink"
+          >
+            <CircleAlert size={22} />
+          </span>
+          <b>{t('product.cb_load_failed')}</b>
+          <Button
+            size="sm"
+            icon={RefreshCw}
+            disabled={snapshot.syncing}
+            onClick={() => void runtime.engine.refresh()}
+            className="mt-2"
+          >
+            {t('common.retry')}
+          </Button>
         </div>
       ) : items.length === 0 ? (
         <div

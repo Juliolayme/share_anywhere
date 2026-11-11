@@ -100,6 +100,7 @@ class AccountClipboardTest {
                 compose.waitUntil(60_000) { entry.clipboardRuntime().ui.value.snapshot.items.any { i -> i.text == marker && !i.pending } }
                 // The row may sit below the fold of a small screen: scroll the list to it.
                 compose.onNodeWithTag("clipboard.home").performScrollToNode(hasTestTag("clip-row"))
+                compose.onAllNodesWithTag("clip-row").onFirst().assertExists()
                 val synced = entry.clipboardRuntime().ui.value.snapshot.items.first { it.text == marker }
                 assertNotNull(synced.seq)
 

@@ -103,7 +103,6 @@ fun EmailField(value: String, onChange: (String) -> Unit, error: String?, tag: S
         value = value,
         onValueChange = onChange,
         label = { Text(stringResource(R.string.android_yy_email)) },
-        placeholder = { Text("you@example.com") },
         singleLine = true,
         isError = error != null,
         supportingText = error?.let { { Text(it) } },

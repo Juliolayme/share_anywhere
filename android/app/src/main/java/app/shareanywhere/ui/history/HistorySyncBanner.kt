@@ -35,7 +35,10 @@ class HistorySyncActions(
 @Composable
 fun HistorySyncBanner(actions: HistorySyncActions, viewModel: AccountViewModel = hiltViewModel()) {
     val s by viewModel.state.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
     val m = Modifier.testTag("history.sync-banner")
+    // A failed action from the banner (for example Turn on history sync while offline) says why.
+    app.shareanywhere.ui.account.AccountError(error)
 
     @Composable
     fun info(title: String, label: String? = null, onClick: () -> Unit = {}, kind: NoticeKind = NoticeKind.Info) = InlineNotice(

@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -306,7 +307,7 @@ private fun RevokeDialog(d: AccountDevice, viewModel: AccountViewModel, onDismis
 @Composable
 fun PairDeviceSheet(viewModel: AccountViewModel, onDismiss: () -> Unit) {
     val state by viewModel.sendKey.collectAsStateWithLifecycle()
-    var code by rememberSaveable { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var cameraDenied by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current

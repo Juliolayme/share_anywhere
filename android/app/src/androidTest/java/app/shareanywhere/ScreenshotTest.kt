@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.core.net.toUri
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -17,6 +18,7 @@ import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.UiDevice
 import app.shareanywhere.settings.ThemeMode
 import app.shareanywhere.ui.nav.ScreenIds
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Rule
@@ -65,6 +67,162 @@ class ScreenshotTest {
 
     @Test
     fun largeFontSignedInAndSession() = captureWithBackend("light-font130", ThemeMode.LIGHT, 1.3f)
+
+    @Test
+    fun lightTransfers() = captureTransfers("light", ThemeMode.LIGHT, 1.0f)
+
+    @Test
+    fun darkTransfers() = captureTransfers("dark", ThemeMode.DARK, 1.0f)
+
+    @Test
+    fun largeFontTransfers() = captureTransfers("light-font130", ThemeMode.LIGHT, 1.3f)
+
+    /**
+     * Transfer screens with a second device in the test process ([TestPeer]): the sender's dashboard while bytes move and
+     * when done, the expired join window, the receiver's progress while bytes move and its result, History detail, and the
+     * empty Send screen.
+     */
+    private fun captureTransfers(variant: String, theme: ThemeMode, fontScale: Float) {
+        Backend.assume()
+        Backend.markWelcomed()
+        device.executeShellCommand("settings put system font_scale $fontScale")
+        val entry = Backend.entry()
+        runBlocking { entry.settingsRepository().setTheme(theme) }
+        val size = 48 * 1024 * 1024
+        TestPeer(Backend.Peer.create()).use { peer ->
+            // Sender: dashboard and dashboard-done.
+            val (out, _) = TestPeer.file("shot-send-${System.nanoTime()}.bin", size)
+            val sending =
+                runBlocking {
+                    entry.sessionsApi().create(
+                        listOf(app.shareanywhere.data.api.FileInput(out.name, out.length(), "application/octet-stream")),
+                        false
+                    )
+                }
+            runBlocking {
+                entry.outgoingFiles().insertAll(
+                    listOf(
+                        app.shareanywhere.transfer.OutgoingFile(
+                            sending.id,
+                            sending.files!!.single().id,
+                            0,
+                            out.toUri().toString(),
+                            out.name,
+                            out.length(),
+                            "application/octet-stream",
+                            System.currentTimeMillis()
+                        )
+                    )
+                )
+            }
+            val open = android.content.Intent(androidx.test.core.app.ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+                .setAction(app.shareanywhere.notify.Notifier.ACTION_OPEN_SESSION)
+                .putExtra(app.shareanywhere.notify.Notifier.EXTRA_SESSION_ID, sending.id)
+            ActivityScenario.launch<MainActivity>(open).use {
+                compose.dumpOnFailure {
+                    compose.waitForTag(ScreenIds.SESSION, 30_000)
+                    runBlocking { peer.peer.api.resolveCode(sending.code!!).let { peer.peer.api.join(it.sessionId, it.joinTicket) } }
+                    val rx = peer.receiver(sending.id)
+                    runBlocking {
+                        kotlinx.coroutines.withTimeout(20_000) {
+                            rx.state.first {
+                                it.phase ==
+                                    app.shareanywhere.transfer.runtime.RxPhase.Choose
+                            }
+                        }
+                    }
+                    rx.start(
+                        app.shareanywhere.transfer.SaveTarget(
+                            sending.id,
+                            app.shareanywhere.transfer.storage.Folders.DEFAULT_DOWNLOADS,
+                            app.shareanywhere.transfer.storage.Folders.DEFAULT_LABEL,
+                            System.currentTimeMillis()
+                        )
+                    )
+                    compose.waitForTag("session.dashboard", 30_000)
+                    compose.onNodeWithTag("session.dashboard").tap()
+                    compose.waitForTag(ScreenIds.DASHBOARD, 30_000)
+                    save(variant, ScreenIds.DASHBOARD)
+                    waitForSendEnd(sending.id, 180_000)
+                    compose.waitForTag(ScreenIds.DASHBOARD_DONE, 30_000)
+                    save(variant, ScreenIds.DASHBOARD_DONE)
+                    // The peer's copy lands in Download/Share Anywhere too: remove it.
+                    for (f in rx.state.value.files) {
+                        f.documentUri?.let { u ->
+                            runCatching { peer.context.contentResolver.delete(android.net.Uri.parse(u), null, null) }
+                        }
+                    }
+                }
+            }
+            runBlocking { runCatching { entry.sessionsApi().close(sending.id) } }
+
+            // The join window ends (test clock): session-expired.
+            val expiring =
+                runBlocking {
+                    entry.sessionsApi().create(listOf(app.shareanywhere.data.api.FileInput("notes.txt", 12, "text/plain")), false)
+                }
+            val openExpiring = android.content.Intent(open).putExtra(app.shareanywhere.notify.Notifier.EXTRA_SESSION_ID, expiring.id)
+            ActivityScenario.launch<MainActivity>(openExpiring).use {
+                compose.dumpOnFailure {
+                    compose.waitForTag(ScreenIds.SESSION, 30_000)
+                    Backend.advanceClock(601)
+                    compose.waitForTag(ScreenIds.SESSION_EXPIRED, 30_000)
+                    save(variant, ScreenIds.SESSION_EXPIRED)
+                }
+            }
+            runBlocking { runCatching { entry.sessionsApi().close(expiring.id) } }
+
+            // Receiver: rx-progress and rx-done, then History detail and the empty Send screen.
+            val (inFile, _) = TestPeer.file("shot-receive-${System.nanoTime()}.bin", size)
+            val incoming =
+                runBlocking {
+                    peer.peer.api.create(
+                        listOf(app.shareanywhere.data.api.FileInput(inFile.name, inFile.length(), "application/octet-stream")),
+                        false
+                    )
+                }
+            runBlocking { peer.sender(incoming.id, inFile, incoming.files!!.single().id, "application/octet-stream") }
+            try {
+                ActivityScenario.launch(MainActivity::class.java).use {
+                    compose.dumpOnFailure {
+                        compose.waitForTag(ScreenIds.HOME, 30_000)
+                        compose.onNodeWithTag("home.receive").performClick()
+                        compose.onNodeWithTag("receive.tab-code").performClick()
+                        compose.waitForTag(ScreenIds.RECEIVE_CODE)
+                        compose.onNodeWithTag("receive.code-input").performTextInput(incoming.code!!)
+                        compose.onNodeWithTag("receive.continue").performClick()
+                        compose.waitForTag(ScreenIds.RX_PREVIEW, 30_000)
+                        compose.onNodeWithTag("preview.receive").tap()
+                        compose.waitForTag("rx.start", 30_000)
+                        compose.onNodeWithTag("rx.start").tap()
+                        compose.waitForTag(ScreenIds.RX_PROGRESS, 60_000)
+                        save(variant, ScreenIds.RX_PROGRESS)
+                        waitForReceiveEnd(incoming.id, 180_000)
+                        compose.waitForTag(ScreenIds.RX_DONE, 30_000)
+                        save(variant, ScreenIds.RX_DONE)
+                        compose.onNodeWithTag("rx.done").tap()
+                        compose.waitForTag(ScreenIds.HOME, 30_000)
+                        compose.onNodeWithTag("nav.${ScreenIds.HISTORY}").performClick()
+                        compose.waitForTag("history.row.rx:${incoming.id}", 30_000)
+                        compose.onNodeWithTag("history.row.rx:${incoming.id}").tap()
+                        compose.waitForTag(ScreenIds.HISTORY_DETAIL, 15_000)
+                        save(variant, ScreenIds.HISTORY_DETAIL)
+                    }
+                }
+                ActivityScenario.launch(MainActivity::class.java).use {
+                    compose.dumpOnFailure {
+                        compose.waitForTag(ScreenIds.HOME, 30_000)
+                        compose.onNodeWithTag("home.send").performClick()
+                        compose.waitForTag(ScreenIds.SEND)
+                        save(variant, ScreenIds.SEND)
+                    }
+                }
+            } finally {
+                deleteReceived(incoming.id)
+                runBlocking { runCatching { peer.peer.api.close(incoming.id) } }
+            }
+        }
+    }
 
     /**
      * Screens that need the CI backend: the sender's session and its expired state, the receiver's preview and save

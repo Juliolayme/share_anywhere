@@ -12,6 +12,8 @@ on:
       - 'web/e2e/nightly/**'
       - 'scripts/android-interop.sh'
       - 'scripts/android-clipboard-interop.sh'
+      # The API 29 / 35 matrix re-checks instrumentation test changes made on a branch.
+      - 'android/app/src/androidTest/**'
       - 'web/e2e/transfer/helpers.ts'
       - 'web/e2e/pairing/helpers.ts'
       - 'web/e2e/mobile/snapshots.spec.ts'

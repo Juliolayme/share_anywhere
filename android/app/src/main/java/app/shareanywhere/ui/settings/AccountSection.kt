@@ -19,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -326,9 +327,10 @@ private fun KeyRow(keys: KeyStatus, actions: AccountActions, onRetry: () -> Unit
 
 @Composable
 private fun ChangePasswordDialog(viewModel: AccountViewModel, onDismiss: () -> Unit, onDone: () -> Unit) {
-    var current by rememberSaveable { mutableStateOf("") }
-    var next by rememberSaveable { mutableStateOf("") }
-    var confirm by rememberSaveable { mutableStateOf("") }
+    // Plain remember: passwords never go into the saved-instance state.
+    var current by remember { mutableStateOf("") }
+    var next by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
     var tried by rememberSaveable { mutableStateOf(false) }
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()

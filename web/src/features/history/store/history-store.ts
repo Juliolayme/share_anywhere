@@ -74,11 +74,15 @@ function done(tx: IDBTransaction): Promise<void> {
 
 const REMOVED_KEY = 'history.removed';
 const REMOVED_MAX = 500;
+/** Longer than any session lives (72 h signed in), so a live session cannot outlast the memory of a deletion. */
+const REMOVED_TTL = 7 * DAY;
 
 /**
  * Ids the user deleted (one by one or with Clear all), kept in localStorage so a live session that rewrites its
  * entry (`tx:<session>`, docs/ARCHITECTURE.md §4.5) does not bring it back, in this tab or another, or after a
- * reload. Bounded to the most recent REMOVED_MAX ids; without storage nothing is remembered.
+ * reload. Kept for REMOVED_TTL and bounded to the most recent REMOVED_MAX ids; without storage nothing is
+ * remembered. The same id is a whole session (`tx:` or `rx:<session>`), so a later delivery in that session is
+ * not recorded either (docs/UX_SCREEN_MAP.md HI-2).
  */
 /** Where deleted ids are kept: the UI preference storage (src/lib/storage.ts), or nothing. */
 export interface PrefStorage {
@@ -96,12 +100,16 @@ function removedIds(storage: PrefStorage | null) {
     }
   };
   return {
-    has: (id: string) => id in read(),
+    has: (id: string) => {
+      const at = read()[id];
+      return at !== undefined && Date.now() - at < REMOVED_TTL;
+    },
     add(ids: string[]) {
       if (!storage || !ids.length) return;
       const now = Date.now();
       const all = { ...read(), ...Object.fromEntries(ids.map((id) => [id, now])) };
       const kept = Object.entries(all)
+        .filter(([, at]) => now - at < REMOVED_TTL)
         .sort((a, b) => b[1] - a[1])
         .slice(0, REMOVED_MAX);
       storage.write(REMOVED_KEY, JSON.stringify(Object.fromEntries(kept))); // ignores full or blocked storage

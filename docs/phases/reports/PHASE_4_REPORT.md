@@ -1,6 +1,6 @@
 # Phase 4 report: multi-receiver, reconnect and resume hardening
 
-Status: implemented; QA rounds 1–4 failed, all P0/P1 findings fixed; round 5 pending (`docs/qa/PHASE_4_QA.md`). Everything here is guest-only and Web-only; Android and iOS come in Phases 6 and 7.
+Status: implemented; QA rounds 1–5 failed, all P0/P1 findings fixed; round 6 pending (`docs/qa/PHASE_4_QA.md`). Everything here is guest-only and Web-only; Android and iOS come in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -17,7 +17,7 @@ Status: implemented; QA rounds 1–4 failed, all P0/P1 findings fixed; round 5 p
   - TR-7 and RX-7 come from each client's own transfers, with the same counting rule on the sender (`finalOf`). While the session is live the sender's result is provisional: a late receiver brings back TR-6, and the History entry is rewritten when the result changes.
   - TR-7 "New transfer" closes the finished session (confirming while the window is open); "Back to the session" leads to the code and Create new code. If the sender leaves another way and Create later hits the open-session cap, the send screen lists the device's open sessions (`GET /v1/sessions`, new) with Open and Close.
   - The sender's result counts files, like the server and the receiver: one file of two is partial.
-  - Only the tab with the picked files serves receivers (Web Lock); another tab of the same device on that session leaves offers to it. Deleted History entries stay deleted across tabs and reloads.
+  - Only the tab with the picked files serves receivers and writes History (Web Lock); another tab of the same device on that session leaves offers to it, says another tab is sending, and mirrors the progress. Deleted History entries stay deleted across tabs and reloads for 7 days.
   - Tests: the rule over every combination of receiver and transfer states (576,601 inputs), and database scenarios: delivery then window expiry (session live, Renew, late receiver completes), idle end completed/partial/expired, removed and blocked excluded, max lifetime mid-transfer, Close, lifetime end racing final reports.
 - **Cleanup**: the maintenance job cancels orphan transfers (ended session or departed receiver) and counts them; purge on the existing 7-day schedule, now tested. Transfer reports lock the session row before the transfer row, serializing them with Remove, Leave, Close and the lifetime end.
 - **Reconnect hardening**: receiver redial backoff with ±25 % jitter (tested); the WebSocket already reconnects with jitter and a fresh one-time ticket; bitmap exchange and duplicate tolerance unchanged from Phase 3.
@@ -58,7 +58,7 @@ TR-4/TR-5 session (reachable from TR-6/TR-7 by "Back to the session"; Create new
 |---|---|
 | `go vet ./...`, `golangci-lint run ./...` | Clean, 0 issues |
 | `go test -race -count=1 ./...` with the test database | All packages pass (sharing 24, transfers 20 top-level tests, none skipped) |
-| `pnpm -C web format:check`, `lint`, `exec tsc -b`, `test --run` | Pass; 176 unit tests |
+| `pnpm -C web format:check`, `lint`, `exec tsc -b`, `test --run` | Pass; 182 unit tests |
 | `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md` | Pass (32 operations; 1,800 keys each) |
 | Playwright, all five projects locally (ac7a284) | 197 passed, 61 skipped (project-specific); the 2 Android screenshot comparisons differ by local fonts (baselines are made on the runner) |
 | CI | [42930065900](https://github.com/Juliolayme/share_anywhere/actions/runs/42930065900) on d6d6aae: green, every e2e project passed on the first attempt (chromium 45, firefox 44, webkit 45, android-chrome 38, ios-safari 38). [42925255350](https://github.com/Juliolayme/share_anywhere/actions/runs/42925255350) on b8b4405: green, and every e2e project passed on the first attempt (no test needed a retry: chromium 44, firefox 43, webkit 44, android-chrome 38, ios-safari 38 passed). On b247af7, [42920840711](https://github.com/Juliolayme/share_anywhere/actions/runs/42920840711) was green, but the new late-receiver spec passed only on retry on chromium-desktop and webkit-desktop (QA round 3; fixed in 0c4a20d). [42916941586](https://github.com/Juliolayme/share_anywhere/actions/runs/42916941586) on ac7a284: all 12 jobs green. Earlier: 42913806193 on 06e9211 (non-e2e green; four e2e jobs cancelled by the next push) |
@@ -83,7 +83,7 @@ Unchanged from Phase 3. New: `VITE_BLOCK_CACHE_MB` (optional, build time, in `.e
 |---|---|
 | P0 | — |
 | P1 | Firefox default-route mode (from Phase 3); retry for failed receivers and per-file re-download (G4/G12) |
-| P2 | Remove/Block/Reject on an ended session are still accepted (harmless, documented); sender notice for auto-declined receivers; History integrity wording for partial sends; about 150 product keys from Phases 2–3 not listed in the DESIGN_DEVIATIONS E-table; a browser spec for Create new code after a delivery; a `TransferDashboard` component test for the New transfer branches; a message for a receiver whose WebSocket upgrade keeps being refused |
+| P2 | Remove/Block/Reject on an ended session are still accepted (harmless, documented); sender notice for auto-declined receivers; History integrity wording for partial sends; about 150 product keys from Phases 2–3 not listed in the DESIGN_DEVIATIONS E-table; a browser spec for Create new code after a delivery; a `TransferDashboard` component test for the New transfer branches; a message for a receiver whose WebSocket upgrade keeps being refused; receivers redial without an answer while the tab with the files has no socket (TRANSFER_PROTOCOL §5.1) |
 
 ## 8. Local run
 
@@ -107,3 +107,4 @@ Unchanged from Phase 3. New: `VITE_BLOCK_CACHE_MB` (optional, build time, in `.e
 | b8b4405 | QA round 3: open-sessions list when the cap is reached (`GET /v1/sessions`) |
 | 50a13c8 | Report links |
 | d6d6aae | QA round 4: only the tab with the files serves receivers (Web Lock); History remembers deletions; panel focus and strings; download retries |
+| b367853 | Report links |

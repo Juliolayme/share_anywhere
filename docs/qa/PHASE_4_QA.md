@@ -107,3 +107,28 @@ Nightly [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/
 | P2-4 UX_SCREEN_MAP lacked the cap-reached state | P2 | TR-3 rows list the state and the panel |
 | P2-5 No green nightly on the final backend; the Firefox download had no retry | P2 | `curl --retry 4 --retry-all-errors` in ci.yml and nightly.yml; nightly re-dispatched on the final commit and linked in the report |
 | P2-6 `display: contents` live region; report nits | P2 | The live region is a normal block inside the heading group; report counts corrected (24 sharing tests; open-sessions ran in all 5 projects in CI) |
+
+## Round 5 — commit b367853 (code as d6d6aae) — FAIL
+
+0 P0, 2 P1, 9 P2 findings. The round-4 P1 was confirmed resolved for the transfer. CI and nightly on d6d6aae passed with no retries.
+
+**Why it failed:**
+
+- the file-less second tab, which no longer answers offers, still wrote the sender's History entry, with 0 bytes and no route, over the serving tab's correct entry;
+- that tab showed the "reloaded, close this session" alert and the keep-open banner while another tab was sending.
+
+### Resolution of round 5 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| The file-less tab overwrote the History entry with 0 bytes and no route | P1 | Only the serving tab writes History: a tab without the files skips the write while another tab holds the files lock. Writes also never record fewer bytes than an earlier write, and keep the earlier route. The two-tab e2e now reads the stored entry (status completed, bytes equal to the file size, route set). Unit test: the mirroring tab writes nothing |
+| The file-less tab showed a false alert and advice, the keep-open banner, and no progress | P1 | New state `elsewhere`, rechecked every 2 s: TR-4/TR-6 show "Another tab of this browser is sending these files" (`product.tx_other_tab`, EN/VI, E15) instead of the alert. No keep-open banner and no screen hold in that tab. Receiver cards mirror the server records, status and verified bytes included. UX_SCREEN_MAP TR-6. The e2e checks the notice; it failed on the previous code |
+| A requested but not yet granted lock was ignored | P2 | `filesHeldElsewhere` counts pending requests |
+| Receivers can stall when the serving tab has no socket | P2 | Recorded as a known limit in TRANSFER_PROTOCOL §5.1 and the backlog |
+| Deleted ids kept indefinitely; bound untested | P2 | Kept 7 days (longer than any session lives) and at most 500; store test covers the bound and the expiry. The clear-versus-another-tab write race is accepted (the entry is cleared, the id not remembered) |
+| Deleting an entry also blocks later records for that session; undocumented | P2 | Documented in UX_SCREEN_MAP HI-2 and the store comment |
+| No test for the holding side of the lock | P2 | Unit test: a tab with files requests the lock and releases it on dispose |
+| Controllers never disposed in production | P2 | Stated in TRANSFER_PROTOCOL §5.1: the lock lives as long as the tab's controller, which stays for the life of the tab |
+| TESTING_AND_CI outdated for multi.spec | P2 | Updated with the late-receiver and second-tab tests |
+| Report numbers wrong | P2 | Corrected |
+| EN copy nits | P2 | "a new one" / "a new session" |

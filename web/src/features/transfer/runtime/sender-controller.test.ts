@@ -463,4 +463,99 @@ describe('SenderController', () => {
       t.tx.dispose();
     }
   });
+  it('the tab with the files holds the lock until it is disposed', async () => {
+    let released = false;
+    const request = vi.fn((_name: string, cb: () => Promise<void>) => cb().then(() => void (released = true)));
+    Object.defineProperty(globalThis.navigator, 'locks', {
+      configurable: true,
+      value: { request, query: async () => ({ held: [], pending: [] }) },
+    });
+    try {
+      const tx = new SenderController({
+        sessionId: 's1',
+        api: {
+          list: async () => ({ role: 'sender', transfers: [], peers: [] }),
+          turn: async () => {
+            throw new Error('no TURN in this test');
+          },
+        } as unknown as TransfersApi,
+        view: async () =>
+          ({
+            id: 's1',
+            status: 'ACTIVE',
+            files: [{ id: 'f1', name: 'a.bin', size: 4, mime: 'x' }],
+            participants: [],
+            join_window: { state: 'OPEN', ends_at: new Date(Date.now() + 60_000).toISOString() },
+            server_time: new Date().toISOString(),
+          }) as unknown as SessionView,
+        socket: { subscribe: () => () => undefined, send: () => true } as unknown as SessionSocket,
+        history: null,
+        files: [new File(['abcd'], 'a.bin')],
+      });
+      await tx.init();
+      expect(tx.state.hasFiles).toBe(true);
+      expect(request).toHaveBeenCalledWith(filesLockName('s1'), expect.any(Function));
+      expect(released).toBe(false);
+      tx.dispose();
+      await vi.waitFor(() => expect(released).toBe(true));
+    } finally {
+      delete (globalThis.navigator as { locks?: unknown }).locks;
+    }
+  });
+  it('a tab mirroring another tab shows the server progress and never writes History', async () => {
+    Object.defineProperty(globalThis.navigator, 'locks', {
+      configurable: true,
+      value: { query: async () => ({ held: [{ name: filesLockName('s1') }], pending: [] }) },
+    });
+    const adds: unknown[] = [];
+    let emit: (e: SocketEvent) => void = () => undefined;
+    try {
+      const tx = new SenderController({
+        sessionId: 's1',
+        api: {
+          list: async () => ({
+            role: 'sender',
+            transfers: [{ id: 't1', participant_id: 'p1', file_id: 'f1', status: 'CONNECTING', verified_bytes: 0 }],
+            peers: [],
+          }),
+          turn: async () => {
+            throw new Error('no TURN in this test');
+          },
+        } as unknown as TransfersApi,
+        view: async () =>
+          ({
+            id: 's1',
+            status: 'ACTIVE',
+            files: [{ id: 'f1', name: 'a.bin', size: 10, mime: 'x' }],
+            participants: [{ id: 'p1', role: 'receiver', status: 'JOINED', display_name: 'R', platform: 'Web' }],
+            join_window: { state: 'EXPIRED' },
+            server_time: new Date().toISOString(),
+          }) as unknown as SessionView,
+        socket: {
+          subscribe: (fn: (e: SocketEvent) => void) => ((emit = fn), () => undefined),
+          send: () => true,
+        } as unknown as SessionSocket,
+        history: { add: async (e: unknown) => void adds.push(e), list: async () => [] } as unknown as HistoryStore,
+        files: undefined,
+      });
+      await tx.init();
+      expect(tx.state.elsewhere).toBe(true);
+      expect(tx.state.receivers[0]?.status).toBe('connecting'); // not "reconnecting": another tab serves it
+      const upd = (status: string, verified_bytes: number) =>
+        emit({
+          type: 'TRANSFER_UPDATED',
+          transfer: { id: 't1', participant_id: 'p1', file_id: 'f1', status, verified_bytes },
+        } as unknown as SocketEvent);
+      upd('TRANSFERRING', 6);
+      expect(tx.state.receivers[0]).toMatchObject({ status: 'transferring', verified: 6 });
+      upd('COMPLETED', 10);
+      expect(tx.state.receivers[0]).toMatchObject({ status: 'completed', verified: 10 });
+      expect(tx.state.final).toBe('completed');
+      await new Promise((r) => setTimeout(r, 20));
+      expect(adds).toEqual([]); // the tab that served writes History
+      tx.dispose();
+    } finally {
+      delete (globalThis.navigator as { locks?: unknown }).locks;
+    }
+  });
 });

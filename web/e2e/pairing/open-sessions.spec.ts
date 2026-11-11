@@ -72,7 +72,7 @@ test('open-sessions: at the guest cap Create lists the 2 open sessions; Close on
   await dialog.getByRole('button', { name: 'Close session' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(panel.getByTestId('open-sessions-closed')).toHaveText(
-    'Session closed. You can create the new session now.',
+    'Session closed. You can create a new session now.',
   );
   await expect(rows).toHaveCount(1);
   await expect(rows.nth(0)).toContainText('second.pdf + 1 file');

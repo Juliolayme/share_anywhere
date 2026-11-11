@@ -47,7 +47,7 @@ flowchart LR
 | TR-3 | Review selection | `/send` (same route once files are picked, as in the design's `send-review`) | Names, types, sizes, total; **Require approval** toggle (default off) with hint for sensitive files; Cloud option disabled with "Sign in to use Cloud transfer" (Phase 8). When Create hits the open-session cap, the device's open sessions are listed with Open and Close (`docs/ARCHITECTURE.md` §4.5) | Same, Cloud option enabled when consented (Phase 8) | Create session |
 | TR-4 | Session: share and waiting | `/send/session/:id` | QR, six-digit code, and link sharing one join window with a countdown from **10:00**; receiver slots "0 of 5"; Require approval toggle; Stop accepting; keep-open banner and screen-on pill. **Expired state:** code, link, and QR hidden, "Code expired — Create new code" with the Create new code button; joined receivers keep transferring. **Full state:** "Session full", Create new code disabled until a slot frees | Same | Copy link / Create new code |
 | TR-5 | Participants and requests | `/send/session/:id` (panel) | Joined receivers with name, platform, Guest/Signed in badge, security words, Remove, Block; when approval is on, request cards with Approve, Reject, Block; join toasts; Stop accepting nudge (`product.stop_nudge`); protected-mode notice when active | Same | Remove / Approve |
-| TR-6 | Transfer dashboard | `/send/session/:id/transfers` | Per receiver and per file progress, speed, ETA with uncertainty, route badge, pause/resume/retry/cancel, error drawer, aggregate progress, keep-open banner and screen-on pill | Same | Stop all / Close session |
+| TR-6 | Transfer dashboard | `/send/session/:id/transfers` | Per receiver and per file progress, speed, ETA with uncertainty, route badge, pause/resume/retry/cancel, error drawer, aggregate progress, keep-open banner and screen-on pill. **Another tab sends:** a tab of the same browser without the picked files, while another tab holds them, shows "Another tab of this browser is sending these files" (`product.tx_other_tab`) with progress from the server records, no keep-open banner, and never writes History (TR-4 shows the same notice) | Same | Stop all / Close session |
 | TR-7 | Session result | `/send/session/:id/result` | Completed, partially completed, failed, cancelled; per-receiver summary; entry written to local history | Same, plus synced to cloud history when sync is on | Done / New session |
 | TR-8 | Close or expire confirmation | dialog | Confirms ending the session and what happens to running transfers | Same | Close session |
 
@@ -69,7 +69,7 @@ flowchart LR
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
 | HI-1 | History list | `/history` | Local entries only; banner "Stored only on this device" (`common.local`); once accounts exist, a Sign in action to sync history | Sync off: banner `product.turn_on_history_sync`. Sync on: merged local and synced entries with origin device | Search / Open entry |
-| HI-2 | History detail | `/history/:entryId` | Direction, peer, files, transferred bytes vs size, result | Same, plus origin device | Delete entry |
+| HI-2 | History detail | `/history/:entryId` | Direction, peer, files, transferred bytes vs size, result. Deleting an entry (or Clear all) also keeps that session from being recorded again for 7 days, so a live session that later finishes another delivery does not bring it back (Web, `history-store.ts`) | Same, plus origin device | Delete entry |
 
 ## 7. Devices
 

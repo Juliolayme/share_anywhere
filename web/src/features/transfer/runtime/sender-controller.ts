@@ -73,6 +73,11 @@ export interface TxState {
   receivers: TxReceiver[];
   /** False after a reload: the browser no longer gives this tab the picked files. */
   hasFiles: boolean;
+  /**
+   * This tab has no files but another tab of this browser does and serves the receivers (Web Lock): this tab
+   * only mirrors the server records and never writes History.
+   */
+  elsewhere: boolean;
   /** The session result (TR-7), or null while it is not decided: some receiver is still going, or nobody counts yet. */
   final: TxFinal;
   /** The session is no longer live (closed, or ended by its lifetime): no new receivers, nothing to close. */
@@ -217,7 +222,9 @@ export async function filesHeldElsewhere(sessionId: string): Promise<boolean> {
   if (!l?.query) return false;
   try {
     const state = await l.query();
-    return (state.held ?? []).some((h) => h.name === filesLockName(sessionId));
+    // A request not granted yet counts too: that tab has the files and is about to hold the lock.
+    const name = filesLockName(sessionId);
+    return [...(state.held ?? []), ...(state.pending ?? [])].some((h) => h.name === name);
   } catch {
     return false;
   }
@@ -230,6 +237,7 @@ export class SenderController extends Observable<TxState> {
   private gone = new Set<string>();
   /** Releases the files Web Lock (filesLockName) held while this tab has the picked files. */
   private releaseFilesLock: (() => void) | undefined;
+  private lockTicks = 0;
   private transfers = new Map<string, Transfer>();
   private downTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private resuming = new Set<string>();
@@ -270,6 +278,7 @@ export class SenderController extends Observable<TxState> {
       hasFiles: !!d.files,
       final: null,
       ended: false,
+      elsewhere: false,
       windowEndsAt: null,
       serverOffset: 0,
     });
@@ -305,6 +314,7 @@ export class SenderController extends Observable<TxState> {
           () => new Promise<void>((release) => (this.releaseFilesLock = release)),
         )
         .catch(() => undefined);
+    if (!this.state_.hasFiles) this.update({ elsewhere: await filesHeldElsewhere(this.d.sessionId) });
     this.unsub = this.d.socket.subscribe((e) => this.onSocket(e));
     await this.refresh(view);
     this.sampler = setInterval(() => this.sample(), 500);
@@ -351,7 +361,8 @@ export class SenderController extends Observable<TxState> {
         // Without a live channel the server record is the only truth (after a reload, or events missed while
         // the socket was down): take a pause from it, leave a pause it no longer has, and show an active record
         // with nobody connected as reconnecting, which starts the reconnect window.
-        if (!removed && server && !this.live(p.id) && !server.match(/completed|failed|cancelled/)) {
+        if (this.state_.elsewhere && !removed && server) status = server;
+        else if (!removed && server && !this.live(p.id) && !server.match(/completed|failed|cancelled/)) {
           if (server === 'paused') status = 'paused';
           else if (status === 'paused' || status === 'transferring' || status === 'verifying') status = 'reconnecting';
         }
@@ -515,6 +526,14 @@ export class SenderController extends Observable<TxState> {
       const mine = [...this.transfers.values()].filter((x) => x.participant_id === t.participant_id);
       const server = statusFromServer(mine.map((x) => x.status));
       const r = this.state_.receivers.find((x) => x.participantId === t.participant_id);
+      if (r && server && this.state_.elsewhere && !txExcluded(r.status)) {
+        // Another tab serves this receiver: show what the server records say, progress included.
+        const index = this.state_.files.find((f) => f.fileId === t.file_id)?.index;
+        const perFile = r.perFile.map((n, i) => (i === index ? Math.max(n, t.verified_bytes) : n));
+        this.patch(r.participantId, { status: server, perFile, verified: perFile.reduce((a, b) => a + b, 0) });
+        this.checkFinal();
+        return;
+      }
       if (r && server && ['completed', 'failed', 'cancelled'].includes(server) && !txExcluded(r.status))
         this.patch(r.participantId, { status: server });
       if (server !== 'paused') this.resuming.delete(t.participant_id);
@@ -726,6 +745,14 @@ export class SenderController extends Observable<TxState> {
   }
 
   private sample(): void {
+    // A tab without the files keeps checking whether another tab serves them (it may close, or open later).
+    if (!this.state_.hasFiles && ++this.lockTicks % 4 === 0)
+      void filesHeldElsewhere(this.d.sessionId).then((v) => {
+        if (v !== this.state_.elsewhere) {
+          this.update({ elsewhere: v });
+          void this.refresh();
+        }
+      });
     const now = performance.now();
     for (const [pid, p] of this.peers) {
       const r = this.state_.receivers.find((x) => x.participantId === pid);
@@ -783,10 +810,21 @@ export class SenderController extends Observable<TxState> {
     // and reloads. An entry the user deleted is not brought back: the History store refuses it.
     this.historyChain = this.historyChain
       .then(async () => {
+        // The tab that serves the receivers writes History; a tab that only mirrors them would record no bytes.
+        if (!this.state_.hasFiles && (await filesHeldElsewhere(this.d.sessionId))) return;
         const prev = (await history.list()).find((e) => e.id === entry.id);
         const startedAt = this.startedAt ?? prev?.startedAt;
+        // Never record less than an earlier write did (after a reload this tab knows only the server's bytes).
+        const files = entry.files?.map((f, i) => ({
+          ...f,
+          transferredBytes: Math.max(f.transferredBytes ?? 0, prev?.files?.[i]?.transferredBytes ?? 0),
+        }));
+        const route = entry.route ?? prev?.route;
         await history.add({
           ...entry,
+          transferredBytes: Math.max(entry.transferredBytes ?? 0, prev?.transferredBytes ?? 0),
+          ...(files ? { files } : {}),
+          ...(route ? { route } : {}),
           createdAt: prev?.createdAt ?? entry.createdAt,
           ...(startedAt ? { startedAt } : {}),
         });

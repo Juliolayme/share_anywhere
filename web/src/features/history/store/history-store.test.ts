@@ -165,3 +165,16 @@ describe('deleted entries stay deleted', () => {
     expect((await store.list()).map((e) => e.id)).toEqual(['a']);
   });
 });
+
+describe('deleted-id memory bounds', () => {
+  it('keeps at most 500 ids and forgets them after seven days', async () => {
+    const store = openHistoryStore(new IDBFactory());
+    for (let i = 0; i < 510; i++) await store.remove(`id-${i}`);
+    const kept = JSON.parse(localStorage.getItem('sa.pref.history.removed') ?? '{}') as Record<string, number>;
+    expect(Object.keys(kept)).toHaveLength(500);
+    // Seven days later the memory has expired: the id can be recorded again.
+    localStorage.setItem('sa.pref.history.removed', JSON.stringify({ old: Date.now() - 8 * DAY }));
+    await store.add(entry('old', 0));
+    expect((await store.list()).map((e) => e.id)).toEqual(['old']);
+  });
+});

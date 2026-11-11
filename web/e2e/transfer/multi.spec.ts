@@ -228,9 +228,30 @@ test('a second tab of the sender on the same session leaves the transfer to the 
   const second = track(await sender.context().newPage());
   await second.goto(`/send/session/${s.id}`);
   await expect(second.getByTestId('session-code')).toBeVisible();
+  // The second tab knows another tab sends the files (no "reloaded, start again" alert, no keep-open banner).
+  await expect(second.getByText('Another tab of this browser is sending these files', { exact: false })).toBeVisible();
+  await expect(second.getByText('This tab no longer has the files', { exact: false })).toHaveCount(0);
   const rx = await receiver(browser, browserName, 'Receiver Tabs');
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
   await expect(result(rx)).toHaveAttribute('data-result', 'completed', { timeout: 90_000 });
   expect(await downloadAndHash(rx, name)).toBe(f.sha256);
+  // History records what the tab with the files sent; the mirroring tab does not overwrite it.
+  const entry = async () =>
+    sender.evaluate(
+      (id) =>
+        new Promise<{ status?: string; transferredBytes?: number; route?: string } | null>((resolve) => {
+          const req = indexedDB.open('share-anywhere');
+          req.onsuccess = () => {
+            const get = req.result.transaction('history').objectStore('history').get(`tx:${id}`);
+            get.onsuccess = () => resolve((get.result as never) ?? null);
+            get.onerror = () => resolve(null);
+          };
+          req.onerror = () => resolve(null);
+        }),
+      s.id,
+    );
+  await expect.poll(entry, { timeout: 15_000 }).toMatchObject({ status: 'completed', transferredBytes: f.size });
+  await second.waitForTimeout(3_000); // give the mirroring tab time to (not) write
+  expect(await entry()).toMatchObject({ status: 'completed', transferredBytes: f.size, route: expect.any(String) });
 });

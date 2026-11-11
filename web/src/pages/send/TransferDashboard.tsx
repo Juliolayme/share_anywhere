@@ -108,7 +108,7 @@ export default function TransferDashboard() {
   const windowOpen = !!s.windowEndsAt && Date.parse(s.windowEndsAt) > now + s.serverOffset;
   // A tab that lost its picked files (after a reload) cannot send, so its transfers do not hold the screen.
   // Held on TR-7 too while the window is open: a late receiver may still join (docs/ARCHITECTURE.md §7.1).
-  const holdForWindow = windowOpen && !s.ended;
+  const holdForWindow = windowOpen && !s.ended && !s.elsewhere;
   const pill = useKeepAwake((s.hasFiles && active) || holdForWindow);
   const [error, setError] = useState<string | null>(null);
   // Where Close leads: the session screen, or a new transfer (TR-7 "New transfer" closes a finished session).
@@ -183,7 +183,7 @@ export default function TransferDashboard() {
 
   return (
     <Screen id={screen}>
-      {(!s.final || holdForWindow) && <KeepOpenBanner state={pill} />}
+      {!s.elsewhere && (!s.final || holdForWindow) && <KeepOpenBanner state={pill} />}
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-[6px]">
@@ -224,7 +224,12 @@ export default function TransferDashboard() {
           />
         )}
         {error && <Banner tone="danger" role="alert" title={error} />}
-        {!s.hasFiles && s.loaded && !s.final && <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />}
+        {!s.hasFiles && s.loaded && !s.final && s.elsewhere && (
+          <Banner tone="info" role="status" title={t('product.tx_other_tab')} />
+        )}
+        {!s.hasFiles && s.loaded && !s.final && !s.elsewhere && (
+          <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />
+        )}
         {s.final && <FinalBanner final={s.final} onNewTransfer={newTransfer} busy={closing} />}
         <Card className="flex flex-col gap-3 px-[20px] py-[18px]" as="section">
           <div className="flex flex-wrap items-baseline justify-between gap-3">

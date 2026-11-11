@@ -254,14 +254,15 @@
     "open_sessions_p": "This device can keep {max} sessions open at once. Close one you no longer need, then create the new one.",
     "open_sessions_loading": "Loading your open sessions…",
     "open_sessions_error": "Couldn’t load your open sessions.",
-    "open_sessions_empty": "No sessions are open now. You can create the new one.",
+    "open_sessions_empty": "No sessions are open now. You can create a new one.",
     "open_session_window_open": "Code open until {time}",
     "open_session_window_expired": "Code expired",
     "open_session_window_full": "Session full",
     "open_session_open_named": "Open {name}",
     "open_session_close_named": "Close {name}",
-    "open_session_closed": "Session closed. You can create the new session now.",
-    "open_session_meta": "Started {time} · {joined}/{max} receivers · {window}"
+    "open_session_closed": "Session closed. You can create a new session now.",
+    "open_session_meta": "Started {time} · {joined}/{max} receivers · {window}",
+    "tx_other_tab": "Another tab of this browser is sending these files. Keep that tab open until the transfer ends."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -524,6 +525,7 @@
     "open_session_open_named": "Mở {name}",
     "open_session_close_named": "Đóng {name}",
     "open_session_closed": "Đã đóng phiên. Bây giờ bạn có thể tạo phiên mới.",
-    "open_session_meta": "Bắt đầu {time} · {joined}/{max} người nhận · {window}"
+    "open_session_meta": "Bắt đầu {time} · {joined}/{max} người nhận · {window}",
+    "tx_other_tab": "Một thẻ khác của trình duyệt này đang gửi các tệp này. Hãy giữ thẻ đó mở cho đến khi truyền xong."
   }
 }

@@ -96,7 +96,8 @@ export default function SessionPage() {
   const [, txState] = useSender(id, live && view?.role === 'sender');
   const transferring = txState.receivers.some((r) => txActive(r.status));
   // The screen stays on while the join window is open or transfers run (docs/ARCHITECTURE.md §7.1).
-  const pill = useKeepAwake(windowOpen || (txState.hasFiles && transferring));
+  // A tab that only mirrors another tab's transfer (txState.elsewhere) leaves the screen to that tab.
+  const pill = useKeepAwake((windowOpen && !txState.elsewhere) || (txState.hasFiles && transferring));
 
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -196,8 +197,13 @@ export default function SessionPage() {
 
   return (
     <Screen id={screenId}>
-      <KeepOpenBanner state={pill} />
-      {txState.loaded && !txState.hasFiles && <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />}
+      {!txState.elsewhere && <KeepOpenBanner state={pill} />}
+      {txState.loaded && !txState.hasFiles && txState.elsewhere && (
+        <Banner tone="info" role="status" title={t('product.tx_other_tab')} />
+      )}
+      {txState.loaded && !txState.hasFiles && !txState.elsewhere && (
+        <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />
+      )}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <span className="text-caption font-semibold text-fg-2">

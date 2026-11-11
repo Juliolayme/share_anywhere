@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -105,7 +106,12 @@ private fun UiText.text() = str(id, *args.toList().toTypedArray())
  * capture status, the timeline and the item sheet. [syncRequest] runs one Sync (the notification's action).
  */
 @Composable
-fun ClipboardScreen(actions: ClipboardActions, syncRequest: Int = 0, viewModel: ClipboardViewModel = hiltViewModel()) {
+fun ClipboardScreen(
+    actions: ClipboardActions,
+    syncRequest: Int = 0,
+    onSyncHandled: () -> Unit = {},
+    viewModel: ClipboardViewModel = hiltViewModel()
+) {
     val account by viewModel.accountState.collectAsStateWithLifecycle()
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().testTag(ScreenIds.CLIPBOARD)) {
@@ -128,7 +134,7 @@ fun ClipboardScreen(actions: ClipboardActions, syncRequest: Int = 0, viewModel: 
             }
             account.keys != KeyStatus.Ready -> KeyStep(account, actions, onRetry = { viewModel.retryKeys() })
             !ui.active -> SkeletonList(4, stringResource(R.string.product_cb_loading), Modifier.padding(SaTokens.Space.S4))
-            else -> ClipboardHome(ui, actions, syncRequest, viewModel)
+            else -> ClipboardHome(ui, actions, syncRequest, onSyncHandled, viewModel)
         }
     }
 }
@@ -254,20 +260,32 @@ private fun KeyStep(s: AccountState, actions: ClipboardActions, onRetry: () -> U
 /** CB-4 for a ready device. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ClipboardHome(ui: ClipboardUi, actions: ClipboardActions, syncRequest: Int, viewModel: ClipboardViewModel) {
+private fun ClipboardHome(
+    ui: ClipboardUi,
+    actions: ClipboardActions,
+    syncRequest: Int,
+    onSyncHandled: () -> Unit,
+    viewModel: ClipboardViewModel
+) {
     val snap = ui.snapshot
     val syncing by viewModel.syncing.collectAsStateWithLifecycle()
     val outcome by viewModel.outcome.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(Filter.All) }
     var inline by rememberSaveable { mutableStateOf<Int?>(null) }
-    var sensitive by rememberSaveable { mutableStateOf<String?>(null) }
+    var sensitive by remember { mutableStateOf<String?>(null) }
     var paste by rememberSaveable { mutableStateOf(false) }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
     val snackbar = LocalSnackbar.current
     val context = LocalContext.current
-    LaunchedEffect(syncRequest) { if (syncRequest > 0) viewModel.syncNow() }
+    // One Sync per notification tap: the request is consumed, so coming back to this tab never reads the clipboard again.
+    LaunchedEffect(syncRequest) {
+        if (syncRequest > 0) {
+            onSyncHandled()
+            viewModel.syncNow()
+        }
+    }
     LaunchedEffect(outcome) {
         when (val o = outcome ?: return@LaunchedEffect) {
             is SyncOutcome.Toast -> snackbar.showSnackbar(
@@ -784,7 +802,7 @@ private fun strCount(n: Int) = str(R.string.product_cb_chars, "n" to n)
 /** Paste fallback: Android did not share the clipboard (the window had no focus yet). */
 @Composable
 private fun PasteDialog(onDismiss: () -> Unit, onSend: (String) -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
+    var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.product_cb_paste_h)) },

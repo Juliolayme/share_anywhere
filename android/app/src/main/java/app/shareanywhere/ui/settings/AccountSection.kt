@@ -160,11 +160,11 @@ private fun GuestAccount(actions: AccountActions) {
         }
     }
     SaCard {
-        DisabledRow(stringResource(R.string.product_history_sync), stringResource(R.string.android_yy_s_guest_p))
+        DisabledRow(stringResource(R.string.product_history_sync), stringResource(R.string.product_history_signin))
         RowDivider()
-        DisabledRow(stringResource(R.string.product_manage_devices), stringResource(R.string.android_yy_s_guest_p))
+        DisabledRow(stringResource(R.string.product_manage_devices), stringResource(R.string.android_yy_dv_sync_p))
         RowDivider()
-        DisabledRow(stringResource(R.string.common_s_cloud), stringResource(R.string.android_yy_s_guest_p))
+        DisabledRow(stringResource(R.string.common_s_cloud), stringResource(R.string.product_cloud_later))
     }
 }
 

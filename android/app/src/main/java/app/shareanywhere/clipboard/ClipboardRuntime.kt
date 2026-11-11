@@ -94,6 +94,8 @@ class ClipboardRuntime(
     private var namesAt = 0L
     private val notified = HashSet<String>()
     private var resumed = false
+
+    @Volatile private var windowFocused = false
     private var listener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private val manager by lazy { context.getSystemService(ClipboardManager::class.java) }
 
@@ -293,6 +295,7 @@ class ClipboardRuntime(
 
     /** The window gained input focus: Android now allows a read, so what was copied elsewhere is captured once. */
     fun onWindowFocus(hasFocus: Boolean) {
+        windowFocused = hasFocus
         if (hasFocus && _listening.value) captureCurrent()
     }
 
@@ -322,13 +325,8 @@ class ClipboardRuntime(
         val clip = manager.primaryClip
         val desc = clip?.description
         if (clip == null || clip.itemCount == 0 || desc == null || !(desc.hasMimeType("text/*"))) {
-            if (clip == null && !manager.hasPrimaryClip()) {
-                ClipRead.Empty
-            } else if (clip == null) {
-                ClipRead.Refused
-            } else {
-                ClipRead.Empty
-            }
+            // Android 10+ answers a read without input focus with no clip at all: a refusal (paste fallback).
+            if (clip == null && Build.VERSION.SDK_INT >= 29 && !windowFocused) ClipRead.Refused else ClipRead.Empty
         } else {
             val text = clip.getItemAt(0).coerceToText(context)?.toString().orEmpty()
             val flagged = desc.extras?.getBoolean(EXTRA_IS_SENSITIVE, false) == true

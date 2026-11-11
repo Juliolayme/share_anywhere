@@ -27,6 +27,9 @@ interface Sealer {
 
     /** Throws [CryptoException] `decrypt_failed` when the blob cannot be opened (key invalidated, foreign data). */
     fun open(blob: ByteArray, aad: ByteArray): ByteArray
+
+    /** Destroys the sealing key, so sealed blobs left anywhere can never be opened again (wipe). */
+    fun destroy() {}
 }
 
 /** AES-256-GCM with a non-exportable AndroidKeyStore key (docs/CLIPBOARD_PROTOCOL.md §1.9, PRD §7.5). */
@@ -45,6 +48,14 @@ class KeystoreSealer(private val alias: String = "sa_account_keys_v1") : Sealer 
                 .build()
         )
         return g.generateKey()
+    }
+
+    override fun destroy() {
+        try {
+            java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias)
+        } catch (_: GeneralSecurityException) {
+        } catch (_: java.io.IOException) {
+        }
     }
 
     override fun seal(plaintext: ByteArray, aad: ByteArray): ByteArray {
@@ -106,7 +117,16 @@ class AccountKeyStore(
         }
     }
 
-    suspend fun clear() = lock.withLock { withContext(Dispatchers.IO) { file.delete() } }
+    /** Erases the file and the Keystore key that sealed it (a later account gets a fresh key). */
+    suspend fun clear() = lock.withLock {
+        withContext(Dispatchers.IO) {
+            file.delete()
+            sealer.destroy()
+        }
+    }
+
+    /** Account keys from an earlier session are still on disk. */
+    suspend fun exists(): Boolean = withContext(Dispatchers.IO) { file.baseFile.exists() }
 
     /** The keys of [accountId]; a file for another account is erased first. */
     fun forAccount(accountId: String): KeyStore = object : KeyStore {

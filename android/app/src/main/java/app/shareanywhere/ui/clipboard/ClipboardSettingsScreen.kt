@@ -49,6 +49,21 @@ fun ClipboardSettingsScreen(onBack: () -> Unit, onOpenClipboard: () -> Unit, vie
     var confirmClear by rememberSaveable { mutableStateOf(false) }
     val settings = ui.snapshot.settings
     val ready = ui.active && settings != null
+    val outcome by viewModel.outcome.collectAsStateWithLifecycle()
+    val snackbar = app.shareanywhere.ui.nav.LocalSnackbar.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Save and Clear report here too (a failure offline, or "cleared on all devices").
+    androidx.compose.runtime.LaunchedEffect(outcome) {
+        val o = outcome ?: return@LaunchedEffect
+        val text =
+            when (o) {
+                is SyncOutcome.Toast -> o.text
+                is SyncOutcome.Inline -> o.text
+                else -> null
+            }
+        viewModel.outcomeShown()
+        if (text != null) snackbar.showSnackbar(context.getString(text.id))
+    }
     Column(Modifier.fillMaxSize().testTag(ScreenIds.CLIPBOARD_SETTINGS)) {
         FlowTopBar(
             stringResource(R.string.product_cb_settings_link),
@@ -91,7 +106,8 @@ fun ClipboardSettingsScreen(onBack: () -> Unit, onOpenClipboard: () -> Unit, vie
                         stringResource(R.string.android_yy_s_skip_p) + "\n" + stringResource(R.string.product_cb_skip_disclaimer),
                         checked = settings?.sensitiveSkip ?: true,
                         onCheckedChange = { on -> if (settings != null) viewModel.saveSettings(settings.copy(sensitiveSkip = on)) },
-                        modifier = Modifier.testTag("cbs.skip")
+                        modifier = Modifier.testTag("cbs.skip"),
+                        enabled = ready
                     )
                     RowDivider()
                     SwitchRow(
@@ -99,7 +115,8 @@ fun ClipboardSettingsScreen(onBack: () -> Unit, onOpenClipboard: () -> Unit, vie
                         description = stringResource(R.string.product_cb_pause_p),
                         checked = settings?.paused ?: false,
                         onCheckedChange = { on -> if (settings != null) viewModel.saveSettings(settings.copy(paused = on)) },
-                        modifier = Modifier.testTag("cbs.pause")
+                        modifier = Modifier.testTag("cbs.pause"),
+                        enabled = ready
                     )
                     RowDivider()
                     SettingsRow(

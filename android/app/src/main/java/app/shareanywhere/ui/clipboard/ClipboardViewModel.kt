@@ -63,7 +63,7 @@ fun outcomeOf(r: CaptureResult, text: String): SyncOutcome? = when (r) {
     CaptureResult.Duplicate -> SyncOutcome.Inline(UiText(R.string.product_cb_duplicate))
     CaptureResult.Empty -> SyncOutcome.Inline(UiText(R.string.product_cb_empty_clip))
     CaptureResult.TooLarge -> SyncOutcome.Inline(UiText(R.string.product_cb_too_large))
-    CaptureResult.Paused -> SyncOutcome.Inline(UiText(R.string.product_cb_resume))
+    CaptureResult.Paused -> SyncOutcome.Inline(UiText(R.string.phrases_resume_sync_first))
     CaptureResult.NotReady -> SyncOutcome.Inline(UiText(R.string.product_error_generic))
 }
 

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
+import androidx.room.withTransaction
 import app.shareanywhere.account.AccountDataHooks
 import app.shareanywhere.account.AccountManager
 import app.shareanywhere.account.keys.AccountKeyStore
@@ -223,7 +224,7 @@ object AppModule {
         Room.databaseBuilder(context, ClipboardDatabase::class.java, ClipboardDatabase.NAME).build()
 
     @Provides @Singleton
-    fun clipboardStore(db: ClipboardDatabase): ClipboardStore = ClipboardStore(db.clipboard())
+    fun clipboardStore(db: ClipboardDatabase): ClipboardStore = ClipboardStore(db.clipboard()) { block -> db.withTransaction { block() } }
 
     @Provides @Singleton
     fun clipboardApi(client: ApiClient, identity: IdentityManager): ClipboardEndpoints = ClipboardApi(client, identity)

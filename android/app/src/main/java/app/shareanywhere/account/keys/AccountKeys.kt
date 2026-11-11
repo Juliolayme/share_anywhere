@@ -369,6 +369,9 @@ class AccountKeys(private val api: AccountApi, private val keys: AccountKeyStore
         }
     }
 
+    /** Something of an account is still on the device (keys or key bookkeeping). */
+    suspend fun leftover(): Boolean = keys.exists() || meta.owner() != null || meta.excluded().isNotEmpty()
+
     /** Everything this device keeps for the account (sign-out, another account, the session ended). */
     suspend fun wipe() {
         runCatching { keys.clear() }

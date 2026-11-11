@@ -93,6 +93,11 @@ class AccountManager(
                     // The account session ended here or elsewhere: nothing of that account stays on the device.
                     wipeAccountData()
                 }
+                if (c != null && c.acct == null && keys.leftover()) {
+                    // The account session ended while the app was not running (revoked elsewhere, reset, expiry): a
+                    // guest start erases what that account left on the device (CLIPBOARD_PROTOCOL §2.9, §2.11).
+                    wipeAccountData()
+                }
                 if (c?.acct == null) {
                     _state.value = AccountState(deviceId = c?.sub)
                     history.syncHandler = null

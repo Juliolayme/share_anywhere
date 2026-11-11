@@ -82,6 +82,7 @@ fun AppNav(
     pendingRoute: String? = null,
     onPendingRouteHandled: () -> Unit = {},
     clipboardSync: Int = 0,
+    onClipboardSyncHandled: () -> Unit = {},
     navController: NavHostController = rememberNavController()
 ) {
     // Fixed for the life of the graph: finishing Welcome navigates instead of changing the start destination.
@@ -222,7 +223,8 @@ fun AppNav(
                                 phrase = { navController.navigate(Routes.keyPair(flow = false, phrase = true)) },
                                 settings = { navController.navigate(ScreenIds.CLIPBOARD_SETTINGS) }
                             ),
-                            syncRequest = clipboardSync
+                            syncRequest = clipboardSync,
+                            onSyncHandled = onClipboardSyncHandled
                         )
                     }
                     composable(ScreenIds.CLIPBOARD_SETTINGS) {

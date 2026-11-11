@@ -191,7 +191,11 @@ data class StoreSnapshot(
  * generation: an engine started before it can never write again, so a request that finishes after the wipe leaves no
  * record behind.
  */
-open class ClipboardStore(private val dao: ClipboardDao) {
+open class ClipboardStore(
+    private val dao: ClipboardDao,
+    /** Runs a write's DAO calls as one Room transaction (the app passes `withTransaction`; JVM tests run them directly). */
+    private val transaction: suspend (suspend () -> Unit) -> Unit = { it() }
+) {
     private val lock = Mutex()
     private var gen = 0L
 
@@ -207,7 +211,7 @@ open class ClipboardStore(private val dao: ClipboardDao) {
     /** Runs [block] unless the store was wiped since [generation]; false when it was. */
     open suspend fun write(generation: Long, block: suspend (ClipboardDao) -> Unit): Boolean = lock.withLock {
         if (generation != gen) return false
-        block(dao)
+        transaction { block(dao) }
         true
     }
 

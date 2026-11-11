@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -106,6 +108,7 @@ fun KeySetupScreen(onBack: () -> Unit, onDone: () -> Unit, onKeysExist: () -> Un
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .toggleable(value = saved, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = { saved = it })
                     .testTag("key-setup.saved"),
                 verticalAlignment = Alignment.CenterVertically
@@ -254,7 +257,8 @@ private fun PairingPanel(pair: PairState, onNewCode: () -> Unit, onExpired: () -
 
 @Composable
 private fun PhraseEntry(viewModel: AccountViewModel, onDone: () -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
+    // Plain remember: the phrase never goes into the saved-instance state.
+    var text by remember { mutableStateOf("") }
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     SecureWindow()

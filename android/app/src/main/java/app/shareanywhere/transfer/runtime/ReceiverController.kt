@@ -447,8 +447,8 @@ class ReceiverController(private val d: ReceiverDeps) {
                         override fun onResumed(byPeer: Boolean) = update { it.copy(phase = RxPhase.Transferring) }
 
                         override fun onError(code: String, fatal: Boolean, message: String?) {
-                            // Code and the engine's short reason only (never tokens, names or file contents).
-                            android.util.Log.w("SA-TRANSFER", "receiver error code=$code fatal=$fatal reason=${message?.take(160)}")
+                            // The error code only: messages can carry file paths or a peer's text.
+                            android.util.Log.w("SA-TRANSFER", "receiver error code=$code fatal=$fatal")
                             scope.launch { connError(code, fatal) }
                         }
                     }

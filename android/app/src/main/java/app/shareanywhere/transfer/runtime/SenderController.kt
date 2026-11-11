@@ -607,8 +607,8 @@ class SenderController(private val d: SenderDeps) {
                         override fun onResumed(byPeer: Boolean) = patch(pid) { it.copy(status = TxStatus.Transferring) }
 
                         override fun onError(code: String, fatal: Boolean, message: String?) {
-                            // Code and the engine's short reason only (never tokens, names or file contents).
-                            android.util.Log.w("SA-TRANSFER", "sender error code=$code fatal=$fatal reason=${message?.take(160)}")
+                            // The error code only: messages can carry file paths or a peer's text.
+                            android.util.Log.w("SA-TRANSFER", "sender error code=$code fatal=$fatal")
                             connError(pid, code, fatal)
                         }
                     }

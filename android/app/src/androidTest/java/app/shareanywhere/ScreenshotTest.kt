@@ -3,10 +3,13 @@ package app.shareanywhere
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -45,6 +48,91 @@ class ScreenshotTest {
 
     @Test
     fun largeFont() = capture("light-font130", ThemeMode.LIGHT, 1.3f)
+
+    @Test
+    fun lightSignedInAndSession() = captureWithBackend("light", ThemeMode.LIGHT, 1.0f)
+
+    @Test
+    fun darkSignedInAndSession() = captureWithBackend("dark", ThemeMode.DARK, 1.0f)
+
+    @Test
+    fun largeFontSignedInAndSession() = captureWithBackend("light-font130", ThemeMode.LIGHT, 1.3f)
+
+    /**
+     * Screens that need the CI backend: the sender's session and its expired state, the receiver's preview and save
+     * screens, and the account flow (trust, key setup, checklist) with the signed-in Clipboard, Clipboard settings,
+     * Devices and Settings. The key-setup phrase screen sets FLAG_SECURE, so its capture may come out blank by design.
+     */
+    private fun captureWithBackend(variant: String, theme: ThemeMode, fontScale: Float) {
+        Backend.assume()
+        Backend.markWelcomed()
+        device.executeShellCommand("settings put system font_scale $fontScale")
+        val entry = Backend.entry()
+        runBlocking { entry.settingsRepository().setTheme(theme) }
+        val mine =
+            runBlocking { entry.sessionsApi().create(listOf(app.shareanywhere.data.api.FileInput("notes.txt", 12, "text/plain")), false) }
+        val intent = android.content.Intent(androidx.test.core.app.ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+            .setAction(app.shareanywhere.notify.Notifier.ACTION_OPEN_SESSION)
+            .putExtra(app.shareanywhere.notify.Notifier.EXTRA_SESSION_ID, mine.id)
+        val peer = Backend.Peer.create()
+        val theirs =
+            runBlocking { peer.api.create(listOf(app.shareanywhere.data.api.FileInput("photo.jpg", 2_400_000, "image/jpeg")), false) }
+        ActivityScenario.launch<MainActivity>(intent).use {
+            compose.dumpOnFailure {
+                compose.waitForTag(ScreenIds.SESSION, 30_000)
+                save(variant, ScreenIds.SESSION)
+                runBlocking { entry.sessionsApi().close(mine.id) }
+
+                // Account flow from Settings, then the signed-in tabs.
+                device.pressBack()
+                compose.waitForTag(ScreenIds.HOME, 15_000)
+                compose.onNodeWithTag("nav.${ScreenIds.SETTINGS}").performClick()
+                compose.waitForTag("settings.create", 15_000)
+                compose.onNodeWithTag("settings.create").tap()
+                compose.waitForTag(ScreenIds.SIGNUP)
+                compose.onNodeWithTag("signup.email").performTextInput("shot-${java.util.UUID.randomUUID().toString().take(8)}@example.com")
+                compose.onNodeWithTag("signup.password").performTextInput("Sa-shot-${java.util.UUID.randomUUID().toString().take(6)}-pw!")
+                compose.onNodeWithTag("signup.submit").tap()
+                compose.waitForTag(ScreenIds.TRUST, 30_000)
+                save(variant, ScreenIds.TRUST)
+                compose.onNodeWithTag("trust.continue").tap()
+                compose.waitForTag("key-setup.words", 120_000)
+                save(variant, ScreenIds.KEY_SETUP)
+                compose.onNodeWithTag("key-setup.saved").tap()
+                compose.onNodeWithTag("key-setup.continue").tap()
+                compose.waitForTag(ScreenIds.CHECKLIST, 60_000)
+                save(variant, ScreenIds.CHECKLIST)
+                compose.onNodeWithTag("checklist.clipboard").tap()
+                compose.waitForTag("clipboard.home", 60_000)
+                save(variant, "${ScreenIds.CLIPBOARD}-signed-in")
+                compose.onNodeWithTag("clipboard.home").performScrollToNode(hasTestTag("clipboard.settings-link"))
+                compose.onNodeWithTag("clipboard.settings-link").tap()
+                compose.waitForTag(ScreenIds.CLIPBOARD_SETTINGS)
+                save(variant, ScreenIds.CLIPBOARD_SETTINGS)
+                device.pressBack()
+                for (route in listOf(ScreenIds.DEVICES, ScreenIds.SETTINGS)) {
+                    compose.onNodeWithTag("nav.$route").performClick()
+                    compose.waitForTag(route)
+                    save(variant, "$route-signed-in")
+                }
+
+                // Receive: preview and the save screen.
+                compose.onNodeWithTag("nav.${ScreenIds.HOME}").performClick()
+                compose.waitForTag(ScreenIds.HOME, 15_000)
+                compose.onNodeWithTag("home.receive").performClick()
+                compose.onNodeWithTag("receive.tab-code").performClick()
+                compose.waitForTag(ScreenIds.RECEIVE_CODE)
+                compose.onNodeWithTag("receive.code-input").performTextInput(theirs.code!!)
+                compose.onNodeWithTag("receive.continue").performClick()
+                compose.waitForTag(ScreenIds.RX_PREVIEW, 30_000)
+                save(variant, ScreenIds.RX_PREVIEW)
+                compose.onNodeWithTag("preview.receive").tap()
+                compose.waitForTag("rx.start", 30_000)
+                save(variant, ScreenIds.RX_SAVE)
+                runBlocking { runCatching { peer.api.close(theirs.id) } }
+            }
+        }
+    }
 
     private fun save(variant: String, name: String) {
         compose.waitForIdle()

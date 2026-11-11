@@ -35,6 +35,9 @@ private class FakeServer(private val clock: () -> Long) : ClipboardEndpoints {
     val deletes = ArrayList<String>()
     var creates = 0
 
+    /** Creates reach the server but their answers are lost (a dropped connection) until this is turned off. */
+    var loseResponses = false
+
     private fun iso(ms: Long) = Instant.ofEpochMilli(ms).toString()
 
     private fun net() {
@@ -76,7 +79,10 @@ private class FakeServer(private val clock: () -> Long) : ClipboardEndpoints {
         if (settings.paused) throw ApiException(409, "clipboard_paused", "")
         if (req.keyVersion != keyVersion) throw ApiException(409, "key_version_conflict", "")
         val existing = log.lastOrNull { it.eventId == req.eventId }
-        if (existing != null) return ClipboardEventCreated(existing.seq, existing.createdAt, existing.expiresAt)
+        if (existing != null) {
+            if (loseResponses) throw NetworkException(IOException("response lost"))
+            return ClipboardEventCreated(existing.seq, existing.createdAt, existing.expiresAt)
+        }
         val e = ClipboardEvent(
             req.eventId,
             ++seq,
@@ -92,6 +98,7 @@ private class FakeServer(private val clock: () -> Long) : ClipboardEndpoints {
             false
         )
         log += e
+        if (loseResponses) throw NetworkException(IOException("response lost"))
         return ClipboardEventCreated(e.seq, e.createdAt, e.expiresAt)
     }
 
@@ -427,6 +434,45 @@ class ClipboardEngineTest {
         second.start()
         assertTrue(second.state.value.items.isEmpty())
         second.stop()
+    }
+
+    @Test
+    fun anItemDeletedElsewhereWhileItsAnswerWasLostNeverComesBack() = runTest {
+        val s = Setup(this)
+        val e = engine(s)
+        e.start()
+        s.server.loseResponses = true
+        val id = (e.capture("lost answer", CaptureSource.MANUAL) as CaptureResult.Queued).id
+        // Another device deletes it; the cursor carries the tombstone while it is still queued here.
+        s.server.deleteOnServer(id)
+        s.server.loseResponses = false
+        e.refresh()
+        advanceTimeBy(ClipboardEngine.RETRY_MIN_MS + 1)
+        advanceUntilIdle()
+        assertTrue("dropped from the queue", s.dao.queue.isEmpty())
+        assertTrue("never shown again", e.state.value.items.isEmpty())
+        assertTrue(s.server.live().isEmpty())
+        e.stop()
+    }
+
+    @Test
+    fun deletingAQueuedItemWhoseCreateLandedDeletesItOnTheServer() = runTest {
+        val s = Setup(this)
+        val e = engine(s)
+        e.start()
+        s.server.loseResponses = true
+        val id = (e.capture("delete after a lost answer", CaptureSource.MANUAL) as CaptureResult.Queued).id
+        assertEquals("the create reached the server", 1, s.server.live().size)
+        s.server.loseResponses = false
+        e.remove(id)
+        advanceUntilIdle()
+        assertTrue("the DELETE removed it everywhere", s.server.live().isEmpty())
+        assertTrue(e.state.value.items.isEmpty())
+        // The grace period passes and the pending delete is settled.
+        advanceTimeBy(ClipboardEngine.DELETE_GRACE_MS + 1)
+        advanceUntilIdle()
+        assertTrue(s.dao.deletes.isEmpty())
+        e.stop()
     }
 
     @Test

@@ -85,7 +85,8 @@ class MainActivity : ComponentActivity() {
                                     onTurnKeepScreenOn = { scope.launch { settings.setKeepScreenOn(true) } },
                                     pendingRoute = pending,
                                     onPendingRouteHandled = { pendingRoute.value = null },
-                                    clipboardSync = clipSync
+                                    clipboardSync = clipSync,
+                                    onClipboardSyncHandled = { clipboardSync.value = 0 }
                                 )
                             }
                         }

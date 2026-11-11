@@ -11,6 +11,7 @@ import { SharingProvider } from '../features/sharing/SharingContext';
 import { KeepAwakeProvider } from '../lib/keepAwake/KeepAwakeContext';
 import type { KeepAwakeEnv } from '../lib/keepAwake/controller';
 import { AccountProvider } from '../features/account/AccountContext';
+import { ClipboardProvider } from '../features/clipboard/ClipboardContext';
 
 export const noWakeLock: KeepAwakeEnv = { isSecure: true, isVisible: () => true, onVisibility: () => () => undefined };
 
@@ -74,7 +75,9 @@ export function renderApp(
             <HistoryProvider store={store}>
               <AccountProvider>
                 <ToastProvider>
-                  <MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>
+                  <MemoryRouter initialEntries={[path]}>
+                    <ClipboardProvider>{ui}</ClipboardProvider>
+                  </MemoryRouter>
                 </ToastProvider>
               </AccountProvider>
             </HistoryProvider>

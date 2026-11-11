@@ -25,10 +25,14 @@ test('welcome → home: first visit shows Welcome, Start sharing opens Transfer 
   await expect(page.getByRole('heading', { name: /sign in|create account/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /sign in/i })).toHaveCount(0);
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Clipboard' })).toHaveCount(0);
+  // Since Phase 5B the Clipboard tab is in the shell; for a guest it opens an informational intro, never a sign-in screen.
+  await page.getByRole('link', { name: 'Clipboard', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Clipboard Sync' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /sign in|create account/i })).toHaveCount(0);
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
 
   // Later visits skip Welcome.
-  await page.reload();
+  await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Transfer', level: 1 })).toBeVisible();
 });
 

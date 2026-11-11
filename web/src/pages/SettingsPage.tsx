@@ -1,4 +1,4 @@
-import { Cloud, History, MonitorSmartphone, Trash2, User } from 'lucide-react';
+import { ChevronRight, Clipboard, Cloud, History, MonitorSmartphone, ShieldCheck, Trash2, User } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, ConfirmDialog, Segmented, Screen, Switch } from '../components/ui';
@@ -11,6 +11,7 @@ import { useTheme } from '../lib/theme';
 import { useRetention } from '../lib/prefs';
 import { useHistory } from '../features/history/HistoryContext';
 import type { Retention } from '../features/history/store/history-store';
+import { flags } from '../config/flags';
 
 const VERSION = import.meta.env.VITE_APP_VERSION ?? '0.1.0';
 // The signed-in account section (history sync, devices, password, sign out) loads only for signed-in users.
@@ -68,18 +69,68 @@ function GuestAccountFeatures() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, badge, children }: { title: string; badge?: string; children: React.ReactNode }) {
   return (
     <Card className="flex flex-col gap-4 p-[20px]">
-      <h2 className="m-0 text-[16px]">{title}</h2>
+      <h2 className="m-0 flex items-center gap-2 text-[16px]">
+        {title}
+        {badge && (
+          <span className="rounded-sm bg-surface-2 px-[7px] py-[2px] text-[11px] font-bold text-fg-2">{badge}</span>
+        )}
+      </h2>
       {children}
     </Card>
   );
 }
 
 /**
- * ST-1 / design screen `settings`, guest view with the sections that work in Phase 1. Transfer,
- * notification, data and clipboard sections arrive with the features they control.
+ * ST-1 Clipboard section (design `settings`): opens CB-6. Guests see the rows disabled with "Needs sign-in" and Sign
+ * in; nothing here touches the clipboard.
+ */
+function ClipboardSection({ signedIn }: { signedIn: boolean }) {
+  const { t } = useI18n();
+  const rows = [
+    { icon: Clipboard, label: t('web_vv.k61'), sub: t('web_vv.k62') },
+    { icon: ShieldCheck, label: t('web_vv.k63'), sub: t('web_vv.k64') },
+  ];
+  if (signedIn) {
+    return (
+      <Section title={t('common.g_clip')}>
+        <p className="m-0 text-caption leading-[1.5] text-fg-2">{t('product.cb_settings_p')}</p>
+        <Link
+          to="/settings/clipboard"
+          data-testid="settings-clipboard"
+          className="flex min-h-touch items-center gap-3 rounded-md border border-border px-3 text-[14px] font-semibold text-fg no-underline hover:bg-surface-2 hover:text-fg"
+        >
+          <Clipboard aria-hidden size={18} className="flex-none text-fg-2" />
+          <span className="flex-1">{t('product.cb_settings_link')}</span>
+          <ChevronRight aria-hidden size={18} className="text-fg-3" />
+        </Link>
+      </Section>
+    );
+  }
+  return (
+    <Section title={t('common.g_clip')} badge={t('web_vv.k60')}>
+      {rows.map((r) => (
+        <div key={r.label} className="flex items-center gap-3 text-[14px]">
+          <r.icon aria-hidden size={18} className="flex-none text-fg-3" />
+          <span className="flex-1 text-fg-2">
+            {r.label}
+            <span className="block text-caption">{r.sub}</span>
+          </span>
+          <Switch checked={false} onChange={() => undefined} label={r.label} disabled />
+        </div>
+      ))}
+      <Link to="/signin?returnTo=%2Fsettings" className="self-start text-caption font-semibold">
+        {t('common.s_guest_p')}
+      </Link>
+    </Section>
+  );
+}
+
+/**
+ * ST-1 / design screen `settings`: account, appearance, transfers, Clipboard (CB-6 link, Phase 5B), privacy and
+ * retention. Notification and data sections arrive with the features they control.
  */
 export default function SettingsPage() {
   const { t, locale, setLocale } = useI18n();
@@ -131,6 +182,7 @@ export default function SettingsPage() {
           </div>
         </Section>
         {account.enabled && !signedIn && <GuestAccountFeatures />}
+        {account.enabled && flags.clipboard && <ClipboardSection signedIn={signedIn} />}
         <Section title={t('web_vv.k49')}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-[14px]">{t('web_vv.k50')}</span>

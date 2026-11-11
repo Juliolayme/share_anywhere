@@ -10,6 +10,7 @@ import { ToastProvider } from './components/Toast';
 import { SharingProvider } from './features/sharing/SharingContext';
 import { KeepAwakeProvider } from './lib/keepAwake/KeepAwakeContext';
 import { AccountProvider } from './features/account/AccountContext';
+import { ClipboardProvider } from './features/clipboard/ClipboardContext';
 import './index.css';
 
 applyTheme(getThemePreference());
@@ -27,7 +28,9 @@ createRoot(root).render(
               <AccountProvider>
                 <ToastProvider>
                   <BrowserRouter>
-                    <App />
+                    <ClipboardProvider>
+                      <App />
+                    </ClipboardProvider>
                   </BrowserRouter>
                 </ToastProvider>
               </AccountProvider>

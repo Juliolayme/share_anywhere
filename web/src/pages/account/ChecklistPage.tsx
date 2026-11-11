@@ -1,5 +1,6 @@
 import { CircleCheck, Circle } from 'lucide-react';
 import { Link, Navigate } from 'react-router-dom';
+import { flags } from '../../config/flags';
 import { useI18n } from '../../i18n/i18n';
 import { useAccount } from '../../features/account/AccountContext';
 import { AuthPending, AuthLayout, Heading, useFlowLink, useReturnTo } from './AuthLayout';
@@ -20,8 +21,9 @@ function Item({ done, label, action }: { done: boolean; label: string; action?: 
 }
 
 /**
- * AC-8 `/account/checklist` (design `checklist`) after the first sign-in on this device. Clipboard items stay out
- * until Clipboard Sync exists (Phase 5B, `clipboard` flag), so the action returns to where the flow started.
+ * AC-8 `/account/checklist` (design `checklist`) after the first sign-in on this device. Continue returns to where the
+ * flow started; with Clipboard Sync built (`clipboard` flag) "Go to Clipboard" opens it, and is the only action when
+ * the flow started there.
  */
 export default function ChecklistPage() {
   const { t } = useI18n();
@@ -32,6 +34,10 @@ export default function ChecklistPage() {
   if (account.phase !== 'signed_in') return <Navigate to={flow('/signin')} replace />;
   const keyReady = account.keys === 'ready';
   const syncOn = account.me?.history_sync === true;
+  const clipboardOn = flags.clipboard && flags.accounts;
+  const fromClipboard = clipboardOn && (returnTo === '/clipboard' || returnTo.startsWith('/clipboard/'));
+  const btn =
+    'inline-flex h-control-lg items-center justify-center rounded-md px-6 text-[15px] font-semibold no-underline';
   return (
     <AuthLayout screen="checklist">
       <Heading title={t('web_vv.k28')} body={t('web_vv.k29')} />
@@ -71,12 +77,25 @@ export default function ChecklistPage() {
         )}
         {account.added && <Item done={syncOn} label={syncOn ? t('product.ck_sync_on') : t('product.ck_sync_off')} />}
       </ul>
-      <Link
-        to={returnTo}
-        className="inline-flex h-control-lg items-center justify-center rounded-md bg-send px-6 text-[15px] font-semibold text-on-send no-underline hover:bg-send-hover hover:text-on-send"
-      >
-        {t('web_vv.k27')}
-      </Link>
+      {fromClipboard ? (
+        <Link to={returnTo} className={`${btn} bg-send text-on-send hover:bg-send-hover hover:text-on-send`}>
+          {t('web_vv.k30')}
+        </Link>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Link to={returnTo} className={`${btn} bg-send text-on-send hover:bg-send-hover hover:text-on-send`}>
+            {t('web_vv.k27')}
+          </Link>
+          {clipboardOn && (
+            <Link
+              to="/clipboard"
+              className={`${btn} border border-border-strong bg-surface text-fg hover:bg-surface-2 hover:text-fg`}
+            >
+              {t('web_vv.k30')}
+            </Link>
+          )}
+        </div>
+      )}
     </AuthLayout>
   );
 }

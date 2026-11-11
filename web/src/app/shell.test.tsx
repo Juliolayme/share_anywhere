@@ -5,7 +5,7 @@ import { App } from '../App';
 import { renderApp } from '../test/render';
 import { writePref } from '../lib/storage';
 
-describe('guest-first shell (accounts on, clipboard off)', () => {
+describe('guest-first shell (accounts on, clipboard on)', () => {
   it('welcome (ON-1): Start sharing opens Transfer home; sign-in is only an optional link, never a screen', async () => {
     renderApp(<App />);
     expect(await screen.findByRole('heading', { name: 'Big files, any device, any network.' })).toBeInTheDocument();
@@ -20,7 +20,7 @@ describe('guest-first shell (accounts on, clipboard off)', () => {
     expect(screen.getByTestId('header-signin')).toHaveAttribute('href', '/signin');
   });
 
-  it('hides the Clipboard tab and shows Transfer, History, Devices, Settings', async () => {
+  it('shows Transfer, Clipboard, History, Devices, Settings', async () => {
     writePref('welcomed', '1');
     renderApp(<App />);
     const navs = await screen.findAllByRole('navigation', { name: 'Main navigation' });
@@ -28,7 +28,7 @@ describe('guest-first shell (accounts on, clipboard off)', () => {
       const links = within(nav)
         .getAllByRole('link')
         .map((a) => a.textContent);
-      expect(links).toEqual(['Transfer', 'History', 'Devices', 'Settings']);
+      expect(links).toEqual(['Transfer', 'Clipboard', 'History', 'Devices', 'Settings']);
     }
   });
 
@@ -83,16 +83,30 @@ describe('with flags changed', () => {
     vi.doUnmock('../config/flags');
   });
 
-  it('shows the Clipboard tab only when the clipboard flag is on', async () => {
+  it('clipboard flag off: no Clipboard tab, route or Settings section', async () => {
     vi.resetModules();
-    vi.doMock('../config/flags', () => ({ flags: { sharing: false, accounts: false, clipboard: true } }));
+    vi.doMock('../config/flags', () => ({ flags: { sharing: true, accounts: true, clipboard: false } }));
+    const { App: FlaggedApp } = await import('../App');
+    const { renderApp: render2 } = await import('../test/render');
+    const storage = await import('../lib/storage');
+    storage.writePref('welcomed', '1');
+    render2(<FlaggedApp />, { path: '/clipboard' });
+    const navs = await screen.findAllByRole('navigation', { name: 'Main navigation' });
+    for (const nav of navs) expect(within(nav).queryByRole('link', { name: 'Clipboard' })).toBeNull();
+    expect(await screen.findByRole('heading', { name: /not found|không tìm thấy/i })).toBeInTheDocument();
+    vi.doUnmock('../config/flags');
+  });
+
+  it('clipboard needs accounts: with accounts off the Clipboard tab is hidden even when its flag is on', async () => {
+    vi.resetModules();
+    vi.doMock('../config/flags', () => ({ flags: { sharing: true, accounts: false, clipboard: true } }));
     const { App: FlaggedApp } = await import('../App');
     const { renderApp: render2 } = await import('../test/render');
     const storage = await import('../lib/storage');
     storage.writePref('welcomed', '1');
     render2(<FlaggedApp />);
-    const nav = (await screen.findAllByRole('navigation', { name: 'Main navigation' }))[0];
-    expect(within(nav as HTMLElement).getByRole('link', { name: 'Clipboard' })).toBeInTheDocument();
+    const navs = await screen.findAllByRole('navigation', { name: 'Main navigation' });
+    for (const nav of navs) expect(within(nav).queryByRole('link', { name: 'Clipboard' })).toBeNull();
     vi.doUnmock('../config/flags');
   });
 });

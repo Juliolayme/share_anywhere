@@ -8,7 +8,7 @@ test('home (mobile): compact bottom navigation with touch targets of at least 44
   const nav = page.getByRole('navigation', { name: 'Main navigation' }).filter({ visible: true });
   await expect(nav).toHaveCount(1);
   const links = nav.getByRole('link');
-  await expect(links).toHaveText(['Transfer', 'History', 'Devices', 'Settings']);
+  await expect(links).toHaveText(['Transfer', 'Clipboard', 'History', 'Devices', 'Settings']);
   const navBox = await nav.boundingBox();
   const viewport = page.viewportSize();
   expect(navBox && viewport && navBox.y + navBox.height).toBeCloseTo(viewport?.height ?? 0, 0);

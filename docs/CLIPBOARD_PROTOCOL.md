@@ -1,6 +1,6 @@
 # Clipboard protocol (version 1)
 
-How signed-in devices of one account share the keys that protect Clipboard Sync and cloud history, and (Phase 5B) how clipboard events move between them (PRD §2 "Account key bootstrap", §7.4, §7.5). The server stores ciphertext, wrapped keys, and public metadata only; it never holds a key that opens user content. Endpoints and access levels live in `docs/API.md`; token lifetimes, rate limits, and the wider threat model in `docs/SECURITY_MODEL.md`. Web implements this document in `web/src/lib/crypto/`; Android (Phase 6) and iOS (Phase 7) must reproduce `shared/protocol/schemas/clipboard-vectors.json` exactly.
+How signed-in devices of one account share the keys that protect Clipboard Sync and cloud history, and (Phase 5B) how clipboard events move between them (PRD §2 "Account key bootstrap", §7.4, §7.5). The server stores ciphertext, wrapped keys, and public metadata only; it never holds a key that opens user content. Endpoints and access levels live in `docs/API.md`; token lifetimes, rate limits, and the wider threat model in `docs/SECURITY_MODEL.md`. Web implements §1 in `web/src/lib/crypto/` and §2 in `web/src/features/clipboard/`; Android (Phase 6) and iOS (Phase 7) must reproduce `shared/protocol/schemas/clipboard-vectors.json` exactly.
 
 Guests have no account, so they have no ADK, no Clipboard Sync, and no cloud history. Nothing in this document applies to file sharing.
 
@@ -189,4 +189,109 @@ Limitation (pairing receive on a device holding no ADK): such a device has nothi
 
 ## 2. Clipboard events
 
-*Placeholder: Phase 5B specifies the clipboard event protocol here (event format, `seq` cursors, idempotency, WebSocket notifications, size and retention limits, sensitive-content rules), using the `clipboard-v1` subkey and item encryption from §1.3.*
+How a signed-in device whose browser or app is added to the account and holds the ADK (§1.8) shares clipboard text with the account's other devices (PRD §7.1–§7.6). Version 1 carries text only. Endpoints, access levels, status codes, and rate limits are owned by `docs/API.md` §2.5 and `docs/SECURITY_MODEL.md` §5–§6; this section is the wire contract both sides implement. Web implements it in `web/src/features/clipboard/` (engine, store, capture, runtime) on top of `web/src/lib/crypto/`.
+
+### 2.1 Event format
+
+Each capture is one immutable event. Fields on the wire (JSON; binary fields base64url without padding, §1.10):
+
+| Field | Set by | Meaning |
+|---|---|---|
+| `event_id` | client | UUID chosen by the capturing device; the idempotency key and part of the AAD. Never contains `\|` |
+| `seq` | server | Per-account strictly increasing integer (§2.3) |
+| `origin_device_id` | server | The device that posted it, taken from the verified token, never from the body |
+| `event_type` | client | `TEXT` (the only value in v1) |
+| `mime_type` | client | `text/plain` (the only value in v1) |
+| `key_version` | client | ADK version whose `clipboard-v1` subkey encrypted it; must be the account's current version on create |
+| `nonce` | client | 12 random bytes; `null` on a tombstone |
+| `ciphertext` | client | AES-256-GCM ciphertext ‖ 16-byte tag; `null` on a tombstone |
+| `payload_size` | client | UTF-8 byte length of the plaintext, 1…262,144 (declared; the server cannot check it) |
+| `created_at`, `expires_at` | server | Insert time; `created_at` + the account's `retention_days` at insert time |
+| `deleted` | server | `true` for a tombstone (deleted, cleared, or pushed out by the cap) |
+
+Plaintext is the UTF-8 text exactly as read from the clipboard (no trimming, no normalization). Empty or whitespace-only text is never sent.
+
+### 2.2 Encryption
+
+Item encryption is §1.3 with id = `event_id`: AES-256-GCM under the `clipboard-v1` subkey of ADK(`key_version`), a fresh random 12-byte nonce per event, AAD = UTF-8 of `<event_id>|<key_version>`. The shared vectors (`shared/protocol/schemas/clipboard-vectors.json`, `items`) fix one example. Writers always use the newest version they hold. A reader that lacks the row's version, or whose decryption fails (a ciphertext moved to another row, a relabelled version, any changed byte), shows the row as **locked on this device** and never shows other text; locked rows are retried when the device stores a version it did not hold (rotation pickup, pairing, recovery, chain import).
+
+### 2.3 `seq` and cursors
+
+- The server assigns `seq` inside the insert transaction while holding a per-account clipboard advisory lock (separate from history's), so `seq` order equals commit order and no reader can see seq n+1 before n. Deletions take a new `seq` too.
+- A client's cursor is the highest `seq` it has applied. First use on a device (no cursor): `GET /v1/clipboard/history` returns the live events newest first and the account's highest `seq` from the same snapshot; the client stores both. Afterwards it follows `GET /v1/clipboard/events?cursor=<cursor>` page by page (`next_cursor` is the last `seq` returned) until a page is empty, applying each event in order: a live event is upserted, a tombstone removes the row. The cursor is stored only after the page is applied, in the same local transaction, and never moves backwards.
+- Each `GET /v1/clipboard/events` records the `cursor` the caller sent as that device's applied position (`clipboard_device_cursors`). The final empty page therefore reports the device caught up.
+- Tombstones are kept 7 days (§2.6). A device that has not caught up for longer than 6 days may have missed deletions, so it discards its cursor and reloads with `GET /v1/clipboard/history` instead of following an old cursor.
+- Events past `expires_at` are left out by the server even before the sweep removes them; clients also hide expired rows they cached.
+
+### 2.4 Idempotency, retries, and errors
+
+- `POST /v1/clipboard/events` is idempotent on (account, `event_id`): a repeat returns the stored `seq`, `created_at`, `expires_at` with `201` and stores nothing new; re-posting a deleted event returns its tombstone `seq` and does not restore it. A client retries an unacknowledged event with the **same** `event_id`, so a lost response never duplicates an event.
+- `409 key_version_conflict`: the account rotated to a key this device has not picked up. The client runs a key check (rotation pickup, §1.13), re-encrypts the same plaintext under the newest held version with the same `event_id`, and retries once. A second conflict leaves the event queued and tells the user to pair this device again.
+- `409 clipboard_paused`: nothing was stored; the client shows the paused state (§2.7) and keeps the event queued until sync resumes.
+- `413 payload_too_large` or `400`: the server will never accept this event; the client drops it from its queue and says so. `429 rate_limited`: retried after `Retry-After`. Network errors and `5xx`: retried with backoff (Web: 5 s doubling to 60 s), on reconnect, and when the browser reports it is online again. `401`/`403` (the device left the account): the client stops; the account layer erases local data (§2.9).
+
+### 2.5 WebSocket notifications
+
+The server notifies every open socket of the account's devices that have a live **added** account session at send time, the origin device included, after each committed change (`shared/protocol/websocket-events.json`):
+
+| Message | Payload | Client action |
+|---|---|---|
+| `CLIPBOARD_EVENT_CREATED` | `event_id, seq, origin_device_id, created_at, payload_size, key_version` | Fetch by cursor |
+| `CLIPBOARD_EVENT_DELETED` | `event_id, seq` (also for a cap tombstone) | Fetch by cursor |
+| `CLIPBOARD_HISTORY_CLEARED` | `seq` (highest tombstone) | Fetch by cursor |
+| `CLIPBOARD_SETTINGS_UPDATED` | `paused, retention_days, sensitive_skip` | Apply (validated); refetch settings if malformed |
+| `DEVICE_CONNECTED`, `DEVICE_DISCONNECTED` | `device_id` | Optional (Web refreshes device names for an unknown ID) |
+
+Messages carry metadata only: no ciphertext and no plaintext ever goes over the WebSocket. Clients never apply an event from a notification; they always fetch with the cursor, which also covers missed notifications. They also fetch on (re)connect and, on the Web, when the tab regains focus or becomes visible. Bursts coalesce: a fetch requested while one runs causes at most one more pass.
+
+### 2.6 Limits: size, cap, retention, rate
+
+- Text only; `payload_size` ≤ 262,144 bytes of UTF-8 (256 KB), checked by the client before encryption and by the server (`413`); ciphertext ≤ 262,160 bytes.
+- At most 100 live events per account: inserting the 101st tombstones the oldest live one in the same transaction.
+- Retention: `retention_days` 1…7 (default 7) applies to events created afterwards (`expires_at` at insert). The server's maintenance loop hard-deletes events past `expires_at` and tombstones older than 7 days. Clients hide expired rows and show the limit ("Kept for 7 days or 100 items").
+- Creation: 60 per minute per device and 240 per minute per account (`429`); deletions, clear, and settings changes: 600 per minute per device (`docs/SECURITY_MODEL.md` §5).
+
+### 2.7 Pause
+
+`paused` is an account-wide setting (`PUT /v1/clipboard/settings`). While it is true: the server answers `409 clipboard_paused` to new events and stores nothing; reads, deletions, clear, and settings still work. Clients read and send nothing (manual Sync says "Resume sync first"), automatic capture stops on every device, and events already queued wait until sync resumes. Resuming on any device reaches the others through `CLIPBOARD_SETTINGS_UPDATED`.
+
+### 2.8 Sensitive content
+
+When the account setting `sensitive_skip` is true (default), clients run best-effort heuristics on the plaintext before anything is encrypted or sent, entirely on the device:
+
+- **Platform flags** (where the platform has them): Android `ClipDescription.EXTRA_IS_SENSITIVE`, iOS `detectPatterns(for:)` before reading (Phases 6 and 7). Browsers expose no such flag.
+- **Heuristics** (Web `web/src/features/clipboard/sensitive.ts`, in this order): a PEM private key block anywhere (`-----BEGIN … PRIVATE KEY-----`, including PGP private key blocks); a JSON Web Token anywhere (`eyJ….eyJ….…`); a well-known credential prefix anywhere (AWS `AKIA…`, Google `AIza…`, GitHub `ghp_…`/`github_pat_…`, Slack `xox?-…`, Stripe `sk_live_…`/`sk_test_…`, `sk-…`); the whole text is a one-time code (4–8 digits, or two groups of 3–4 digits); the whole text is a Luhn-valid 13–19-digit card number; the whole text is one 24–512-character token without spaces that is not a URL (hex of 32+ characters with entropy ≥ 3 bits/char, or 3+ character classes with entropy ≥ 4 bits/char); the whole text is one 8–64-character word mixing lower, upper, digits, and symbols.
+- **Automatic and in-page captures** that match are skipped silently and noted in the timeline on this device only ("Skipped — looked like a password or one-time code. Not synced."); the text is never stored or sent, and the same text is not noted again on the next focus.
+- **Manual Sync** that matches shows "Skipped as possibly sensitive" with the disclaimer and **Sync anyway** (sends it) or **Don't sync**.
+- The UI states that the check is best-effort: it can miss secrets and flag ordinary text. With `sensitive_skip` false nothing is skipped.
+
+### 2.9 Offline queue and local data
+
+- A capture is encrypted first, then written to the offline queue, then sent; the queue keeps only the encrypted request fields (`event_id`, `key_version`, `nonce`, `ciphertext`, `payload_size`) and the capture time, never plaintext. Queued events show at the top of the timeline as **Queued** (decrypted in memory) and are sent in capture order, idempotently (§2.4), when the network returns. Deleting a queued event drops it locally (and deletes it on the server in case it arrived).
+- Web storage: IndexedDB `share-anywhere-clipboard` with stores `events` (the account's live events exactly as the server returned them: ciphertext only, so the timeline opens offline), `queue`, and `meta` (cursor and last catch-up time), every record keyed by account. Never Web Storage: `storage.ts` holds only the per-browser automatic capture on/off preference. Decrypted text exists only in memory while the page is open.
+- Sign-out, revocation, an ended account session, or a key wipe erase the clipboard store together with the key store and sync bookkeeping (`wipeAccountData`), and the running clipboard runtime stops at once.
+
+### 2.10 Web capture rules and browser constraints
+
+What a website can and cannot do (PRD §7.2), and what the Web client does:
+
+- **Only for a ready account.** The capture code (`web/src/features/clipboard/capture.ts`, the only module that touches `navigator.clipboard`, the clipboard-read permission, or the page `copy` event) is imported only by the clipboard runtime, which the app loads with a dynamic import once the account is signed in, the device is added, and the key is on the device. A guest, a device that is not added, and a device without the key make no clipboard call, no permission query, and register no copy listener (enforced by a source-structure test and by Playwright instrumentation).
+- **Secure context required.** On plain HTTP browsers offer neither the clipboard API nor WebCrypto; Clipboard shows "HTTPS required" and nothing else works.
+- **Manual Sync** calls `navigator.clipboard.readText()` directly in the click handler (user gesture). Where the browser shows its own Paste UI (Firefox, Safari) or asks for permission (Chromium), that is the browser's prompt, answered by the user. If the read is refused, unsupported, or still pending after 4 s, a paste field opens (Ctrl+V, ⌘V, or long-press → Paste): pasted text is captured from the field. The browser is never asked again until the next click, so there is no prompt loop.
+- **Automatic capture** (per-browser toggle, default on) reads opportunistically on window `focus` and `visibilitychange` (visible) only when `navigator.permissions.query({name: 'clipboard-read'})` already reports `granted`. `permissions.query` never prompts; where the browser does not expose that permission (Firefox, Safari) automatic capture is not attempted. Never polling, never on a timer. Offline it still reads and queues.
+- **In-page copies**: while automatic capture is on, the `copy` event of this page captures the selected text (or the field selection, or data the page set) of copies made inside Share Anywhere. Copies made in other apps are invisible to a website while it is not in front; the UI never claims otherwise.
+- **Dedupe**: identical consecutive text is not sent twice (the newest row already holds it, or this tab already saw it, including text it wrote with Copy).
+- **Copy** writes with `navigator.clipboard.writeText()` from the click; if that is missing or refused it falls back to selecting a hidden field and `document.execCommand('copy')` (not captured again); if both fail, the item drawer selects the text and says to press Ctrl+C. Nothing is ever written to the clipboard without a click (no automatic remote write).
+- **Status**: the capture status panel (`clipboardStatus`, `docs/UX_SCREEN_MAP.md` §12) is derived from capability detection only: `insecure` (no secure context), `paused`, `offline`, `denied` (permission denied), `unsupported` (no `readText`, or no clipboard-read permission state: manual only), `auto` (granted and toggle on), `besteffort` (otherwise).
+
+### 2.11 Revocation and key versions
+
+Revoking a device ends its account session at once (no reads, `401`/`403`) and rotates the ADK without it (§1.8, §1.13). A new event must use the account's current `key_version` (§2.4), so every event created after the rotation is encrypted under a version the revoked device never received. It keeps whatever it already decrypted and the old versions it held; the Web client erases both when it notices the session ended.
+
+### 2.12 Conformance
+
+Android (Phase 6) and iOS (Phase 7) implement §2.1–§2.9 unchanged, with their platform capture rules (PRD §7.3, §7.3b) in place of §2.10, and must decrypt events written by the Web client (`clipboard-cross-client` nightly job, `docs/TESTING_AND_CI.md` §2.2).
+
+---
+
+*This document is frozen for `clipboard-protocol-v1`. Changes to §1 or §2 that alter the wire format, the encryption, or the cursor rules need a new protocol version and an ADR.*

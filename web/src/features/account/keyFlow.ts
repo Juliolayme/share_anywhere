@@ -29,6 +29,7 @@ import { ApiError } from '../../lib/api/errors';
 import type { AccountApi, KeyChain, KeysState, PairingPeer } from './api';
 import { deriveKeyStatus, type KeyStatus } from './state';
 import { openSyncMeta, type SyncMetaStore } from './sync/syncMeta';
+import { clipboardStore } from '../clipboard/store';
 
 let storePromise: Promise<KeyStore> | null = null;
 let metaStore: SyncMetaStore | null = null;
@@ -318,7 +319,10 @@ async function checkKeysNow(api: AccountApi, userId: string, deviceId: string): 
   return { status, keyVersion: state.key_version, state, newVersions, rotationOwed: false };
 }
 
-/** Sign-out or leaving the account: erases every key and the sync bookkeeping in this browser. */
+/**
+ * Sign-out or leaving the account (revoked, session ended, key wipe): erases every key, the sync bookkeeping, and the
+ * Clipboard Sync cache and offline queue in this browser.
+ */
 export async function wipeAccountData(): Promise<void> {
   const errors: unknown[] = [];
   try {
@@ -328,6 +332,11 @@ export async function wipeAccountData(): Promise<void> {
   }
   try {
     await syncMeta().wipe();
+  } catch (e) {
+    errors.push(e);
+  }
+  try {
+    await clipboardStore().wipe();
   } catch (e) {
     errors.push(e);
   }

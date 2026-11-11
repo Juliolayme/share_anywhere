@@ -29,6 +29,11 @@ const KeySetupPage = lazy(() => import('./pages/account/KeySetupPage'));
 const PairPage = lazy(() => import('./pages/account/PairPage'));
 const ChecklistPage = lazy(() => import('./pages/account/ChecklistPage'));
 
+// Clipboard Sync (Phase 5B, `clipboard` flag): CB-1…CB-5 and CB-6 load on demand (docs/UX_SCREEN_MAP.md §10).
+const ClipboardPage = lazy(() => import('./pages/ClipboardPage'));
+const ClipboardSettingsPage = lazy(() => import('./pages/ClipboardSettingsPage'));
+const clipboardOn = flags.clipboard && flags.accounts;
+
 const BrandPreview = import.meta.env.DEV ? lazy(() => import('./pages/BrandPreview')) : null;
 
 /** First visit goes to Welcome once (PRD §5.1); every later visit opens Transfer home directly. */
@@ -188,6 +193,27 @@ export function App() {
         <Route path="history/*" element={<HistoryPage />} />
         <Route path="devices" element={<DevicesPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        {clipboardOn && (
+          <>
+            {/* CB-1…CB-4 at /clipboard and the CB-5 drawer at /clipboard/:eventId share one page. */}
+            <Route
+              path="clipboard/*"
+              element={
+                <Lazy>
+                  <ClipboardPage />
+                </Lazy>
+              }
+            />
+            <Route
+              path="settings/clipboard"
+              element={
+                <Lazy>
+                  <ClipboardSettingsPage />
+                </Lazy>
+              }
+            />
+          </>
+        )}
         <Route path="*" element={<NotFound />} />
       </Route>
       {BrandPreview && (

@@ -44,8 +44,8 @@ export function useNavItems(): NavItem[] {
     { to: '/devices', label: t('web.nav_devices'), icon: MonitorSmartphone, match: (p) => p.startsWith('/devices') },
     { to: '/settings', label: t('web.nav_settings'), icon: Settings, match: (p) => p.startsWith('/settings') },
   ];
-  // The Clipboard tab exists only once Clipboard Sync works (CLAUDE.md §8b).
-  return items.filter((i) => i.to !== '/clipboard' || flags.clipboard);
+  // The Clipboard tab exists only while Clipboard Sync is built (CLAUDE.md §8b); it needs accounts.
+  return items.filter((i) => i.to !== '/clipboard' || (flags.clipboard && flags.accounts));
 }
 
 export function HeaderControls() {

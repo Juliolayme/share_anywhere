@@ -96,3 +96,32 @@ test('inline L() extraction fails loudly on an unsupported form or a key collisi
   assert.throws(() => extractInlinePairs('L("dq", "vi") L(\'a b\', \'c\')'), /2 L\( calls but extracted 1/);
   assert.throws(() => extractInlinePairs("L('A b', 'x') L('a-b', 'y')"), /collide/);
 });
+
+test('Android string resources escape aapt2 specials and keep placeholders', async () => {
+  const { escapeAndroidString, androidResourceName, androidStrings, renderAndroidStrings, isAndroidNamespace } = await import('./gen-i18n.mjs');
+  assert.equal(escapeAndroidString("Don't <b> & \"q\""), "Don\\'t &lt;b&gt; &amp; \\\"q\\\"");
+  assert.equal(escapeAndroidString('@home'), '\\@home');
+  assert.equal(escapeAndroidString('?x'), '\\?x');
+  assert.equal(escapeAndroidString(' characters'), '\\u0020characters');
+  assert.equal(escapeAndroidString('a  b\nc\\d'), 'a \\u0020b\\nc\\\\d');
+  assert.equal(escapeAndroidString('Join within {time}'), 'Join within {time}');
+  assert.equal(androidResourceName('android_yy.cb_clear'), 'android_yy_cb_clear');
+  assert.throws(() => androidResourceName('1x.y'), /start with a letter/);
+  assert.throws(() => androidStrings({ android: { 'a-b': 'x', a_b: 'y' } }), /collide/);
+  assert.ok(isAndroidNamespace('android_vv') && isAndroidNamespace('product') && !isAndroidNamespace('web') && !isAndroidNamespace('ios_xx'));
+  const xml = renderAndroidStrings({ android: { pct: '15%' }, web: { send: 'Send files' } });
+  assert.ok(xml.includes('<string name="android_pct" formatted="false">15%</string>'));
+  assert.ok(!xml.includes('web_send'));
+});
+
+test('the Android slice holds the guest shell strings in both languages', async () => {
+  const { androidStrings } = await import('./gen-i18n.mjs');
+  const catalogs = buildCatalogs();
+  const en = androidStrings(catalogs.en);
+  const vi = androidStrings(catalogs.vi);
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(vi).sort());
+  assert.equal(en.android_vv_k34, 'Start sharing');
+  assert.equal(vi.android_send, 'Gửi tệp');
+  assert.equal(en.android_yy_s_wake, 'Keep screen on during transfers');
+  assert.ok(en.product_welcome_android_p.startsWith('Send 4–20 GB'));
+});

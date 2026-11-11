@@ -469,7 +469,17 @@
     "cb_queued_rate_limited": "Encrypted and queued — too many items at once. It will be sent again shortly.",
     "cb_queued_key": "Encrypted and queued — your account has a newer key that this device doesn’t hold. Pair this device again to send it.",
     "cb_queued_paused": "Encrypted and queued — sync is paused. It will be sent when you resume.",
-    "cb_offline_empty_p": "Your clipboard history loads when you reconnect. Items you sync now are encrypted and queued on this device."
+    "cb_offline_empty_p": "Your clipboard history loads when you reconnect. Items you sync now are encrypted and queued on this device.",
+    "welcome_android_p": "Send 4–20 GB to a PC browser or another phone. Share by QR, code or link — receivers join instantly. No account needed.",
+    "history_load_failed": "Couldn’t load your transfer history.",
+    "history_any_status": "Any status",
+    "history_range_30d": "Last 30 days",
+    "history_range_7d": "Last 7 days",
+    "history_range_today": "Today",
+    "history_all_devices": "All devices",
+    "identity_replaced": "These device credentials were used twice, so this device got a new anonymous identity for safety.",
+    "version_android": "Share Anywhere for Android {version}",
+    "see_all": "See all"
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -940,6 +950,16 @@
     "cb_queued_rate_limited": "Đã mã hóa và xếp hàng — quá nhiều mục cùng lúc. Mục sẽ được gửi lại sau ít phút.",
     "cb_queued_key": "Đã mã hóa và xếp hàng — tài khoản có khoá mới hơn mà thiết bị này chưa có. Hãy ghép nối lại thiết bị để gửi.",
     "cb_queued_paused": "Đã mã hóa và xếp hàng — đồng bộ đang tạm dừng. Mục sẽ được gửi khi bạn tiếp tục.",
-    "cb_offline_empty_p": "Lịch sử clipboard sẽ tải khi bạn kết nối lại. Các mục bạn đồng bộ lúc này được mã hóa và xếp hàng trên thiết bị này."
+    "cb_offline_empty_p": "Lịch sử clipboard sẽ tải khi bạn kết nối lại. Các mục bạn đồng bộ lúc này được mã hóa và xếp hàng trên thiết bị này.",
+    "welcome_android_p": "Gửi 4–20 GB tới trình duyệt trên máy tính hoặc điện thoại khác. Chia sẻ bằng QR, mã hoặc liên kết — người nhận vào ngay. Không cần tài khoản.",
+    "history_load_failed": "Không tải được lịch sử truyền.",
+    "history_any_status": "Mọi trạng thái",
+    "history_range_30d": "30 ngày qua",
+    "history_range_7d": "7 ngày qua",
+    "history_range_today": "Hôm nay",
+    "history_all_devices": "Mọi thiết bị",
+    "identity_replaced": "Thông tin thiết bị này đã bị dùng hai lần, nên thiết bị được cấp danh tính ẩn danh mới để an toàn.",
+    "version_android": "Share Anywhere cho Android {version}",
+    "see_all": "Xem tất cả"
   }
 }

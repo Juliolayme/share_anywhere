@@ -160,3 +160,21 @@ The design shows the finished product with sample data. These elements are left 
 | H9 | "Kept for 7 days or 100 items · Change in Settings → Clipboard" | The account's `retention_days` ("Kept for {n} days or 100 items") and a **Clipboard settings** link | Retention is an account setting (1–7 days) |
 | H10 | Item drawer "Delete" | **Delete** (`common.del`) deletes on every device and the toast says so (`common.n_del`); a link to a deleted or expired item falls back to the list | Deletion is a tombstone seen by every device (`docs/CLIPBOARD_PROTOCOL.md` §2.3) |
 | H11 | Pause / Resume sync 34 px high, timeline filter chips 36 px, skipped-row dismiss button 36 px | The same sizes from the `rail` breakpoint (760 px) up; below it each is at least the 44 px touch target (`min-h-touch`, `min-w-touch` from `touchTarget.web`) | Touch targets on phones (`CLAUDE.md` §3, Design System touch target token) |
+
+## I. Android shell: differences from the design (Phase 6, milestone 6.1)
+
+| # | Design (`Android App.dc.html`) | Built | Why |
+|---|---|---|---|
+| I1 | Welcome paragraph "Send 4–20 GB to a PC browser or another phone…" written inline in the prototype, with no catalog entry | `product.welcome_android_p` (EN as in the design, VI added) | No hard-coded strings (`CLAUDE.md` §3); every string comes from the catalogs |
+| I2 | Welcome "Start sharing" opens `perms` (two permissions) before Transfer home | Start sharing opens Transfer home directly; permissions are asked just in time by the flows that need them (6.2) | PRD §5.1 and `docs/UX_SCREEN_MAP.md` ON-3: permissions are never on the first-launch path |
+| I3 | Welcome "I want Clipboard Sync — sign in" (`android_vv.k131`), Transfer home header Sign in, Devices "Sync your device list" card, Settings guest "Sign in for Clipboard Sync" | Not shown; the Settings guest header says `product.no_account` | `accounts` and `clipboard` flags are off until milestone 6.4 (`CLAUDE.md` §8b): no Sign in button that does nothing |
+| I4 | Transfer home Send files / Receive files tiles | Not shown until Send and Receive work (milestone 6.2, `sharing` flag) | No dead buttons (`CLAUDE.md` §3) |
+| I5 | Transfer home "Wi-Fi · good / Direct P2P likely" card, live transfer card | Not shown | No network probe or transfer exists yet; the values would be invented (as F3 on the Web) |
+| I6 | Transfer home "See all" written inline | `product.see_all` | No hard-coded strings |
+| I7 | History chips All · Sent · Received · Failed only | The design's chips plus status, date and device filter chips (`product.filter_*`, `product.history_any_status`, `history_range_*`, `history_all_devices`, copies of the Web's labels) | PRD §5.6: filter by date, peer device, status, file name |
+| I8 | History detail "Send again" | Not shown | Same as G16: the app keeps no access to the files after a transfer |
+| I9 | Settings Transfer strategy, Require approval default, Notifications, Cloud, Data & battery, Clipboard sections, Licenses | Only Account (Guest), Appearance (theme, language), Transfer (Keep screen on during transfers), Privacy & retention (Keep transfer history, Clear history, privacy note), About (version) | Each row arrives with the feature it controls (as F6, F7 on the Web) |
+| I10 | Language picker labels "English" / "Tiếng Việt" inline; no "System" option | `product.lang_en`, `product.lang_vi`, plus "System" (`android_yy.th_sys`) first, the default | Follows the device language until the user picks one; strings from the catalogs |
+| I11 | Typography in Plus Jakarta Sans and JetBrains Mono | Plus Jakarta Sans is bundled (variable font, OFL licence in `assets/licenses`); monospace text uses the platform monospace | Keeps the APK small; mono is used only for byte counts in 6.1 |
+| I12 | Corner radii 16, 24 and 28 px on cards and buttons | Nearest Design System radius tokens (`lg` 14, `xl` 20, `full` for pill buttons) | Tokens only (`CLAUDE.md` §3); the prototype's values are not in `tokens.json` |
+| I13 | Identity bootstrap states have no Android specimen | ON-2 inline notices on Transfer home and Devices with the Web's strings (`product.identity_loading`, `identity_offline`, `identity_failed`, `rate_limited`, `retry_in`) and `product.identity_replaced` after refresh-secret reuse | PRD §5.1, `docs/SECURITY_MODEL.md` §4 |

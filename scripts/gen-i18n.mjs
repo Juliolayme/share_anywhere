@@ -14,10 +14,13 @@
 //   shared/i18n/product.json   PRD strings the design lacks     -> "product" (hand-written)
 // All tables are parsed as JSON5 data (never executed). A table that looks like {en, vi} but cannot be parsed fails the run.
 //
-//   node scripts/gen-i18n.mjs           write shared/i18n/en.json and vi.json
-//   node scripts/gen-i18n.mjs --check   fail if they are out of date or EN/VI keys differ
+// The Android app's slice (android, android_*, common, phrases, product, handoff) is also written as string resources:
+//   android/app/src/main/res/values/strings.xml and values-vi/strings.xml ("ns.key" -> ns_key).
+//
+//   node scripts/gen-i18n.mjs           write shared/i18n/en.json, vi.json and the Android string resources
+//   node scripts/gen-i18n.mjs --check   fail if any of them is out of date or EN/VI keys differ
 import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import JSON5 from 'json5';
 import { ROOT } from './lib/tokens.mjs';
@@ -302,6 +305,73 @@ function render(locale, catalog) {
   return JSON.stringify({ $comment: HEADER, locale, ...catalog }, null, 2) + '\n';
 }
 
+
+const ANDROID_RES = join(ROOT, 'android/app/src/main/res');
+
+/** Catalog namespaces the Android app ships: its own design tables plus the shared ones. */
+export function isAndroidNamespace(ns) {
+  return ns === 'android' || ns.startsWith('android_') || ['common', 'phrases', 'product', 'handoff'].includes(ns);
+}
+
+/** "android_yy.cb_clear" -> "android_yy_cb_clear" (aapt2 resource names: letters, digits, underscores). */
+export function androidResourceName(flatKey) {
+  const name = flatKey.replace(/[^A-Za-z0-9_]/g, '_');
+  if (!/^[A-Za-z]/.test(name)) throw new Error(`Android resource name must start with a letter: ${flatKey}`);
+  return name;
+}
+
+/** Escapes a catalog string for an Android <string> element (aapt2 rules), keeping {placeholders} as text. */
+export function escapeAndroidString(text) {
+  let s = String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t');
+  if (/^[@?]/.test(s)) s = `\\${s}`;
+  // aapt2 trims and collapses whitespace: keep leading, trailing, and repeated spaces as escapes.
+  s = s.replace(/^ +| +$/g, (m) => '\\u0020'.repeat(m.length)).replace(/ {2,}/g, (m) => ` ${'\\u0020'.repeat(m.length - 1)}`);
+  return s;
+}
+
+/** The Android slice of one locale's catalog as {resourceName: text}; fails on a name collision. */
+export function androidStrings(catalog) {
+  const out = {};
+  const from = {};
+  for (const [ns, table] of Object.entries(catalog)) {
+    if (!isAndroidNamespace(ns) || typeof table !== 'object') continue;
+    for (const [key, text] of Object.entries(flatten(table, ns))) {
+      const name = androidResourceName(key);
+      if (name in out) throw new Error(`Android string names collide: ${from[name]} and ${key} -> ${name}`);
+      out[name] = text;
+      from[name] = key;
+    }
+  }
+  return out;
+}
+
+export function renderAndroidStrings(catalog) {
+  const lines = ['<?xml version="1.0" encoding="utf-8"?>', `<!-- ${HEADER} Source: scripts/gen-i18n.mjs (Android slice). -->`, '<resources>'];
+  for (const [name, text] of Object.entries(androidStrings(catalog)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const formatted = String(text).includes('%') ? ' formatted="false"' : '';
+    lines.push(`    <string name="${name}"${formatted}>${escapeAndroidString(text)}</string>`);
+  }
+  lines.push('</resources>', '');
+  return lines.join('\n');
+}
+
+/** Every generated file with its expected content. */
+export function generatedFiles(catalogs) {
+  return [
+    ...['en', 'vi'].map((locale) => [join(OUT, `${locale}.json`), render(locale, catalogs[locale])]),
+    [join(ANDROID_RES, 'values/strings.xml'), renderAndroidStrings(catalogs.en)],
+    [join(ANDROID_RES, 'values-vi/strings.xml'), renderAndroidStrings(catalogs.vi)],
+  ];
+}
+
 function main(argv) {
   const check = argv.includes('--check');
   const catalogs = buildCatalogs();
@@ -311,9 +381,7 @@ function main(argv) {
     process.exit(1);
   }
   let stale = 0;
-  for (const locale of ['en', 'vi']) {
-    const file = join(OUT, `${locale}.json`);
-    const content = render(locale, catalogs[locale]);
+  for (const [file, content] of generatedFiles(catalogs)) {
     if (check) {
       let cur = '';
       try {
@@ -326,13 +394,13 @@ function main(argv) {
         stale++;
       }
     } else {
-      mkdirSync(OUT, { recursive: true });
+      mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, content);
-      console.log(`wrote ${relative(ROOT, file)} (${Object.keys(flatten(catalogs[locale])).length} strings)`);
+      console.log(`wrote ${relative(ROOT, file)}`);
     }
   }
   if (stale) process.exit(1);
-  if (check) console.log(`i18n: EN/VI catalogs current, ${Object.keys(flatten(catalogs.en)).length} keys each, placeholders match.`);
+  if (check) console.log(`i18n: EN/VI catalogs current, ${Object.keys(flatten(catalogs.en)).length} keys each, placeholders match; Android string resources current.`);
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : '';

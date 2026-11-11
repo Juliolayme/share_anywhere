@@ -16,3 +16,11 @@ indent_style = tab
 
 [*.md]
 trim_trailing_whitespace = false
+
+# Android (ktlint, android_studio code style; android/app/build.gradle.kts runs ktlintCheck).
+[*.{kt,kts}]
+indent_size = 4
+max_line_length = 140
+ktlint_code_style = android_studio
+# Compose: @Composable functions are PascalCase nouns.
+ktlint_function_naming_ignore_when_annotated_with = Composable

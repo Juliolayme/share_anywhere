@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Lint configuration for Share Anywhere Android. -->
+<lint>
+    <!-- strings.xml is generated from the whole shared catalog (scripts/gen-i18n.mjs): screens of later
+         milestones use most of it, so unused strings are expected until then. -->
+    <issue id="UnusedResources">
+        <ignore path="src/main/res/values/strings.xml" />
+        <ignore path="src/main/res/values-vi/strings.xml" />
+    </issue>
+    <!-- The adaptive icon folder is written by scripts/export-brand.mjs (pnpm brand) for every platform at once. -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+    <!-- Library versions are pinned to the last releases that build against compileSdk 35 (the targetSdk);
+         see gradle/libs.versions.toml. -->
+    <issue id="GradleDependency" severity="informational" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <issue id="AndroidGradlePluginVersion" severity="informational" />
+    <issue id="OldTargetApi" severity="informational" />
+</lint>

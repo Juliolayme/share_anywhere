@@ -19,3 +19,6 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0013](0013-session-hardening.md) | Account session hardening (browser-session binding, retired refresh secrets) | Accepted |
 | [0014](0014-current-version-proofs.md) | Current-version key proofs, rotation owed after departures, and pairing anchored on held keys | Accepted, amended by 0015 |
 | [0015](0015-authenticated-recovery-key.md) | Authenticated recovery key and key checks in open tabs | Accepted |
+| [0016](0016-android-networking.md) | Android networking and API models | Accepted |
+| [0017](0017-android-webrtc.md) | WebRTC library for Android | Accepted |
+| [0018](0018-android-di-persistence-build.md) | Android dependency injection, persistence, secret storage, and build reproducibility | Accepted |

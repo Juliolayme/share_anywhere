@@ -17,7 +17,7 @@ blob-report/
 *.test
 *.out
 
-# Android / iOS (later phases)
+# Android / iOS
 .gradle/
 local.properties
 *.keystore

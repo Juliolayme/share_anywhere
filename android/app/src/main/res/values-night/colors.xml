@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- tokens.json color.dark.bg. -->
+    <color name="sa_window_bg">#0B1A33</color>
+</resources>

@@ -46,3 +46,23 @@ test('a logo theme mode with an unreadable wordmark is reported', () => {
   t.logo.themeMode.dark = 'color';
   assert.ok(checkContrast(t).some((f) => f.startsWith('dark: logo wordmark on bg')));
 });
+
+test('Kotlin tokens carry every colour in both themes, ARGB with alpha for rgba values', async () => {
+  const { renderKotlin, kotlinColor, kotlinName, shadowElevation } = await import('./gen-tokens.mjs');
+  const t = loadTokens();
+  const kt = renderKotlin(t);
+  for (const theme of ['light', 'dark']) {
+    for (const [name, value] of Object.entries(t.color[theme])) {
+      assert.ok(kt.includes(`${kotlinName(name)} = ${kotlinColor(value)},`), `${theme}.${name}`);
+      assert.ok(kt.includes(`"${name}" to ${kotlinName(name)},`), `byToken ${name}`);
+    }
+  }
+  assert.equal(kotlinColor('#0a6fd6'), 'Color(0xFF0A6FD6)');
+  assert.equal(kotlinColor('rgba(16, 42, 86, 0.32)'), 'Color(0x52102A56)');
+  assert.throws(() => kotlinColor('hsl(0 0% 0%)'), /Unsupported color/);
+  assert.equal(kotlinName('border-strong'), 'borderStrong');
+  assert.equal(shadowElevation('none'), 0);
+  assert.equal(shadowElevation('0 8px 24px rgba(16, 42, 86, 0.12)'), 8);
+  assert.ok(kt.includes('val TouchTarget: Dp = 48.dp'));
+  assert.ok(kt.includes('val S4: Dp = 16.dp'));
+});

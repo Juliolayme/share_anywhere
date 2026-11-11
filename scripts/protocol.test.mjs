@@ -56,3 +56,50 @@ test('every operation in the real openapi.yaml declares a known x-sa-access', ()
     assert.ok(['public', 'device', 'participant', 'account', 'account+device'].includes(op.access), op.key);
   }
 });
+
+test('Kotlin models: required, optional and nullable fields, allOf merges, aliases, maps, operations', async () => {
+  const { renderKotlinModels } = await import('./protocol.mjs');
+  const doc = {
+    info: { version: '9.9.9' },
+    paths: {
+      '/v1/things/{id}': { post: { operationId: 'makeThing', 'x-sa-access': 'device', summary: 'Make it.' } },
+    },
+    components: {
+      schemas: {
+        Base64Url: { type: 'string' },
+        Error: { type: 'object', required: ['error'], properties: { error: { type: 'string' }, retry_after_s: { type: 'integer' } } },
+        Thing: {
+          type: 'object',
+          required: ['id', 'size', 'tags', 'when'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            size: { type: 'integer', format: 'int64' },
+            tags: { type: 'array', items: { type: 'string' } },
+            when: { type: 'string', nullable: true },
+            kind: { type: 'string', enum: ['a', 'b'] },
+            checks: { type: 'object', additionalProperties: { type: 'string' } },
+            blob: { allOf: [{ $ref: '#/components/schemas/Base64Url' }] },
+            inner: { type: 'object', properties: { ok: { type: 'boolean' } } },
+          },
+        },
+        ThingError: { allOf: [{ $ref: '#/components/schemas/Error' }, { type: 'object', required: ['thing'], properties: { thing: { $ref: '#/components/schemas/Thing' } } }] },
+      },
+    },
+  };
+  const kt = renderKotlinModels(doc);
+  assert.ok(kt.includes('const val API_VERSION = "9.9.9"'));
+  assert.ok(kt.includes('typealias Base64Url = String'));
+  assert.ok(kt.includes('@SerialName("id") val id: String,'));
+  assert.ok(kt.includes('@SerialName("size") val size: Long,'));
+  assert.ok(kt.includes('@SerialName("tags") val tags: List<String>,'));
+  assert.ok(kt.includes('@SerialName("when") val `when`: String? = null,'));
+  assert.ok(kt.includes('One of: a, b.'));
+  assert.ok(kt.includes('@SerialName("checks") val checks: Map<String, String>? = null,'));
+  assert.ok(kt.includes('@SerialName("blob") val blob: Base64Url? = null,'));
+  assert.ok(kt.includes('@SerialName("inner") val inner: ThingInner? = null,'));
+  assert.ok(kt.includes('data class ThingInner('));
+  assert.ok(kt.includes('data class ThingError(\n    @SerialName("error") val error: String,\n    @SerialName("retry_after_s") val retryAfterS: Int? = null,\n    @SerialName("thing") val thing: Thing,\n)'));
+  assert.ok(kt.includes('val makeThing = ApiOperation("POST", "/v1/things/{id}", "device")'));
+  assert.ok(kt.includes('val all: List<ApiOperation> = listOf(makeThing)'));
+  assert.ok(!kt.includes('import kotlinx.serialization.json.JsonElement'));
+});

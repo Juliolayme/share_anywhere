@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The product name is a brand name, the same in every language (PRD §3). -->
+    <string name="app_name" translatable="false">Share Anywhere</string>
+</resources>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- tokens.json color.light.bg; values-night holds color.dark.bg. Checked by GeneratedSourcesTest. -->
+    <color name="sa_window_bg">#F7FAFD</color>
+</resources>

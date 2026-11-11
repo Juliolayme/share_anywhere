@@ -145,6 +145,8 @@ Entry points: header chip and ST-1 Sign in, Clipboard intro (CB-1), Devices intr
 | Screen-on pill | Wake Lock states, including unsupported and refused | Hint `product.hint_android_screen_off` | Hint `product.hint_ios_lock` |
 | QR scan | Not offered; code entry and links cover Web | CameraX | AVFoundation + Vision (real device only) |
 
+**As built (Phase 6 milestone 6.1, Android):** ON-1 `welcome` (shown once, Start sharing → TR-1, no sign-in), TR-1 `home` (logo, ON-2 identity notices, recent local transfers with See all, empty and loading states; Send and Receive arrive in 6.2), HI-1 `history` (search, the design's chips plus status, date and device filters, `common.local` banner, empty, no-match, loading and error states, Clear history with confirmation) with HI-2 as a bottom sheet tagged `history-detail` (Delete from history), DV-1 `devices` ("This device" card with name, platform, Anonymous since, Rename, Reset device identity), ST-1 `settings` (Guest header, theme, language System/English/Tiếng Việt, Keep screen on during transfers, Keep transfer history 30/90 days/don't keep, Clear history, privacy note, version). Bottom navigation Transfer, History, Devices, Settings; Clipboard hidden by its flag. Screen IDs are the navigation routes and Compose test tags. Differences from the design: `docs/design/DESIGN_DEVIATIONS.md` section I.
+
 ## 12. Design screen IDs, components, and state models
 
 Web IDs come from `Web App.dc.html`, Android IDs from `Android App.dc.html`, iOS IDs from `iOS App.dc.html`. "—" means the platform has no separate screen. Components are named in `docs/DESIGN_SYSTEM.md` §6.

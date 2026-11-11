@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window theme before Compose draws: the design's light canvas (tokens.json color.light.bg). Compose applies
+         the full Material 3 theme from ui/theme/Tokens.kt. -->
+    <style name="Theme.ShareAnywhere" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/sa_window_bg</item>
+    </style>
+</resources>

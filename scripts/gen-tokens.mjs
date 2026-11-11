@@ -3,11 +3,11 @@
 //
 //   node scripts/gen-tokens.mjs            write generated files
 //   node scripts/gen-tokens.mjs --check    fail if generated files are out of date (CI)
-//   node scripts/gen-tokens.mjs --target kotlin|swift
+//   node scripts/gen-tokens.mjs --target css|kotlin|swift   (default: css and kotlin)
 //
 // Targets:
 //   css     web/src/styles/tokens.css and web/src/styles/tokens.ts (implemented, Phase 0)
-//   kotlin  android/app/src/main/java/app/shareanywhere/ui/theme/Tokens.kt (hook, implemented in Phase 6)
+//   kotlin  android/app/src/main/java/app/shareanywhere/ui/theme/Tokens.kt (implemented, Phase 6)
 //   swift   ios/ShareAnywhereCore/Sources/DesignTokens/Tokens.swift (hook, implemented in Phase 7)
 import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -99,14 +99,163 @@ export function cssVariableNames(t) {
   ];
 }
 
+
+/** "surface-2" -> "surface2", "on-send" -> "onSend", "label-lg" -> "labelLg". */
+export function kotlinName(token) {
+  return token.replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase());
+}
+
+/** "#0A6FD6" or "rgba(16, 42, 86, 0.32)" -> "Color(0xFF0A6FD6)" / "Color(0x52102A56)". */
+export function kotlinColor(value) {
+  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+  if (hex) return `Color(0xFF${hex[1].toUpperCase()})`;
+  const rgba = /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\s*\)$/.exec(value);
+  if (rgba) {
+    const [r, g, b] = rgba.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, '0'));
+    const a = Math.round(Number(rgba[4]) * 255).toString(16).padStart(2, '0');
+    return `Color(0x${(a + r + g + b).toUpperCase()})`;
+  }
+  throw new Error(`Unsupported color value for Kotlin: ${value}`);
+}
+
+const px = (v) => {
+  const m = /^(-?[0-9.]+)px$/.exec(v);
+  if (!m) throw new Error(`Expected a px value, got ${v}`);
+  return Number(m[1]);
+};
+const ms = (v) => {
+  const m = /^([0-9.]+)ms$/.exec(v);
+  if (!m) throw new Error(`Expected a ms value, got ${v}`);
+  return Number(m[1]);
+};
+/** Compose elevation for a CSS shadow: the y offset of its first layer ("0 8px 24px …" -> 8), 0 for none. */
+export function shadowElevation(v) {
+  if (v === 'none') return 0;
+  const m = /^\s*-?[0-9.]+(?:px)?\s+(-?[0-9.]+)px/.exec(v);
+  if (!m) throw new Error(`Unsupported shadow for Kotlin: ${v}`);
+  return Number(m[1]);
+}
+const pascal = (s) => kotlinName(s).replace(/^./, (c) => c.toUpperCase());
+const num = (n) => (Number.isInteger(n) ? String(n) : String(n).replace(/^(-?)0\./, '$1.').replace(/^(-?)\./, '$10.'));
+const floatList = (a) => `floatArrayOf(${a.map((n) => `${num(n)}f`).join(', ')})`;
+
+export function renderKotlin(t) {
+  const colorNames = Object.keys(t.color.light);
+  const L = [];
+  L.push(`// ${HEADER}`);
+  L.push('@file:Suppress("ktlint", "MagicNumber")');
+  L.push('');
+  L.push('package app.shareanywhere.ui.theme');
+  L.push('');
+  L.push('import androidx.compose.ui.graphics.Color');
+  L.push('import androidx.compose.ui.text.font.FontWeight');
+  L.push('import androidx.compose.ui.unit.Dp');
+  L.push('import androidx.compose.ui.unit.TextUnit');
+  L.push('import androidx.compose.ui.unit.dp');
+  L.push('import androidx.compose.ui.unit.sp');
+  L.push('');
+  L.push('/** One theme of the design-token colour roles (docs/DESIGN_SYSTEM.md); names follow tokens.json in camelCase. */');
+  L.push('data class SaPalette(');
+  for (const k of colorNames) L.push(`    val ${kotlinName(k)}: Color,`);
+  L.push(') {');
+  L.push('    /** Every colour keyed by its tokens.json name, for consistency tests. */');
+  L.push('    val byToken: Map<String, Color>');
+  L.push('        get() = mapOf(');
+  for (const k of colorNames) L.push(`            "${k}" to ${kotlinName(k)},`);
+  L.push('        )');
+  L.push('}');
+  L.push('');
+  L.push('/** A type-scale step: size and line height in sp, weight, and the font family role (sans or mono). */');
+  L.push('data class SaTypeStyle(val size: TextUnit, val line: TextUnit, val weight: FontWeight, val mono: Boolean)');
+  L.push('');
+  L.push('/** Logo colours for one colour mode (Logo.dc.html). */');
+  L.push('data class SaLogoColors(val send: Color, val receive: Color, val dot: Color, val text: Color)');
+  L.push('');
+  L.push('object SaTokens {');
+  L.push(`    const val VERSION = ${t.version}`);
+  for (const theme of ['light', 'dark']) {
+    L.push('');
+    L.push(`    val ${pascal(theme)} = SaPalette(`);
+    for (const k of colorNames) L.push(`        ${kotlinName(k)} = ${kotlinColor(t.color[theme][k])},`);
+    L.push('    )');
+  }
+  L.push('');
+  L.push('    object Brand {');
+  for (const [k, v] of Object.entries(t.brand)) L.push(`        val ${pascal(k)} = ${kotlinColor(v)}`);
+  L.push('    }');
+  L.push('');
+  L.push('    object Type {');
+  for (const [k, ty] of Object.entries(t.font.type)) {
+    L.push(`        val ${pascal(k)} = SaTypeStyle(${num(px(ty.size))}.sp, ${num(px(ty.line))}.sp, FontWeight(${ty.weight}), mono = ${ty.family === 'mono'})`);
+  }
+  L.push('    }');
+  L.push('');
+  L.push('    object Weight {');
+  for (const [k, v] of Object.entries(t.font.weight)) L.push(`        val ${pascal(k)} = FontWeight(${v})`);
+  L.push('    }');
+  L.push('');
+  L.push('    /** Spacing scale: S1 = space "1" (4 dp), S4 = space "4" (16 dp), and so on. */');
+  L.push('    object Space {');
+  for (const [k, v] of Object.entries(t.space)) L.push(`        val S${k}: Dp = ${num(px(v))}.dp`);
+  L.push('    }');
+  L.push('');
+  L.push('    object Radius {');
+  for (const [k, v] of Object.entries(t.radius)) L.push(`        val ${pascal(k)}: Dp = ${num(px(v))}.dp`);
+  L.push('    }');
+  L.push('');
+  L.push('    object Border {');
+  for (const [k, v] of Object.entries(t.border)) L.push(`        val ${pascal(k)}: Dp = ${num(px(v))}.dp`);
+  L.push('    }');
+  L.push('');
+  L.push('    /** Control heights. */');
+  L.push('    object Control {');
+  for (const [k, v] of Object.entries(t.control)) L.push(`        val ${pascal(k)}: Dp = ${num(px(v))}.dp`);
+  L.push('    }');
+  L.push('');
+  const tt = /^([0-9.]+)dp$/.exec(t.touchTarget.android);
+  if (!tt) throw new Error(`touchTarget.android must be in dp, got ${t.touchTarget.android}`);
+  L.push('    /** Minimum touch target on Android (touchTarget.android). */');
+  L.push(`    val TouchTarget: Dp = ${num(Number(tt[1]))}.dp`);
+  L.push('');
+  L.push('    /** Elevation per level, from the y offset of each CSS shadow (none = 0). */');
+  for (const theme of ['light', 'dark']) {
+    if (theme === 'dark') L.push('');
+    L.push(`    object Elevation${pascal(theme)} {`);
+    for (const [k, v] of Object.entries(t.elevation[theme])) L.push(`        val ${pascal(k)}: Dp = ${num(shadowElevation(v))}.dp`);
+    L.push('    }');
+  }
+  L.push('');
+  L.push('    /** Motion durations in milliseconds (0 when the system disables animations). */');
+  L.push('    object Motion {');
+  for (const [k, v] of Object.entries(t.motion.duration)) L.push(`        const val ${pascal(k)}Ms = ${num(ms(v))}`);
+  L.push('    }');
+  L.push('');
+  L.push('    /** Logo geometry in the 48-unit viewBox: capsules [x, y, width, height, radius], dots [cx, cy, r]. */');
+  L.push('    object Logo {');
+  const g = t.logo.geometry;
+  L.push(`        const val VIEWBOX = ${num(Number(g.viewBox.split(/\s+/)[2]))}f`);
+  for (const k of ['capsuleSend', 'capsuleReceive', 'dotSend', 'dotReceive']) L.push(`        val ${pascal(k)} = ${floatList(g[k])}`);
+  for (const [mode, c] of Object.entries(t.logo.modes)) {
+    L.push(`        val Mode${pascal(mode)} = SaLogoColors(${['send', 'receive', 'dot', 'text'].map((k) => kotlinColor(c[k])).join(', ')})`);
+  }
+  L.push(`        val ForLight = Mode${pascal(t.logo.themeMode.light)}`);
+  L.push(`        val ForDark = Mode${pascal(t.logo.themeMode.dark)}`);
+  L.push(`        const val WORDMARK_SIZE_RATIO = ${num(t.logo.wordmark.sizeRatio)}f`);
+  L.push(`        const val WORDMARK_GAP_RATIO = ${num(t.logo.wordmark.gapRatio)}f`);
+  L.push(`        const val WORDMARK_WEIGHT = ${t.logo.wordmark.fontWeight}`);
+  L.push(`        const val DOTLESS_AT_OR_BELOW_DP = ${t.logo.dotlessAtOrBelowPx}`);
+  L.push('    }');
+  L.push('}');
+  L.push('');
+  return L.join('\n');
+}
+
 const TARGETS = {
   css: (t) => [
     [join(ROOT, 'web/src/styles/tokens.css'), renderCss(t)],
     [join(ROOT, 'web/src/styles/tokens.ts'), renderTs(t)],
   ],
-  kotlin: () => {
-    throw new Error('Kotlin token generation is implemented in Phase 6 (Android). See docs/phases/PHASE_6_ANDROID.md.');
-  },
+  kotlin: (t) => [[join(ROOT, 'android/app/src/main/java/app/shareanywhere/ui/theme/Tokens.kt'), renderKotlin(t)]],
   swift: () => {
     throw new Error('Swift token generation is implemented in Phase 7 (iOS). See docs/phases/PHASE_7_IOS.md.');
   },
@@ -115,7 +264,7 @@ const TARGETS = {
 function main(argv) {
   const check = argv.includes('--check');
   const ti = argv.indexOf('--target');
-  const targets = ti >= 0 ? [argv[ti + 1]] : ['css'];
+  const targets = ti >= 0 ? [argv[ti + 1]] : ['css', 'kotlin'];
   const tokens = loadTokens();
 
   const schemaErrors = validateTokens(tokens);

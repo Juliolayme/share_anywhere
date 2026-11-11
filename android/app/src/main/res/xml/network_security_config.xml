@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release: HTTPS only, system trust store only (docs/SECURITY_MODEL.md). The debug build replaces this file
+     (src/debug/res/xml) to allow cleartext to the local development backend. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

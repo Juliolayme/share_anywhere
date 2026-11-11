@@ -1,0 +1,99 @@
+name: Android emulator
+
+# Reusable: instrumentation tests on an Android emulator (KVM) against the CI backend stack
+# (docker-compose.ci.yml, the same stack as e2e-web), reached from the emulator at 10.0.2.2.
+# Called by ci.yml (API 34) and, from Phase 6 nightly work, by nightly.yml (docs/TESTING_AND_CI.md §2.4).
+on:
+  workflow_call:
+    inputs:
+      api-level:
+        description: Android API level of the emulator image
+        type: number
+        required: true
+      target:
+        description: System image target (default, google_apis, google_apis_playstore)
+        type: string
+        default: google_apis
+      arch:
+        description: System image ABI
+        type: string
+        default: x86_64
+      gradle-task:
+        description: Gradle task that runs the instrumentation tests
+        type: string
+        default: connectedDebugAndroidTest
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    name: android-emulator (API ${{ inputs.api-level }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: gradle/actions/wrapper-validation@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Start CI stack (postgres, backend, web, coturn, caddy)
+        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Backend reachable on the host (the emulator sees it as 10.0.2.2:8080)
+        run: curl -fsS http://localhost:8080/healthz
+      - name: Build the app and test APKs before booting the emulator
+        working-directory: android
+        run: ./gradlew assembleDebug assembleDebugAndroidTest -Pbackend=http://10.0.2.2:8080 --stacktrace
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ inputs.api-level }}-${{ inputs.target }}-${{ inputs.arch }}-v1
+      - name: Create AVD and snapshot for the cache
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2.33.0
+        with:
+          api-level: ${{ inputs.api-level }}
+          target: ${{ inputs.target }}
+          arch: ${{ inputs.arch }}
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+      - name: Instrumentation tests (${{ inputs.gradle-task }})
+        uses: reactivecircus/android-emulator-runner@v2.33.0
+        with:
+          api-level: ${{ inputs.api-level }}
+          target: ${{ inputs.target }}
+          arch: ${{ inputs.arch }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          working-directory: android
+          script: ./gradlew ${{ inputs.gradle-task }} -Pbackend=http://10.0.2.2:8080 --stacktrace
+      - name: Upload instrumentation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-api${{ inputs.api-level }}
+          if-no-files-found: ignore
+          path: |
+            android/app/build/reports/androidTests
+            android/app/build/outputs/androidTest-results
+          retention-days: 7
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v

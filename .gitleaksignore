@@ -2,3 +2,10 @@
 # credential. History cannot be rewritten (no force-push), so this exact finding is ignored;
 # the test now builds the string at runtime.
 303721fe878ec680fa22552eb63972ce338b5714:backend/internal/platform/logging/logging_test.go:jwt:41
+
+# Phase 5A false positives (a598989): published, deterministic test vectors for the account-key protocol
+# (fixed inputs so Android and iOS can reproduce them, docs/CLIPBOARD_PROTOCOL.md §1) and a TypeScript type
+# field named privateKey. None is a credential. The vectors file is also path-allowlisted in .gitleaks.toml.
+a598989701ca93b1c326f9b08f1fbb8c4c16368b:shared/protocol/schemas/clipboard-vectors.json:generic-api-key:53
+a598989701ca93b1c326f9b08f1fbb8c4c16368b:shared/protocol/schemas/clipboard-vectors.json:generic-api-key:56
+a598989701ca93b1c326f9b08f1fbb8c4c16368b:web/src/lib/crypto/x25519.ts:generic-api-key:16

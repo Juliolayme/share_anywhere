@@ -1,0 +1,8 @@
+# Gitleaks configuration: the default rules, plus a path allowlist for published test vectors.
+# Keep this list minimal; every entry must be public, deterministic test data, never a credential.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deterministic, published protocol test vectors (docs/CLIPBOARD_PROTOCOL.md §1)"
+paths = ['''^shared/protocol/schemas/clipboard-vectors\.json$''']

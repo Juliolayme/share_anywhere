@@ -68,11 +68,29 @@ export function clampScalar(secret: Uint8Array): Bytes {
 /** A fresh keypair; the private key is non-extractable on the WebCrypto backend. */
 export async function generateX25519(): Promise<X25519KeyPair> {
   if (await hasWebCryptoX25519()) {
-    const pair = (await subtle().generateKey(ALG, false, ['deriveBits'])) as CryptoKeyPair;
-    const publicKey = new Uint8Array(await subtle().exportKey('raw', pair.publicKey));
-    return { privateKey: { kind: 'webcrypto', key: pair.privateKey }, publicKey };
+    // WebKit on Linux fails about one generation in 32 with OperationError (a private scalar whose first byte
+    // is zero); every attempt draws a fresh scalar, so a few retries make a failure vanishingly rare.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const pair = (await subtle().generateKey(ALG, false, ['deriveBits'])) as CryptoKeyPair;
+        const publicKey = new Uint8Array(await subtle().exportKey('raw', pair.publicKey));
+        return { privateKey: { kind: 'webcrypto', key: pair.privateKey }, publicKey };
+      } catch {
+        /* next attempt */
+      }
+    }
   }
   return x25519FromSecret(randomBytes(X25519_BYTES));
+}
+
+/**
+ * A fresh keypair on the JS backend (@noble/curves): the private scalar is returned as bytes for the caller to
+ * keep encrypted (the device key store's fallback where a WebCrypto X25519 key cannot be stored).
+ */
+export async function generateX25519Raw(): Promise<X25519KeyPair> {
+  const k = clampScalar(randomBytes(X25519_BYTES));
+  const x = await noble();
+  return { privateKey: { kind: 'raw', bytes: k }, publicKey: copyBytes(x.getPublicKey(k)) };
 }
 
 /**
@@ -90,9 +108,13 @@ export async function x25519FromSecret(secret: Uint8Array): Promise<X25519KeyPai
       // X25519(k, 9) is the public key; derive it natively instead of loading a JS curve.
       const base = await subtle().importKey('raw', copyBytes(BASE_POINT), ALG, false, []);
       const publicKey = new Uint8Array(await subtle().deriveBits({ name: 'X25519', public: base }, key, 256));
+      zeroize(k);
       return { privateKey: { kind: 'webcrypto', key }, publicKey };
+    } catch {
+      // WebKit on Linux rejects every scalar whose first byte is zero (DataError, 1 in 32 after clamping), so a
+      // given recovery seed would never import there: use the JS backend for this key (same X25519 result).
     } finally {
-      zeroize(pkcs8, k);
+      zeroize(pkcs8);
     }
   }
   const x = await noble();

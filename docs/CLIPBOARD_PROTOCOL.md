@@ -108,7 +108,7 @@ It stores ADK(v+1) only after `200`. On `409 key_version_conflict` or `409 devic
 
 | Platform | ADK at rest | Device private key | On sign-out |
 |---|---|---|---|
-| Web | IndexedDB database `share-anywhere-keys`; each version encrypted with AES-256-GCM under a non-extractable device KEK (a `CryptoKey` kept in the same database), AAD `adk\|<version>` | Non-extractable `CryptoKey` in the same database; fallback backend: scalar encrypted under the KEK, AAD `device\|x25519` | All records and the KEK are erased |
+| Web | IndexedDB database `share-anywhere-keys`; each version encrypted with AES-256-GCM under a non-extractable device KEK (a `CryptoKey` kept in the same database), AAD `adk\|<version>` | Non-extractable `CryptoKey` in the same database; fallback backend: scalar encrypted under the KEK, AAD `device\|x25519` (also used where the engine stores a WebCrypto X25519 key but reads the record back empty, seen in Playwright's WebKit: `getOrCreateDeviceKey` reads the key back once and falls back). The same engine rejects X25519 scalars whose first byte is zero (pkcs8 import `DataError`, `generateKey` `OperationError`, about 1 in 32 after clamping): generation retries with a fresh key and an import from a fixed secret (recovery seed) uses the JS backend, which gives the same X25519 results | All records and the KEK are erased |
 | Android | Wrapped by an Android Keystore AES key (PRD §7.5) | Wrapped by the same Keystore key | Keys and wrapped blobs deleted |
 | iOS | Wrapped by a Secure Enclave `P256.KeyAgreement` derived key, Keychain `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, excluded from backups (PRD §7.5) | Same protection | Keychain items deleted |
 

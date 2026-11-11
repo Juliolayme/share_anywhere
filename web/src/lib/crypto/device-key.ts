@@ -1,6 +1,7 @@
 import { b64uEncode } from './encoding';
 import type { KeyStore } from './store';
-import { generateX25519, hasWebCryptoX25519, type X25519KeyPair } from './x25519';
+import { KeyStoreUnavailableError } from './errors';
+import { generateX25519, generateX25519Raw, hasWebCryptoX25519, type X25519KeyPair } from './x25519';
 
 /**
  * Per-device X25519 wrapping keypair (contract §Crypto "Device wrapping key"). Rotation blobs are wrapped
@@ -24,13 +25,21 @@ export async function deviceKeyIsHardened(): Promise<boolean> {
 }
 
 /**
- * The stored device keypair, creating and saving one on first use. `created` tells the caller to register
+ * The stored device keypair, creating and saving one on first use (read back once, falling back to the JS
+ * backend where the engine cannot restore a stored WebCrypto X25519 key). `created` tells the caller to register
  * the public key (`PUT /v1/keys/device`); re-registering an unchanged key is harmless.
  */
 export async function getOrCreateDeviceKey(store: KeyStore): Promise<{ keyPair: X25519KeyPair; created: boolean }> {
   const existing = await store.loadDeviceKey();
   if (existing) return { keyPair: existing, created: false };
-  const keyPair = await generateDeviceKeyPair();
+  let keyPair = await generateDeviceKeyPair();
   await store.saveDeviceKey(keyPair);
+  if (keyPair.privateKey.kind === 'webcrypto' && !(await store.loadDeviceKey())) {
+    // Some engines (WebKit) accept a WebCrypto X25519 key into IndexedDB but read the record back as undefined.
+    // Keep the private scalar encrypted under the non-extractable device KEK instead (the fallback backend).
+    keyPair = await generateX25519Raw();
+    await store.saveDeviceKey(keyPair);
+    if (!(await store.loadDeviceKey())) throw new KeyStoreUnavailableError('the device key does not survive storage');
+  }
   return { keyPair, created: true };
 }

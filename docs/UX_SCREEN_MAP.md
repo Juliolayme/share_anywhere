@@ -71,6 +71,8 @@ flowchart LR
 | HI-1 | History list | `/history` | Local entries only; banner "Stored only on this device" (`common.local`); once accounts exist, a Sign in action to sync history | Sync off: banner `product.turn_on_history_sync`. Sync on: merged local and synced entries with origin device | Search / Open entry |
 | HI-2 | History detail | `/history/:entryId` | Direction, peer, files, transferred bytes vs size, result. Deleting an entry (or Clear all) also keeps that session from being recorded again for 7 days, so a live session that later finishes another delivery does not bring it back (Web, `history-store.ts`) | Same, plus origin device | Delete entry |
 
+**As built (Phase 5A, Web):** banner by state: guest "Sign in to sync your history across your devices" (Sign in, `returnTo=/history`); not added → Add this device; sync off → `common.local` with **Turn on history sync**; key missing → Pair this device; sync on → "Synced {when}" with Sync now, "Syncing…", or an error banner with Retry (offline is said as such); entries the device cannot read yet are counted. Synced entries carry the origin device in HI-2 ("Device"). With sync on, Delete and Clear all also tombstone the synced copies, and the Clear dialog says so.
+
 ## 7. Devices
 
 | ID | Screen | Destination | Guest | Signed in | Primary action |
@@ -78,11 +80,15 @@ flowchart LR
 | DV-1 | Devices | `/devices` | "This device" card (name, platform, anonymous since) with Rename and Reset device identity; account-required intro with Sign in / Create account | Device added: account device list, current device marked, Rename, Revoke, Pair a new device. Not added: read-only list + `product.add_device` | Rename / Sign in / Pair |
 | DV-2 | Revoke confirmation | dialog | — | Explains loss of clipboard and history access and key rotation | Revoke |
 
+**As built (Phase 5A, Web):** guests keep the "This device" card and get the "Sync your device list" intro with Sign in / Create account (`returnTo=/devices`). Signed in, `GET /v1/devices` lists the account's devices (current first, "This device" badge, platform and last activity, Trusted / Not trusted chip, "Not paired yet" for an added device without a registered key). An added device can rename any device (`PATCH /v1/devices/{id}`; its own name through `PATCH /v1/devices/current`), revoke another one (DV-2 lists: signed out of the account, loses synced history and clipboard, keys rotated, file sharing keeps working as a guest; then `DELETE /v1/devices/{id}` and the key rotation, `409 devices_changed` / `key_version_conflict` refetch and retry; a failed rotation shows a banner with "Rotate keys"), and open **Pair a new device** (paste the new device's `sa1.…` code, or scan its QR where `BarcodeDetector` and a camera exist; the dialog names the waiting device before the key is sent). Revoke and pairing need this device's key (`ready`). A not-added device sees the list read-only with `product.add_device` and **Add this device** (→ AC-4).
+
 ## 8. Settings
 
 | ID | Screen | Destination | Guest | Signed in | Primary action |
 |---|---|---|---|---|---|
 | ST-1 | Settings | `/settings` | Header "Guest" + Sign in / Create account; device name; theme; language EN/VI; notifications; transfer strategy (Auto); **Keep screen on during transfers** (default on); data/battery; local history retention and Clear history; privacy; about. Cloud, history sync, clipboard, manage devices shown disabled with Sign in | Header with account name, Account/security, Sign out; all sections enabled | Sign in / toggle settings |
+
+**As built (Phase 5A, Web):** guest header "Guest" with Sign in and Create account (`returnTo=/settings`), and an Account card with history sync, Manage devices and Cloud Distribution shown disabled ("Sign in to use Cloud transfer"). Signed in: the account email and initial, `product.add_device_clipboard` with **Add this device** while not added; for an added device the **Sync transfer history** switch (`PATCH /v1/me`, account-wide), the encryption-key state with Pair this device / Set up encryption when needed, Manage devices, Cloud Distribution disabled until Phase 8, **Change password** (inline form, `POST /v1/me/password`; other devices are signed out) and **Sign out** (AC-7). Two-step verification is not built (`DESIGN_DEVIATIONS.md` A3).
 
 ## 9. Account (reached only from account CTAs)
 
@@ -98,6 +104,16 @@ Entry points: header chip and ST-1 Sign in, Clipboard intro (CB-1), Devices intr
 | AC-6 | Pair this device | `/account/key/pair` | Added device without the ADK | Scan QR / paste pairing code, or Use recovery phrase |
 | AC-7 | Sign out | dialog | From ST-1 | Keep local history / Clear local history → Sign out |
 | AC-8 | You're set up (checklist) | `/account/checklist` | After the first sign-in on a device | Go to Clipboard |
+
+**As built (Phase 5A, Web):** the account routes render outside the app shell (logo, language and theme, one card) and load on demand; every one of them keeps `returnTo`, which accepts only a same-origin relative path that is not itself an account route (`web/src/features/account/returnTo.ts`). Entry points: header chip (below 1100 px) and sidebar panel, Welcome's optional "Already have an account? Sign in", Settings, Devices, History banner.
+
+- AC-1 / AC-2 sign in or create the account **without** adding the device; AC-4 follows. Client checks: email shape, password required (sign-up: at least 10 characters, strength meter); server errors are shown inline (`invalid_credentials`, `email_taken`, `weak_password`, rate limits with the wait). `already_signed_in` refreshes the token and returns.
+- AC-3 request form → "Check your inbox" whatever the address; `/reset?token=` reads the token once, drops it from the address bar, and sets a new password (confirmation field); success links to Sign in.
+- AC-4 (`trust`): device name, `product.add_device` (on) and, while it is on, `product.copy_history` (off) → Continue. Adding calls `POST /v1/devices/current/add`, then the key state routes to AC-5 (`key_version` 0), AC-6 (account key missing here) or AC-8. Not adding goes to AC-8.
+- AC-5 (`key-setup`): the ADK and recovery phrase are prepared on the device (Argon2id in a Web Worker); the 12 words are shown once with the warning that losing every device and the phrase makes synced history unrecoverable; "I wrote down my recovery phrase" enables Continue, which sends `POST /v1/keys/setup` and only then stores the key. `409 keys_exist` points to AC-6.
+- AC-6 (`key-pair`): QR plus copyable `sa1.<code>.<fingerprint>` text with the 10-minute countdown, polling every 2 s; expired or failed codes offer **New code**; a key from a sender that is not a device of the account is refused. **Use recovery phrase**: one field with word suggestions, unknown-word and checksum messages, word count, and progress while unlocking; a phrase of another account says so.
+- AC-7: dialog from Settings with Keep / Clear local history; sign-out erases the key store and sync bookkeeping, the browser continues as a new guest (new device ID, no reload).
+- AC-8 (`checklist`): sharing without an account, signed in as …, device added, key on this device, history sync on/off, each with its action when not done. The design's "Go to Clipboard" is **Continue** (back to `returnTo`) until Clipboard Sync exists (Phase 5B).
 
 ## 10. Clipboard
 
@@ -154,5 +170,8 @@ Web IDs come from `Web App.dc.html`, Android IDs from `Android App.dc.html`, iOS
 | AC-2 Create account | `signup` | `signup` | `signup` | Input with password strength | default, error |
 | AC-3 Reset password | `forgot` | `forgot` | `forgot` | Input, sent state | form, sent |
 | AC-4 After sign-in choices / trust device | `trust` | trust step | trust step | Switch, Button | default (the design's `verify` email step is not built, `DESIGN_DEVIATIONS.md` A1) |
+| AC-5 Account Data Key setup (Web addition, `DESIGN_DEVIATIONS.md` E17) | `key-setup` | — | — | Recovery-phrase grid, warning, checkbox, Button | generating, phrase shown, keys exist, unavailable, error |
+| AC-6 Pair this device / recovery phrase (Web addition, E17) | `key-pair` | — | — | QR panel, code text, countdown, phrase field with suggestions | waiting, expired, failed, untrusted, phrase (invalid word, checksum, wrong phrase, unlocking) |
+| AC-7 Sign out | `settings` dialog | — | — | Dialog with Segmented keep / clear | default |
 | AC-8 First-run checklist after sign-in | `checklist` | `checklist` | `checklist` | Checklist | default |
 | CB-1 to CB-6 Clipboard | `clipboard` | `clipboard` | `clipboard` | Account-required intro, Sync Clipboard / PasteButton, status banner, timeline, item detail | Web `clipboardStatus`: `auto`, `besteffort`, `denied`, `unsupported`, `offline`, `paused`; Android: `foreground`, `offline`, `paused`, `error`; iOS: `manual`, `offline`, `paused`, `denied` |

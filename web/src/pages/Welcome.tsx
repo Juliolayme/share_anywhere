@@ -1,13 +1,15 @@
 import { ArrowLeftRight, ArrowRight, ShieldCheck } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Logo } from '../components/Logo';
 import { useI18n } from '../i18n/i18n';
 import { HeaderControls } from '../app/AppShell';
 import { markWelcomeSeen } from '../lib/prefs';
+import { flags } from '../config/flags';
 
 /**
- * ON-1 / design screen `welcome`: one primary action, Start sharing → Transfer home. No sign-in here; the
- * design's sign-in links and Clipboard Sync feature row appear only with the `accounts` flag (Phase 5A).
+ * ON-1 / design screen `welcome`: one primary action, Start sharing → Transfer home. With the `accounts` flag an
+ * optional "Already have an account? Sign in" link follows (docs/UX_SCREEN_MAP.md ON-1); nothing asks for an
+ * account. The design's Clipboard Sync row waits for Phase 5B.
  */
 export default function Welcome() {
   const { t } = useI18n();
@@ -55,6 +57,14 @@ export default function Welcome() {
               <ArrowRight aria-hidden size={18} />
             </button>
             <p className="mb-1 mt-[2px] text-caption leading-[1.5] text-fg-2">{t('product.no_account')}</p>
+            {flags.accounts && (
+              <>
+                <div aria-hidden className="h-[1px] bg-border" />
+                <Link to="/signin" onClick={markWelcomeSeen} className="self-start text-[14px] font-semibold">
+                  {t('common.have')}
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </main>

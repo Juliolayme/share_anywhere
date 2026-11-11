@@ -108,6 +108,14 @@ export function HistoryDetail({
         <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-[10px] text-[14px]">
           <dt className="text-fg-2">{directionLabel(entry, t)}</dt>
           <dd className="m-0 break-words">{entryPeers(entry).join(', ')}</dd>
+          {entry.origin && (
+            <>
+              <dt className="text-fg-2">{t('product.history_origin')}</dt>
+              <dd className="m-0 break-words" data-testid="history-detail-origin">
+                {entry.origin}
+              </dd>
+            </>
+          )}
           <dt className="text-fg-2">{t('product.history_original_size')}</dt>
           <dd className={mono}>{formatBytes(entry.totalBytes, locale)}</dd>
           <dt className="text-fg-2">{t('web_xx.h_size')}</dt>

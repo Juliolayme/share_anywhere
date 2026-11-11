@@ -137,6 +137,77 @@ describe('DeviceClient', () => {
   });
 });
 
+const jwt = (payload: object) =>
+  `h.${btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}.s`;
+
+describe('DeviceClient and account sessions', () => {
+  it('does not refresh and resubmit on a 401 that is an answer (sign-in invalid_credentials)', async () => {
+    const h = harness([() => json(200, session()), () => json(401, { error: 'invalid_credentials' })]);
+    await h.client.bootstrap();
+    const err = await h.client.request('POST', '/v1/auth/signin', { email: 'a@b.co', password: 'x' }).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('invalid_credentials');
+    expect(h.calls.map((c) => c.url)).toEqual(['/v1/devices/token', '/v1/auth/signin']);
+  });
+
+  it('refreshes and retries once on device_token_invalid (token minted before the account session changed)', async () => {
+    const h = harness([
+      () => json(200, session('d1', jwt({ sub: 'd1', acct: 'u1', dl: true }))),
+      () => json(401, { error: 'device_token_invalid' }),
+      () => json(200, session('d1', jwt({ sub: 'd1' }))),
+      () => json(200, { ok: true }),
+    ]);
+    const seen: (string | undefined)[] = [];
+    h.client.subscribeClaims((c) => seen.push(c?.acct ?? 'guest'));
+    await h.client.bootstrap();
+    await h.client.request('GET', '/v1/me');
+    expect(h.calls.map((c) => c.url)).toEqual(['/v1/devices/token', '/v1/me', '/v1/devices/token', '/v1/me']);
+    // The account session ended elsewhere: the next token is a guest token and listeners hear it.
+    expect(seen).toEqual(['u1', 'guest']);
+    expect(h.client.claims).toEqual({ sub: 'd1' });
+  });
+
+  it('takes a new access token for the same device (sign-in, add device) without touching the device', async () => {
+    const h = harness([() => json(200, session('d1', jwt({ sub: 'd1' }))), () => json(200, { a: 1 })]);
+    const devices: (string | undefined)[] = [];
+    const claims: unknown[] = [];
+    h.client.subscribe((d) => devices.push(d?.id));
+    h.client.subscribeClaims((c) => claims.push(c));
+    await h.client.bootstrap();
+    const signedIn = jwt({ sub: 'd1', acct: 'u1' });
+    h.client.acceptToken({ access_token: signedIn, expires_in: 900 });
+    expect(h.client.device?.id).toBe('d1');
+    expect(h.client.claims).toEqual({ sub: 'd1', acct: 'u1' });
+    h.client.acceptToken({ access_token: jwt({ sub: 'd1', acct: 'u1', dl: true }), expires_in: 900 });
+    await h.client.request('GET', '/v1/devices');
+    expect((h.calls[1]?.init.headers as Record<string, string>).Authorization).toContain('Bearer h.');
+    expect(devices).toEqual(['d1']);
+    expect(claims).toEqual([{ sub: 'd1' }, { sub: 'd1', acct: 'u1' }, { sub: 'd1', acct: 'u1', dl: true }]);
+  });
+
+  it('takes the fresh anonymous identity from sign-out (new device ID)', async () => {
+    const h = harness([() => json(200, session('d1', jwt({ sub: 'd1', acct: 'u1', dl: true })))]);
+    await h.client.bootstrap();
+    h.client.acceptSession(session('d2', jwt({ sub: 'd2' })) as Parameters<typeof h.client.acceptSession>[0]);
+    expect(h.client.device?.id).toBe('d2');
+    expect(h.client.claims).toEqual({ sub: 'd2' });
+  });
+
+  it('resolves bodiless answers (202, 204) to undefined and sends public requests without a token', async () => {
+    const h = harness([
+      () => json(200, session()),
+      () => new Response(null, { status: 204 }),
+      () => new Response(null, { status: 202 }),
+    ]);
+    await h.client.bootstrap();
+    expect(await h.client.request('DELETE', '/v1/history')).toBeUndefined();
+    expect(
+      await h.client.publicRequest('POST', '/v1/auth/password-reset/request', { email: 'a@b.co' }),
+    ).toBeUndefined();
+    expect((h.calls[2]?.init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+});
+
 describe('platform label and proof-of-work', () => {
   it('names the browser', () => {
     expect(platformLabel('Mozilla/5.0 (X11) Gecko/20100101 Firefox/130.0')).toBe('Web · Firefox');

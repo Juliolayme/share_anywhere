@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   chromium,
   expect,
@@ -173,11 +174,37 @@ export function linkPath(link: string): string {
   return new URL(link).pathname;
 }
 
-/** A guest device created directly through the API (for filling a session to 5). */
+/** A solution for the device-creation proof-of-work (the app's solvePow, in Node). */
+function solvePow(token: string, difficulty: number): string {
+  for (let i = 0; ; i++) {
+    const solution = i.toString(36);
+    const d = createHash('sha256').update(`${token}:${solution}`).digest();
+    let bits = 0;
+    for (const b of d) {
+      if (b === 0) {
+        bits += 8;
+        continue;
+      }
+      bits += Math.clz32(b) - 24;
+      break;
+    }
+    if (bits >= difficulty) return solution;
+  }
+}
+
+/**
+ * A guest device created directly through the API (for filling a session to 5). Above the per-address soft
+ * limit the server asks for proof-of-work (`428`), as it does for the app; the helper solves it the same way
+ * (the test stack uses a low difficulty), so a long suite on one address keeps working.
+ */
 export async function apiDevice(request: APIRequestContext): Promise<string> {
-  const res = await request.post(`${BASE}/v1/devices/anonymous`, {
-    data: { platform: 'API · Test', transport: 'body' },
-  });
+  const data: Record<string, unknown> = { platform: 'API · Test', transport: 'body' };
+  let res = await request.post(`${BASE}/v1/devices/anonymous`, { data });
+  if (res.status() === 428) {
+    const { challenge } = (await res.json()) as { challenge: { token: string; difficulty: number } };
+    data.pow = { token: challenge.token, solution: solvePow(challenge.token, challenge.difficulty) };
+    res = await request.post(`${BASE}/v1/devices/anonymous`, { data });
+  }
   expect(res.status()).toBe(201);
   return (await res.json()).access_token as string;
 }

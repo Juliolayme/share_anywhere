@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { deviceIdFrom, openAsReturningGuest, sessionResponse } from '../fixtures';
 
-// Guest-first smoke (docs/TESTING_AND_CI.md §3): no sign-in anywhere on the path.
-test('welcome → home: first visit shows Welcome, Start sharing opens Transfer home, no sign-in anywhere', async ({
+// Guest-first smoke (docs/TESTING_AND_CI.md §3): no sign-in screen anywhere on the path. With the `accounts` flag
+// on (Phase 5A) sign-in is only offered as an optional link; nothing asks for credentials.
+test('welcome → home: first visit shows Welcome, Start sharing opens Transfer home, no sign-in screen anywhere', async ({
   page,
 }) => {
   await page.goto('/');
@@ -10,6 +11,9 @@ test('welcome → home: first visit shows Welcome, Start sharing opens Transfer 
   await expect(page.getByRole('heading', { name: 'Big files, any device, any network.' })).toBeVisible();
   await expect(page.getByRole('heading', { name: /sign in|create account/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /sign in|create account/i })).toHaveCount(0);
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  // The only account affordance is the optional link (docs/UX_SCREEN_MAP.md ON-1).
+  await expect(page.getByRole('link', { name: 'Already have an account? Sign in' })).toBeVisible();
 
   await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
   await page.getByRole('button', { name: 'Start sharing' }).click();
@@ -20,6 +24,7 @@ test('welcome → home: first visit shows Welcome, Start sharing opens Transfer 
   await expect(page.getByRole('link', { name: /Receive files/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: /sign in|create account/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /sign in/i })).toHaveCount(0);
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Clipboard' })).toHaveCount(0);
 
   // Later visits skip Welcome.
@@ -53,7 +58,10 @@ test('devices → settings: rename shows in Settings, and Settings says Guest', 
   await page.getByRole('link', { name: 'Settings' }).first().click();
   await expect(page.getByTestId('identity-label')).toHaveText('Guest');
   await expect(page.getByTestId('settings-device-name')).toHaveText('E2E Desk');
-  await expect(page.getByRole('button', { name: /sign in/i })).toHaveCount(0);
+  // Guests are offered Sign in and Create account (links to the account screens), never asked to use them.
+  await expect(page.locator('#main').getByRole('link', { name: 'Sign in', exact: true }).first()).toBeVisible();
+  await expect(page.locator('#main').getByRole('link', { name: 'Create account' })).toBeVisible();
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
 
   // The name is stored on the server: it survives a reload.
   await page.reload();

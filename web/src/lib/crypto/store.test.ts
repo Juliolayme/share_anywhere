@@ -75,6 +75,26 @@ describe('IndexedDB key store', () => {
     again.close();
   });
 
+  it('falls back to a KEK-encrypted raw device key when a stored WebCrypto X25519 key does not read back (WebKit)', async () => {
+    const store = await openKeyStore({ factory: new IDBFactory() });
+    // Model WebKit: the put succeeds, but a record holding a WebCrypto X25519 key reads back as undefined.
+    const load = store.loadDeviceKey.bind(store);
+    let webcryptoSaved = false;
+    const save = store.saveDeviceKey.bind(store);
+    store.saveDeviceKey = async (kp) => {
+      webcryptoSaved = kp.privateKey.kind === 'webcrypto';
+      await save(kp);
+    };
+    store.loadDeviceKey = async () => (webcryptoSaved ? null : load());
+    const { keyPair, created } = await getOrCreateDeviceKey(store);
+    expect(created).toBe(true);
+    expect(keyPair.privateKey.kind).toBe('raw');
+    const again = await getOrCreateDeviceKey(store);
+    expect(again.created).toBe(false);
+    expect(hex(again.keyPair.publicKey)).toBe(hex(keyPair.publicKey));
+    store.close();
+  });
+
   it('keeps a fallback (raw) device key encrypted under the KEK', async () => {
     const factory = new IDBFactory();
     forceX25519Backend('noble');

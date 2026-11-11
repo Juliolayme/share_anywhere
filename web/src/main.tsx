@@ -9,6 +9,7 @@ import { HistoryProvider } from './features/history/HistoryContext';
 import { ToastProvider } from './components/Toast';
 import { SharingProvider } from './features/sharing/SharingContext';
 import { KeepAwakeProvider } from './lib/keepAwake/KeepAwakeContext';
+import { AccountProvider } from './features/account/AccountContext';
 import './index.css';
 
 applyTheme(getThemePreference());
@@ -23,11 +24,13 @@ createRoot(root).render(
         <SharingProvider>
           <KeepAwakeProvider>
             <HistoryProvider>
-              <ToastProvider>
-                <BrowserRouter>
-                  <App />
-                </BrowserRouter>
-              </ToastProvider>
+              <AccountProvider>
+                <ToastProvider>
+                  <BrowserRouter>
+                    <App />
+                  </BrowserRouter>
+                </ToastProvider>
+              </AccountProvider>
             </HistoryProvider>
           </KeepAwakeProvider>
         </SharingProvider>

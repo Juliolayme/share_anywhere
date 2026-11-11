@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   ArrowLeftRight,
   Clipboard,
@@ -18,6 +18,8 @@ import { flags } from '../config/flags';
 import { useIdentity } from '../lib/identity/identity';
 import { useOnline } from '../lib/online';
 import { useTheme } from '../lib/theme';
+import { useAccount } from '../features/account/AccountContext';
+import { withReturnTo } from '../features/account/returnTo';
 
 interface NavItem {
   to: string;
@@ -70,6 +72,85 @@ export function HeaderControls() {
       >
         {dark ? <Sun aria-hidden size={18} /> : <Moon aria-hidden size={18} />}
       </button>
+    </div>
+  );
+}
+
+const initialOf = (email: string) => (email.trim()[0] ?? '?').toUpperCase();
+
+/** Header identity chip: Guest + Sign in, or the account's initial and email (links to Settings). */
+function IdentityChip() {
+  const { t } = useI18n();
+  const account = useAccount();
+  const { pathname, search } = useLocation();
+  if (!account.enabled) return null;
+  if (account.phase === 'guest') {
+    return (
+      <Link
+        to={withReturnTo('/signin', `${pathname}${search}`)}
+        data-testid="header-signin"
+        className="inline-flex h-control-sm items-center rounded-md border border-border-strong bg-surface px-3 text-caption font-semibold text-fg no-underline hover:bg-surface-2 hover:text-fg"
+      >
+        {t('web.signin')}
+      </Link>
+    );
+  }
+  const email = account.me?.email ?? '';
+  return (
+    <Link
+      to="/settings"
+      aria-label={t('product.account_chip', { email: email || t('product.badge_signed_in') })}
+      data-testid="header-account"
+      className="inline-flex h-[44px] max-w-[260px] items-center gap-2 rounded-md px-2 text-caption font-semibold text-fg no-underline hover:bg-surface-2 hover:text-fg"
+    >
+      <span
+        aria-hidden
+        className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full bg-send text-on-send"
+      >
+        {email ? initialOf(email) : <User size={16} />}
+      </span>
+      <span className="hidden truncate rail:inline">{email}</span>
+    </Link>
+  );
+}
+
+/** Sidebar identity panel (design sidebar): Guest with Sign in, or the signed-in account. */
+function SidebarIdentity() {
+  const { t } = useI18n();
+  const account = useAccount();
+  const { pathname, search } = useLocation();
+  const signedIn = account.phase === 'signed_in';
+  const email = account.me?.email ?? '';
+  return (
+    <div className="flex flex-col gap-[10px] rounded-lg border border-border bg-bg p-[14px]">
+      <div className="flex items-center gap-[10px]">
+        <span
+          aria-hidden
+          className={`flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full ${signedIn ? 'bg-send text-on-send' : 'bg-surface-2 text-fg-2'}`}
+        >
+          {signedIn && email ? <b className="text-[14px]">{initialOf(email)}</b> : <User size={18} />}
+        </span>
+        <div className="min-w-0">
+          <b className="block truncate text-[14px]">
+            {signedIn ? email || t('product.badge_signed_in') : t('web.guest')}
+          </b>
+          <div className="text-[12px] leading-4 text-fg-2">
+            {signedIn
+              ? account.added
+                ? t('product.badge_signed_in')
+                : t('product.ck_not_added')
+              : t('product.sidebar_guest_p')}
+          </div>
+        </div>
+      </div>
+      {account.enabled && !signedIn && (
+        <Link
+          to={withReturnTo('/signin', `${pathname}${search}`)}
+          className="inline-flex h-[40px] items-center justify-center rounded-md border border-border-strong bg-surface text-caption font-semibold text-fg no-underline hover:bg-surface-2 hover:text-fg"
+        >
+          {t('web.signin')}
+        </Link>
+      )}
     </div>
   );
 }
@@ -137,18 +218,7 @@ export function AppShell() {
           })}
         </nav>
         <div className="flex-1" />
-        <div className="flex items-center gap-[10px] rounded-lg border border-border bg-bg p-[14px]">
-          <span
-            aria-hidden
-            className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-surface-2 text-fg-2"
-          >
-            <User size={18} />
-          </span>
-          <div>
-            <b className="text-[14px]">{t('web.guest')}</b>
-            <div className="text-[12px] leading-4 text-fg-2">{t('product.sidebar_guest_p')}</div>
-          </div>
-        </div>
+        <SidebarIdentity />
       </aside>
       {/* Icon rail from 760 to 1099 px */}
       <aside className="sticky top-0 hidden h-screen w-[80px] flex-none flex-col items-center gap-[18px] border-r border-border bg-surface px-2 py-[18px] rail:flex sidebar:hidden">
@@ -172,12 +242,19 @@ export function AppShell() {
       </aside>
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-[60px] flex-none items-center gap-3 border-b border-border bg-bg px-[clamp(16px,3vw,40px)]">
-          <span className="rail:hidden">
+          {/* Below 400 px the header also holds the identity chip, so the logo drops its wordmark. */}
+          <span className="hidden min-[400px]:inline rail:hidden">
             <Logo size={28} lockup />
+          </span>
+          <span className="min-[400px]:hidden">
+            <Logo size={28} />
           </span>
           <StatusPill />
           <span className="flex-1" />
           <HeaderControls />
+          <span className="sidebar:hidden">
+            <IdentityChip />
+          </span>
         </header>
         <main
           id="main"

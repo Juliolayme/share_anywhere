@@ -1,5 +1,6 @@
-import { Laptop, Pencil, RotateCcw, Smartphone } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Laptop, MonitorSmartphone, Pencil, RotateCcw, Smartphone } from 'lucide-react';
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Card, ConfirmDialog, PageHeader, Screen } from '../components/ui';
 import { useToast } from '../components/Toast';
 import { useI18n } from '../i18n/i18n';
@@ -7,12 +8,55 @@ import { formatWait, useIdentity } from '../lib/identity/identity';
 import { ApiError } from '../lib/api/errors';
 import { formatDate } from '../lib/format';
 import { IdentityNotice } from '../features/identity/IdentityNotice';
+import { useAccount } from '../features/account/AccountContext';
+
+// The account device list (rename, revoke, pairing) loads only for signed-in users.
+const AccountDevices = lazy(() => import('../features/account/AccountDevices'));
+
+/** DV-1 guest intro (design `devices` guest): the account-wide list needs an account; sharing never does. */
+function GuestIntro() {
+  const { t } = useI18n();
+  const cls =
+    'inline-flex h-control-md items-center justify-center rounded-md px-4 text-[14px] font-semibold no-underline';
+  return (
+    <section className="flex flex-wrap items-center gap-4 rounded-[16px] border border-dashed border-border-strong bg-surface p-[clamp(18px,3vw,24px)]">
+      <span
+        aria-hidden
+        className="flex h-[48px] w-[48px] flex-none items-center justify-center rounded-lg bg-send-soft text-send-ink"
+      >
+        <MonitorSmartphone size={22} />
+      </span>
+      <div className="min-w-[220px] flex-1">
+        <h2 className="m-0 text-[16px]">{t('web_vv.k82')}</h2>
+        <div className="mt-[2px] text-[14px] leading-[1.5] text-fg-2">{t('common.dv_sync_p')}</div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to="/signin?returnTo=%2Fdevices"
+          className={`${cls} bg-send text-on-send hover:bg-send-hover hover:text-on-send`}
+        >
+          {t('web.signin')}
+        </Link>
+        <Link
+          to="/signup?returnTo=%2Fdevices"
+          className={`${cls} border border-border-strong bg-surface text-fg hover:bg-surface-2 hover:text-fg`}
+        >
+          {t('web.create_acc')}
+        </Link>
+      </div>
+    </section>
+  );
+}
 
 const isMobileUA = () => typeof navigator !== 'undefined' && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 
-/** DV-1 / design screen `devices` for a guest: only "This device", with rename and reset identity. */
+/**
+ * DV-1 / design screen `devices`. A guest sees only "This device" (rename, reset identity) and the account intro;
+ * a signed-in user sees the account's device list (AccountDevices).
+ */
 export default function DevicesPage() {
   const { t, locale } = useI18n();
+  const account = useAccount();
   const toast = useToast();
   const { client, device, status } = useIdentity();
   const [editing, setEditing] = useState(false);
@@ -46,6 +90,18 @@ export default function DevicesPage() {
       setSaving(false);
     }
   };
+
+  if (account.phase === 'signed_in') {
+    return (
+      <Screen id="devices">
+        <PageHeader title={t('web.dv_h')} subtitle={<p className="m-0">{t('web_vv.k83')}</p>} />
+        <IdentityNotice />
+        <Suspense fallback={<div aria-hidden className="h-[160px] animate-pulse rounded-[16px] bg-surface-2" />}>
+          <AccountDevices />
+        </Suspense>
+      </Screen>
+    );
+  }
 
   return (
     <Screen id="devices">
@@ -161,6 +217,7 @@ export default function DevicesPage() {
           }
         }}
       />
+      {account.enabled && <GuestIntro />}
     </Screen>
   );
 }

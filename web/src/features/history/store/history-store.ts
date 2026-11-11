@@ -39,6 +39,8 @@ export interface HistoryEntry {
   route?: HistoryRoute;
   /** Epoch milliseconds when the first byte moved; with `createdAt` it gives the duration. */
   startedAt?: number;
+  /** Name of the account device this entry came from, for entries pulled by cloud history sync (Phase 5A). */
+  origin?: string;
 }
 
 export type Retention = '30' | '90' | 'none';

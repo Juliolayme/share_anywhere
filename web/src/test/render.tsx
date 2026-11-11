@@ -10,6 +10,7 @@ import type { HistoryStore } from '../features/history/store/history-store';
 import { SharingProvider } from '../features/sharing/SharingContext';
 import { KeepAwakeProvider } from '../lib/keepAwake/KeepAwakeContext';
 import type { KeepAwakeEnv } from '../lib/keepAwake/controller';
+import { AccountProvider } from '../features/account/AccountContext';
 
 export const noWakeLock: KeepAwakeEnv = { isSecure: true, isVisible: () => true, onVisibility: () => () => undefined };
 
@@ -71,9 +72,11 @@ export function renderApp(
         <SharingProvider>
           <KeepAwakeProvider env={noWakeLock}>
             <HistoryProvider store={store}>
-              <ToastProvider>
-                <MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>
-              </ToastProvider>
+              <AccountProvider>
+                <ToastProvider>
+                  <MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>
+                </ToastProvider>
+              </AccountProvider>
             </HistoryProvider>
           </KeepAwakeProvider>
         </SharingProvider>

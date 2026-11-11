@@ -1,6 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { openHistoryStore, type HistoryEntry, type HistoryStore } from './store/history-store';
 import { getRetention } from '../../lib/prefs';
+
+/** Cloud history sync listens to local deletions (Phase 5A); the local operation never waits for it. */
+export interface HistorySyncHandler {
+  removed: (ids: string[]) => void;
+  cleared: () => void;
+}
 
 interface HistoryValue {
   entries: HistoryEntry[];
@@ -11,6 +17,8 @@ interface HistoryValue {
   /** Deletes one entry (HI-2 "Delete from history"). */
   remove: (id: string) => Promise<void>;
   store: HistoryStore | null;
+  /** Registers the account's sync handler (null to remove it). */
+  setSyncHandler: (h: HistorySyncHandler | null) => void;
 }
 
 const HistoryContext = createContext<HistoryValue | null>(null);
@@ -28,6 +36,10 @@ export function HistoryProvider({ children, store: given }: { children: ReactNod
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(store === null);
+  const sync = useRef<HistorySyncHandler | null>(null);
+  const setSyncHandler = useCallback((h: HistorySyncHandler | null) => {
+    sync.current = h;
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!store) return;
@@ -46,6 +58,7 @@ export function HistoryProvider({ children, store: given }: { children: ReactNod
     if (!store) return;
     await store.clear();
     setEntries([]);
+    sync.current?.cleared();
   }, [store]);
 
   const remove = useCallback(
@@ -53,6 +66,7 @@ export function HistoryProvider({ children, store: given }: { children: ReactNod
       if (!store) return;
       await store.remove(id);
       setEntries((list) => list.filter((e) => e.id !== id));
+      sync.current?.removed([id]);
     },
     [store],
   );
@@ -63,8 +77,8 @@ export function HistoryProvider({ children, store: given }: { children: ReactNod
   }, [store, refresh]);
 
   const value = useMemo(
-    () => ({ entries, loading, error, refresh, clear, remove, store }),
-    [entries, loading, error, refresh, clear, remove, store],
+    () => ({ entries, loading, error, refresh, clear, remove, store, setSyncHandler }),
+    [entries, loading, error, refresh, clear, remove, store, setSyncHandler],
   );
   return <HistoryContext.Provider value={value}>{children}</HistoryContext.Provider>;
 }

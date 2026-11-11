@@ -1,11 +1,16 @@
 import type { components } from './schema.gen';
 import { ApiError, NetworkError, toApiError } from './errors';
 import { solvePow } from './pow';
+import { decodeClaims, type TokenClaims } from './token';
 
 type Schemas = components['schemas'];
 export type Device = Schemas['Device'];
 type DeviceSession = Schemas['DeviceSession'];
 type PowRequired = Schemas['PowRequired'];
+export type { TokenClaims };
+
+/** Only these 401 codes mean the access token itself is stale; others (`invalid_credentials`) are answers. */
+const STALE_TOKEN = new Set(['device_token_invalid', 'device_token_expired']);
 
 export interface DeviceClientOptions {
   fetch?: typeof fetch;
@@ -44,7 +49,11 @@ export function platformLabel(ua: string = typeof navigator !== 'undefined' ? na
 /**
  * Anonymous device identity for the Web (docs/ADR/0008-device-token-format.md): the access token lives
  * only in memory, the refresh secret only in the HttpOnly `sa_device` cookie. Refreshes are single-flight,
- * scheduled before expiry, and retried once on `401 device_token_expired`.
+ * scheduled before expiry, and a request is retried once after a refresh when the server answers
+ * `401 device_token_invalid` or `401 device_token_expired` (never on other 401s such as `invalid_credentials`).
+ * Account endpoints answer with new access tokens (sign-in, add device) or a whole new identity (sign-out);
+ * {@link DeviceClient.acceptToken} and {@link DeviceClient.acceptSession} take them, and claim listeners hear
+ * every change of `acct`/`dl`.
  */
 export class DeviceClient {
   private token: string | null = null;
@@ -52,7 +61,10 @@ export class DeviceClient {
   private timer: unknown = null;
   private inflight: Promise<DeviceSession> | null = null;
   private listeners = new Set<(d: Device | null) => void>();
+  private claimListeners = new Set<(c: TokenClaims | null) => void>();
   device: Device | null = null;
+  /** Claims of the current access token (display state only; the server decides access). */
+  claims: TokenClaims | null = null;
   /** server_time − local time, for countdowns that must follow the server clock. */
   serverOffsetMs = 0;
 
@@ -79,9 +91,29 @@ export class DeviceClient {
     return () => this.listeners.delete(fn);
   }
 
+  /** Hears every change of the token's `acct` / `dl` claims (null when the token is dropped). */
+  subscribeClaims(fn: (c: TokenClaims | null) => void): () => void {
+    this.claimListeners.add(fn);
+    return () => this.claimListeners.delete(fn);
+  }
+
   private setDevice(d: Device | null) {
     this.device = d;
     for (const fn of this.listeners) fn(d);
+  }
+
+  private setToken(token: string | null, expiresIn = 0) {
+    this.token = token;
+    if (token) {
+      this.expiresAt = this.now() + expiresIn * 1000;
+      this.schedule(expiresIn * 1000);
+    }
+    const next = token ? decodeClaims(token) : null;
+    const prev = this.claims;
+    this.claims = next;
+    if (prev?.acct !== next?.acct || prev?.dl !== next?.dl || (prev === null) !== (next === null)) {
+      for (const fn of this.claimListeners) fn(next);
+    }
   }
 
   private async send(path: string, init: RequestInit): Promise<Response> {
@@ -93,13 +125,24 @@ export class DeviceClient {
   }
 
   private accept(s: DeviceSession): DeviceSession {
-    this.token = s.access_token;
-    this.expiresAt = this.now() + s.expires_in * 1000;
     const server = Date.parse(s.server_time);
     if (Number.isFinite(server)) this.serverOffsetMs = server - this.now();
+    this.setToken(s.access_token, s.expires_in);
     this.setDevice(s.device);
-    this.schedule(s.expires_in * 1000);
     return s;
+  }
+
+  /** Takes a whole new device session from an account endpoint (sign-out returns a fresh anonymous identity). */
+  acceptSession(s: DeviceSession): Device {
+    return this.accept(s).device;
+  }
+
+  /**
+   * Takes a new access token for the same device (sign-in, sign-up, add device): the device ID never changes,
+   * so a running transfer is not interrupted.
+   */
+  acceptToken(t: { access_token: string; expires_in: number }): void {
+    this.setToken(t.access_token, t.expires_in);
   }
 
   private schedule(lifetimeMs: number) {
@@ -151,7 +194,7 @@ export class DeviceClient {
         if (!res.ok) {
           const err = await toApiError(res);
           if (err.status === 401) {
-            this.token = null;
+            this.setToken(null);
             this.setDevice(null);
           }
           throw err;
@@ -170,7 +213,11 @@ export class DeviceClient {
     return this.token;
   }
 
-  /** Authenticated JSON request; refreshes and retries once when the token expired or was rejected. */
+  /**
+   * Authenticated JSON request. Refreshes and retries once when the server says the token is stale (expired,
+   * or minted before the account session changed); any other error is returned to the caller as is. A response
+   * without a body (201/202/204) resolves to undefined.
+   */
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const token = await this.accessToken();
@@ -182,14 +229,25 @@ export class DeviceClient {
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
-      if (res.ok) return (await res.json()) as T;
+      if (res.ok) return readBody<T>(res);
       const err = await toApiError(res);
-      if (err.status === 401 && attempt === 0) {
+      if (err.status === 401 && STALE_TOKEN.has(err.code) && attempt === 0) {
         this.token = null;
         continue;
       }
       throw err;
     }
+  }
+
+  /** Unauthenticated JSON request for `public` endpoints (password reset). */
+  async publicRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await this.send(path, {
+      method,
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    if (res.ok) return readBody<T>(res);
+    throw await toApiError(res);
   }
 
   async rename(displayName: string): Promise<Device> {
@@ -209,4 +267,9 @@ export class DeviceClient {
     if (this.timer !== null) this.clearTimer(this.timer);
     this.timer = null;
   }
+}
+
+async function readBody<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }

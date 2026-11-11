@@ -21,11 +21,34 @@ const TransferDashboard = lazy(() => import('./pages/send/TransferDashboard'));
 const ReceiveSessionPage = lazy(() => import('./pages/receive/ReceiveSessionPage'));
 const SaveLocationPage = lazy(() => import('./pages/receive/SaveLocationPage'));
 
+// Account screens (Phase 5A, `accounts` flag) and the key library they use load on demand.
+const SignInPage = lazy(() => import('./pages/account/SignInPage'));
+const ResetPage = lazy(() => import('./pages/account/ResetPage'));
+const ChoicesPage = lazy(() => import('./pages/account/ChoicesPage'));
+const KeySetupPage = lazy(() => import('./pages/account/KeySetupPage'));
+const PairPage = lazy(() => import('./pages/account/PairPage'));
+const ChecklistPage = lazy(() => import('./pages/account/ChecklistPage'));
+
 const BrandPreview = import.meta.env.DEV ? lazy(() => import('./pages/BrandPreview')) : null;
 
 /** First visit goes to Welcome once (PRD §5.1); every later visit opens Transfer home directly. */
 function FirstVisit({ children }: { children: ReactNode }) {
   return hasSeenWelcome() ? <>{children}</> : <Navigate to="/welcome" replace />;
+}
+
+/** Account routes outside the app shell (docs/UX_SCREEN_MAP.md §9). */
+function AuthLazy({ children }: { children: ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-bg">
+          <div aria-hidden className="h-[320px] w-full max-w-[440px] animate-pulse rounded-xl bg-surface-2" />
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  );
 }
 
 function Lazy({ children }: { children: ReactNode }) {
@@ -44,6 +67,66 @@ export function App() {
   return (
     <Routes>
       <Route path="/welcome" element={<Welcome />} />
+      {flags.accounts && (
+        <>
+          <Route
+            path="/signin"
+            element={
+              <AuthLazy>
+                <SignInPage mode="signin" />
+              </AuthLazy>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <AuthLazy>
+                <SignInPage mode="signup" />
+              </AuthLazy>
+            }
+          />
+          <Route
+            path="/reset"
+            element={
+              <AuthLazy>
+                <ResetPage />
+              </AuthLazy>
+            }
+          />
+          <Route
+            path="/signin/choices"
+            element={
+              <AuthLazy>
+                <ChoicesPage />
+              </AuthLazy>
+            }
+          />
+          <Route
+            path="/account/key/setup"
+            element={
+              <AuthLazy>
+                <KeySetupPage />
+              </AuthLazy>
+            }
+          />
+          <Route
+            path="/account/key/pair"
+            element={
+              <AuthLazy>
+                <PairPage />
+              </AuthLazy>
+            }
+          />
+          <Route
+            path="/account/checklist"
+            element={
+              <AuthLazy>
+                <ChecklistPage />
+              </AuthLazy>
+            }
+          />
+        </>
+      )}
       <Route element={<AppShell />}>
         <Route
           index

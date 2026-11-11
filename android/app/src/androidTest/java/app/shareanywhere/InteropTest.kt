@@ -66,7 +66,14 @@ class InteropTest {
                 compose.onNodeWithTag("rx.start").tap()
                 compose.waitForTag(ScreenIds.RX_DONE, 14 * 60_000)
                 val state = Backend.entry().transferRuntime().existingReceiver(id)!!.state.value
-                assertEquals(RxPhase.Completed, state.phase)
+                // On failure, say why (the receiver's error and each file's state) for the nightly log.
+                assertEquals(
+                    "receiver error=${state.error} files=${state.files.map {
+                        "${it.verified}/${it.size} done=${it.done} failed=${it.failed}"
+                    }}",
+                    RxPhase.Completed,
+                    state.phase
+                )
                 assertEquals(sha, TestPeer.sha256(ApplicationProvider.getApplicationContext(), state.files.single().documentUri!!.toUri()))
             }
         }

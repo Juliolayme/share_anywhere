@@ -13,6 +13,7 @@ import app.shareanywhere.data.api.SessionsApi
 import app.shareanywhere.di.AppEntryPoint
 import app.shareanywhere.identity.ProofOfWork
 import dagger.hilt.android.EntryPointAccessors
+import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -73,6 +74,41 @@ object Backend {
                         override suspend fun <T> invoke(block: suspend (token: String) -> T): T = block(session.accessToken)
                     }
                 Peer(SessionsApi(client, auth), session.device.displayName, client, auth)
+            }
+        }
+    }
+
+    /** A second device signed in to an account (added), posting clipboard items as another device would. */
+    class AccountPeer private constructor(private val client: ApiClient, private val token: String) {
+        private val auth =
+            object : Authorized {
+                override suspend fun <T> invoke(block: suspend (token: String) -> T): T = block(token)
+            }
+
+        /** An item under the account's current key version. The server stores ciphertext only, so random bytes do. */
+        suspend fun postClipboardItem(size: Int) {
+            val version = app.shareanywhere.data.api.AccountApi(client, auth).keys().keyVersion
+            val rnd = java.security.SecureRandom()
+            val nonce = ByteArray(12).also(rnd::nextBytes)
+            val ct = ByteArray(size + 16).also(rnd::nextBytes)
+            app.shareanywhere.clipboard.ClipboardApi(client, auth).create(
+                app.shareanywhere.data.api.ClipboardEventRequest(
+                    UUID.randomUUID().toString(),
+                    version,
+                    app.shareanywhere.account.crypto.B64u.encode(nonce),
+                    app.shareanywhere.account.crypto.B64u.encode(ct),
+                    size,
+                    "TEXT",
+                    "text/plain"
+                )
+            )
+        }
+
+        companion object {
+            suspend fun signIn(email: String, password: String): AccountPeer {
+                val peer = Peer.create("Chrome on Windows")
+                val r = app.shareanywhere.data.api.AccountApi(peer.client, peer.auth).signIn(email, password, addDevice = true)
+                return AccountPeer(peer.client, r.accessToken)
             }
         }
     }

@@ -90,7 +90,8 @@ jobs:
           path: |
             android/app/build/reports/androidTests
             android/app/build/outputs/androidTest-results
-          retention-days: 7
+            android/app/build/outputs/connected_android_test_additional_output
+          retention-days: 14
       - name: Logs on failure
         if: failure()
         run: docker compose -f docker-compose.ci.yml logs

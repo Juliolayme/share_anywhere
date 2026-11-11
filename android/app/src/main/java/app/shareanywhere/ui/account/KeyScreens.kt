@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -101,11 +102,15 @@ fun KeySetupScreen(onBack: () -> Unit, onDone: () -> Unit, onKeysExist: () -> Un
                 }
             }
             InlineNotice(NoticeKind.Warning, R.drawable.ic_error, stringResource(R.string.product_key_setup_warn))
+            // The whole row toggles (one TalkBack target, 48 dp), not only the box.
             Row(
-                Modifier.fillMaxWidth().testTag("key-setup.saved"),
+                Modifier
+                    .fillMaxWidth()
+                    .toggleable(value = saved, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = { saved = it })
+                    .testTag("key-setup.saved"),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Checkbox(checked = saved, onCheckedChange = { saved = it })
+                Checkbox(checked = saved, onCheckedChange = null)
                 Text(stringResource(R.string.product_key_saved_check))
             }
         }

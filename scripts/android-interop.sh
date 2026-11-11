@@ -25,8 +25,7 @@ instrument() {
   if grep -q "^OK (1 test)" <<<"$out"; then return 0; fi
   adb logcat -d > "$INTEROP_DIR/logcat-$1.txt" 2>&1 || true
   echo "-- logcat (app, last 200 lines) --"
-  pid=$(adb shell pidof app.shareanywhere 2>/dev/null | tr -d '\r' || true)
-  grep -E "app.shareanywhere|AndroidRuntime|org.webrtc|TestRunner${pid:+| $pid }" "$INTEROP_DIR/logcat-$1.txt" | tail -200 || true
+  grep -E "SA-TRANSFER|AndroidRuntime|FATAL|TestRunner: (failed|java)|org.webrtc|dcsctp|DataChannel" "$INTEROP_DIR/logcat-$1.txt" | grep -v AppsFilter | tail -200 || true
   return 1
 }
 status=0

@@ -11,6 +11,7 @@ on:
       - '.github/workflows/nightly.yml'
       - 'web/e2e/nightly/**'
       - 'scripts/android-interop.sh'
+      - 'scripts/android-clipboard-interop.sh'
       - 'web/e2e/transfer/helpers.ts'
       - 'web/e2e/pairing/helpers.ts'
       - 'web/e2e/mobile/snapshots.spec.ts'
@@ -229,6 +230,82 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
 
+  android-matrix:
+    # docs/phases/PHASE_6_ANDROID.md: the instrumentation suite on API 29 and 35 (API 34 runs in ci.yml), including the
+    # Android 15 dataSync time-budget simulation (FgsBudgetTest, API 35 only).
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [29, 35]
+    uses: ./.github/workflows/android-emulator.yml
+    with:
+      api-level: ${{ matrix.api-level }}
+
+  clipboard-cross-client:
+    # Encrypted Clipboard Sync between the Web app (Playwright Chromium) and the Android app on the emulator: the Web
+    # pairs Android, each decrypts the other's item (scripts/android-clipboard-interop.sh).
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Start CI stack
+        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install chromium
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
+      - name: Build the app and test APKs
+        working-directory: android
+        run: ./gradlew assembleDebug assembleDebugAndroidTest -Pbackend=http://10.0.2.2:8080 --stacktrace
+      - name: Clipboard both ways
+        uses: reactivecircus/android-emulator-runner@v2.33.0
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          CLIP_INTEROP_DIR: ${{ runner.temp }}/clipboard-interop
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash scripts/android-clipboard-interop.sh
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipboard-cross-client
+          if-no-files-found: ignore
+          path: |
+            web/playwright-report
+            web/test-results
+            ${{ runner.temp }}/clipboard-interop
+          retention-days: 7
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   plan:
     runs-on: ubuntu-latest
     steps:
@@ -236,8 +313,7 @@ jobs:
         run: |
           cat <<'TXT'
           Jobs still to be added by later phases (docs/TESTING_AND_CI.md section 2.2):
-            Phase 6  android-matrix      emulator API 29 / 34 / 35, FGS time-budget simulation
-            Phase 5B clipboard-cross-client encrypted clipboard Web <-> Android / iOS
+            Phase 7  clipboard-cross-client for iOS (Web <-> Android runs above)
             Phase 7  ios-matrix, ios-web-interop, ios-background-suspend
             Phase 8  turn-forced         relay-only transfers over UDP and TCP/TLS
             Phase 7  android-ios-interop best-effort, two half-tests against a shared ephemeral backend

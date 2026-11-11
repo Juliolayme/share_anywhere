@@ -50,6 +50,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Each instrumentation test starts from a fresh install (docs/TESTING_AND_CI.md §5).
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
+        testInstrumentationRunnerArguments["useTestStorageService"] = "true"
         // Tests that need the backend run only when CI passes -Pbackend (android-emulator.yml).
         findProperty("backend")?.let { testInstrumentationRunnerArguments["backend"] = it.toString() }
         flags.forEach { (name, on) -> buildConfigField("boolean", name, on.toString()) }
@@ -226,6 +227,8 @@ dependencies {
     androidTestImplementation(libs.androidx.test.uiautomator)
     androidTestUtil(libs.androidx.test.orchestrator)
     androidTestUtil(libs.androidx.test.services)
+    // Screenshots written through TestStorage survive clearPackageData and are pulled into build/outputs.
+    androidTestImplementation(libs.androidx.test.services.storage)
 
     robolectricRuntime(libs.robolectric.android.all) { isTransitive = false }
 }

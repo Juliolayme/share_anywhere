@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"time"
 
@@ -18,26 +19,72 @@ type querier interface {
 }
 
 // AccountState implements devices.Accounts: the device's active, unexpired, unrevoked account session.
-// touch (a token refresh) records use and slides an added device's session to 90 days from now.
-func (s *Service) AccountState(ctx context.Context, deviceID string, touch bool) (devices.AccountState, error) {
-	now := s.cfg.Clock.Now()
+func (s *Service) AccountState(ctx context.Context, deviceID string) (devices.AccountState, error) {
 	var st devices.AccountState
-	var err error
-	if touch {
-		err = s.cfg.Pool.QueryRow(ctx,
-			`UPDATE auth_sessions SET last_used_at = $2,
-			        expires_at = CASE WHEN device_added THEN $3 ELSE expires_at END
-			  WHERE device_id = $1::uuid AND revoked_at IS NULL AND expires_at > $2
-			  RETURNING user_id::text, device_added`, deviceID, now, now.Add(AddedSessionIdle)).Scan(&st.AccountID, &st.Added)
-	} else {
-		err = s.cfg.Pool.QueryRow(ctx,
-			`SELECT user_id::text, device_added FROM auth_sessions
-			  WHERE device_id = $1::uuid AND revoked_at IS NULL AND expires_at > $2`, deviceID, now).Scan(&st.AccountID, &st.Added)
-	}
+	err := s.cfg.Pool.QueryRow(ctx,
+		`SELECT user_id::text, device_added FROM auth_sessions
+		  WHERE device_id = $1::uuid AND revoked_at IS NULL AND expires_at > $2`, deviceID, s.cfg.Clock.Now()).Scan(&st.AccountID, &st.Added)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return devices.AccountState{}, nil
 	}
 	return st, err
+}
+
+// Refreshed implements devices.Accounts for a token refresh. A not-added session started from a Web
+// (cookie-transport) device is bound to the browser session: the presented sa_acct cookie must hash to the
+// stored binding, or the account session ends the way an expired one does (the device leaves the account)
+// and the refresh yields a guest token (docs/ADR/0013-session-hardening.md). Otherwise the refresh records
+// use and slides an added device's session to 90 days from now.
+func (s *Service) Refreshed(ctx context.Context, deviceID, browserBinding string) (devices.AccountState, error) {
+	now := s.cfg.Clock.Now()
+	var st devices.AccountState
+	var ended []string
+	err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+		var id string
+		var bound []byte
+		err := tx.QueryRow(ctx,
+			`SELECT id::text, user_id::text, device_added, browser_binding FROM auth_sessions
+			  WHERE device_id = $1::uuid AND revoked_at IS NULL AND expires_at > $2 FOR UPDATE`, deviceID, now,
+		).Scan(&id, &st.AccountID, &st.Added, &bound)
+		if errors.Is(err, pgx.ErrNoRows) {
+			st = devices.AccountState{}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !st.Added && bound != nil && subtle.ConstantTimeCompare(hashToken(browserBinding), bound) != 1 {
+			st = devices.AccountState{}
+			ended, err = s.detach(ctx, tx, now, detachFilter{Device: deviceID})
+			return err
+		}
+		_, err = tx.Exec(ctx,
+			`UPDATE auth_sessions SET last_used_at = $2, expires_at = CASE WHEN device_added THEN $3 ELSE expires_at END
+			  WHERE id = $1::uuid`, id, now, now.Add(AddedSessionIdle))
+		return err
+	})
+	if err != nil {
+		return devices.AccountState{}, err
+	}
+	s.forget(ended)
+	return st, nil
+}
+
+// browserBinding returns a fresh sa_acct cookie value and its SHA-256 for a not-added session of a Web
+// (cookie-transport) device. Added sessions and native (body-transport) devices get none.
+func (s *Service) browserBinding(ctx context.Context, deviceID string, added bool) (string, []byte, error) {
+	if added {
+		return "", nil, nil
+	}
+	d, err := s.cfg.Devices.Get(ctx, deviceID)
+	if err != nil {
+		return "", nil, err
+	}
+	if d.Transport != devices.TransportCookie {
+		return "", nil, nil
+	}
+	tok, hash := newToken(32)
+	return tok, hash, nil
 }
 
 // session is the caller's verified account session.
@@ -140,8 +187,9 @@ func (s *Service) DeviceRevoked(deviceID string) {
 }
 
 // startSession binds a new account session to the device inside tx. Expired sessions of the device are
-// ended first; a live one means the device is already signed in.
-func (s *Service) startSession(ctx context.Context, tx pgx.Tx, now time.Time, userID, deviceID string, added bool) error {
+// ended first; a live one means the device is already signed in. binding is the SHA-256 of the sa_acct
+// cookie for a not-added Web session (nil otherwise).
+func (s *Service) startSession(ctx context.Context, tx pgx.Tx, now time.Time, userID, deviceID string, added bool, binding []byte) error {
 	if _, err := s.detach(ctx, tx, now, detachFilter{Device: deviceID, ExpiredOnly: true}); err != nil {
 		return err
 	}
@@ -150,8 +198,8 @@ func (s *Service) startSession(ctx context.Context, tx pgx.Tx, now time.Time, us
 		expires = now.Add(AddedSessionIdle)
 	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO auth_sessions (id, user_id, device_id, device_added, created_at, last_used_at, expires_at)
-		 VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $5, $6)`, newID(), userID, deviceID, added, now, expires); err != nil {
+		`INSERT INTO auth_sessions (id, user_id, device_id, device_added, created_at, last_used_at, expires_at, browser_binding)
+		 VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $5, $6, $7)`, newID(), userID, deviceID, added, now, expires, binding); err != nil {
 		if isUniqueViolation(err, "auth_sessions_device_active_key") {
 			return ErrAlreadySignedIn
 		}
@@ -233,9 +281,10 @@ func (s *Service) ListDevices(ctx context.Context, id access.Identity) ([]Accoun
 	return out, rows.Err()
 }
 
-// RenameDevice renames one of the account's devices.
+// RenameDevice renames one of the account's devices. Only an added device may change the account (a
+// not-added session is read-only, docs/API.md §2.4).
 func (s *Service) RenameDevice(ctx context.Context, id access.Identity, deviceID, name string) (AccountDevice, error) {
-	se, err := s.require(ctx, id, false)
+	se, err := s.require(ctx, id, true)
 	if err != nil {
 		return AccountDevice{}, err
 	}
@@ -286,8 +335,9 @@ func (s *Service) RevokeDevice(ctx context.Context, id access.Identity, deviceID
 	return nil
 }
 
-// AddCurrent adds the calling device to its account: the session becomes an added one (90-day sliding) and
-// the device becomes an account device. Idempotent.
+// AddCurrent adds the calling device to its account: the session becomes an added one (90-day sliding), its
+// browser-session binding is dropped (the sa_acct cookie is cleared by the handler), and the device becomes
+// an account device. Idempotent.
 func (s *Service) AddCurrent(ctx context.Context, id access.Identity) (devices.Session, error) {
 	se, err := s.require(ctx, id, false)
 	if err != nil {
@@ -296,7 +346,7 @@ func (s *Service) AddCurrent(ctx context.Context, id access.Identity) (devices.S
 	now := s.cfg.Clock.Now()
 	err = pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx,
-			`UPDATE auth_sessions SET device_added = true, last_used_at = $2, expires_at = $3 WHERE id = $1::uuid`,
+			`UPDATE auth_sessions SET device_added = true, browser_binding = NULL, last_used_at = $2, expires_at = $3 WHERE id = $1::uuid`,
 			se.ID, now, now.Add(AddedSessionIdle)); err != nil {
 			return err
 		}

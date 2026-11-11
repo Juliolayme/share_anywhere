@@ -7,8 +7,10 @@ import { useI18n } from '../../i18n/i18n';
 import { ApiError } from '../../lib/api/errors';
 import { formatWhen } from '../../lib/format';
 import { useIdentity } from '../../lib/identity/identity';
-import { accountErrorText, useAccount } from './AccountContext';
+import { accountErrorText, keyErrorStatus, useAccount } from './AccountContext';
 import type { AccountDevice } from './api';
+import { KeyProblemBanner } from './KeyProblem';
+import type { KeyStatus } from './state';
 import { rotateKeys } from './keyFlow';
 import { PairDeviceDialog } from './PairDeviceDialog';
 
@@ -174,6 +176,8 @@ export default function AccountDevices() {
   const [revoking, setRevoking] = useState<AccountDevice | null>(null);
   const [busy, setBusy] = useState(false);
   const [rotateFailed, setRotateFailed] = useState(false);
+  /** A rotation the server refused as unauthorized (403) or legacy (409): shown as the key problem, not a retry. */
+  const [rotateProblem, setRotateProblem] = useState<KeyStatus | null>(null);
   const [pairing, setPairing] = useState(false);
   const { api, added, userId } = account;
   const keysOk = account.keys === 'ready' || (account.keys === 'setup' && account.keyVersion === 0);
@@ -203,10 +207,13 @@ export default function AccountDevices() {
     try {
       const r = await rotateKeys(api, userId, device.id);
       setRotateFailed(false);
+      setRotateProblem(null);
       await account.refreshKeys();
       return r;
-    } catch {
-      setRotateFailed(true);
+    } catch (e) {
+      const status = keyErrorStatus(e);
+      if (status === 'rejected' || status === 'legacy') setRotateProblem(status);
+      else setRotateFailed(true);
       return 'failed';
     }
   };
@@ -243,6 +250,12 @@ export default function AccountDevices() {
         >
           {t('product.not_added_p')}
         </Banner>
+      )}
+      {(account.keys === 'rejected' || account.keys === 'legacy' || rotateProblem) && (
+        <KeyProblemBanner
+          status={account.keys === 'rejected' || account.keys === 'legacy' ? account.keys : (rotateProblem ?? 'none')}
+          returnTo="/devices"
+        />
       )}
       {rotateFailed && (
         <Banner

@@ -8,6 +8,15 @@ export type CryptoErrorCode =
   | 'invalid_phrase'
   /** A pairing blob was wrapped by a key that is not the advertised sender or a known device. */
   | 'untrusted_sender'
+  /**
+   * Key authenticity failed (docs/CLIPBOARD_PROTOCOL.md §1): a rotation blob whose chain link or verify key does not
+   * check out, a pairing key that does not match the account's signed versions. Nothing was stored.
+   */
+  | 'unverified'
+  /** Recovery: the phrase opened the blob, but the anchor or the signature chain does not verify. Nothing stored. */
+  | 'recovery_unverified'
+  /** The account's keys predate key authenticity (no verify key or anchor): they must be set up again. */
+  | 'keys_legacy'
   /** The key store has no ADK for that version, or no device key. */
   | 'not_found'
   /** The key store already holds different bytes for that ADK version. */

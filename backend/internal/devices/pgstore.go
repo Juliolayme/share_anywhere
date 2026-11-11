@@ -62,9 +62,10 @@ func (s *PGStore) RotateSecret(ctx context.Context, oldHash, newHash []byte, now
 		var deviceID string
 		var generation int
 		var usedAt *time.Time
+		var retired bool
 		err := tx.QueryRow(ctx,
-			`SELECT device_id::text, generation, used_at FROM device_refresh_secrets WHERE secret_hash = $1 FOR UPDATE`, oldHash,
-		).Scan(&deviceID, &generation, &usedAt)
+			`SELECT device_id::text, generation, used_at, retired FROM device_refresh_secrets WHERE secret_hash = $1 FOR UPDATE`, oldHash,
+		).Scan(&deviceID, &generation, &usedAt, &retired)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrSecretUnknown
 		}
@@ -75,10 +76,11 @@ func (s *PGStore) RotateSecret(ctx context.Context, oldHash, newHash []byte, now
 		if err != nil {
 			return err
 		}
-		if usedAt != nil && inReuseGrace(*usedAt, generation, d, now) {
-			// The newer secret never reached the client: retire it and rotate again from this one.
+		if usedAt != nil && inReuseGrace(*usedAt, generation, retired, d, now) {
+			// The newer secret never reached the client: retire it (presenting it later is always reuse) and
+			// rotate again from this one.
 			if _, err := tx.Exec(ctx,
-				`UPDATE device_refresh_secrets SET used_at = $3 WHERE device_id = $1::uuid AND generation = $2 AND used_at IS NULL`,
+				`UPDATE device_refresh_secrets SET used_at = $3, retired = true WHERE device_id = $1::uuid AND generation = $2 AND used_at IS NULL`,
 				deviceID, d.Generation, now); err != nil {
 				return err
 			}

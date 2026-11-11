@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/mail"
 	"strings"
 	"time"
@@ -26,6 +28,8 @@ type AuthResult struct {
 	Session devices.Session
 	UserID  string
 	Email   string
+	// Binding is the sa_acct cookie value for a not-added Web session ("" otherwise).
+	Binding string
 }
 
 // NormalizeEmail trims and lowercases an address and checks it is a plain addr-spec with a dotted domain.
@@ -46,12 +50,12 @@ func NormalizeEmail(s string) (string, error) {
 	return s, nil
 }
 
-func (s *Service) result(ctx context.Context, deviceID, userID, email string) (AuthResult, error) {
+func (s *Service) result(ctx context.Context, deviceID, userID, email, binding string) (AuthResult, error) {
 	sess, err := s.cfg.Devices.Token(ctx, deviceID)
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return AuthResult{Session: sess, UserID: userID, Email: email}, nil
+	return AuthResult{Session: sess, UserID: userID, Email: email, Binding: binding}, nil
 }
 
 // SignUp creates an account and binds an account session to the calling device (the device ID does not
@@ -77,6 +81,10 @@ func (s *Service) SignUp(ctx context.Context, id access.Identity, ipKey string, 
 	if err != nil {
 		return AuthResult{}, err
 	}
+	binding, bindingHash, err := s.browserBinding(ctx, id.DeviceID, in.AddDevice)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	now := s.cfg.Clock.Now()
 	userID := newID()
 	err = pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
@@ -91,12 +99,12 @@ func (s *Service) SignUp(ctx context.Context, id access.Identity, ipKey string, 
 		if _, err := tx.Exec(ctx, `INSERT INTO account_keys (user_id, updated_at) VALUES ($1::uuid, $2)`, userID, now); err != nil {
 			return err
 		}
-		return s.startSession(ctx, tx, now, userID, id.DeviceID, in.AddDevice)
+		return s.startSession(ctx, tx, now, userID, id.DeviceID, in.AddDevice, bindingHash)
 	})
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return s.result(ctx, id.DeviceID, userID, email)
+	return s.result(ctx, id.DeviceID, userID, email, binding)
 }
 
 func firstErr(err error, fallback error) error {
@@ -150,6 +158,10 @@ func (s *Service) SignIn(ctx context.Context, id access.Identity, ipKey string, 
 			return AuthResult{}, err
 		}
 	}
+	binding, bindingHash, err := s.browserBinding(ctx, id.DeviceID, in.AddDevice)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	now := s.cfg.Clock.Now()
 	err = pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		if newHash != "" {
@@ -157,12 +169,12 @@ func (s *Service) SignIn(ctx context.Context, id access.Identity, ipKey string, 
 				return err
 			}
 		}
-		return s.startSession(ctx, tx, now, userID, id.DeviceID, in.AddDevice)
+		return s.startSession(ctx, tx, now, userID, id.DeviceID, in.AddDevice, bindingHash)
 	})
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return s.result(ctx, id.DeviceID, userID, email)
+	return s.result(ctx, id.DeviceID, userID, email, binding)
 }
 
 // SignOut ends the device's account session, removes it from the account, revokes the device identity, and
@@ -232,7 +244,21 @@ func (s *Service) sendReset(email string) {
 		Link: link,
 	}
 	if err := s.cfg.Mailer.Send(ctx, msg); err != nil {
-		s.cfg.Log.Error("password reset mail failed", "error", err.Error())
+		// Mailer errors (SMTP replies, address errors) may quote the recipient: log the class only.
+		s.cfg.Log.Error("password reset mail failed", "error_class", errClass(err))
+	}
+}
+
+// errClass names an error without its text, which may carry personal data (docs/SECURITY_MODEL.md §7).
+func errClass(err error) string {
+	var ne net.Error
+	switch {
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+		return "timeout"
+	case errors.As(err, &ne) && ne.Timeout():
+		return "timeout"
+	default:
+		return fmt.Sprintf("%T", err)
 	}
 }
 
@@ -319,9 +345,10 @@ func (s *Service) me(ctx context.Context, q querier, se session) (Me, error) {
 	return m, err
 }
 
-// UpdateMe changes account settings visible to every device (history_sync).
+// UpdateMe changes account settings visible to every device (history_sync). Only an added device may change
+// the account (a not-added session is read-only).
 func (s *Service) UpdateMe(ctx context.Context, id access.Identity, historySync *bool) (Me, error) {
-	se, err := s.require(ctx, id, false)
+	se, err := s.require(ctx, id, true)
 	if err != nil {
 		return Me{}, err
 	}

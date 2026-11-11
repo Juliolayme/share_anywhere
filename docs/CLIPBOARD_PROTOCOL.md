@@ -16,8 +16,9 @@ Guests have no account, so they have no ADK, no Clipboard Sync, and no cloud his
 | Device wrapping key | X25519 keypair per device | Private key on the device (§1.7); public key on the server | The device only |
 | Recovery key | X25519 keypair derived from the 12-word phrase with Argon2id | Never stored; public key, salt, and parameters on the server | Whoever knows the phrase |
 | Pairing key | Ephemeral X25519 keypair of a new device | Memory of the pairing screen | The new device, for one pairing |
+| Version signing key | Ed25519 keypair derived from ADK(v) (§1.13) | Derived on demand, erased after use; `verify_key(v)` on the server | Holders of that ADK version |
 
-Server-side records (all opaque to the server): the recovery blob (newest ADK wrapped to the recovery public key), one chain blob per version ≥ 2, pending rotation blobs per device, and one pairing blob per pairing.
+Server-side records (all opaque to the server): the recovery blob (newest ADK wrapped to the recovery public key), one chain blob per version ≥ 2, pending rotation blobs per device, and one pairing blob per pairing. Public authenticity records (§1.13): `verify_key(v)` for every version, the rotation signature for every version ≥ 2, the recovery anchor, and each device key's proof.
 
 ### 1.2 Account Data Key and subkeys
 
@@ -73,14 +74,14 @@ The rotating device uploads the chain blob for the new version. A device holding
 
 ### 1.7 Device wrapping key
 
-- Each added device creates an X25519 keypair once and registers the public key with `PUT /v1/keys/device`. Rotation blobs are wrapped to it; for pairing it is the existing device's sender key.
+- Each added device creates an X25519 keypair once. It registers the public key with `PUT /v1/keys/device` only once it holds the ADK (after setup, pairing, or recovery), with a proof made by the newest ADK version it holds (§1.13); never right after "Add this device". Rotation blobs are wrapped to it; for pairing it is the existing device's sender key.
 - Web: a WebCrypto X25519 key with a non-extractable private key, kept in IndexedDB as a `CryptoKey` (Chrome 133+, Firefox 130+, Safari 17+). Browsers without WebCrypto X25519 (for example Safari 16) fall back to `@noble/curves`; the private scalar is then script-visible while in use and is stored encrypted under the device KEK (§1.9). Both backends produce identical bytes (`clipboard-vectors.json`).
 - Android and iOS: the private key is wrapped by a Keystore or Secure Enclave key (§1.9).
-- A device that has not registered a public key (for example one that signed in before keys existed) receives no rotation blob; it pairs again or uses the phrase.
+- A device that has not registered a proven public key (for example one that was added but never paired) receives no rotation blob; it pairs again or uses the phrase.
 
 ### 1.8 Flows
 
-**Setup (first device).** After sign-up or the first sign-in of an account with `key_version = 0`, the device generates ADK v1, a phrase, and a salt, derives the recovery keypair, wraps ADK v1 to it, and sends `POST /v1/keys/setup {recovery_public_key, salt, params, recovery_blob}`. It stores ADK v1 locally only after `201`. On `409 keys_exist` another device won; this one discards its ADK and pairs or recovers instead. The phrase screen comes next and cannot be revisited.
+**Setup (first device).** After sign-up or the first sign-in of an account with `key_version = 0`, the device generates ADK v1, a phrase, and a salt, derives the recovery keypair and the anchor key from the same Argon2id seed (then erases the seed), wraps ADK v1 to the recovery key, and sends `POST /v1/keys/setup {recovery_public_key, salt, params, recovery_blob, verify_key, recovery_anchor}` (§1.13). It stores ADK v1 locally only after `201`, then registers its device key with a proof by version 1. On `409 keys_exist` another device won; this one discards its ADK and pairs or recovers instead. The phrase screen comes next and cannot be revisited.
 
 **Pairing (new device, both devices signed in and added).**
 
@@ -88,21 +89,22 @@ The rotating device uploads the chain blob for the new version. A device holding
 2. It shows a QR code and the same text to paste: `sa1.<code>.<fingerprint>`, where fingerprint = base64url of the first 16 bytes of SHA-256(ephemeral public key).
 3. The existing device scans or pastes it, calls `GET /v1/keys/pairings/by-code/{code}`, and refuses to continue unless the returned `ephemeral_public_key` matches the fingerprint. It should show the returned `device_name` for the user to confirm.
 4. It wraps its newest ADK to the ephemeral key with its device key (purpose `pair`) and sends `POST /v1/keys/pairings/by-code/{code}/wrap {key_version, sender_public_key, blob}`.
-5. The new device polls `GET /v1/keys/pairings/{pairing_id}` until `ready`, checks that `sender_public_key` is one of the account's registered device keys (`GET /v1/keys` `devices`) and that the blob is wrapped by it, unwraps, and stores the ADK. It then imports the chain (§1.5) and registers its own device key.
+5. The new device polls `GET /v1/keys/pairings/{pairing_id}` until `ready`, checks that `sender_public_key` is one of the account's registered device keys (`GET /v1/keys` `devices`) and that the blob is wrapped by it, unwraps, and verifies the ADK against `GET /v1/keys/chain` (§1.13 "Pairing receive") before storing it. It then imports the chain (§1.5) and registers its own device key with a proof.
 
 The fingerprint closes the gap where a dishonest server swaps in its own ephemeral key for the code: the existing device would wrap the ADK to a key the server holds.
 
-**Recovery (new device, phrase).** `GET /v1/keys/recovery` → `{key_version, recovery_blob, salt, params}`; the device validates the phrase, derives the recovery keypair, unwraps (purpose `recovery`), stores the ADK, imports the chain, and registers its device key. A well-formed but wrong phrase fails as a decryption error; the screen says the phrase does not match.
+**Recovery (new device, phrase).** `GET /v1/keys/recovery` → `{key_version, recovery_blob, salt, params, recovery_anchor}` and `GET /v1/keys/chain`; the device validates the phrase, derives the recovery keypair and anchor key, unwraps (purpose `recovery`), verifies the anchor, the signature chain, and the verify key (§1.13 "Recovery"), then stores the ADK, imports the chain, and registers its device key with a proof. A well-formed but wrong phrase fails as a decryption error; the screen says the phrase does not match. A right phrase whose account does not verify stores nothing and says so.
 
 **Rotation (after revoking a device).** The revoking device calls `DELETE /v1/devices/{id}`, then `GET /v1/keys`. If its newest local version is behind `key_version`, it first accepts its pending blobs. It then generates ADK(v+1) and sends `POST /v1/keys/rotate` with:
 
 - `chain_blob`: ADK(v) under ADK(v+1) (§1.5);
 - `recovery_blob`: ADK(v+1) wrapped to the recovery public key, so the phrase keeps working without being re-entered;
-- `device_blobs`: ADK(v+1) wrapped (purpose `rotate`) to every remaining added device with a registered public key, the rotating device included as a safety copy.
+- `device_blobs`: ADK(v+1) wrapped (purpose `rotate`) to every remaining added device whose registered public key carries a proof that verifies with the rotating device's own copy of the proving version (§1.13), the rotating device included as a safety copy;
+- `verify_key` and `signature`: verify_key(v+1) and the rotation signed with version v (§1.13).
 
-It stores ADK(v+1) only after `200`. On `409 key_version_conflict` or `409 devices_changed` it discards the new ADK, refreshes `GET /v1/keys`, and starts again. The revoked device keeps the versions it already had (old entries it could read before), but it receives no blob for v+1 and loses API access with its account session, so it cannot read anything written afterwards.
+It stores ADK(v+1) only after `200`. `403 rotation_unauthorized` (the signature does not verify against the stored verify_key(v)) and `409 keys_legacy` (keys from before §1.13) are shown to the user as key errors, not retried. On `409 key_version_conflict` or `409 devices_changed` it discards the new ADK, refreshes `GET /v1/keys`, and starts again. The revoked device keeps the versions it already had (old entries it could read before), but it receives no blob for v+1 and loses API access with its account session, so it cannot read anything written afterwards.
 
-**Pending pickup.** Each device reads `pending` from `GET /v1/keys` when it starts an account session and whenever it finds a newer `key_version` than it holds, unwraps each blob (purpose `rotate`, version bound by the AAD), stores it, and acknowledges with `DELETE /v1/keys/pending/{key_version}`. Storing the same bytes twice is a no-op; different bytes for a stored version are refused.
+**Pending pickup.** Each device reads `pending` from `GET /v1/keys` when it starts an account session and whenever it finds a newer `key_version` than it holds, unwraps each blob (purpose `rotate`, version bound by the AAD), verifies it (§1.13 "Rotation pickup"), stores it, and acknowledges with `DELETE /v1/keys/pending/{key_version}`. A blob that does not verify is neither stored nor acknowledged, and the UI shows "A key change on your account could not be verified" with Pair again and Use recovery phrase. Storing the same bytes twice is a no-op; different bytes for a stored version are refused.
 
 ### 1.9 Local storage
 
@@ -127,7 +129,8 @@ Web specifics:
 ### 1.11 Threat notes
 
 - **Server compromise.** An attacker with the database gets ciphertext, wrapped blobs, public keys, and the Argon2id salt and parameters. Opening the recovery blob requires guessing a 128-bit phrase through Argon2id; no other blob opens without a device private key.
-- **Dishonest server.** It can withhold or reorder data and refuse service, but it cannot read content: it cannot substitute a pairing key (fingerprint check), forge a pairing blob from an unknown sender (sender check against registered device keys and the blob prefix), move a ciphertext between rows or versions (AAD), or replay a blob for another purpose or version (AAD). Residual risk: the device list in `GET /v1/keys` comes from the server, so a dishonest server could add a public key of its own and receive the next rotation blob. Out-of-band verification of device keys is not part of v1.
+- **Dishonest server.** It can withhold or reorder data and refuse service, but it cannot read content: it cannot substitute a pairing key (fingerprint check), forge a pairing blob from an unknown sender (sender check against registered device keys and the blob prefix), move a ciphertext between rows or versions (AAD), replay a blob for another purpose or version (AAD), get a rotation blob wrapped to a key of its own (device keys need a proof made with the ADK, §1.13), or make existing devices adopt an ADK it chose (rotation pickup needs a chain link to the held key, §1.13). Residual risk: pairing receive on a brand-new device is not anchored (§1.13).
+- **Password-only attacker.** Someone who knows the password can sign in and add a device, but without the ADK it cannot prove a device key (so no rotation is wrapped to it), cannot sign a rotation (the server answers `403 rotation_unauthorized`), and a rotation blob it got delivered some other way is refused by every device (QA round 1 P0-1).
 - **Revoked device.** It keeps what it already decrypted and the ADK versions it held; rotation stops it from reading anything new. Content written before the revocation is not re-encrypted.
 - **Stolen unlocked device or XSS.** Script running in the app's origin can use the non-extractable keys while it runs, but cannot copy them out; on the fallback X25519 backend it could read the device private scalar. CSP (`script-src 'self'`) and the absence of third-party scripts are the main defense.
 - **Phrase hygiene.** The phrase is shown once. Anyone who learns it can unwrap the newest ADK through the recovery blob and read the account's encrypted history, including versions created later, because each rotation re-wraps the new ADK to the same recovery key. Replacing the phrase is not part of v1.
@@ -142,11 +145,37 @@ Web specifics:
 - one history and one clipboard item encrypted with a fixed nonce (plaintext, AAD, ciphertext);
 - the wrap of a fixed ADK with fixed sender and recipient keys (clamped scalars, public keys, shared secret, HKDF salt, wrap key) for each purpose;
 - a chain blob;
-- a recovery phrase from fixed entropy, a messy typed form and its normalization, the Argon2id seed with a fixed salt, the clamped private key, and the public key.
+- a recovery phrase from fixed entropy, a messy typed form and its normalization, the Argon2id seed with a fixed salt, the clamped private key, and the public key;
+- `key_authenticity` (generated by the Go backend from the `chain` inputs): signing seeds and verify keys for ADK v1 and v2, the rotation message and signature for version 2, a device key message and proof, and the anchor key, message, and recovery anchor from a fixed seed. `web/src/lib/crypto/authenticity-vectors.test.ts` and the Go test both verify every value.
 
 `web/src/lib/crypto/vectors.test.ts` regenerates (`UPDATE_VECTORS=1`) and compares it with both X25519 backends. Change it only together with a format version bump. Fixed nonces and keys exist only for vectors; production code always draws fresh randomness.
 
-Web modules (`web/src/lib/crypto/`): `adk.ts` (ADK, subkeys), `item.ts` (item encryption, wire helpers), `wrap.ts` (ECIES and chain), `phrase.ts`, `argon.ts`, `recovery.ts`, `recovery.worker.ts` (phrase and recovery key), `x25519.ts` and `device-key.ts` (X25519 backends, device key), `store.ts` (IndexedDB key store), `bootstrap.ts`, `pairing.ts`, `rotation.ts` (flows). Account screens load the library lazily so it stays out of the main bundle.
+Web modules (`web/src/lib/crypto/`): `adk.ts` (ADK, subkeys), `item.ts` (item encryption, wire helpers), `wrap.ts` (ECIES and chain), `phrase.ts`, `argon.ts`, `recovery.ts`, `recovery.worker.ts` (phrase and recovery key), `x25519.ts` and `device-key.ts` (X25519 backends, device key), `store.ts` (IndexedDB key store), `authenticity.ts` (version signing keys, proofs, anchor, verification rules), `bootstrap.ts`, `pairing.ts`, `rotation.ts` (flows). Account screens load the library lazily so it stays out of the main bundle.
+
+### 1.13 Key authenticity
+
+Wrapping alone says nothing about who chose a key: any added device, including one whose user only knows the password, could otherwise post `POST /v1/keys/rotate` with an ADK it chose, and every device would accept a rotation blob it can open (QA round 1 P0-1). Every ADK version therefore carries a signing key that only its holders can derive (ADR 0012; endpoints in `docs/API.md`). Ed25519 is RFC 8032 (pure, deterministic; Web verifies strictly, without ZIP-215 leniency); HKDF is HKDF-SHA256 with an empty salt; `b64u` is base64url without padding; `|` is a literal separator and numbers are decimal.
+
+```text
+sign_seed(v)    = HKDF(ikm = ADK(v), info = "sa-keyver-sign-v1", L = 32)
+verify_key(v)   = Ed25519 public key of sign_seed(v)                                   (32 bytes, stored per version)
+rotation sig    = Ed25519_sign(sign_seed(v),   "sa-rotate-v1|" + (v+1) + "|" + b64u(verify_key(v+1)) + "|" + b64u(SHA-256(chain_blob)))
+device proof    = Ed25519_sign(sign_seed(kv),  "sa-devkey-v1|" + <device id, lowercase UUID> + "|" + kv + "|" + b64u(public_key))
+anchor key      = HKDF(ikm = recovery_seed, info = "sa-recovery-anchor-v1", L = 32)  (recovery_seed = the Argon2id output of §1.6)
+recovery_anchor = HMAC-SHA256(anchor key, "sa-anchor-v1|" + b64u(verify_key(1)))
+```
+
+Server checks: setup requires `verify_key` and `recovery_anchor`; a rotation must be signed by the stored verify_key(v) (`403 rotation_unauthorized`, nothing stored); a device key registration (`{public_key, key_version, proof}`) must carry a proof by a version `1..current` for the caller's device ID from the token (`403 device_key_unproven`); accounts created before key authenticity have no verify key and are refused (`409 keys_legacy`). `GET /v1/keys/chain` returns `{chain, versions: [{key_version, verify_key, signature}]}` and `GET /v1/keys/recovery` adds `recovery_anchor`.
+
+Client rules (Web: `web/src/lib/crypto/authenticity.ts`, `rotation.ts`, `bootstrap.ts`, `pairing.ts`; comparisons of key material are constant-time):
+
+- **Rotation pickup** (`acceptPendingBlobs`): versions ascending. A blob for version v is accepted only when the device already holds ADK(v-1), the chain link of v opened with the candidate yields exactly that ADK(v-1), and the candidate derives `versions[v].verify_key`. Only a holder of ADK(v-1) can make such a link. Otherwise nothing is stored or acknowledged and the key state becomes `rejected`.
+- **Rotating** (`prepareRotation`): a device gets a blob only when its proof verifies with verify_key(kv) derived from the rotating device's own ADK(kv) (it holds every version through the chain); others are skipped as `unproven` (or `no_key`). The rotation is signed with version v.
+- **Recovery** (`recoverWithPhrase`): the anchor recomputed from the phrase must authenticate `versions[1].verify_key`; each `versions[k].signature` (k = 2..v) must verify with `versions[k-1].verify_key` over the rotation message built from `chain[k]`; the recovered ADK(v) must derive `versions[v].verify_key`. Any failure is `recovery_unverified`; an account without an anchor is `keys_legacy`. The phrase is the root of trust, so recovery is fully anchored.
+- **Pairing receive** (`acceptPairing`): the received ADK(v) must derive `versions[v].verify_key` and the signature chain 2..v must verify.
+- **Registering the device key**: only once the device holds the ADK, with a proof by the newest version it holds (`proveDeviceKey`).
+
+Limitation (pairing receive): a brand-new device has nothing of its own to anchor to. A dishonest server that controls everything the new device sees could present a whole fabricated account (its own versions, signatures, and a pairing blob from a device key of its own) and the checks above would pass. The pairing fingerprint protects the existing device's side only. Recovery with the phrase is anchored; comparing pairing confirmation words out of band is not part of v1.
 
 ## 2. Clipboard events
 

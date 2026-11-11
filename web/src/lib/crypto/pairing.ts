@@ -1,4 +1,5 @@
 import { sha256 } from '@noble/hashes/sha2.js';
+import { assertAdkMatchesVersion, verifySignatureChain, type ChainState } from './authenticity';
 import { CryptoError, invalid } from './errors';
 import { assertVersion, b64uDecode, b64uEncode, equalBytes, zeroize } from './encoding';
 import type { KeyStore } from './store';
@@ -104,11 +105,18 @@ export interface AcceptPairingOptions {
   trustedSenderKeys?: readonly (string | null)[];
 }
 
-/** New device: unwraps the blob with the ephemeral key, checks the sender, and stores the ADK. */
+/**
+ * New device: unwraps the blob with the ephemeral key, checks the sender, verifies the key, and stores the ADK.
+ * Verification (contract A.6 "Pairing receive"): the received ADK(v) must derive `versions[v].verify_key` and every
+ * rotation 2..v must be signed by the version before it (`chain` = `GET /v1/keys/chain`). This is not anchored to
+ * anything the new device already knows, so a dishonest server could still present a whole fabricated account to a
+ * brand-new device (docs/CLIPBOARD_PROTOCOL.md §1 limitation); it does stop a key that is not the account's.
+ */
 export async function acceptPairing(
   store: KeyStore,
   pairing: PairingKeys,
   ready: PairingReady,
+  chain: ChainState,
   options: AcceptPairingOptions = {},
 ): Promise<number> {
   assertVersion(ready.key_version);
@@ -121,6 +129,8 @@ export async function acceptPairing(
     expectedSender: sender,
   });
   try {
+    await assertAdkMatchesVersion(raw, chain.versions, ready.key_version);
+    verifySignatureChain(chain, ready.key_version);
     await store.saveAdk(ready.key_version, raw);
   } finally {
     zeroize(raw);

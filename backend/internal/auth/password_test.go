@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"strings"
@@ -193,5 +194,29 @@ func TestMemoryMailer(t *testing.T) {
 	_ = m.Send(context.Background(), Message{To: "alice@example.com", Link: "l2"})
 	if last, ok := m.Last("ALICE@example.com"); !ok || last.Link != "l2" || m.Count() != 2 {
 		t.Fatalf("last: %+v %v", last, ok)
+	}
+}
+
+type failingMailer struct{}
+
+func (failingMailer) Send(_ context.Context, m Message) error {
+	return &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("550 mailbox " + m.To + " unavailable")}
+}
+
+// TestResetMailFailureLogsNoAddress (QA P2): a mail failure is logged with a fixed message and an error
+// class, never the error text, which may quote the recipient.
+func TestResetMailFailureLogsNoAddress(t *testing.T) {
+	e := newEnv(t)
+	e.signup("xia@example.com", true)
+	var buf bytes.Buffer
+	e.svc.cfg.Mailer = failingMailer{}
+	e.svc.cfg.Log = slog.New(slog.NewTextHandler(&buf, nil))
+	e.svc.sendReset("xia@example.com")
+	out := buf.String()
+	if !strings.Contains(out, "password reset mail failed") || !strings.Contains(out, "error_class=*net.OpError") || strings.Contains(out, "xia@") {
+		t.Fatalf("log: %q", out)
+	}
+	if errClass(context.DeadlineExceeded) != "timeout" {
+		t.Fatal("deadline is a timeout")
 	}
 }

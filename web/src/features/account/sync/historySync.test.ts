@@ -5,8 +5,17 @@ import { generateAdk, openKeyStore, type KeyStore } from '../../../lib/crypto';
 import { NetworkError } from '../../../lib/api/errors';
 import { openHistoryStore, type HistoryEntry, type HistoryStore } from '../../history/store/history-store';
 import type { AccountApi, RemoteHistoryEntry } from '../api';
-import { clearSynced, deleteSynced, entryUuid, parseEntry, syncHistory, syncedId, type SyncDeps } from './historySync';
-import { openSyncMeta, type SyncMetaStore } from './syncMeta';
+import {
+  clearSynced,
+  deleteSynced,
+  entryUuid,
+  parseEntry,
+  rewindForNewKeys,
+  syncHistory,
+  syncedId,
+  type SyncDeps,
+} from './historySync';
+import { emptyMeta, openSyncMeta, type SyncMetaStore } from './syncMeta';
 
 /** In-memory stand-in for the history endpoints (docs/API.md §2.4 "History"): seq per account, tombstones. */
 function fakeServer() {
@@ -222,6 +231,41 @@ describe('cloud history sync', () => {
     expect((await syncHistory(deps(server, both))).pulled).toBe(1);
     const newer = await device('dev-c', [adk2]);
     expect(await syncHistory(deps(server, newer))).toMatchObject({ pulled: 0, unreadable: 1 });
+  });
+
+  it('pulls skipped entries again once the device stores the key version it lacked (P2-9)', async () => {
+    const server = fakeServer();
+    const adk2 = generateAdk(2);
+    const a = await device('dev-a', [adk1]);
+    await a.meta.put({ ...(await a.meta.get('u1')), pushSince: 0 });
+    await a.history.add(entry('tx:v1', 'v1.pdf'));
+    await a.history.add(entry('tx:v1b', 'v1b.pdf'));
+    await syncHistory(deps(server, a));
+    const w = await device('dev-w', [adk1, adk2]);
+    await w.meta.put({ ...(await w.meta.get('u1')), pushSince: 0 });
+    await w.history.add(entry('tx:v2', 'v2.pdf'));
+    await syncHistory(deps(server, w));
+    // C holds only v2: the two v1 entries (seq 1 and 2) are skipped, the cursor still moves past them.
+    const c = await device('dev-c', [adk2]);
+    expect(await syncHistory(deps(server, c))).toMatchObject({ pulled: 1, unreadable: 2 });
+    const meta = await c.meta.get('u1');
+    expect(meta).toMatchObject({ cursor: 3, retrySeq: 1, retryVersions: [2] });
+    // Nothing new: no rewind, nothing pulled.
+    expect(await syncHistory(deps(server, c))).toMatchObject({ pulled: 0, unreadable: 0 });
+    // C imports v1 (chain import, pickup, pairing or recovery): the next pass rewinds and reads them.
+    await c.keys.saveAdk(1, adk1.raw);
+    expect(await syncHistory(deps(server, c))).toMatchObject({ pulled: 3, unreadable: 0 });
+    expect((await c.history.list()).map((e) => e.title).sort()).toEqual(['v1.pdf', 'v1b.pdf', 'v2.pdf']);
+    expect(await c.meta.get('u1')).toMatchObject({ cursor: 3, retrySeq: null, retryVersions: [] });
+  });
+
+  it('rewindForNewKeys only rewinds for a version that was missing', () => {
+    const meta = { ...emptyMeta('u1'), cursor: 40, retrySeq: 12, retryVersions: [2] };
+    expect(rewindForNewKeys(meta, [2])).toBe(false);
+    expect(meta.cursor).toBe(40);
+    expect(rewindForNewKeys(meta, [1, 2])).toBe(true);
+    expect(meta).toMatchObject({ cursor: 11, retrySeq: null, retryVersions: [] });
+    expect(rewindForNewKeys({ ...emptyMeta('u1'), cursor: 5 }, [1, 2, 3])).toBe(false);
   });
 
   it('validates decrypted entries and derives stable UUIDs per device', async () => {

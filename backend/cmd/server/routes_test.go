@@ -125,7 +125,11 @@ func TestNonPublicRoutesRejectAnonymousCalls(t *testing.T) {
 // signed-in tokens whose claims match the "live" account session.
 type fakeAccounts map[string]devices.AccountState
 
-func (f fakeAccounts) AccountState(_ context.Context, id string, _ bool) (devices.AccountState, error) {
+func (f fakeAccounts) AccountState(_ context.Context, id string) (devices.AccountState, error) {
+	return f[id], nil
+}
+
+func (f fakeAccounts) Refreshed(_ context.Context, id, _ string) (devices.AccountState, error) {
 	return f[id], nil
 }
 
@@ -187,8 +191,10 @@ func TestAccountLevelsFromOpenAPI(t *testing.T) {
 		}
 		counts[level]++
 	}
-	// Phase 5A declares 7 account and 16 account+device operations; the test must not pass vacuously.
-	if counts["account"] < 7 || counts["account+device"] < 16 {
+	// Phase 5A declares 5 account and 18 account+device operations (PATCH /v1/me and PATCH /v1/devices/{id}
+	// are account+device since QA round 1: a not-added session is read-only); the test must not pass
+	// vacuously.
+	if counts["account"] < 5 || counts["account+device"] < 18 {
 		t.Fatalf("too few account routes in openapi.yaml: %v", counts)
 	}
 }

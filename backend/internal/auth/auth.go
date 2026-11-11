@@ -151,18 +151,21 @@ var (
 	ErrResetInvalid = errf(http.StatusBadRequest, "reset_token_invalid", "This reset link is invalid or has expired. Request a new one.")
 	ErrInvalidCreds = errf(http.StatusUnauthorized, "invalid_credentials", "Email or password is incorrect.")
 	// ErrWrongPassword is 403, not 401, so clients do not mistake it for an expired access token.
-	ErrWrongPassword     = errf(http.StatusForbidden, "invalid_credentials", "The current password is incorrect.")
-	ErrTokenStale        = errf(http.StatusUnauthorized, "device_token_invalid", "The device access token is not valid.")
-	ErrAccountRequired   = errf(http.StatusForbidden, "account_required", "Sign in to use this feature.")
-	ErrDeviceNotAdded    = errf(http.StatusForbidden, "device_not_added", "Add this device to your account to use this feature.")
-	ErrNotFound          = errf(http.StatusNotFound, "not_found", "Not found.")
-	ErrEmailTaken        = errf(http.StatusConflict, "email_taken", "An account with this email already exists. Sign in instead.")
-	ErrAlreadySignedIn   = errf(http.StatusConflict, "already_signed_in", "This device is already signed in. Sign out first.")
-	ErrUseSignout        = errf(http.StatusConflict, "use_signout", "Sign out to remove this device.")
-	ErrKeysExist         = errf(http.StatusConflict, "keys_exist", "This account already has a data key.")
-	ErrKeyVersion        = errf(http.StatusConflict, "key_version_conflict", "The account key changed. Reload the keys and try again.")
-	ErrPairingConflict   = errf(http.StatusConflict, "pairing_conflict", "Another pairing for this device started at the same time. Try again.")
-	errDevicesChangedMsg = "The account's devices changed. Reload the keys and try again."
+	ErrWrongPassword        = errf(http.StatusForbidden, "invalid_credentials", "The current password is incorrect.")
+	ErrTokenStale           = errf(http.StatusUnauthorized, "device_token_invalid", "The device access token is not valid.")
+	ErrAccountRequired      = errf(http.StatusForbidden, "account_required", "Sign in to use this feature.")
+	ErrDeviceNotAdded       = errf(http.StatusForbidden, "device_not_added", "Add this device to your account to use this feature.")
+	ErrNotFound             = errf(http.StatusNotFound, "not_found", "Not found.")
+	ErrEmailTaken           = errf(http.StatusConflict, "email_taken", "An account with this email already exists. Sign in instead.")
+	ErrAlreadySignedIn      = errf(http.StatusConflict, "already_signed_in", "This device is already signed in. Sign out first.")
+	ErrUseSignout           = errf(http.StatusConflict, "use_signout", "Sign out to remove this device.")
+	ErrKeysExist            = errf(http.StatusConflict, "keys_exist", "This account already has a data key.")
+	ErrKeyVersion           = errf(http.StatusConflict, "key_version_conflict", "The account key changed. Reload the keys and try again.")
+	ErrPairingConflict      = errf(http.StatusConflict, "pairing_conflict", "Another pairing for this device started at the same time. Try again.")
+	ErrKeysLegacy           = errf(http.StatusConflict, "keys_legacy", "This account's keys were set up before key verification and cannot be changed. Set up the account again (development data only).")
+	ErrRotationUnauthorized = errf(http.StatusForbidden, "rotation_unauthorized", "This key change is not signed by the current account key.")
+	ErrDeviceKeyUnproven    = errf(http.StatusForbidden, "device_key_unproven", "This device has not proven that it holds the account key. Pair it or use the recovery phrase first.")
+	errDevicesChangedMsg    = "The account's devices changed. Reload the keys and try again."
 )
 
 func rateLimited(wait time.Duration) *Error {

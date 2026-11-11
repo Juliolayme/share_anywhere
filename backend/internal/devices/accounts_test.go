@@ -13,10 +13,12 @@ type fakeAccounts struct {
 	touched map[string]int
 }
 
-func (f *fakeAccounts) AccountState(_ context.Context, id string, touch bool) (AccountState, error) {
-	if touch {
-		f.touched[id]++
-	}
+func (f *fakeAccounts) AccountState(_ context.Context, id string) (AccountState, error) {
+	return f.state[id], nil
+}
+
+func (f *fakeAccounts) Refreshed(_ context.Context, id, _ string) (AccountState, error) {
+	f.touched[id]++
 	return f.state[id], nil
 }
 

@@ -1,4 +1,5 @@
-import { b64uEncode } from './encoding';
+import { deviceKeyProof, type DeviceKeyRegistration } from './authenticity';
+import { b64uEncode, zeroize } from './encoding';
 import type { KeyStore } from './store';
 import { KeyStoreUnavailableError } from './errors';
 import { generateX25519, generateX25519Raw, hasWebCryptoX25519, type X25519KeyPair } from './x25519';
@@ -42,4 +43,24 @@ export async function getOrCreateDeviceKey(store: KeyStore): Promise<{ keyPair: 
     if (!(await store.loadDeviceKey())) throw new KeyStoreUnavailableError('the device key does not survive storage');
   }
   return { keyPair, created: true };
+}
+
+/**
+ * The `PUT /v1/keys/device` body for this device (contract A.4): the wrapping public key with a proof signed by the
+ * newest ADK version the device holds. Null while the device holds no ADK: a device registers only once it has the
+ * key (after setup, pairing or recovery), so rotations never wrap new keys to a device that was never given one.
+ */
+export async function proveDeviceKey(
+  store: KeyStore,
+  deviceId: string,
+  keyPair: X25519KeyPair,
+): Promise<DeviceKeyRegistration | null> {
+  const version = await store.currentVersion();
+  if (version === 0) return null;
+  const raw = await store.unwrapAdkRaw(version);
+  try {
+    return await deviceKeyProof(raw, version, deviceId, keyPair.publicKey);
+  } finally {
+    zeroize(raw);
+  }
 }

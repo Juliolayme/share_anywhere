@@ -7,6 +7,7 @@ import { useI18n } from '../../i18n/i18n';
 import { ApiError } from '../../lib/api/errors';
 import { FormError, PasswordField } from '../../pages/account/AuthLayout';
 import { accountErrorText, useAccount } from './AccountContext';
+import { KeyProblemBanner } from './KeyProblem';
 import { MAX_PASSWORD, MIN_PASSWORD } from './state';
 
 const row = 'flex min-h-[48px] items-center gap-3 border-t border-border py-2 text-[14px]';
@@ -90,6 +91,13 @@ function KeyRow() {
   const { t } = useI18n();
   const account = useAccount();
   const k = account.keys;
+  if (k === 'rejected' || k === 'legacy') {
+    return (
+      <div className="border-t border-border py-3" data-testid="key-status">
+        <KeyProblemBanner status={k} returnTo="/settings" />
+      </div>
+    );
+  }
   return (
     <div className={row} data-testid="key-status">
       <KeyRound aria-hidden size={18} className="flex-none text-fg-2" />

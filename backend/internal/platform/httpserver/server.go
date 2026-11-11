@@ -187,7 +187,7 @@ func recoverer(log *slog.Logger, next http.Handler) http.Handler {
 			if v == http.ErrAbortHandler {
 				panic(v)
 			}
-			log.Error("panic in handler", "path", r.URL.Path, "panic", fmt.Sprint(v), "stack", string(debug.Stack()))
+			log.Error("panic in handler", "path", RedactPath(r.URL.Path), "panic", fmt.Sprint(v), "stack", string(debug.Stack()))
 			if !rec.wroteHeader {
 				writeJSON(rec, http.StatusInternalServerError, map[string]string{"error": "internal", "message": "Something went wrong."})
 			}

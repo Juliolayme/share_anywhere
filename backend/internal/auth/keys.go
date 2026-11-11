@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -33,10 +34,13 @@ type RecoveryInfo struct {
 	Params    Argon2Spec `json:"params"`
 }
 
-// DeviceKey is one added device and its wrapping public key (null until registered).
+// DeviceKey is one added device and its wrapping public key with the proof that it holds ADK(key_version)
+// (all null until registered).
 type DeviceKey struct {
-	DeviceID  string  `json:"device_id"`
-	PublicKey *string `json:"public_key"`
+	DeviceID   string  `json:"device_id"`
+	PublicKey  *string `json:"public_key"`
+	KeyVersion *int    `json:"key_version"`
+	Proof      *string `json:"proof"`
 }
 
 // PendingBlob is an ADK version wrapped for the caller by a rotation.
@@ -83,7 +87,7 @@ func (s *Service) Keys(ctx context.Context, id access.Identity) (KeysState, erro
 		out.Recovery = &RecoveryInfo{PublicKey: enc(pub), Salt: enc(salt), Params: Argon2Spec{M: *m, T: *t, P: *p}}
 	}
 	rows, err := s.cfg.Pool.Query(ctx,
-		`SELECT a.device_id::text, k.public_key FROM auth_sessions a
+		`SELECT a.device_id::text, k.public_key, k.key_version, k.proof FROM auth_sessions a
 		   JOIN devices d ON d.id = a.device_id AND d.revoked_at IS NULL AND d.expires_at > $2
 		   LEFT JOIN device_keys k ON k.device_id = a.device_id AND k.user_id = a.user_id
 		  WHERE a.user_id = $1::uuid AND a.revoked_at IS NULL AND a.expires_at > $2 AND a.device_added
@@ -93,14 +97,14 @@ func (s *Service) Keys(ctx context.Context, id access.Identity) (KeysState, erro
 	}
 	for rows.Next() {
 		var dk DeviceKey
-		var k []byte
-		if err := rows.Scan(&dk.DeviceID, &k); err != nil {
+		var k, proof []byte
+		if err := rows.Scan(&dk.DeviceID, &k, &dk.KeyVersion, &proof); err != nil {
 			rows.Close()
 			return KeysState{}, err
 		}
 		if k != nil {
-			e := enc(k)
-			dk.PublicKey = &e
+			e, p := enc(k), enc(proof)
+			dk.PublicKey, dk.Proof = &e, &p
 		}
 		out.Devices = append(out.Devices, dk)
 	}
@@ -127,20 +131,59 @@ func (s *Service) Keys(ctx context.Context, id access.Identity) (KeysState, erro
 	return out, rows.Err()
 }
 
-// RegisterDeviceKey stores (or replaces) the calling device's X25519 wrapping public key. Replacing it
+// RegisterKeyInput is PUT /v1/keys/device.
+type RegisterKeyInput struct {
+	PublicKey  string `json:"public_key"`
+	KeyVersion int    `json:"key_version"`
+	Proof      string `json:"proof"`
+}
+
+// verifyKeyAt returns verify_key(v) of the account inside tx (nil for a legacy row, ErrNoRows if the
+// version does not exist).
+func verifyKeyAt(ctx context.Context, tx pgx.Tx, userID string, v int) ([]byte, error) {
+	var vk []byte
+	err := tx.QueryRow(ctx, `SELECT verify_key FROM account_key_versions WHERE user_id = $1::uuid AND key_version = $2`, userID, v).Scan(&vk)
+	return vk, err
+}
+
+// RegisterDeviceKey stores (or replaces) the calling device's X25519 wrapping public key. The proof must be
+// a signature by the signing key of ADK(key_version) over the caller's device ID (from the token, never the
+// body), so only a device that already holds the ADK (setup, pairing, or recovery done) can register, and
+// rotations only ever wrap new keys to such devices (docs/ADR/0012-key-authenticity.md). Replacing the key
 // drops blobs wrapped to the old key, which the device can no longer open.
-func (s *Service) RegisterDeviceKey(ctx context.Context, id access.Identity, publicKey string) error {
+func (s *Service) RegisterDeviceKey(ctx context.Context, id access.Identity, in RegisterKeyInput) error {
 	se, err := s.require(ctx, id, true)
 	if err != nil {
 		return err
 	}
-	pub, ok := validKey(publicKey)
-	if !ok {
+	pub, ok1 := validKey(in.PublicKey)
+	proof, ok2 := b64(in.Proof)
+	if !ok1 || !ok2 || len(proof) != signatureLen || in.KeyVersion < 1 {
 		return ErrInvalid
 	}
 	return pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+		var current int
+		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&current); err != nil {
+			return err
+		}
+		if in.KeyVersion > current {
+			return ErrDeviceKeyUnproven
+		}
+		vk, err := verifyKeyAt(ctx, tx, se.UserID, in.KeyVersion)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrDeviceKeyUnproven
+		}
+		if err != nil {
+			return err
+		}
+		if vk == nil {
+			return ErrKeysLegacy
+		}
+		if !verifySig(vk, DeviceKeyMessage(se.DeviceID, in.KeyVersion, pub), proof) {
+			return ErrDeviceKeyUnproven
+		}
 		var old []byte
-		err := tx.QueryRow(ctx, `SELECT public_key FROM device_keys WHERE device_id = $1::uuid FOR UPDATE`, se.DeviceID).Scan(&old)
+		err = tx.QueryRow(ctx, `SELECT public_key FROM device_keys WHERE device_id = $1::uuid FOR UPDATE`, se.DeviceID).Scan(&old)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -150,9 +193,10 @@ func (s *Service) RegisterDeviceKey(ctx context.Context, id access.Identity, pub
 			}
 		}
 		_, err = tx.Exec(ctx,
-			`INSERT INTO device_keys (device_id, user_id, public_key, created_at) VALUES ($1::uuid, $2::uuid, $3, $4)
-			 ON CONFLICT (device_id) DO UPDATE SET user_id = EXCLUDED.user_id, public_key = EXCLUDED.public_key, created_at = EXCLUDED.created_at`,
-			se.DeviceID, se.UserID, pub, s.cfg.Clock.Now())
+			`INSERT INTO device_keys (device_id, user_id, public_key, key_version, proof, created_at) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6)
+			 ON CONFLICT (device_id) DO UPDATE SET user_id = EXCLUDED.user_id, public_key = EXCLUDED.public_key,
+			        key_version = EXCLUDED.key_version, proof = EXCLUDED.proof, created_at = EXCLUDED.created_at`,
+			se.DeviceID, se.UserID, pub, in.KeyVersion, proof, s.cfg.Clock.Now())
 		return err
 	})
 }
@@ -163,6 +207,10 @@ type SetupInput struct {
 	Salt              string     `json:"salt"`
 	Params            Argon2Spec `json:"params"`
 	RecoveryBlob      string     `json:"recovery_blob"`
+	// VerifyKey is verify_key(1), the Ed25519 public key derived from ADK(1).
+	VerifyKey string `json:"verify_key"`
+	// RecoveryAnchor is HMAC-SHA256 of AnchorMessage(verify_key(1)) under a key derived from the recovery seed.
+	RecoveryAnchor string `json:"recovery_anchor"`
 }
 
 // lockKeys locks the account's key row for the rest of tx and returns the current version.
@@ -181,7 +229,9 @@ func (s *Service) SetupKeys(ctx context.Context, id access.Identity, in SetupInp
 	pub, ok1 := validKey(in.RecoveryPublicKey)
 	salt, ok2 := b64(in.Salt)
 	blob, ok3 := validBlob(in.RecoveryBlob, minWrapBlob)
-	if !ok1 || !ok2 || len(salt) < 16 || len(salt) > 64 || !ok3 || !in.Params.valid() {
+	vk, ok4 := validKey(in.VerifyKey)
+	anchor, ok5 := validKey(in.RecoveryAnchor)
+	if !ok1 || !ok2 || len(salt) < 16 || len(salt) > 64 || !ok3 || !ok4 || !ok5 || !in.Params.valid() {
 		return 0, ErrInvalid
 	}
 	now := s.cfg.Clock.Now()
@@ -194,14 +244,14 @@ func (s *Service) SetupKeys(ctx context.Context, id access.Identity, in SetupInp
 			return ErrKeysExist
 		}
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO account_key_versions (user_id, key_version, recovery_blob, chain_blob, created_by_device_id, created_at)
-			 VALUES ($1::uuid, 1, $2, NULL, $3::uuid, $4)`, se.UserID, blob, se.DeviceID, now); err != nil {
+			`INSERT INTO account_key_versions (user_id, key_version, recovery_blob, chain_blob, verify_key, signature, created_by_device_id, created_at)
+			 VALUES ($1::uuid, 1, $2, NULL, $3, NULL, $4::uuid, $5)`, se.UserID, blob, vk, se.DeviceID, now); err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx,
 			`UPDATE account_keys SET key_version = 1, recovery_public_key = $2, recovery_salt = $3, recovery_m = $4,
-			        recovery_t = $5, recovery_p = $6, updated_at = $7 WHERE user_id = $1::uuid`,
-			se.UserID, pub, salt, in.Params.M, in.Params.T, in.Params.P, now)
+			        recovery_t = $5, recovery_p = $6, recovery_anchor = $7, updated_at = $8 WHERE user_id = $1::uuid`,
+			se.UserID, pub, salt, in.Params.M, in.Params.T, in.Params.P, anchor, now)
 		return err
 	})
 	if err != nil {
@@ -216,6 +266,8 @@ type Recovery struct {
 	RecoveryBlob string     `json:"recovery_blob"`
 	Salt         string     `json:"salt"`
 	Params       Argon2Spec `json:"params"`
+	// RecoveryAnchor authenticates verify_key(1) to a phrase holder; null for legacy accounts.
+	RecoveryAnchor *string `json:"recovery_anchor"`
 }
 
 // GetRecovery returns the newest ADK wrapped to the recovery public key.
@@ -225,11 +277,11 @@ func (s *Service) GetRecovery(ctx context.Context, id access.Identity) (Recovery
 		return Recovery{}, err
 	}
 	var r Recovery
-	var blob, salt []byte
+	var blob, salt, anchor []byte
 	err = s.cfg.Pool.QueryRow(ctx,
-		`SELECT k.key_version, v.recovery_blob, k.recovery_salt, k.recovery_m, k.recovery_t, k.recovery_p
+		`SELECT k.key_version, v.recovery_blob, k.recovery_salt, k.recovery_m, k.recovery_t, k.recovery_p, k.recovery_anchor
 		   FROM account_keys k JOIN account_key_versions v ON v.user_id = k.user_id AND v.key_version = k.key_version
-		  WHERE k.user_id = $1::uuid`, se.UserID).Scan(&r.KeyVersion, &blob, &salt, &r.Params.M, &r.Params.T, &r.Params.P)
+		  WHERE k.user_id = $1::uuid`, se.UserID).Scan(&r.KeyVersion, &blob, &salt, &r.Params.M, &r.Params.T, &r.Params.P, &anchor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Recovery{}, ErrNotFound
 	}
@@ -237,6 +289,10 @@ func (s *Service) GetRecovery(ctx context.Context, id access.Identity) (Recovery
 		return Recovery{}, err
 	}
 	r.RecoveryBlob, r.Salt = enc(blob), enc(salt)
+	if anchor != nil {
+		a := enc(anchor)
+		r.RecoveryAnchor = &a
+	}
 	return r, nil
 }
 
@@ -246,29 +302,55 @@ type ChainLink struct {
 	Blob       string `json:"blob"`
 }
 
-// Chain returns every chain blob, oldest first.
-func (s *Service) Chain(ctx context.Context, id access.Identity) ([]ChainLink, error) {
+// KeyVersionInfo is one ADK version's verify key and the signature by the previous version that authorized
+// it (null for version 1). Both are null only for legacy rows set up before key verification existed.
+type KeyVersionInfo struct {
+	KeyVersion int     `json:"key_version"`
+	VerifyKey  *string `json:"verify_key"`
+	Signature  *string `json:"signature"`
+}
+
+// ChainState is GET /v1/keys/chain.
+type ChainState struct {
+	Chain    []ChainLink      `json:"chain"`
+	Versions []KeyVersionInfo `json:"versions"`
+}
+
+// Chain returns every chain blob and every version's verify key and signature, oldest first, so a client
+// can check the whole version list (docs/CLIPBOARD_PROTOCOL.md §1).
+func (s *Service) Chain(ctx context.Context, id access.Identity) (ChainState, error) {
 	se, err := s.require(ctx, id, true)
 	if err != nil {
-		return nil, err
+		return ChainState{}, err
 	}
 	rows, err := s.cfg.Pool.Query(ctx,
-		`SELECT key_version, chain_blob FROM account_key_versions WHERE user_id = $1::uuid AND chain_blob IS NOT NULL ORDER BY key_version`, se.UserID)
+		`SELECT key_version, chain_blob, verify_key, signature FROM account_key_versions WHERE user_id = $1::uuid ORDER BY key_version`, se.UserID)
 	if err != nil {
-		return nil, err
+		return ChainState{}, err
 	}
 	defer rows.Close()
-	out := []ChainLink{}
+	out := ChainState{Chain: []ChainLink{}, Versions: []KeyVersionInfo{}}
 	for rows.Next() {
-		var c ChainLink
-		var b []byte
-		if err := rows.Scan(&c.KeyVersion, &b); err != nil {
-			return nil, err
+		var v KeyVersionInfo
+		var chain, vk, sig []byte
+		if err := rows.Scan(&v.KeyVersion, &chain, &vk, &sig); err != nil {
+			return ChainState{}, err
 		}
-		c.Blob = enc(b)
-		out = append(out, c)
+		if chain != nil {
+			out.Chain = append(out.Chain, ChainLink{KeyVersion: v.KeyVersion, Blob: enc(chain)})
+		}
+		v.VerifyKey, v.Signature = optEnc(vk), optEnc(sig)
+		out.Versions = append(out.Versions, v)
 	}
 	return out, rows.Err()
+}
+
+func optEnc(b []byte) *string {
+	if b == nil {
+		return nil
+	}
+	e := enc(b)
+	return &e
 }
 
 // DeviceBlob is a new ADK version wrapped for one device.
@@ -283,9 +365,16 @@ type RotateInput struct {
 	RecoveryBlob string       `json:"recovery_blob"`
 	ChainBlob    string       `json:"chain_blob"`
 	DeviceBlobs  []DeviceBlob `json:"device_blobs"`
+	// VerifyKey is verify_key(v+1).
+	VerifyKey string `json:"verify_key"`
+	// Signature is by the signing key of version v over RotationMessage(v+1, verify_key, chain_blob).
+	Signature string `json:"signature"`
 }
 
-// Rotate records ADK version current+1 atomically under the account's key-row lock. Every other added
+// Rotate records ADK version current+1 atomically under the account's key-row lock. The rotation must be
+// signed by the signing key of the current version (only a holder of ADK(v) can authorize v+1), checked
+// against the stored verify_key(v): a device that only knows the password cannot plant a key of its own
+// choosing (403 rotation_unauthorized, nothing stored; docs/ADR/0012-key-authenticity.md). Every other added
 // device with a registered wrapping key must get a blob (409 devices_changed lists the missing ones), so no
 // remaining device is locked out; a blob for a device that is not an added device of the account is refused
 // (400 with unexpected), so no removed device gets the key. The caller may include a safety copy for itself,
@@ -297,7 +386,9 @@ func (s *Service) Rotate(ctx context.Context, id access.Identity, in RotateInput
 	}
 	rec, ok1 := validBlob(in.RecoveryBlob, minWrapBlob)
 	chain, ok2 := validBlob(in.ChainBlob, minChainBlob)
-	if !ok1 || !ok2 || in.KeyVersion < 1 || len(in.DeviceBlobs) > 100 {
+	newVK, ok3 := validKey(in.VerifyKey)
+	sig, ok4 := b64(in.Signature)
+	if !ok1 || !ok2 || !ok3 || !ok4 || len(sig) != signatureLen || in.KeyVersion < 1 || len(in.DeviceBlobs) > 100 {
 		return 0, ErrInvalid
 	}
 	blobs := map[string][]byte{}
@@ -316,6 +407,16 @@ func (s *Service) Rotate(ctx context.Context, id access.Identity, in RotateInput
 		}
 		if v < 1 || in.KeyVersion != v+1 {
 			return ErrKeyVersion
+		}
+		vk, err := verifyKeyAt(ctx, tx, se.UserID, v)
+		if err != nil {
+			return err
+		}
+		if vk == nil {
+			return ErrKeysLegacy
+		}
+		if !verifySig(vk, RotationMessage(in.KeyVersion, newVK, chain), sig) {
+			return ErrRotationUnauthorized
 		}
 		// Every live added device of the account (the caller included) and whether it registered a key.
 		rows, err := tx.Query(ctx,
@@ -364,8 +465,8 @@ func (s *Service) Rotate(ctx context.Context, id access.Identity, in RotateInput
 				Extra: map[string]any{"missing": missing}}
 		}
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO account_key_versions (user_id, key_version, recovery_blob, chain_blob, created_by_device_id, created_at)
-			 VALUES ($1::uuid, $2, $3, $4, $5::uuid, $6)`, se.UserID, in.KeyVersion, rec, chain, se.DeviceID, now); err != nil {
+			`INSERT INTO account_key_versions (user_id, key_version, recovery_blob, chain_blob, verify_key, signature, created_by_device_id, created_at)
+			 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8)`, se.UserID, in.KeyVersion, rec, chain, newVK, sig, se.DeviceID, now); err != nil {
 			return err
 		}
 		for d, b := range blobs {
@@ -483,7 +584,9 @@ type WrapInput struct {
 	Blob            string `json:"blob"`
 }
 
-// WrapPairing stores the newest ADK wrapped for the new device; accepted once.
+// WrapPairing stores the newest ADK wrapped for the new device; accepted once. sender_public_key must be the
+// caller's registered (therefore proven, see RegisterDeviceKey) wrapping key, so a pairing blob always comes
+// from a device that showed it holds the ADK (403 device_key_unproven otherwise).
 func (s *Service) WrapPairing(ctx context.Context, id access.Identity, code string, in WrapInput) error {
 	se, err := s.require(ctx, id, true)
 	if err != nil {
@@ -503,26 +606,38 @@ func (s *Service) WrapPairing(ctx context.Context, id access.Identity, code stri
 		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&current); err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx,
-			`UPDATE device_pairings p SET key_version = $5, sender_public_key = $6, blob = $7, wrapped_by_device_id = $3::uuid, wrapped_at = $4
-			  WHERE `+openPairing+` AND $5 = $8::int AND $5 >= 1`,
-			hashToken(code), se.UserID, se.DeviceID, now, in.KeyVersion, sender, blob, current)
-		if err != nil {
+		var registered []byte
+		err := tx.QueryRow(ctx, `SELECT public_key FROM device_keys WHERE device_id = $1::uuid AND user_id = $2::uuid`, se.DeviceID, se.UserID).Scan(&registered)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		if tag.RowsAffected() == 1 {
-			return nil
+		proven := bytes.Equal(registered, sender)
+		if proven {
+			tag, err := tx.Exec(ctx,
+				`UPDATE device_pairings p SET key_version = $5, sender_public_key = $6, blob = $7, wrapped_by_device_id = $3::uuid, wrapped_at = $4
+				  WHERE `+openPairing+` AND $5 = $8::int AND $5 >= 1`,
+				hashToken(code), se.UserID, se.DeviceID, now, in.KeyVersion, sender, blob, current)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 1 {
+				return nil
+			}
 		}
-		// Tell a stale key version apart from a pairing that is gone.
+		// Tell a pairing that is gone apart from an unproven sender key or a stale key version.
 		var exists bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM device_pairings p WHERE `+openPairing+`)`,
 			hashToken(code), se.UserID, se.DeviceID, now).Scan(&exists); err != nil {
 			return err
 		}
-		if exists {
+		switch {
+		case !exists:
+			return ErrNotFound
+		case !proven:
+			return ErrDeviceKeyUnproven
+		default:
 			return ErrKeyVersion
 		}
-		return ErrNotFound
 	})
 }
 

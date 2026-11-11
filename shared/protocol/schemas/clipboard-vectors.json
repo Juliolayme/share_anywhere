@@ -107,5 +107,31 @@
     "private_clamped": "d80713f9d04aa176dbb28bbf0e7a793267581485b23fd2a096ba256e5320766d",
     "public_key": "49527d10263430fa651486e62bb2c824ed83cac83d1f7bb3c63f344faa17416c",
     "public_key_b64u": "SVJ9ECY0MPplFIbmK7LIJO2Dysg9H3uzxj80T6oXQWw"
+  },
+  "key_authenticity": {
+    "info_sign": "sa-keyver-sign-v1",
+    "sign_seed_v1": "02d527817931697fc8574490438374814348473c4f4438c83bf176bcec2c6b53",
+    "verify_key_v1": "4f7ad9138ca81eaf88247af1a8d4af97b44f4147ab5693cd77b2737e155042bf",
+    "sign_seed_v2": "1906dce2ced253076e22b663117853d5cf173c4385be1ed4225dd72d05db7c01",
+    "verify_key_v2": "92d0a9daca218c65e5b00f702b1959cd609798b65e2dfc54e4959e4e9486d7bb",
+    "rotation": {
+      "key_version": 2,
+      "chain_blob_sha256": "b036c22c1c15d2cfb6a400f160b1ffd1394753d468d84550ac7bc0e95df0c7ef",
+      "message_utf8": "sa-rotate-v1|2|ktCp2sohjGXlsA9wKxlZzWCXmLZeLfxU5JWeTpSG17s|sDbCLBwV0s-2pADxYLH_0TlHU9Ro2EVQrHvA6V3wx-8",
+      "signature": "8336fbde6bbca551547622d3d7cfecd8f9951fdebded90babc8827ee1e9971de2e4ca617da0f0d3e3f5a10904f965f112596a03f9d9cb536b1b9d6aaa2ce6e07"
+    },
+    "device_key": {
+      "device_id": "00000000-0000-4000-8000-000000000001",
+      "key_version": 1,
+      "public_key": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "message_utf8": "sa-devkey-v1|00000000-0000-4000-8000-000000000001|1|QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
+      "proof": "edaae79b701751e85ee2c5d9a3398279bca16eaa1ecb813608404e090764b9191d663ee36ff7e4894206067f15b681bb66472b2c9c6621e69812c04f9732a204"
+    },
+    "anchor": {
+      "recovery_seed": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "anchor_key": "5a969874c0dc3e163d6a3d12a5cb8ce3f17d611cd7fed331c76f8f52eaf5696f",
+      "message_utf8": "sa-anchor-v1|T3rZE4yoHq-IJHrxqNSvl7RPQUerVpPNd7JzfhVQQr8",
+      "recovery_anchor": "0d5136c80ca2a5b3f5b29f16e8d4c69d5e9ef7c5ca6ef55a087c17b8d92a8a04"
+    }
   }
 }

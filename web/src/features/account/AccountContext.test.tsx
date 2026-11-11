@@ -4,7 +4,9 @@ import { DeviceClient } from '../../lib/api/device-client';
 import { IdentityProvider } from '../../lib/identity/identity';
 import { HistoryProvider } from '../history/HistoryContext';
 import type { HistoryStore } from '../history/store/history-store';
-import { AccountProvider, useAccount } from './AccountContext';
+import { ApiError } from '../../lib/api/errors';
+import { writePref } from '../../lib/storage';
+import { AccountProvider, keyErrorStatus, useAccount } from './AccountContext';
 
 const wipe = vi.fn(async () => undefined);
 vi.mock('./keyFlow', () => ({
@@ -36,7 +38,7 @@ const sessionFor = (id: string, claims: object) => ({
   server_time: new Date().toISOString(),
 });
 
-function setup(initial: object) {
+function setup(initial: object, { offline = false } = {}) {
   const calls: string[] = [];
   let claims = initial;
   const client = new DeviceClient({
@@ -45,6 +47,7 @@ function setup(initial: object) {
     clearTimer: () => undefined,
     fetch: (async (url: string, init: RequestInit) => {
       calls.push(`${init.method ?? 'GET'} ${url}`);
+      if (offline) throw new TypeError('Failed to fetch');
       if (url === '/v1/devices/token') return json(200, sessionFor('d1', claims));
       if (url === '/v1/me')
         return json(200, {
@@ -98,6 +101,31 @@ function setup(initial: object) {
 beforeEach(() => wipe.mockClear());
 
 describe('AccountProvider', () => {
+  it('offline at load: unknown, with an account hint only when this browser held account keys (P2-7)', async () => {
+    writePref('accountKeys', '1');
+    const t = setup({}, { offline: true });
+    await waitFor(() => expect(t.calls).toContain('POST /v1/devices/token'));
+    expect(t.account().known).toBe(false);
+    expect(t.account().accountHint).toBe(true);
+    writePref('accountKeys', '');
+  });
+
+  it('offline at load without the marker gives no account hint', async () => {
+    const t = setup({}, { offline: true });
+    await waitFor(() => expect(t.calls).toContain('POST /v1/devices/token'));
+    expect(t.account().known).toBe(false);
+    expect(t.account().accountHint).toBe(false);
+  });
+
+  it('maps key check failures to honest states', () => {
+    expect(keyErrorStatus(new ApiError(409, 'keys_legacy', ''))).toBe('legacy');
+    expect(keyErrorStatus(new ApiError(403, 'rotation_unauthorized', ''))).toBe('rejected');
+    expect(keyErrorStatus(new ApiError(403, 'device_key_unproven', ''))).toBe('rejected');
+    expect(keyErrorStatus(Object.assign(new Error('x'), { code: 'unverified' }))).toBe('rejected');
+    expect(keyErrorStatus(Object.assign(new Error('x'), { code: 'storage_unavailable' }))).toBe('unavailable');
+    expect(keyErrorStatus(new ApiError(500, 'internal', ''))).toBe('error');
+  });
+
   it('a guest stays a guest and makes no account call', async () => {
     const t = setup({});
     await waitFor(() => expect(t.client.device?.id).toBe('d1'));

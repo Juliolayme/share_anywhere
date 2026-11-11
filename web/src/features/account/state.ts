@@ -14,9 +14,13 @@ export type Phase = 'guest' | 'signed_in';
  * - `pair`: the account has an ADK this device does not hold: AC-6 (pair or recovery phrase);
  * - `ready`: the device holds the account's newest ADK;
  * - `unavailable`: this browser cannot keep keys (IndexedDB or WebCrypto missing);
- * - `error`: the check failed (offline, server error); retried on the next refresh.
+ * - `error`: the check failed (offline, server error); retried on the next refresh;
+ * - `rejected`: a key change (rotation) addressed to this device did not verify, or the server refused this device's
+ *   key proof (docs/CLIPBOARD_PROTOCOL.md §1 "Key authenticity"): nothing was stored; pair again or use the phrase;
+ * - `legacy`: the account's keys predate key authenticity (`409 keys_legacy`, pre-release data): set up again.
  */
-export type KeyStatus = 'none' | 'checking' | 'setup' | 'pair' | 'ready' | 'unavailable' | 'error';
+export type KeyStatus =
+  'none' | 'checking' | 'setup' | 'pair' | 'ready' | 'unavailable' | 'error' | 'rejected' | 'legacy';
 
 export function phaseOf(claims: TokenClaims | null, enabled: boolean): Phase {
   return enabled && claims?.acct ? 'signed_in' : 'guest';
@@ -37,7 +41,7 @@ export function leftAccount(prev: TokenClaims | null, next: TokenClaims | null):
 export function nextAccountStep(added: boolean, keys: KeyStatus): 'setup' | 'pair' | 'checklist' {
   if (!added) return 'checklist';
   if (keys === 'setup') return 'setup';
-  if (keys === 'pair') return 'pair';
+  if (keys === 'pair' || keys === 'rejected') return 'pair';
   return 'checklist';
 }
 

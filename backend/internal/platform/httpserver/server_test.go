@@ -96,6 +96,15 @@ func TestRecoverer(t *testing.T) {
 	}
 }
 
+func TestRecovererRedactsPath(t *testing.T) {
+	var buf bytes.Buffer
+	h := recoverer(slog.New(slog.NewJSONHandler(&buf, nil)), http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/keys/pairings/by-code/SECRETCODE", nil))
+	if strings.Contains(buf.String(), "SECRETCODE") || !strings.Contains(buf.String(), "[redacted]") {
+		t.Fatalf("panic log must use the redacted path: %s", buf.String())
+	}
+}
+
 func TestRecovererReraisesAbort(t *testing.T) {
 	h := recoverer(discard(), http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }))
 	defer func() {

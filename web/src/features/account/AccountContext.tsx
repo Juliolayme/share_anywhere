@@ -24,6 +24,11 @@ export interface AccountValue {
   enabled: boolean;
   /** False until the device token is known (bootstrap); account screens wait instead of redirecting. */
   known: boolean;
+  /**
+   * This browser held account keys the last time it was signed in (a non-secret marker). While the token is still
+   * unknown (offline at load), screens show a neutral state instead of guest prompts.
+   */
+  accountHint: boolean;
   phase: Phase;
   userId: string | null;
   /** GET /v1/me, once loaded. */
@@ -71,6 +76,8 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
   const [keys, setKeys] = useState<KeyStatus>('none');
   const [keyVersion, setKeyVersion] = useState(0);
   const [sync, setSync] = useState<SyncStatus>({ state: 'idle' });
+  /** Bumped when a key check stored new ADK versions: a sync pass then pulls entries skipped as unreadable. */
+  const [keyEpoch, setKeyEpoch] = useState(0);
   /** Set by this tab's sign-out, which erases the keys itself: the claim change that follows is expected. */
   const signedOutHere = useRef(false);
   const prevClaims = useRef<TokenClaims | null>(client.claims);
@@ -144,14 +151,10 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
         writePref(KEYS_MARKER, '1');
         setKeyVersion(res.keyVersion);
         setKeys(res.status);
+        if (res.newVersions.length) setKeyEpoch((n) => n + 1);
         return res.status;
       } catch (e) {
-        const code = (e as { code?: string } | null)?.code;
-        const status: KeyStatus =
-          e instanceof Error &&
-          (e.name === 'KeyStoreUnavailableError' || code === 'unsupported' || code === 'storage_unavailable')
-            ? 'unavailable'
-            : 'error';
+        const status = keyErrorStatus(e);
         setKeys(status);
         return status;
       }
@@ -213,13 +216,14 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
   // 30 s while sync is on and the tab is visible.
   useEffect(() => {
     if (keys !== 'ready' || !me) return;
+    void keyEpoch;
     void syncNow();
     if (!me.history_sync) return;
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') void syncNow();
     }, 30_000);
     return () => clearInterval(id);
-  }, [keys, me, syncNow]);
+  }, [keys, me, syncNow, keyEpoch]);
 
   // Local deletions tombstone the synced copies while sync is on (queued when offline).
   useEffect(() => {
@@ -304,6 +308,7 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
     () => ({
       enabled,
       known: claims !== null,
+      accountHint: claims === null && readPref(KEYS_MARKER) === '1',
       phase,
       userId,
       me,
@@ -349,6 +354,19 @@ export function useAccount(): AccountValue {
   return v;
 }
 
+/** Key state for a failed key check: storage problems, key authenticity failures, legacy keys, anything else. */
+export function keyErrorStatus(e: unknown): KeyStatus {
+  const code = (e as { code?: string } | null)?.code;
+  if (
+    e instanceof Error &&
+    (e.name === 'KeyStoreUnavailableError' || code === 'unsupported' || code === 'storage_unavailable')
+  )
+    return 'unavailable';
+  if (code === 'keys_legacy') return 'legacy';
+  if (code === 'unverified' || code === 'rotation_unauthorized' || code === 'device_key_unproven') return 'rejected';
+  return 'error';
+}
+
 /** Inline message for an account API error (docs/API.md §3). */
 export function accountErrorText(e: unknown, t: Translate): string {
   if (e instanceof ApiError && (e.code === 'rate_limited' || e.code === 'locked_out') && e.retryAfterS) {
@@ -360,6 +378,12 @@ export function accountErrorText(e: unknown, t: Translate): string {
 
 function accountErrorKey(e: unknown): string {
   if (e instanceof NetworkError) return 'product.acct_offline';
+  const code = (e as { code?: string } | null)?.code;
+  // Key authenticity outcomes (CryptoError or ApiError codes, docs/CLIPBOARD_PROTOCOL.md §1).
+  if (code === 'keys_legacy') return 'product.keys_legacy';
+  if (code === 'recovery_unverified') return 'product.phrase_unverified';
+  if (code === 'unverified' || code === 'rotation_unauthorized' || code === 'device_key_unproven')
+    return 'product.key_change_unverified';
   if (!(e instanceof ApiError)) return 'product.error_generic';
   switch (e.code) {
     case 'invalid_credentials':

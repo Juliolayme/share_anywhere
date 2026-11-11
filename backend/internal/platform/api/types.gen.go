@@ -580,10 +580,16 @@ type DeviceBlob struct {
 	DeviceId openapi_types.UUID `json:"device_id"`
 }
 
-// DeviceKey defines model for DeviceKey.
+// DeviceKey An added device and its wrapping key; public_key, key_version, and proof are null until the device registers (once it holds the ADK).
 type DeviceKey struct {
-	DeviceId  openapi_types.UUID `json:"device_id"`
-	PublicKey *PublicKey         `json:"public_key"`
+	DeviceId openapi_types.UUID `json:"device_id"`
+
+	// KeyVersion The ADK version whose signing key made proof.
+	KeyVersion *int `json:"key_version"`
+
+	// Proof Signature by ADK(key_version) over "sa-devkey-v1|<device_id>|<key_version>|<b64u(public_key)>"; clients verify it before wrapping to the key.
+	Proof     *Signature `json:"proof"`
+	PublicKey *PublicKey `json:"public_key"`
 }
 
 // DeviceSession defines model for DeviceSession.
@@ -712,6 +718,17 @@ type KeyVersion struct {
 	KeyVersion int `json:"key_version"`
 }
 
+// KeyVersionInfo defines model for KeyVersionInfo.
+type KeyVersionInfo struct {
+	KeyVersion int `json:"key_version"`
+
+	// Signature The rotation signature by version key_version-1 (null for version 1 and for legacy rows).
+	Signature *Signature `json:"signature"`
+
+	// VerifyKey Null only for legacy accounts whose keys predate key verification.
+	VerifyKey *VerifyKey `json:"verify_key"`
+}
+
 // KeysRotateRequest defines model for KeysRotateRequest.
 type KeysRotateRequest struct {
 	// ChainBlob ADK(v-1) wrapped with ADK(v).
@@ -725,11 +742,18 @@ type KeysRotateRequest struct {
 
 	// RecoveryBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
 	RecoveryBlob WrappedBlob `json:"recovery_blob"`
+
+	// Signature By the signing key of the current version v over "sa-rotate-v1|" + (v+1) + "|" + b64u(verify_key(v+1)) + "|" + b64u(SHA-256(chain_blob bytes)).
+	Signature Signature `json:"signature"`
+
+	// VerifyKey verify_key(v+1).
+	VerifyKey VerifyKey `json:"verify_key"`
 }
 
 // KeysSetupRequest defines model for KeysSetupRequest.
 type KeysSetupRequest struct {
-	Params Argon2Spec `json:"params"`
+	Params         Argon2Spec     `json:"params"`
+	RecoveryAnchor RecoveryAnchor `json:"recovery_anchor"`
 
 	// RecoveryBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
 	RecoveryBlob WrappedBlob `json:"recovery_blob"`
@@ -739,6 +763,9 @@ type KeysSetupRequest struct {
 
 	// Salt 16 to 64 bytes.
 	Salt Base64Url `json:"salt"`
+
+	// VerifyKey verify_key(1).
+	VerifyKey VerifyKey `json:"verify_key"`
 }
 
 // KeysState defines model for KeysState.
@@ -910,10 +937,16 @@ type ReadyChecks string
 // ReadyStatus defines model for Ready.Status.
 type ReadyStatus string
 
+// RecoveryAnchor HMAC-SHA256(key = HKDF-SHA256(recovery_seed, info "sa-recovery-anchor-v1"), msg = "sa-anchor-v1|" + b64u(verify_key(1))), 32 bytes base64url. Lets a recovery-phrase holder authenticate verify_key(1) without trusting the server.
+type RecoveryAnchor = string
+
 // RecoveryBlob defines model for RecoveryBlob.
 type RecoveryBlob struct {
 	KeyVersion int        `json:"key_version"`
 	Params     Argon2Spec `json:"params"`
+
+	// RecoveryAnchor Null for legacy accounts whose keys predate key verification (recovery cannot be verified; clients refuse it).
+	RecoveryAnchor *RecoveryAnchor `json:"recovery_anchor"`
 
 	// RecoveryBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
 	RecoveryBlob WrappedBlob `json:"recovery_blob"`
@@ -982,6 +1015,9 @@ type SharedFile struct {
 	Name string             `json:"name"`
 	Size int64              `json:"size"`
 }
+
+// Signature Ed25519 signature (64 bytes, base64url without padding).
+type Signature = string
 
 // Transfer defines model for Transfer.
 type Transfer struct {
@@ -1065,6 +1101,9 @@ type UpdateSessionRequest struct {
 // UpdateSessionRequestAcceptingReceivers false = Stop accepting. Reopening uses renew.
 type UpdateSessionRequestAcceptingReceivers bool
 
+// VerifyKey Ed25519 public key of an ADK version (32 bytes, base64url without padding). verify_key(v) is derived from ADK(v) with HKDF-SHA256 info "sa-keyver-sign-v1".
+type VerifyKey = string
+
 // WrappedBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
 type WrappedBlob = string
 
@@ -1133,6 +1172,12 @@ type ListHistoryEntriesParams struct {
 
 // RegisterDeviceKeyJSONBody defines parameters for RegisterDeviceKey.
 type RegisterDeviceKeyJSONBody struct {
+	// KeyVersion An ADK version the device holds, at most the current one.
+	KeyVersion int `json:"key_version"`
+
+	// Proof Ed25519 signature (64 bytes, base64url without padding).
+	Proof Signature `json:"proof"`
+
 	// PublicKey X25519 public key, exactly 32 bytes, base64url without padding.
 	PublicKey PublicKey `json:"public_key"`
 }

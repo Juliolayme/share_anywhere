@@ -1,6 +1,6 @@
 # ADR 0011: Grace window for the previous refresh secret
 
-Status: Accepted (Phase 5A, 2026-11-11)
+Status: Accepted (Phase 5A, 2026-11-11); partly superseded by 0013
 
 ## Context
 

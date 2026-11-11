@@ -28,8 +28,9 @@ const (
 	activeCacheTTL    = 30 * time.Second
 	// RefreshReuseGrace: the immediately previous refresh secret is still accepted for this long after it was
 	// used, once, when the newer secret was lost in transit (page closed or reloaded before the browser stored
-	// the rotated cookie). The newer secret is retired, so the device never holds two live secrets. Any other
-	// reuse revokes the device (docs/ADR/0011-refresh-reuse-grace.md).
+	// the rotated cookie). The newer secret is retired, so the device never holds two live secrets; a retired
+	// secret never qualifies for grace itself. Any other reuse revokes the device
+	// (docs/ADR/0011-refresh-reuse-grace.md, docs/ADR/0013-session-hardening.md).
 	RefreshReuseGrace = 30 * time.Second
 )
 
@@ -96,15 +97,24 @@ type AccountState struct {
 }
 
 // Accounts is implemented by the account layer (internal/auth) and wired in cmd/server, so this package
-// never imports it. AccountState returns the device's active, unexpired, unrevoked account session; touch
-// marks it used (a refresh), which slides the lifetime of an added device's session.
+// never imports it.
 type Accounts interface {
-	AccountState(ctx context.Context, deviceID string, touch bool) (AccountState, error)
+	// AccountState returns the device's active, unexpired, unrevoked account session.
+	AccountState(ctx context.Context, deviceID string) (AccountState, error)
+	// Refreshed runs on every token refresh: it marks the session used (which slides an added device's
+	// session) and checks the browser-session binding of a not-added Web session against browserBinding
+	// (the sa_acct cookie, "" when absent), ending the session when it does not match. It returns the
+	// resulting state.
+	Refreshed(ctx context.Context, deviceID, browserBinding string) (AccountState, error)
 }
 
 type noAccounts struct{}
 
-func (noAccounts) AccountState(context.Context, string, bool) (AccountState, error) {
+func (noAccounts) AccountState(context.Context, string) (AccountState, error) {
+	return AccountState{}, nil
+}
+
+func (noAccounts) Refreshed(context.Context, string, string) (AccountState, error) {
 	return AccountState{}, nil
 }
 
@@ -270,7 +280,7 @@ func (s *Service) Token(ctx context.Context, deviceID string) (Session, error) {
 		return Session{}, err
 	}
 	s.Forget(deviceID)
-	acct, err := s.accounts.AccountState(ctx, deviceID, false)
+	acct, err := s.accounts.AccountState(ctx, deviceID)
 	if err != nil {
 		return Session{}, err
 	}
@@ -292,8 +302,14 @@ func (s *Service) Replace(ctx context.Context, id string) (Session, error) {
 	return s.createDevice(ctx, old.Platform, GenerateName(old.Platform), old.Transport)
 }
 
-// Refresh rotates a refresh secret and issues a new access token.
+// Refresh rotates a refresh secret and issues a new access token, presenting no browser-session binding
+// (native clients, which never have one).
 func (s *Service) Refresh(ctx context.Context, secret string) (Session, error) {
+	return s.RefreshWithBinding(ctx, secret, "")
+}
+
+// RefreshWithBinding is Refresh with the sa_acct cookie a Web client presented ("" when absent).
+func (s *Service) RefreshWithBinding(ctx context.Context, secret, browserBinding string) (Session, error) {
 	if secret == "" || len(secret) > 128 {
 		return Session{}, ErrSecretUnknown
 	}
@@ -315,9 +331,9 @@ func (s *Service) Refresh(ctx context.Context, secret string) (Session, error) {
 		return Session{}, err
 	}
 	// acct and dl are re-derived from the device's active account session on every refresh, which also
-	// slides an added device's session lifetime.
+	// slides an added device's session lifetime and ends an unbound not-added Web session.
 	s.Forget(d.ID)
-	acct, err := s.accounts.AccountState(ctx, d.ID, true)
+	acct, err := s.accounts.Refreshed(ctx, d.ID, browserBinding)
 	if err != nil {
 		return Session{}, err
 	}
@@ -408,7 +424,7 @@ func (s *Service) accountState(ctx context.Context, deviceID string, now time.Ti
 	if ok && !now.After(e.until) {
 		return e.state, nil
 	}
-	st, err := s.accounts.AccountState(ctx, deviceID, false)
+	st, err := s.accounts.AccountState(ctx, deviceID)
 	if err != nil {
 		return AccountState{}, err
 	}

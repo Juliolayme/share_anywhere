@@ -68,13 +68,14 @@ type memSecret struct {
 	generation int
 	used       bool
 	usedAt     time.Time
+	retired    bool
 }
 
 // inReuseGrace reports whether presenting an already-used secret is the grace case: it is the immediately
-// previous secret (the chain moved exactly one step since), first used at most RefreshReuseGrace ago, and the
-// device is still active. Everything else is reuse.
-func inReuseGrace(usedAt time.Time, generation int, d Device, now time.Time) bool {
-	return generation == d.Generation-1 && !now.Before(usedAt) && now.Sub(usedAt) <= RefreshReuseGrace && d.Active(now)
+// previous secret (the chain moved exactly one step since), first used at most RefreshReuseGrace ago, it was
+// not retired by an earlier grace rotation, and the device is still active. Everything else is reuse.
+func inReuseGrace(usedAt time.Time, generation int, retired bool, d Device, now time.Time) bool {
+	return !retired && generation == d.Generation-1 && !now.Before(usedAt) && now.Sub(usedAt) <= RefreshReuseGrace && d.Active(now)
 }
 
 // NewMemStore returns an empty in-memory store.
@@ -111,10 +112,10 @@ func (m *MemStore) RotateSecret(_ context.Context, oldHash, newHash []byte, now 
 	if d == nil {
 		return Device{}, ErrSecretUnknown
 	}
-	if s.used && inReuseGrace(s.usedAt, s.generation, *d, now) {
+	if s.used && inReuseGrace(s.usedAt, s.generation, s.retired, *d, now) {
 		for _, v := range m.secrets {
 			if v.deviceID == d.ID && v.generation == d.Generation && !v.used {
-				v.used, v.usedAt = true, now
+				v.used, v.usedAt, v.retired = true, now, true
 			}
 		}
 		s.used = false

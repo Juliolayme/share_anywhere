@@ -99,7 +99,7 @@ func newEnv(t *testing.T) *env {
 	ips := clientip.New(nil)
 	devHTTP := devices.NewHTTP(dev, ips, clk, true)
 	devHTTP.Register(router)
-	NewHTTP(svc, ips, devHTTP.WriteSession).Register(router)
+	NewHTTP(svc, ips, devHTTP).Register(router)
 	router.Finalize()
 	return &env{t: t, pool: pool, clk: clk, dev: dev, tokens: tokens, svc: svc, mail: mail, mux: mux}
 }
@@ -196,6 +196,16 @@ func (e *env) signin(email string, add bool) (devices.Session, string) {
 
 // ip is a distinct address for the latest device, so helpers do not share rate-limit buckets.
 func (e *env) ip() string { return fmt.Sprintf("198.51.%d.%d", 100+e.nextIP/250, e.nextIP%250) }
+
+// cookie returns the Set-Cookie named name in a response (nil if none).
+func cookie(r resp, name string) *http.Cookie {
+	for _, c := range (&http.Response{Header: r.hdr}).Cookies() {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
+}
 
 func key32(b byte) string { return enc(bytes.Repeat([]byte{b}, 32)) }
 

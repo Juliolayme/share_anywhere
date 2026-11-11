@@ -17,20 +17,38 @@ const (
 	maxHistoryBody = 96 << 10  // 64 KB ciphertext, base64url, plus fields
 )
 
-// SessionWriter answers with a device session in the device's fixed refresh transport (the Web gets a new
-// sa_device cookie; native clients get refresh_secret in the body). cmd/server passes devices.HTTP's.
-type SessionWriter func(w http.ResponseWriter, status int, s devices.Session)
+// Cookies writes the device-layer cookies (implemented by *devices.HTTP, passed by cmd/server).
+type Cookies interface {
+	// WriteSession answers with a device session in the device's fixed refresh transport (the Web gets a new
+	// sa_device cookie; native clients get refresh_secret in the body).
+	WriteSession(w http.ResponseWriter, status int, s devices.Session)
+	// SetAccountBinding sets the browser-session sa_acct cookie of a not-added Web account session.
+	SetAccountBinding(w http.ResponseWriter, value string)
+	// ClearAccountBinding expires the sa_acct cookie.
+	ClearAccountBinding(w http.ResponseWriter)
+}
 
 // HTTP exposes the account endpoints (docs/API.md §2.4).
 type HTTP struct {
-	svc   *Service
-	ips   *clientip.Resolver
-	write SessionWriter
+	svc     *Service
+	ips     *clientip.Resolver
+	cookies Cookies
 }
 
 // NewHTTP returns the account handlers.
-func NewHTTP(svc *Service, ips *clientip.Resolver, write SessionWriter) *HTTP {
-	return &HTTP{svc: svc, ips: ips, write: write}
+func NewHTTP(svc *Service, ips *clientip.Resolver, cookies Cookies) *HTTP {
+	return &HTTP{svc: svc, ips: ips, cookies: cookies}
+}
+
+// bindCookie sets the sa_acct cookie for a not-added Web session and clears a stale one otherwise; native
+// (body-transport) devices never get it (docs/ADR/0013-session-hardening.md).
+func (h *HTTP) bindCookie(w http.ResponseWriter, d devices.Device, binding string) {
+	switch {
+	case binding != "":
+		h.cookies.SetAccountBinding(w, binding)
+	case d.Transport == devices.TransportCookie:
+		h.cookies.ClearAccountBinding(w)
+	}
 }
 
 // Register adds the routes with their access levels (shared/protocol/openapi.yaml x-sa-access).
@@ -41,11 +59,11 @@ func (h *HTTP) Register(r *access.Router) {
 	r.Handle(http.MethodPost, "/v1/auth/password-reset/request", access.Public, h.resetRequest)
 	r.Handle(http.MethodPost, "/v1/auth/password-reset/confirm", access.Public, h.resetConfirm)
 	r.Handle(http.MethodGet, "/v1/me", access.Account, h.getMe)
-	r.Handle(http.MethodPatch, "/v1/me", access.Account, h.patchMe)
+	r.Handle(http.MethodPatch, "/v1/me", access.AccountDevice, h.patchMe)
 	r.Handle(http.MethodPost, "/v1/me/password", access.Account, h.changePassword)
 	r.Handle(http.MethodPost, "/v1/devices/current/add", access.Account, h.addCurrent)
 	r.Handle(http.MethodGet, "/v1/devices", access.Account, h.listDevices)
-	r.Handle(http.MethodPatch, "/v1/devices/{id}", access.Account, h.renameDevice)
+	r.Handle(http.MethodPatch, "/v1/devices/{id}", access.AccountDevice, h.renameDevice)
 	r.Handle(http.MethodDelete, "/v1/devices/{id}", access.AccountDevice, h.revokeDevice)
 	r.Handle(http.MethodGet, "/v1/keys", access.AccountDevice, h.keys)
 	r.Handle(http.MethodPut, "/v1/keys/device", access.AccountDevice, h.registerKey)
@@ -146,6 +164,7 @@ func (h *HTTP) signup(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
+	h.bindCookie(w, res.Session.Device, res.Binding)
 	httpx.JSON(w, http.StatusCreated, toAuthResponse(res))
 }
 
@@ -160,6 +179,7 @@ func (h *HTTP) signin(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
+	h.bindCookie(w, res.Session.Device, res.Binding)
 	httpx.JSON(w, http.StatusOK, toAuthResponse(res))
 }
 
@@ -174,7 +194,8 @@ func (h *HTTP) signout(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	h.write(w, http.StatusOK, s)
+	h.bindCookie(w, s.Device, "")
+	h.cookies.WriteSession(w, http.StatusOK, s)
 }
 
 func (h *HTTP) resetRequest(w http.ResponseWriter, r *http.Request) {
@@ -268,6 +289,7 @@ func (h *HTTP) addCurrent(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
+	h.bindCookie(w, s.Device, "")
 	httpx.JSON(w, http.StatusOK, tokenResponse{AccessToken: s.AccessToken, ExpiresIn: s.ExpiresIn, Device: deviceRef{ID: s.Device.ID, Added: s.Account.Added}})
 }
 
@@ -319,14 +341,12 @@ func (h *HTTP) keys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTP) registerKey(w http.ResponseWriter, r *http.Request) {
-	var b struct {
-		PublicKey string `json:"public_key"`
-	}
+	var b RegisterKeyInput
 	if err := httpx.Decode(r, &b, maxAuthBody, false); err != nil {
-		httpx.BadRequest(w, "Expected public_key.")
+		httpx.BadRequest(w, "Expected public_key, key_version, and proof.")
 		return
 	}
-	if err := h.svc.RegisterDeviceKey(r.Context(), ident(r), b.PublicKey); err != nil {
+	if err := h.svc.RegisterDeviceKey(r.Context(), ident(r), b); err != nil {
 		h.fail(w, err)
 		return
 	}
@@ -336,7 +356,7 @@ func (h *HTTP) registerKey(w http.ResponseWriter, r *http.Request) {
 func (h *HTTP) setupKeys(w http.ResponseWriter, r *http.Request) {
 	var b SetupInput
 	if err := httpx.Decode(r, &b, maxKeysBody, false); err != nil {
-		httpx.BadRequest(w, "Expected recovery_public_key, salt, params, and recovery_blob.")
+		httpx.BadRequest(w, "Expected recovery_public_key, salt, params, recovery_blob, verify_key, and recovery_anchor.")
 		return
 	}
 	v, err := h.svc.SetupKeys(r.Context(), ident(r), b)
@@ -359,7 +379,7 @@ func (h *HTTP) recovery(w http.ResponseWriter, r *http.Request) {
 func (h *HTTP) rotate(w http.ResponseWriter, r *http.Request) {
 	var b RotateInput
 	if err := httpx.Decode(r, &b, maxKeysBody, false); err != nil {
-		httpx.BadRequest(w, "Expected key_version, recovery_blob, chain_blob, and device_blobs.")
+		httpx.BadRequest(w, "Expected key_version, recovery_blob, chain_blob, device_blobs, verify_key, and signature.")
 		return
 	}
 	v, err := h.svc.Rotate(r.Context(), ident(r), b)
@@ -376,7 +396,7 @@ func (h *HTTP) chain(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"chain": c})
+	httpx.JSON(w, http.StatusOK, c)
 }
 
 func (h *HTTP) ackPending(w http.ResponseWriter, r *http.Request) {

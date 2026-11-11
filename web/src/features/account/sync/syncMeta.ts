@@ -18,6 +18,14 @@ export interface AccountSyncMeta {
   importPending: boolean;
   /** Entries newer than this (epoch ms) are uploaded while sync is on; older ones only through the import. */
   pushSince: number;
+  /**
+   * Lowest `seq` skipped as unreadable (a key version this device lacked, or a decrypt failure), or null. When the
+   * device stores a key version it did not hold then (pickup, chain import, pairing, recovery), the next pass moves
+   * the cursor back to just before it and pulls those entries again.
+   */
+  retrySeq: number | null;
+  /** The ADK versions this device held when `retrySeq` was recorded. */
+  retryVersions: number[];
 }
 
 export interface SyncMetaStore {
@@ -42,6 +50,8 @@ export function emptyMeta(userId: string, now = Date.now()): AccountSyncMeta {
     pendingClear: false,
     importPending: false,
     pushSince: now,
+    retrySeq: null,
+    retryVersions: [],
   };
 }
 

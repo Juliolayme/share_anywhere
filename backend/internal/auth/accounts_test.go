@@ -63,8 +63,11 @@ func TestSignUpSignInSignOut(t *testing.T) {
 	if newDev["id"] == a.Device.ID || newDev["kind"] != "anonymous" || out.body["refresh_secret"] != nil {
 		t.Fatalf("signout body: %s", out.raw)
 	}
-	if c := out.hdr.Get("Set-Cookie"); !strings.Contains(c, devices.CookieName+"=") || !strings.Contains(c, "HttpOnly") {
-		t.Fatalf("signout must set a new sa_device cookie: %q", c)
+	if c := cookie(out, devices.CookieName); c == nil || c.Value == "" || !c.HttpOnly {
+		t.Fatalf("signout must set a new sa_device cookie: %q", out.hdr.Values("Set-Cookie"))
+	}
+	if c := cookie(out, devices.AccountCookieName); c == nil || c.MaxAge >= 0 {
+		t.Fatalf("signout must clear sa_acct: %q", out.hdr.Values("Set-Cookie"))
 	}
 	e.want(e.do("GET", "/v1/me", tokA, nil), 401, "device_token_invalid")
 	guest := out.str("access_token")
@@ -111,6 +114,7 @@ func TestSignInKeepsDeviceAndNotAddedExpires(t *testing.T) {
 	if r.body["device"].(map[string]any)["id"] != b.Device.ID || r.body["device"].(map[string]any)["added"] != false {
 		t.Fatalf("signin body: %s", r.raw)
 	}
+	binding := cookie(r, devices.AccountCookieName).Value
 	tok := r.str("access_token")
 	if id := e.ident(tok); id.DeviceID != b.Device.ID || id.AccountID == "" || id.DeviceAdded {
 		t.Fatalf("claims: %+v", id)
@@ -128,12 +132,12 @@ func TestSignInKeepsDeviceAndNotAddedExpires(t *testing.T) {
 
 	// Refreshing re-derives acct/dl and does not extend a not-added session.
 	e.clk.Advance(23 * time.Hour)
-	s, err := e.dev.Refresh(ctx, b.Secret)
+	s, err := e.dev.RefreshWithBinding(ctx, b.Secret, binding)
 	if err != nil || s.Account.AccountID == "" || s.Account.Added {
 		t.Fatalf("refresh within 24 h: %+v %v", s.Account, err)
 	}
 	e.clk.Advance(2 * time.Hour)
-	s2, err := e.dev.Refresh(ctx, s.Secret)
+	s2, err := e.dev.RefreshWithBinding(ctx, s.Secret, binding)
 	if err != nil || s2.Account.AccountID != "" {
 		t.Fatalf("after 24 h the device is a guest again: %+v %v", s2.Account, err)
 	}
@@ -268,8 +272,11 @@ func TestDevicesListRenameRevoke(t *testing.T) {
 			t.Fatalf("row %v", m)
 		}
 	}
-	// A not-added device can still see the account list.
+	// A not-added device can still see the account list, but cannot change the account (read-only).
 	e.want(e.do("GET", "/v1/devices", tokC, nil), 200, "")
+	e.want(e.do("PATCH", "/v1/devices/"+c.Device.ID, tokC, map[string]any{"name": "Mine"}), 403, "device_not_added")
+	e.want(e.do("PATCH", "/v1/me", tokC, map[string]any{"history_sync": true}), 403, "device_not_added")
+	e.want(e.do("GET", "/v1/me", tokC, nil), 200, "")
 
 	r = e.do("PATCH", "/v1/devices/"+b.Device.ID, tokA, map[string]any{"name": "Kitchen tablet"})
 	e.want(r, 200, "")

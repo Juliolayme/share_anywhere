@@ -286,6 +286,25 @@ func testReuseGrace(t *testing.T, store Store) {
 			t.Fatalf("device must be revoked: %v", err)
 		}
 	})
+	t.Run("retired secret inside the window is reuse", func(t *testing.T) {
+		// QA P2-1: the lost secret was retired by the grace rotation; presenting it while still inside the
+		// window must not count as grace (that would retire the live secret and keep two chains going).
+		f := newFixture(t, store)
+		s0, _ := f.svc.Create(ctx, "e", CreateInput{Transport: TransportCookie, Platform: "Web"})
+		lost, _ := f.svc.Refresh(ctx, s0.Secret)
+		f.clk.Advance(2 * time.Second)
+		s2, err := f.svc.Refresh(ctx, s0.Secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.clk.Advance(2 * time.Second)
+		if _, err := f.svc.Refresh(ctx, lost.Secret); !errors.Is(err, ErrSecretReused) {
+			t.Fatalf("retired secret inside the window: %v", err)
+		}
+		if _, err := f.svc.Refresh(ctx, s2.Secret); !errors.Is(err, ErrSecretUnknown) {
+			t.Fatalf("device must be revoked: %v", err)
+		}
+	})
 	t.Run("after the window is reuse", func(t *testing.T) {
 		f := newFixture(t, store)
 		s0, _ := f.svc.Create(ctx, "c", CreateInput{Transport: TransportCookie, Platform: "Web"})

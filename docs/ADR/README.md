@@ -13,5 +13,7 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0007](0007-goose-migrations.md) | Database migrations with goose | Accepted |
 | [0008](0008-device-token-format.md) | Device access token format and lifetimes | Accepted |
 | [0009](0009-argon2id-passwords.md) | Argon2id parameters for account passwords | Accepted |
-| [0010](0010-account-sessions.md) | Account sessions layered on device identity | Accepted |
-| [0011](0011-refresh-reuse-grace.md) | Grace window for the previous refresh secret | Accepted |
+| [0010](0010-account-sessions.md) | Account sessions layered on device identity | Accepted, partly superseded by 0013 |
+| [0011](0011-refresh-reuse-grace.md) | Grace window for the previous refresh secret | Accepted, partly superseded by 0013 |
+| [0012](0012-key-authenticity.md) | Key authenticity for account key versions and device wrapping keys | Accepted |
+| [0013](0013-session-hardening.md) | Account session hardening (browser-session binding, retired refresh secrets) | Accepted |

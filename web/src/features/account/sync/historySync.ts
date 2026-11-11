@@ -138,8 +138,28 @@ async function push(deps: SyncDeps, meta: AccountSyncMeta): Promise<number> {
   return pushed;
 }
 
+/**
+ * P2-9: entries skipped as unreadable are pulled again once the device holds a key version it lacked when it skipped
+ * them: the cursor moves back to just before the lowest skipped `seq`.
+ */
+export function rewindForNewKeys(meta: AccountSyncMeta, held: readonly number[]): boolean {
+  if (meta.retrySeq === null || !held.some((v) => !meta.retryVersions.includes(v))) return false;
+  meta.cursor = Math.min(meta.cursor, Math.max(0, meta.retrySeq - 1));
+  meta.retrySeq = null;
+  meta.retryVersions = [];
+  return true;
+}
+
+function skipped(meta: AccountSyncMeta, seq: number, held: readonly number[], result: SyncResult) {
+  result.unreadable++;
+  meta.retrySeq = meta.retrySeq === null ? seq : Math.min(meta.retrySeq, seq);
+  meta.retryVersions = [...held];
+}
+
 async function pull(deps: SyncDeps, meta: AccountSyncMeta, result: SyncResult) {
   if (!deps.enabled) return;
+  const held = await deps.keys.allVersions();
+  rewindForNewKeys(meta, held);
   const mine = new Map(Object.entries(meta.uploaded).map(([local, remote]) => [remote, local]));
   for (let page = 0; page < 50; page++) {
     const { entries, next_after } = await deps.api.historyEntries(meta.cursor);
@@ -158,7 +178,7 @@ async function pull(deps: SyncDeps, meta: AccountSyncMeta, result: SyncResult) {
       }
       if (local || e.origin_device_id === deps.deviceId || !e.nonce || !e.ciphertext) continue;
       if (!(await deps.keys.hasAdk(e.key_version))) {
-        result.unreadable++;
+        skipped(meta, e.seq, held, result);
         continue;
       }
       let text: string;
@@ -171,12 +191,12 @@ async function pull(deps: SyncDeps, meta: AccountSyncMeta, result: SyncResult) {
           itemFromWire({ nonce: e.nonce, ciphertext: e.ciphertext }),
         );
       } catch {
-        result.unreadable++;
+        skipped(meta, e.seq, held, result);
         continue;
       }
       const parsed = parseEntry(text);
       if (!parsed) {
-        result.unreadable++;
+        skipped(meta, e.seq, held, result);
         continue;
       }
       const origin = deps.deviceNames?.get(e.origin_device_id);

@@ -1,14 +1,49 @@
 package auth
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"testing"
 	"time"
 )
 
+// Test ADK versions: a real holder of adk(v) can sign as version v (docs/ADR/0012-key-authenticity.md).
+func adk(v int) []byte { return bytes.Repeat([]byte{0xa0 + byte(v)}, 32) }
+
+var testRecoverySeed = bytes.Repeat([]byte{0x5e}, 32)
+
 func setupBody() map[string]any {
+	_, anchor := recoveryAnchor(testRecoverySeed, verifyKeyOf(adk(1)))
 	return map[string]any{
 		"recovery_public_key": key32(9), "salt": blob(16, 1),
 		"params": map[string]any{"m": 65536, "t": 3, "p": 1}, "recovery_blob": blob(92, 2),
+		"verify_key": enc(verifyKeyOf(adk(1))), "recovery_anchor": enc(anchor),
+	}
+}
+
+// deviceKeyBody registers pub for deviceID with a proof by adk(v).
+func deviceKeyBody(deviceID string, v int, pub []byte) map[string]any {
+	return deviceKeyBodySigned(deviceID, v, pub, adk(v))
+}
+
+func deviceKeyBodySigned(deviceID string, v int, pub, signer []byte) map[string]any {
+	return map[string]any{"public_key": enc(pub), "key_version": v,
+		"proof": enc(ed25519.Sign(signKey(signer), DeviceKeyMessage(deviceID, v, pub)))}
+}
+
+func pub32(b byte) []byte { return bytes.Repeat([]byte{b}, 32) }
+
+// rotateBody moves to version v (ADK adk(v)), signed by signer (a real rotation passes adk(v-1)).
+func rotateBody(v int, signer []byte, chainByte byte, blobs map[string]string) map[string]any {
+	list := []map[string]any{}
+	for d, bl := range blobs {
+		list = append(list, map[string]any{"device_id": d, "blob": bl})
+	}
+	chain := bytes.Repeat([]byte{chainByte}, 60)
+	vk := verifyKeyOf(adk(v))
+	return map[string]any{
+		"key_version": v, "recovery_blob": blob(92, 3), "chain_blob": enc(chain), "device_blobs": list,
+		"verify_key": enc(vk), "signature": enc(ed25519.Sign(signKey(signer), RotationMessage(v, vk, chain))),
 	}
 }
 
@@ -25,6 +60,14 @@ func TestKeysSetupRotateAndConflicts(t *testing.T) {
 	}
 	e.want(e.do("POST", "/v1/keys/setup", tokA, map[string]any{"recovery_public_key": key32(9)[:10], "salt": blob(16, 1),
 		"params": map[string]any{"m": 65536, "t": 3, "p": 1}, "recovery_blob": blob(92, 2)}), 400, "invalid_request")
+	// verify_key and recovery_anchor are required, 32 bytes each.
+	for _, field := range []string{"verify_key", "recovery_anchor"} {
+		b := setupBody()
+		delete(b, field)
+		e.want(e.do("POST", "/v1/keys/setup", tokA, b), 400, "invalid_request")
+		b[field] = blob(31, 1)
+		e.want(e.do("POST", "/v1/keys/setup", tokA, b), 400, "invalid_request")
+	}
 	e.want(e.do("GET", "/v1/keys/recovery", tokA, nil), 404, "not_found")
 	r = e.do("POST", "/v1/keys/setup", tokA, setupBody())
 	e.want(r, 201, "")
@@ -33,36 +76,38 @@ func TestKeysSetupRotateAndConflicts(t *testing.T) {
 	}
 	e.want(e.do("POST", "/v1/keys/setup", tokB, setupBody()), 409, "keys_exist")
 
-	e.want(e.do("PUT", "/v1/keys/device", tokA, map[string]any{"public_key": key32(1)}), 204, "")
-	e.want(e.do("PUT", "/v1/keys/device", tokB, map[string]any{"public_key": key32(2)}), 204, "")
-	e.want(e.do("PUT", "/v1/keys/device", tokB, map[string]any{"public_key": enc(make([]byte, 31))}), 400, "invalid_request")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "")
+	e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(b.Device.ID, 1, pub32(2))), 204, "")
+	bad := deviceKeyBody(b.Device.ID, 1, pub32(2))
+	bad["public_key"] = enc(make([]byte, 31))
+	e.want(e.do("PUT", "/v1/keys/device", tokB, bad), 400, "invalid_request")
 
 	r = e.do("GET", "/v1/keys", tokB, nil)
 	rec := r.body["recovery"].(map[string]any)
 	if rec["public_key"] != key32(9) || rec["salt"] != blob(16, 1) || rec["params"].(map[string]any)["m"].(float64) != 65536 {
 		t.Fatalf("recovery: %s", r.raw)
 	}
-	keys := map[string]any{}
+	keys := map[string]map[string]any{}
 	for _, d := range r.body["devices"].([]any) {
 		m := d.(map[string]any)
-		keys[m["device_id"].(string)] = m["public_key"]
+		keys[m["device_id"].(string)] = m
 	}
-	if keys[a.Device.ID] != key32(1) || keys[b.Device.ID] != key32(2) || keys[c.Device.ID] != nil {
+	if keys[a.Device.ID]["public_key"] != key32(1) || keys[b.Device.ID]["public_key"] != key32(2) || keys[c.Device.ID]["public_key"] != nil {
 		t.Fatalf("device keys: %v", keys)
 	}
+	// Each registered key carries its version and proof (so another device can check it); unregistered: nulls.
+	if keys[b.Device.ID]["key_version"].(float64) != 1 || keys[b.Device.ID]["proof"] != deviceKeyBody(b.Device.ID, 1, pub32(2))["proof"] ||
+		keys[c.Device.ID]["key_version"] != nil || keys[c.Device.ID]["proof"] != nil {
+		t.Fatalf("device key proofs: %v", keys)
+	}
+	_, anchor := recoveryAnchor(testRecoverySeed, verifyKeyOf(adk(1)))
 	r = e.do("GET", "/v1/keys/recovery", tokC, nil)
-	if r.code != 200 || r.body["key_version"].(float64) != 1 || r.str("recovery_blob") != blob(92, 2) {
+	if r.code != 200 || r.body["key_version"].(float64) != 1 || r.str("recovery_blob") != blob(92, 2) || r.str("recovery_anchor") != enc(anchor) {
 		t.Fatalf("recovery blob: %s", r.raw)
 	}
 
 	rotate := func(tok string, v int, blobs map[string]string) resp {
-		var list []map[string]any
-		for d, bl := range blobs {
-			list = append(list, map[string]any{"device_id": d, "blob": bl})
-		}
-		return e.do("POST", "/v1/keys/rotate", tok, map[string]any{
-			"key_version": v, "recovery_blob": blob(92, 3), "chain_blob": blob(60, 4), "device_blobs": list,
-		})
+		return e.do("POST", "/v1/keys/rotate", tok, rotateBody(v, adk(v-1), 4, blobs))
 	}
 	// Wrong version.
 	e.want(rotate(tokA, 3, map[string]string{b.Device.ID: blob(92, 5)}), 409, "key_version_conflict")
@@ -113,6 +158,13 @@ func TestKeysSetupRotateAndConflicts(t *testing.T) {
 	if len(chain) != 1 || chain[0].(map[string]any)["key_version"].(float64) != 2 || chain[0].(map[string]any)["blob"] != blob(60, 4) {
 		t.Fatalf("chain: %s", r.raw)
 	}
+	// versions lists 1..current with verify keys and the signature that authorized each rotation.
+	versions := r.body["versions"].([]any)
+	v1, v2 := versions[0].(map[string]any), versions[1].(map[string]any)
+	if len(versions) != 2 || v1["key_version"].(float64) != 1 || v1["verify_key"] != enc(verifyKeyOf(adk(1))) || v1["signature"] != nil ||
+		v2["key_version"].(float64) != 2 || v2["verify_key"] != enc(verifyKeyOf(adk(2))) || v2["signature"] != rotateBody(2, adk(1), 4, nil)["signature"] {
+		t.Fatalf("versions: %s", r.raw)
+	}
 	if r := e.do("GET", "/v1/keys/recovery", tokA, nil); r.body["key_version"].(float64) != 2 || r.str("recovery_blob") != blob(92, 3) {
 		t.Fatalf("recovery after rotation: %s", r.raw)
 	}
@@ -127,7 +179,7 @@ func TestRevokedDeviceCannotReadHistoryOrKeys(t *testing.T) {
 	_, tokA := e.signup("max@example.com", true)
 	b, tokB := e.signin("max@example.com", true)
 	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
-	e.want(e.do("PUT", "/v1/keys/device", tokB, map[string]any{"public_key": key32(2)}), 204, "")
+	e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(b.Device.ID, 1, pub32(2))), 204, "")
 	e.want(e.do("POST", "/v1/history/entries", tokA, entryBody(newID(), 1)), 201, "")
 	e.want(e.do("GET", "/v1/history/entries", tokB, nil), 200, "")
 
@@ -151,11 +203,9 @@ func TestRevokedDeviceCannotReadHistoryOrKeys(t *testing.T) {
 	if len(r.body["devices"].([]any)) != 1 {
 		t.Fatalf("devices after revoke: %s", r.raw)
 	}
-	r = e.do("POST", "/v1/keys/rotate", tokA, map[string]any{"key_version": 2, "recovery_blob": blob(92, 3), "chain_blob": blob(60, 4),
-		"device_blobs": []map[string]any{{"device_id": b.Device.ID, "blob": blob(92, 5)}}})
+	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, map[string]string{b.Device.ID: blob(92, 5)}))
 	e.want(r, 400, "invalid_request")
-	e.want(e.do("POST", "/v1/keys/rotate", tokA, map[string]any{"key_version": 2, "recovery_blob": blob(92, 3), "chain_blob": blob(60, 4),
-		"device_blobs": []map[string]any{}}), 200, "")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
 }
 
 func TestPairingOneTimePickupAndExpiry(t *testing.T) {
@@ -193,6 +243,10 @@ func TestPairingOneTimePickupAndExpiry(t *testing.T) {
 	e.want(e.do("GET", "/v1/keys/pairings/"+pid, tokA, nil), 404, "not_found") // not the owner
 
 	wrap := map[string]any{"key_version": 1, "sender_public_key": key32(1), "blob": blob(92, 8)}
+	// The sender key must be the wrapping device's registered (proven) key.
+	e.want(e.do("POST", "/v1/keys/pairings/by-code/"+code+"/wrap", tokA, wrap), 403, "device_key_unproven")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "")
+	e.want(e.do("POST", "/v1/keys/pairings/by-code/"+code+"/wrap", tokA, map[string]any{"key_version": 1, "sender_public_key": key32(3), "blob": blob(92, 8)}), 403, "device_key_unproven")
 	e.want(e.do("POST", "/v1/keys/pairings/by-code/"+code+"/wrap", tokA, map[string]any{"key_version": 2, "sender_public_key": key32(1), "blob": blob(92, 8)}), 409, "key_version_conflict")
 	e.want(e.do("POST", "/v1/keys/pairings/by-code/"+code+"/wrap", stranger, wrap), 404, "not_found")
 	e.want(e.do("POST", "/v1/keys/pairings/by-code/"+code+"/wrap", tokA, wrap), 204, "")
@@ -223,7 +277,6 @@ func TestPairingOneTimePickupAndExpiry(t *testing.T) {
 	if s := e.do("GET", "/v1/keys/pairings/"+pid2, tokC, nil); s.str("status") != "expired" {
 		t.Fatalf("expired: %s", s.raw)
 	}
-	_ = a
 }
 
 func TestPairingRateLimit(t *testing.T) {
@@ -237,4 +290,153 @@ func TestPairingRateLimit(t *testing.T) {
 		e.do("GET", "/v1/keys/pairings/by-code/x"+itoa(i), tok, nil)
 	}
 	e.want(e.do("GET", "/v1/keys/pairings/by-code/y", tok, nil), 429, "rate_limited")
+}
+
+// TestPasswordOnlyDeviceCannotRotate is the QA P0-1 attack: a device that only knows the password signs in,
+// adds itself, and posts a rotation to an ADK of its own choosing. Without ADK(v) it cannot produce the
+// version-v signature, so the server refuses it and stores nothing; a real ADK(v) holder rotates fine.
+func TestPasswordOnlyDeviceCannotRotate(t *testing.T) {
+	e := newEnv(t)
+	a, tokA := e.signup("quinn@example.com", true)
+	b, tokB := e.signin("quinn@example.com", true)
+	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "")
+	attacker, tokX := e.signin("quinn@example.com", true) // knows the password only
+
+	stored := func() (int, int, int) {
+		var v, versions, blobs int
+		_ = e.pool.QueryRow(ctx, `SELECT key_version FROM account_keys`).Scan(&v)
+		_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM account_key_versions`).Scan(&versions)
+		_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM device_key_blobs`).Scan(&blobs)
+		return v, versions, blobs
+	}
+	chosen := bytes.Repeat([]byte{0x66}, 32) // the attacker's own ADK
+	blobs := map[string]string{a.Device.ID: blob(92, 5)}
+	for name, body := range map[string]map[string]any{
+		"self-signed with the chosen ADK": rotateBody(2, chosen, 4, blobs),
+		"signed by the new version":       rotateBody(2, adk(2), 4, blobs),
+		"garbage signature":               func() map[string]any { m := rotateBody(2, adk(1), 4, blobs); m["signature"] = blob(64, 7); return m }(),
+		"signature over another chain": func() map[string]any {
+			m := rotateBody(2, adk(1), 4, blobs)
+			m["chain_blob"] = blob(60, 9)
+			return m
+		}(),
+	} {
+		r := e.do("POST", "/v1/keys/rotate", tokX, body)
+		if r.code != 403 || r.str("error") != "rotation_unauthorized" {
+			t.Fatalf("%s: got %d %s, want 403 rotation_unauthorized", name, r.code, r.raw)
+		}
+	}
+	if v, versions, nb := stored(); v != 1 || versions != 1 || nb != 0 {
+		t.Fatalf("a refused rotation must store nothing: version %d, %d versions, %d blobs", v, versions, nb)
+	}
+	// It cannot register a wrapping key either, so no rotation ever wraps a key to it.
+	e.want(e.do("PUT", "/v1/keys/device", tokX, deviceKeyBodySigned(attacker.Device.ID, 1, pub32(6), chosen)), 403, "device_key_unproven")
+	// Malformed signature or verify key is 400.
+	m := rotateBody(2, adk(1), 4, blobs)
+	m["signature"] = blob(63, 1)
+	e.want(e.do("POST", "/v1/keys/rotate", tokX, m), 400, "invalid_request")
+	m = rotateBody(2, adk(1), 4, blobs)
+	delete(m, "verify_key")
+	e.want(e.do("POST", "/v1/keys/rotate", tokX, m), 400, "invalid_request")
+
+	// A real holder of ADK(1) rotates (from any added device, here B), and the next rotation must be signed
+	// by version 2: a version-1 signature is now the wrong version.
+	e.want(e.do("POST", "/v1/keys/rotate", tokB, rotateBody(2, adk(1), 4, blobs)), 200, "")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(1), 5, nil)), 403, "rotation_unauthorized")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, nil)), 200, "")
+	if v, versions, _ := stored(); v != 3 || versions != 3 {
+		t.Fatalf("after two real rotations: version %d, %d versions", v, versions)
+	}
+	_ = b
+}
+
+// TestDeviceKeyProof: a wrapping key registers only with a proof by an ADK version the account has, over
+// the caller's own device ID (from the token), the stated version, and the key.
+func TestDeviceKeyProof(t *testing.T) {
+	e := newEnv(t)
+	a, tokA := e.signup("rae@example.com", true)
+	b, _ := e.signin("rae@example.com", true)
+	// No ADK yet: nothing can be proven.
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 403, "device_key_unproven")
+	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+
+	for name, body := range map[string]map[string]any{
+		"another device's ID in the message": deviceKeyBody(b.Device.ID, 1, pub32(1)),
+		"version above current":              deviceKeyBody(a.Device.ID, 2, pub32(1)),
+		"signed by another version's key":    deviceKeyBodySigned(a.Device.ID, 1, pub32(1), adk(2)),
+		"proof for another public key": func() map[string]any {
+			m := deviceKeyBody(a.Device.ID, 1, pub32(2))
+			m["public_key"] = enc(pub32(1))
+			return m
+		}(),
+		"garbage proof": func() map[string]any {
+			m := deviceKeyBody(a.Device.ID, 1, pub32(1))
+			m["proof"] = blob(64, 3)
+			return m
+		}(),
+	} {
+		r := e.do("PUT", "/v1/keys/device", tokA, body)
+		if r.code != 403 || r.str("error") != "device_key_unproven" {
+			t.Fatalf("%s: got %d %s, want 403 device_key_unproven", name, r.code, r.raw)
+		}
+	}
+	for name, body := range map[string]map[string]any{
+		"short proof": func() map[string]any {
+			m := deviceKeyBody(a.Device.ID, 1, pub32(1))
+			m["proof"] = blob(10, 3)
+			return m
+		}(),
+		"no key_version": func() map[string]any {
+			m := deviceKeyBody(a.Device.ID, 1, pub32(1))
+			delete(m, "key_version")
+			return m
+		}(),
+		"version zero":     deviceKeyBody(a.Device.ID, 0, pub32(1)),
+		"proof not base64": func() map[string]any { m := deviceKeyBody(a.Device.ID, 1, pub32(1)); m["proof"] = "!!"; return m }(),
+	} {
+		r := e.do("PUT", "/v1/keys/device", tokA, body)
+		if r.code != 400 || r.str("error") != "invalid_request" {
+			t.Fatalf("%s: got %d %s, want 400 invalid_request", name, r.code, r.raw)
+		}
+	}
+	var n int
+	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM device_keys`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("refused registrations stored %d keys", n)
+	}
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "")
+	// After a rotation, a proof by either held version is accepted.
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 2, pub32(1))), 204, "")
+	var kv int
+	_ = e.pool.QueryRow(ctx, `SELECT key_version FROM device_keys WHERE device_id = $1::uuid`, a.Device.ID).Scan(&kv)
+	if kv != 2 {
+		t.Fatalf("stored key_version %d", kv)
+	}
+}
+
+// TestLegacyKeysRefused: an account whose keys predate migration 0007 (no verify keys, no anchor) cannot
+// rotate or register a device key (409 keys_legacy) and reads nulls where the new fields would be.
+func TestLegacyKeysRefused(t *testing.T) {
+	e := newEnv(t)
+	a, tokA := e.signup("sol@example.com", true)
+	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+	if _, err := e.pool.Exec(ctx, `UPDATE account_key_versions SET verify_key = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(ctx, `UPDATE account_keys SET recovery_anchor = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 409, "keys_legacy")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 409, "keys_legacy")
+	r := e.do("GET", "/v1/keys/recovery", tokA, nil)
+	if _, ok := r.body["recovery_anchor"]; r.code != 200 || !ok || r.body["recovery_anchor"] != nil {
+		t.Fatalf("legacy recovery: %s", r.raw)
+	}
+	r = e.do("GET", "/v1/keys/chain", tokA, nil)
+	vs := r.body["versions"].([]any)
+	if len(vs) != 1 || vs[0].(map[string]any)["verify_key"] != nil || len(r.body["chain"].([]any)) != 0 {
+		t.Fatalf("legacy chain: %s", r.raw)
+	}
 }

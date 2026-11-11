@@ -78,7 +78,7 @@ export interface paths {
         put?: never;
         /**
          * Verify email and password and bind an account session to the calling device (device ID unchanged).
-         * @description An unknown email gets the same 401 invalid_credentials as a wrong password, after the same Argon2id work. Rate limited per IP + email, per IP, per device, and failed attempts per email.
+         * @description An unknown email gets the same 401 invalid_credentials as a wrong password, after the same Argon2id work. Rate limited per IP + email, per IP, per device, and failed attempts per email. With add_device false on a Web (cookie-transport) device the response also sets the browser-session cookie sa_acct (as for sign-up); otherwise a Web response expires any sa_acct.
          */
         post: operations["signIn"];
         delete?: never;
@@ -98,7 +98,7 @@ export interface paths {
         put?: never;
         /**
          * End the account session, remove the device from the account, revoke this device identity, and return a brand-new anonymous identity.
-         * @description No request body. Web devices get the new refresh secret as a new sa_device cookie; native devices get refresh_secret in the body (the old device's transport).
+         * @description No request body. Web devices get the new refresh secret as a new sa_device cookie and sa_acct expired; native devices get refresh_secret in the body (the old device's transport).
          */
         post: operations["signOut"];
         delete?: never;
@@ -118,7 +118,7 @@ export interface paths {
         put?: never;
         /**
          * Create an account and bind an account session to the calling device (device ID unchanged).
-         * @description Fails with 409 already_signed_in when the device already has an account session. Rate limited per IP and per device (docs/SECURITY_MODEL.md §5).
+         * @description Fails with 409 already_signed_in when the device already has an account session. Rate limited per IP and per device (docs/SECURITY_MODEL.md §5). With add_device false on a Web (cookie-transport) device the response also sets the browser-session cookie sa_acct (HttpOnly, SameSite=Strict, Path=/v1/devices/token, no Max-Age) that every refresh must present; otherwise a Web response expires any sa_acct. Native devices get no cookie.
          */
         post: operations["signUp"];
         delete?: never;
@@ -160,7 +160,7 @@ export interface paths {
         delete: operations["revokeAccountDevice"];
         options?: never;
         head?: never;
-        /** Rename one of this account's devices. */
+        /** Rename one of this account's devices. A not-added device is read-only (403 device_not_added). */
         patch: operations["renameAccountDevice"];
         trace?: never;
     };
@@ -223,7 +223,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add the calling device to its account (dl becomes true; the account session slides to 90 days). Idempotent. */
+        /**
+         * Add the calling device to its account (dl becomes true; the account session slides to 90 days). Idempotent.
+         * @description Drops the browser-session binding; a Web response expires the sa_acct cookie.
+         */
         post: operations["addCurrentDevice"];
         delete?: never;
         options?: never;
@@ -262,7 +265,7 @@ export interface paths {
         put?: never;
         /**
          * Rotate the refresh secret and issue a new access token.
-         * @description Native clients send refresh_secret in the body. Web clients send the sa_device cookie and must send X-SA-Refresh 1.
+         * @description Native clients send refresh_secret in the body. Web clients send the sa_device cookie and must send X-SA-Refresh 1. acct and dl are re-derived from the device's live account session. A not-added account session started from a Web device is bound to the browser session: the sa_acct cookie (set at sign-in, same path, no Max-Age) must match, or the account session ends and the token is a guest token; the response then expires sa_acct (docs/ADR/0013-session-hardening.md). Presenting a refresh secret that was already used or retired revokes the device (401 refresh_reused).
          */
         post: operations["refreshDeviceToken"];
         delete?: never;
@@ -349,7 +352,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Chain blobs (for version v, ADK(v-1) wrapped with ADK(v)), oldest first. */
+        /** Chain blobs (for version v, ADK(v-1) wrapped with ADK(v)) and every version's verify key and authorizing signature, oldest first. */
         get: operations["getKeyChain"];
         put?: never;
         post?: never;
@@ -367,7 +370,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Register (or replace) the caller's X25519 wrapping public key. Replacing it drops pending blobs wrapped to the old key. */
+        /**
+         * Register (or replace) the caller's X25519 wrapping public key with a proof that the device holds ADK(key_version). Replacing it drops pending blobs wrapped to the old key.
+         * @description proof is an Ed25519 signature by the signing key of ADK(key_version) over "sa-devkey-v1|" + caller device ID (lowercase UUID, from the token) + "|" + key_version + "|" + b64u(public_key) (docs/CLIPBOARD_PROTOCOL.md §1). A device can register only once it holds the ADK (setup, pairing, or recovery).
+         */
         put: operations["registerDeviceKey"];
         post?: never;
         delete?: never;
@@ -442,7 +448,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Existing device uploads the newest ADK wrapped for the new device. Accepted once. */
+        /** Existing device uploads the newest ADK wrapped for the new device. Accepted once. sender_public_key must be the caller's registered (proven) wrapping key. */
         post: operations["wrapPairing"];
         delete?: never;
         options?: never;
@@ -495,7 +501,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record ADK version current+1 atomically, wrapped for every other added device with a registered key (the caller may add a safety copy for itself). */
+        /** Record ADK version current+1 atomically, signed by the current version, wrapped for every other added device with a registered (proven) key (the caller may add a safety copy for itself). */
         post: operations["rotateKeys"];
         delete?: never;
         options?: never;
@@ -512,7 +518,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters. */
+        /** Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters, verify_key(1), and the recovery anchor. */
         post: operations["setupKeys"];
         delete?: never;
         options?: never;
@@ -533,6 +539,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /** Change account settings visible to every device. A not-added device is read-only (403 device_not_added). */
         patch: operations["updateMe"];
         trace?: never;
     };
@@ -1065,9 +1072,14 @@ export interface components {
             /** Format: uuid */
             device_id: string;
         };
+        /** @description An added device and its wrapping key; public_key, key_version, and proof are null until the device registers (once it holds the ADK). */
         DeviceKey: {
             /** Format: uuid */
             device_id: string;
+            /** @description The ADK version whose signing key made proof. */
+            key_version: number | null;
+            /** @description Signature by ADK(key_version) over "sa-devkey-v1|<device_id>|<key_version>|<b64u(public_key)>"; clients verify it before wrapping to the key. */
+            proof: components["schemas"]["Signature"] | null;
             public_key: components["schemas"]["PublicKey"] | null;
         };
         DevicesChanged: components["schemas"]["Error"] & {
@@ -1179,13 +1191,20 @@ export interface components {
             /** @description Must be the current version + 1. */
             key_version: number;
             recovery_blob: components["schemas"]["WrappedBlob"];
+            /** @description By the signing key of the current version v over "sa-rotate-v1|" + (v+1) + "|" + b64u(verify_key(v+1)) + "|" + b64u(SHA-256(chain_blob bytes)). */
+            signature: components["schemas"]["Signature"];
+            /** @description verify_key(v+1). */
+            verify_key: components["schemas"]["VerifyKey"];
         };
         KeysSetupRequest: {
             params: components["schemas"]["Argon2Spec"];
+            recovery_anchor: components["schemas"]["RecoveryAnchor"];
             recovery_blob: components["schemas"]["WrappedBlob"];
             recovery_public_key: components["schemas"]["PublicKey"];
             /** @description 16 to 64 bytes. */
             salt: components["schemas"]["Base64Url"];
+            /** @description verify_key(1). */
+            verify_key: components["schemas"]["VerifyKey"];
         };
         KeysState: {
             /** @description Every added device of the account. */
@@ -1198,6 +1217,13 @@ export interface components {
         };
         KeyVersion: {
             key_version: number;
+        };
+        KeyVersionInfo: {
+            key_version: number;
+            /** @description The rotation signature by version key_version-1 (null for version 1 and for legacy rows). */
+            signature: components["schemas"]["Signature"] | null;
+            /** @description Null only for legacy accounts whose keys predate key verification. */
+            verify_key: components["schemas"]["VerifyKey"] | null;
         };
         Me: {
             /** Format: date-time */
@@ -1312,9 +1338,13 @@ export interface components {
             /** @enum {string} */
             status: "ok" | "unavailable";
         };
+        /** @description HMAC-SHA256(key = HKDF-SHA256(recovery_seed, info "sa-recovery-anchor-v1"), msg = "sa-anchor-v1|" + b64u(verify_key(1))), 32 bytes base64url. Lets a recovery-phrase holder authenticate verify_key(1) without trusting the server. */
+        RecoveryAnchor: string;
         RecoveryBlob: {
             key_version: number;
             params: components["schemas"]["Argon2Spec"];
+            /** @description Null for legacy accounts whose keys predate key verification (recovery cannot be verified; clients refuse it). */
+            recovery_anchor: components["schemas"]["RecoveryAnchor"] | null;
             recovery_blob: components["schemas"]["WrappedBlob"];
             salt: components["schemas"]["Base64Url"];
         };
@@ -1365,6 +1395,8 @@ export interface components {
             /** Format: int64 */
             size: number;
         };
+        /** @description Ed25519 signature (64 bytes, base64url without padding). */
+        Signature: string;
         Transfer: {
             /** Format: uuid */
             file_id: string;
@@ -1433,6 +1465,8 @@ export interface components {
             accepting_receivers?: false;
             require_approval?: boolean;
         };
+        /** @description Ed25519 public key of an ADK version (32 bytes, base64url without padding). verify_key(v) is derived from ADK(v) with HKDF-SHA256 info "sa-keyver-sign-v1". */
+        VerifyKey: string;
         /** @description Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it. */
         WrappedBlob: string;
         WsTicket: {
@@ -2155,7 +2189,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Chain. */
+            /** @description Chain and version list. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2163,6 +2197,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         chain: components["schemas"]["ChainLink"][];
+                        /** @description Versions 1..current, ascending. */
+                        versions: components["schemas"]["KeyVersionInfo"][];
                     };
                 };
             };
@@ -2180,6 +2216,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description An ADK version the device holds, at most the current one. */
+                    key_version: number;
+                    proof: components["schemas"]["Signature"];
                     public_key: components["schemas"]["PublicKey"];
                 };
             };
@@ -2194,7 +2233,24 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /** @description device_key_unproven (the proof does not verify with verify_key(key_version) for the caller's device ID, or key_version is not an existing version), account_required, or device_not_added. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description keys_legacy (the account's keys predate key verification). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     createPairing: {
@@ -2303,7 +2359,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /** @description device_key_unproven (sender_public_key is not the caller's registered wrapping key), account_required, or device_not_added. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
             /** @description key_version_conflict (key_version is not the account's current version). */
             409: {
@@ -2394,8 +2458,16 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description key_version_conflict, or devices_changed with the missing device IDs. */
+            /** @description rotation_unauthorized (signature does not verify with the stored verify_key of the current version; nothing stored), account_required, or device_not_added. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description key_version_conflict, keys_legacy (the account's keys predate key verification), or devices_changed with the missing device IDs. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -228,7 +228,7 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 	xfers := transfers.New(transfers.Config{Pool: pool, Clock: clk, Sessions: shareSvc, Notify: hub, Metrics: reg, ReportLimit: limits.TransferReport})
 	modules := []func(*access.Router){
 		deviceHTTP.Register,
-		auth.NewHTTP(authSvc, ips, deviceHTTP.WriteSession).Register,
+		auth.NewHTTP(authSvc, ips, deviceHTTP).Register,
 		hub.Register,
 		sharing.NewHTTP(shareSvc, ips, lookup).Register,
 		turn.Register,

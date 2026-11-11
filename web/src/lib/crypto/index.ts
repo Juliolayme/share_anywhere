@@ -12,6 +12,21 @@ export {
   type Adk,
   type SubkeyPurpose,
 } from './adk';
+export {
+  ANCHOR_INFO,
+  SIGN_INFO,
+  anchorKeyFromSeed,
+  checkDeviceKeyProof,
+  deviceKeyProof,
+  recoveryAnchor,
+  rotationMessage,
+  verifyKeyOf,
+  verifySignature,
+  verifySignatureChain,
+  type ChainState,
+  type DeviceKeyRegistration,
+  type KeyVersionInfo,
+} from './authenticity';
 export * from './bootstrap';
 export * from './device-key';
 export { CryptoError, KeyStoreUnavailableError, type CryptoErrorCode } from './errors';

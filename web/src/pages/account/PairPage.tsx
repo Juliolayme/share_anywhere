@@ -1,6 +1,6 @@
 import { Copy, KeyRound, RefreshCw, Smartphone } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { QRCode } from '../../components/QRCode';
 import { Banner, Button } from '../../components/ui';
 import { useToast } from '../../components/Toast';
@@ -9,6 +9,7 @@ import { formatWait, useCountdown } from '../../lib/identity/identity';
 import { CryptoError, checkRecoveryPhrase, normalizePhrase, suggestWords, type PairingReady } from '../../lib/crypto';
 import { accountErrorText, useAccount } from '../../features/account/AccountContext';
 import { finishPairing, recoverKeys, startPairing, type PairingStart } from '../../features/account/keyFlow';
+import { KeyProblemBanner } from '../../features/account/KeyProblem';
 import { AuthPending, AuthLayout, FormError, Heading, useFlowLink } from './AuthLayout';
 
 type PairState = 'starting' | 'waiting' | 'expired' | 'failed' | 'untrusted' | 'finishing';
@@ -69,7 +70,14 @@ function PairWithDevice({ onDone }: { onDone: () => void }) {
             await finishPairing(api, start.keys, st as PairingReady);
             onDone();
           } catch (e) {
-            setState(e instanceof CryptoError && e.code === 'untrusted_sender' ? 'untrusted' : 'failed');
+            // A sender that is not one of the account's devices, or a key that does not match the account's signed
+            // versions (docs/CLIPBOARD_PROTOCOL.md §1): refused, nothing stored.
+            if (e instanceof CryptoError && (e.code === 'untrusted_sender' || e.code === 'unverified')) {
+              setState('untrusted');
+            } else {
+              setError(accountErrorText(e, t));
+              setState('failed');
+            }
           }
         }
       } catch {
@@ -79,7 +87,7 @@ function PairWithDevice({ onDone }: { onDone: () => void }) {
       }
     }, 2000);
     return () => clearInterval(id);
-  }, [api, start, state, onDone]);
+  }, [api, start, state, onDone, t]);
 
   useEffect(() => {
     if (state === 'waiting' && start && left === 0 && Date.now() >= start.expiresAt) setState('expired');
@@ -264,7 +272,9 @@ export default function PairPage() {
   const navigate = useNavigate();
   const account = useAccount();
   const flow = useFlowLink();
-  const [mode, setMode] = useState<'device' | 'phrase'>('device');
+  const [params] = useSearchParams();
+  // `?mode=phrase` opens the phrase entry directly ("Use recovery phrase" from a key problem banner).
+  const [mode, setMode] = useState<'device' | 'phrase'>(params.get('mode') === 'phrase' ? 'phrase' : 'device');
   const [done, setDone] = useState(false);
 
   const finish = useCallback(async () => {
@@ -290,6 +300,8 @@ export default function PairPage() {
       {mode === 'device' && <Heading title={t('product.pair_h')} body={t('product.pair_p')} />}
       {account.keys === 'unavailable' ? (
         <Banner tone="danger" role="alert" title={t('product.keys_unavailable')} />
+      ) : account.keys === 'legacy' ? (
+        <KeyProblemBanner status="legacy" returnTo="/settings" />
       ) : account.keys === 'error' ? (
         <Banner
           tone="danger"

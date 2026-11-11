@@ -5,6 +5,7 @@ import {
   recoverySeedAsync,
   type Argon2Params,
 } from './argon';
+import { anchorKeyFromSeed } from './authenticity';
 import { CryptoError } from './errors';
 import { copyBytes, randomBytes, zeroize, type Bytes } from './encoding';
 import { generatePhrase } from './phrase';
@@ -114,27 +115,44 @@ export async function deriveRecoveryKeyPair(
   params: Argon2Params = RECOVERY_PARAMS,
   options: DeriveOptions = {},
 ): Promise<X25519KeyPair> {
+  return (await deriveRecoveryMaterial(phrase, salt, params, options)).keyPair;
+}
+
+/** What the Argon2id seed yields; the seed itself is erased before this is returned. */
+export interface RecoveryMaterial {
+  keyPair: X25519KeyPair;
+  /** Non-extractable HMAC key of the recovery anchor (docs/CLIPBOARD_PROTOCOL.md §1 "Key authenticity"). */
+  anchorKey: CryptoKey;
+}
+
+/** The recovery keypair and anchor key from one Argon2id run; the seed is zeroized as soon as both exist. */
+export async function deriveRecoveryMaterial(
+  phrase: string,
+  salt: Uint8Array,
+  params: Argon2Params = RECOVERY_PARAMS,
+  options: DeriveOptions = {},
+): Promise<RecoveryMaterial> {
   const seed = await deriveRecoverySeed(phrase, salt, params, options);
   try {
-    return await x25519FromSecret(seed);
+    const keyPair = await x25519FromSecret(seed);
+    return { keyPair, anchorKey: await anchorKeyFromSeed(seed) };
   } finally {
     zeroize(seed);
   }
 }
 
-export interface NewRecovery {
+export interface NewRecovery extends RecoveryMaterial {
   /** Shown once, never stored or sent. */
   phrase: string;
   salt: Bytes;
   params: Argon2Params;
-  keyPair: X25519KeyPair;
 }
 
-/** A fresh phrase, salt, and the keypair they derive (first-device setup). */
+/** A fresh phrase, salt, and the keypair and anchor key they derive (first-device setup). */
 export async function createRecovery(options: DeriveOptions = {}): Promise<NewRecovery> {
   const phrase = generatePhrase();
   const salt = generateRecoverySalt();
   const params = { ...RECOVERY_PARAMS };
-  const keyPair = await deriveRecoveryKeyPair(phrase, salt, params, options);
-  return { phrase, salt, params, keyPair };
+  const material = await deriveRecoveryMaterial(phrase, salt, params, options);
+  return { phrase, salt, params, ...material };
 }

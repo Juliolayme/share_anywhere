@@ -6,6 +6,7 @@ import { useI18n } from '../../i18n/i18n';
 import { ApiError } from '../../lib/api/errors';
 import { accountErrorText, useAccount } from '../../features/account/AccountContext';
 import type { PreparedSetup } from '../../features/account/keyFlow';
+import { KeyProblemBanner } from '../../features/account/KeyProblem';
 import { AuthPending, AuthLayout, FormError, Heading, useFlowLink } from './AuthLayout';
 
 /**
@@ -59,7 +60,8 @@ export default function KeySetupPage() {
   if (account.phase !== 'signed_in') return <Navigate to={flow('/signin')} replace />;
   if (!account.added) return <Navigate to={flow('/signin/choices')} replace />;
   if (account.keys === 'ready' && !busy) return <Navigate to={flow('/account/checklist')} replace />;
-  if (account.keys === 'pair' && !exists) return <Navigate to={flow('/account/key/pair')} replace />;
+  if ((account.keys === 'pair' || account.keys === 'rejected') && !exists)
+    return <Navigate to={flow('/account/key/pair')} replace />;
 
   const confirm = async () => {
     if (!prep) return;
@@ -104,6 +106,8 @@ export default function KeySetupPage() {
             </Link>
           }
         />
+      ) : account.keys === 'legacy' ? (
+        <KeyProblemBanner status="legacy" returnTo="/settings" />
       ) : account.keys === 'unavailable' ? (
         <Banner tone="danger" role="alert" title={t('product.keys_unavailable')} />
       ) : account.keys === 'error' ? (

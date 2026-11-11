@@ -1,6 +1,6 @@
-import { Cloud, HardDrive, History as HistoryIcon, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Cloud, HardDrive, History as HistoryIcon, Search, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useMatch, useNavigate } from 'react-router-dom';
+import { useMatch, useNavigate } from 'react-router-dom';
 import { Banner, Button, Card, ConfirmDialog, PageHeader, Screen } from '../components/ui';
 import { useToast } from '../components/Toast';
 import { useI18n } from '../i18n/i18n';
@@ -9,124 +9,7 @@ import { HistoryDetail } from '../features/history/HistoryDetail';
 import { HistoryRow, historyPath } from '../features/history/HistoryRow';
 import { EMPTY_FILTER, filterHistory, historyPeers, type HistoryFilter } from '../features/history/store/history-store';
 import { useAccount } from '../features/account/AccountContext';
-import { formatWhen } from '../lib/format';
-
-/**
- * HI-1 account banner (docs/UX_SCREEN_MAP.md HI-1): Sign in to sync for guests, add this device, pair this device,
- * Turn on history sync, or the sync status with errors stated plainly.
- */
-function SyncBanner() {
-  const { t, locale } = useI18n();
-  const toast = useToast();
-  const account = useAccount();
-  const [busy, setBusy] = useState(false);
-  if (!account.enabled) return null;
-  const link = 'whitespace-nowrap font-semibold';
-  if (account.phase === 'guest') {
-    return (
-      <Banner
-        tone="info"
-        action={
-          <Link to="/signin?returnTo=%2Fhistory" className={link} data-testid="history-signin">
-            {t('web.signin')}
-          </Link>
-        }
-      >
-        {t('product.history_signin')}
-      </Banner>
-    );
-  }
-  if (!account.added) {
-    return (
-      <Banner
-        tone="info"
-        action={
-          <Link to="/signin/choices?returnTo=%2Fhistory" className={link}>
-            {t('product.add_device_btn')}
-          </Link>
-        }
-      >
-        {t('product.not_added_p')}
-      </Banner>
-    );
-  }
-  if (!account.me) return null;
-  if (!account.me.history_sync) {
-    return (
-      <Banner
-        tone="info"
-        action={
-          <Button
-            size="sm"
-            variant="send"
-            busy={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await account.setHistorySync(true);
-              } catch {
-                toast.show(t('product.history_sync_failed_toggle'));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {t('product.turn_on_history_sync')}
-          </Button>
-        }
-      >
-        {t('common.local')}
-      </Banner>
-    );
-  }
-  if (account.keys === 'pair' || account.keys === 'setup') {
-    return (
-      <Banner
-        tone="warning"
-        action={
-          <Link to="/account/key/pair?returnTo=%2Fhistory" className={link}>
-            {t('product.pair_h')}
-          </Link>
-        }
-      >
-        {t('product.history_pair')}
-      </Banner>
-    );
-  }
-  if (account.keys === 'unavailable') return <Banner tone="danger" title={t('product.keys_unavailable')} />;
-  const s = account.sync;
-  if (s.state === 'error') {
-    return (
-      <Banner
-        tone={s.offline ? 'offline' : 'danger'}
-        role="alert"
-        action={
-          <Button size="sm" icon={RefreshCw} onClick={() => void account.syncNow()}>
-            {t('common.retry')}
-          </Button>
-        }
-      >
-        {s.offline ? t('product.history_sync_offline') : t('product.history_sync_failed')}
-      </Banner>
-    );
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-caption text-fg-2" role="status" data-testid="sync-status">
-      <Cloud aria-hidden size={14} />
-      {s.state === 'running' || s.state === 'idle'
-        ? t('product.history_syncing')
-        : t('product.history_synced_at', { when: formatWhen(s.at, locale) })}
-      {s.state === 'ok' && s.unreadable > 0 && (
-        <span className="text-warning-ink">{t('product.history_unreadable', { n: s.unreadable })}</span>
-      )}
-      {s.state === 'ok' && (
-        <Button variant="link" onClick={() => void account.syncNow()}>
-          {t('product.history_sync_now')}
-        </Button>
-      )}
-    </div>
-  );
-}
+import { SyncBanner } from '../features/account/SyncBanner';
 
 /** History list ↔ drawer navigations keep focus where the drawer puts it (see AppShell). */
 const KEEP_FOCUS = { keepFocus: true };

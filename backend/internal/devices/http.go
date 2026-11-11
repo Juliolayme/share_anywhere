@@ -15,11 +15,14 @@ import (
 )
 
 // Refresh cookie (docs/SECURITY_MODEL.md §4): HttpOnly, SameSite=Strict, scoped to the refresh path.
+// AccountCookieName is the browser-session binding of a not-added Web account session, same scope, no
+// Max-Age (docs/ADR/0013-session-hardening.md).
 const (
-	CookieName    = "sa_device"
-	cookiePath    = "/v1/devices/token"
-	refreshHeader = "X-SA-Refresh"
-	maxBody       = 4 << 10
+	CookieName        = "sa_device"
+	AccountCookieName = "sa_acct"
+	cookiePath        = "/v1/devices/token"
+	refreshHeader     = "X-SA-Refresh"
+	maxBody           = 4 << 10
 )
 
 // HTTP exposes the device endpoints.
@@ -80,6 +83,19 @@ func (h *HTTP) clearCookie(w http.ResponseWriter) {
 		Name: CookieName, Value: "", Path: cookiePath, HttpOnly: true, Secure: h.cookieSecure, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 }
 
+// SetAccountBinding sets the sa_acct cookie that binds a not-added Web account session to this browser
+// session: no Max-Age or Expires, so it ends when the browser session does.
+func (h *HTTP) SetAccountBinding(w http.ResponseWriter, value string) {
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly and SameSite=Strict always; Secure from validated config
+		Name: AccountCookieName, Value: value, Path: cookiePath, HttpOnly: true, Secure: h.cookieSecure, SameSite: http.SameSiteStrictMode})
+}
+
+// ClearAccountBinding expires the sa_acct cookie.
+func (h *HTTP) ClearAccountBinding(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- same attributes as the issuing cookie
+		Name: AccountCookieName, Value: "", Path: cookiePath, HttpOnly: true, Secure: h.cookieSecure, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+}
+
 // writeServiceError maps service errors to the documented HTTP errors (docs/API.md §3).
 func writeServiceError(w http.ResponseWriter, err error) bool {
 	var rl *RateLimitedError
@@ -138,7 +154,7 @@ func (h *HTTP) refresh(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, "Invalid refresh request.")
 		return
 	}
-	secret, viaCookie := "", false
+	secret, viaCookie, binding := "", false, ""
 	if req.RefreshSecret != nil && *req.RefreshSecret != "" {
 		secret = *req.RefreshSecret
 	} else {
@@ -154,18 +170,23 @@ func (h *HTTP) refresh(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		secret, viaCookie = c.Value, true
+		if a, err := r.Cookie(AccountCookieName); err == nil && len(a.Value) <= 128 {
+			binding = a.Value
+		}
 	}
-	s, err := h.svc.Refresh(r.Context(), secret)
+	s, err := h.svc.RefreshWithBinding(r.Context(), secret, binding)
 	switch {
 	case errors.Is(err, ErrSecretReused):
 		if viaCookie {
 			h.clearCookie(w)
+			h.clearBinding(w, binding)
 		}
 		httpx.Error(w, http.StatusUnauthorized, "refresh_reused", "These device credentials were already used; the device was signed out for safety.")
 		return
 	case errors.Is(err, ErrSecretUnknown), errors.Is(err, ErrDeviceInactive):
 		if viaCookie {
 			h.clearCookie(w)
+			h.clearBinding(w, binding)
 		}
 		httpx.Error(w, http.StatusUnauthorized, "refresh_invalid", "Device credentials are not valid.")
 		return
@@ -173,7 +194,19 @@ func (h *HTTP) refresh(w http.ResponseWriter, r *http.Request) {
 	if writeServiceError(w, err) {
 		return
 	}
+	// The binding is only needed while a not-added account session lasts; drop it once the session has
+	// ended (bound check failed, expired, signed out elsewhere) or the device was added.
+	if viaCookie && (s.Account.AccountID == "" || s.Account.Added) {
+		h.clearBinding(w, binding)
+	}
 	h.WriteSession(w, http.StatusOK, s)
+}
+
+// clearBinding expires a presented sa_acct cookie.
+func (h *HTTP) clearBinding(w http.ResponseWriter, presented string) {
+	if presented != "" {
+		h.ClearAccountBinding(w)
+	}
 }
 
 func (h *HTTP) current(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +242,9 @@ func (h *HTTP) reset(w http.ResponseWriter, r *http.Request) {
 	s, err := h.svc.Reset(r.Context(), id.DeviceID, h.addrKey(r))
 	if writeServiceError(w, err) {
 		return
+	}
+	if s.Device.Transport == TransportCookie {
+		h.ClearAccountBinding(w) // the old identity's account session ended with it
 	}
 	// The new identity inherits the old device's transport (cookie for the Web).
 	h.WriteSession(w, http.StatusCreated, s)

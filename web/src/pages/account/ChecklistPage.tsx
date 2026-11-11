@@ -55,12 +55,12 @@ export default function ChecklistPage() {
             label={keyReady ? t('product.key_ready') : t('product.ck_no_key')}
             action={
               !keyReady &&
-              (account.keys === 'pair' || account.keys === 'setup') && (
+              (account.keys === 'pair' || account.keys === 'rejected' || account.keys === 'setup') && (
                 <Link
-                  to={flow(account.keys === 'pair' ? '/account/key/pair' : '/account/key/setup')}
+                  to={flow(account.keys === 'setup' ? '/account/key/setup' : '/account/key/pair')}
                   className="text-caption font-semibold"
                 >
-                  {account.keys === 'pair' ? t('product.pair_h') : t('product.key_setup_cta')}
+                  {account.keys === 'setup' ? t('product.key_setup_cta') : t('product.pair_h')}
                 </Link>
               )
             }

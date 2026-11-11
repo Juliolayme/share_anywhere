@@ -1,6 +1,6 @@
 # ADR 0010: Account sessions layered on device identity
 
-Status: Accepted (Phase 5A, 2026-11-11)
+Status: Accepted (Phase 5A, 2026-11-11); partly superseded by 0013
 
 ## Context
 

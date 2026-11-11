@@ -83,7 +83,12 @@ paths:
       x-sa-access: public
       security: []
       summary: Rotate the refresh secret and issue a new access token.
-      description: Native clients send refresh_secret in the body. Web clients send the sa_device cookie and must send X-SA-Refresh 1.
+      description: >-
+        Native clients send refresh_secret in the body. Web clients send the sa_device cookie and must send X-SA-Refresh 1.
+        acct and dl are re-derived from the device's live account session. A not-added account session started from a Web
+        device is bound to the browser session: the sa_acct cookie (set at sign-in, same path, no Max-Age) must match, or the
+        account session ends and the token is a guest token; the response then expires sa_acct (docs/ADR/0013-session-hardening.md).
+        Presenting a refresh secret that was already used or retired revokes the device (401 refresh_reused).
       parameters:
         - in: header
           name: X-SA-Refresh
@@ -706,7 +711,11 @@ paths:
       operationId: signUp
       x-sa-access: device
       summary: Create an account and bind an account session to the calling device (device ID unchanged).
-      description: Fails with 409 already_signed_in when the device already has an account session. Rate limited per IP and per device (docs/SECURITY_MODEL.md §5).
+      description: >-
+        Fails with 409 already_signed_in when the device already has an account session. Rate limited per IP and per device
+        (docs/SECURITY_MODEL.md §5). With add_device false on a Web (cookie-transport) device the response also sets the
+        browser-session cookie sa_acct (HttpOnly, SameSite=Strict, Path=/v1/devices/token, no Max-Age) that every refresh
+        must present; otherwise a Web response expires any sa_acct. Native devices get no cookie.
       requestBody:
         required: true
         content:
@@ -735,7 +744,11 @@ paths:
       operationId: signIn
       x-sa-access: device
       summary: Verify email and password and bind an account session to the calling device (device ID unchanged).
-      description: An unknown email gets the same 401 invalid_credentials as a wrong password, after the same Argon2id work. Rate limited per IP + email, per IP, per device, and failed attempts per email.
+      description: >-
+        An unknown email gets the same 401 invalid_credentials as a wrong password, after the same Argon2id work. Rate limited
+        per IP + email, per IP, per device, and failed attempts per email. With add_device false on a Web (cookie-transport)
+        device the response also sets the browser-session cookie sa_acct (as for sign-up); otherwise a Web response expires
+        any sa_acct.
       requestBody:
         required: true
         content:
@@ -764,7 +777,7 @@ paths:
       operationId: signOut
       x-sa-access: account
       summary: End the account session, remove the device from the account, revoke this device identity, and return a brand-new anonymous identity.
-      description: No request body. Web devices get the new refresh secret as a new sa_device cookie; native devices get refresh_secret in the body (the old device's transport).
+      description: No request body. Web devices get the new refresh secret as a new sa_device cookie and sa_acct expired; native devices get refresh_secret in the body (the old device's transport).
       responses:
         "200":
           description: The new anonymous identity (new device ID).
@@ -831,7 +844,8 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
     patch:
       operationId: updateMe
-      x-sa-access: account
+      x-sa-access: account+device
+      summary: Change account settings visible to every device. A not-added device is read-only (403 device_not_added).
       requestBody:
         required: true
         content:
@@ -885,6 +899,7 @@ paths:
       operationId: addCurrentDevice
       x-sa-access: account
       summary: Add the calling device to its account (dl becomes true; the account session slides to 90 days). Idempotent.
+      description: Drops the browser-session binding; a Web response expires the sa_acct cookie.
       requestBody:
         required: false
         content:
@@ -936,8 +951,8 @@ paths:
         }
     patch:
       operationId: renameAccountDevice
-      x-sa-access: account
-      summary: Rename one of this account's devices.
+      x-sa-access: account+device
+      summary: Rename one of this account's devices. A not-added device is read-only (403 device_not_added).
       requestBody:
         required: true
         content:
@@ -989,27 +1004,42 @@ paths:
     put:
       operationId: registerDeviceKey
       x-sa-access: account+device
-      summary: Register (or replace) the caller's X25519 wrapping public key. Replacing it drops pending blobs wrapped to the old key.
+      summary: Register (or replace) the caller's X25519 wrapping public key with a proof that the device holds ADK(key_version). Replacing it drops pending blobs wrapped to the old key.
+      description: >-
+        proof is an Ed25519 signature by the signing key of ADK(key_version) over
+        "sa-devkey-v1|" + caller device ID (lowercase UUID, from the token) + "|" + key_version + "|" + b64u(public_key)
+        (docs/CLIPBOARD_PROTOCOL.md §1). A device can register only once it holds the ADK (setup, pairing, or recovery).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [public_key]
+              required: [public_key, key_version, proof]
               additionalProperties: false
               properties:
                 public_key: { $ref: "#/components/schemas/PublicKey" }
+                key_version: { type: integer, minimum: 1, description: "An ADK version the device holds, at most the current one." }
+                proof: { $ref: "#/components/schemas/Signature" }
       responses:
         "204": { description: Registered. }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "403":
+          description: device_key_unproven (the proof does not verify with verify_key(key_version) for the caller's device ID, or key_version is not an existing version), account_required, or device_not_added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: keys_legacy (the account's keys predate key verification).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/keys/setup:
     post:
       operationId: setupKeys
       x-sa-access: account+device
-      summary: Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters.
+      summary: Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters, verify_key(1), and the recovery anchor.
       requestBody:
         required: true
         content:
@@ -1047,7 +1077,7 @@ paths:
     post:
       operationId: rotateKeys
       x-sa-access: account+device
-      summary: Record ADK version current+1 atomically, wrapped for every other added device with a registered key (the caller may add a safety copy for itself).
+      summary: Record ADK version current+1 atomically, signed by the current version, wrapped for every other added device with a registered (proven) key (the caller may add a safety copy for itself).
       requestBody:
         required: true
         content:
@@ -1065,9 +1095,13 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DevicesChanged" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "403":
+          description: rotation_unauthorized (signature does not verify with the stored verify_key of the current version; nothing stored), account_required, or device_not_added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "409":
-          description: key_version_conflict, or devices_changed with the missing device IDs.
+          description: key_version_conflict, keys_legacy (the account's keys predate key verification), or devices_changed with the missing device IDs.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DevicesChanged" }
@@ -1075,19 +1109,23 @@ paths:
     get:
       operationId: getKeyChain
       x-sa-access: account+device
-      summary: Chain blobs (for version v, ADK(v-1) wrapped with ADK(v)), oldest first.
+      summary: Chain blobs (for version v, ADK(v-1) wrapped with ADK(v)) and every version's verify key and authorizing signature, oldest first.
       responses:
         "200":
-          description: Chain.
+          description: Chain and version list.
           content:
             application/json:
               schema:
                 type: object
-                required: [chain]
+                required: [chain, versions]
                 properties:
                   chain:
                     type: array
                     items: { $ref: "#/components/schemas/ChainLink" }
+                  versions:
+                    type: array
+                    description: Versions 1..current, ascending.
+                    items: { $ref: "#/components/schemas/KeyVersionInfo" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /v1/keys/pending/{key_version}:
@@ -1187,7 +1225,7 @@ paths:
     post:
       operationId: wrapPairing
       x-sa-access: account+device
-      summary: Existing device uploads the newest ADK wrapped for the new device. Accepted once.
+      summary: Existing device uploads the newest ADK wrapped for the new device. Accepted once. sender_public_key must be the caller's registered (proven) wrapping key.
       requestBody:
         required: true
         content:
@@ -1197,7 +1235,11 @@ paths:
         "204": { description: Stored for one-time pickup. }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "403":
+          description: device_key_unproven (sender_public_key is not the caller's registered wrapping key), account_required, or device_not_added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
           description: key_version_conflict (key_version is not the account's current version).
@@ -1758,6 +1800,14 @@ components:
       type: string
       pattern: "^[A-Za-z0-9_-]{43}$"
       description: X25519 public key, exactly 32 bytes, base64url without padding.
+    VerifyKey:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{43}$"
+      description: Ed25519 public key of an ADK version (32 bytes, base64url without padding). verify_key(v) is derived from ADK(v) with HKDF-SHA256 info "sa-keyver-sign-v1".
+    Signature:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{86}$"
+      description: Ed25519 signature (64 bytes, base64url without padding).
     WrappedBlob:
       type: string
       pattern: "^[A-Za-z0-9_-]+$"
@@ -1850,13 +1900,20 @@ components:
         params: { $ref: "#/components/schemas/Argon2Spec" }
     DeviceKey:
       type: object
-      required: [device_id, public_key]
+      required: [device_id, public_key, key_version, proof]
+      description: An added device and its wrapping key; public_key, key_version, and proof are null until the device registers (once it holds the ADK).
       properties:
         device_id: { type: string, format: uuid }
         public_key:
           allOf:
             - $ref: "#/components/schemas/PublicKey"
           nullable: true
+        key_version: { type: integer, minimum: 1, nullable: true, description: The ADK version whose signing key made proof. }
+        proof:
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+          nullable: true
+          description: Signature by ADK(key_version) over "sa-devkey-v1|<device_id>|<key_version>|<b64u(public_key)>"; clients verify it before wrapping to the key.
     PendingBlob:
       type: object
       required: [key_version, blob, from_device_id]
@@ -1883,26 +1940,40 @@ components:
           items: { $ref: "#/components/schemas/PendingBlob" }
     KeysSetupRequest:
       type: object
-      required: [recovery_public_key, salt, params, recovery_blob]
+      required: [recovery_public_key, salt, params, recovery_blob, verify_key, recovery_anchor]
       additionalProperties: false
       properties:
         recovery_public_key: { $ref: "#/components/schemas/PublicKey" }
         salt: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: 16 to 64 bytes. }
         params: { $ref: "#/components/schemas/Argon2Spec" }
         recovery_blob: { $ref: "#/components/schemas/WrappedBlob" }
+        verify_key: { allOf: [{ $ref: "#/components/schemas/VerifyKey" }], description: verify_key(1). }
+        recovery_anchor:
+          allOf: [{ $ref: "#/components/schemas/RecoveryAnchor" }]
     KeyVersion:
       type: object
       required: [key_version]
       properties:
         key_version: { type: integer }
+    RecoveryAnchor:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{43}$"
+      description: >-
+        HMAC-SHA256(key = HKDF-SHA256(recovery_seed, info "sa-recovery-anchor-v1"), msg = "sa-anchor-v1|" + b64u(verify_key(1))),
+        32 bytes base64url. Lets a recovery-phrase holder authenticate verify_key(1) without trusting the server.
     RecoveryBlob:
       type: object
-      required: [key_version, recovery_blob, salt, params]
+      required: [key_version, recovery_blob, salt, params, recovery_anchor]
       properties:
         key_version: { type: integer }
         recovery_blob: { $ref: "#/components/schemas/WrappedBlob" }
         salt: { $ref: "#/components/schemas/Base64Url" }
         params: { $ref: "#/components/schemas/Argon2Spec" }
+        recovery_anchor:
+          allOf:
+            - $ref: "#/components/schemas/RecoveryAnchor"
+          nullable: true
+          description: Null for legacy accounts whose keys predate key verification (recovery cannot be verified; clients refuse it).
     DeviceBlob:
       type: object
       required: [device_id, blob]
@@ -1912,7 +1983,7 @@ components:
         blob: { $ref: "#/components/schemas/WrappedBlob" }
     KeysRotateRequest:
       type: object
-      required: [key_version, recovery_blob, chain_blob, device_blobs]
+      required: [key_version, recovery_blob, chain_blob, device_blobs, verify_key, signature]
       additionalProperties: false
       properties:
         key_version: { type: integer, description: Must be the current version + 1. }
@@ -1923,6 +1994,12 @@ components:
           maxItems: 100
           description: One blob for every other added device with a registered public key; a blob for the caller itself is accepted as a safety copy and delivered through its pending list.
           items: { $ref: "#/components/schemas/DeviceBlob" }
+        verify_key: { allOf: [{ $ref: "#/components/schemas/VerifyKey" }], description: verify_key(v+1). }
+        signature:
+          allOf: [{ $ref: "#/components/schemas/Signature" }]
+          description: >-
+            By the signing key of the current version v over
+            "sa-rotate-v1|" + (v+1) + "|" + b64u(verify_key(v+1)) + "|" + b64u(SHA-256(chain_blob bytes)).
     DevicesChanged:
       allOf:
         - $ref: "#/components/schemas/Error"
@@ -1942,6 +2019,21 @@ components:
       properties:
         key_version: { type: integer }
         blob: { $ref: "#/components/schemas/WrappedBlob" }
+    KeyVersionInfo:
+      type: object
+      required: [key_version, verify_key, signature]
+      properties:
+        key_version: { type: integer, minimum: 1 }
+        verify_key:
+          allOf:
+            - $ref: "#/components/schemas/VerifyKey"
+          nullable: true
+          description: Null only for legacy accounts whose keys predate key verification.
+        signature:
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+          nullable: true
+          description: The rotation signature by version key_version-1 (null for version 1 and for legacy rows).
     Pairing:
       type: object
       required: [pairing_id, code, expires_at]

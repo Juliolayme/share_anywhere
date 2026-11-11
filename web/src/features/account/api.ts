@@ -1,4 +1,4 @@
-import type { components } from '../../lib/api/schema.gen';
+import type { components, operations } from '../../lib/api/schema.gen';
 import type { DeviceClient } from '../../lib/api/device-client';
 
 type S = components['schemas'];
@@ -6,8 +6,18 @@ export type AuthResult = S['AuthResult'];
 export type AccountToken = S['AccountToken'];
 export type Me = S['Me'];
 export type AccountDevice = S['AccountDevice'];
+/** `GET /v1/keys`: devices[] carry the ADK version that proved each key and the proof (null until registered). */
 export type KeysState = S['KeysState'];
+export type DeviceKeyState = S['DeviceKey'];
+/** `GET /v1/keys/recovery`, with the recovery anchor (null for a legacy account). */
 export type RecoveryBlob = S['RecoveryBlob'];
+export type KeyVersionInfo = S['KeyVersionInfo'];
+/** `GET /v1/keys/chain`: the chain links and verify keys and signatures of versions 1..current. */
+export type KeyChain = operations['getKeyChain']['responses'][200]['content']['application/json'];
+/** `PUT /v1/keys/device`. */
+export type DeviceKeyRequest = NonNullable<
+  operations['registerDeviceKey']['requestBody']
+>['content']['application/json'];
 export type Pairing = S['Pairing'];
 export type PairingPeer = S['PairingPeer'];
 export type PairingStatus = S['PairingStatus'];
@@ -44,11 +54,11 @@ export function accountApi(client: DeviceClient) {
     renameDevice: (id: string, name: string) => r<AccountDevice>('PATCH', `/v1/devices/${seg(id)}`, { name }),
     revokeDevice: (id: string) => r<undefined>('DELETE', `/v1/devices/${seg(id)}`),
     keys: () => r<KeysState>('GET', '/v1/keys'),
-    registerKey: (publicKey: string) => r<undefined>('PUT', '/v1/keys/device', { public_key: publicKey }),
+    registerKey: (reg: DeviceKeyRequest) => r<undefined>('PUT', '/v1/keys/device', reg),
     setupKeys: (req: KeysSetupRequest) => r<{ key_version: number }>('POST', '/v1/keys/setup', req),
     recovery: () => r<RecoveryBlob>('GET', '/v1/keys/recovery'),
     rotate: (req: KeysRotateRequest) => r<{ key_version: number }>('POST', '/v1/keys/rotate', req),
-    chain: () => r<{ chain: ChainLink[] }>('GET', '/v1/keys/chain'),
+    chain: () => r<KeyChain>('GET', '/v1/keys/chain'),
     ackPending: (v: number) => r<undefined>('DELETE', `/v1/keys/pending/${v}`),
     createPairing: (ephemeralPublicKey: string) =>
       r<Pairing>('POST', '/v1/keys/pairings', { ephemeral_public_key: ephemeralPublicKey }),

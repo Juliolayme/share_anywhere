@@ -1,6 +1,6 @@
 # Phase 4 report: multi-receiver, reconnect and resume hardening
 
-Status: implemented; QA rounds 1–6 failed, all P0/P1 findings fixed; round 7 pending (`docs/qa/PHASE_4_QA.md`). Everything here is guest-only and Web-only; Android and iOS come in Phases 6 and 7.
+Status: implemented and tested on the Web; QA round 7 PASS after six failed rounds, every P0/P1 fixed (`docs/qa/PHASE_4_QA.md`). Everything here is guest-only and Web-only; Android and iOS come in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -111,3 +111,4 @@ Unchanged from Phase 3. New: `VITE_BLOCK_CACHE_MB` (optional, build time, in `.e
 | 7e43912 | QA round 5: the mirroring tab writes no History and says another tab is sending; pending lock counted; deleted-id expiry |
 | e940ee0 | Report links |
 | 17796e1 | QA round 6: the mirroring tab offers no Pause/Resume, runs no reconnect window, shows no ETA; no banner flash; History merge test |
+| eafc23c | Report links |

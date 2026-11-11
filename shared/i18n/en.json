@@ -1363,7 +1363,7 @@
     "tx_err_unauthorized": "The sender’s device didn’t accept this device. Ask the sender to share again.",
     "tx_err_unreachable": "Couldn’t reach the sender. Ask them to keep this session open, then try again.",
     "tx_no_files": "This tab no longer has the files you picked (the page was reloaded). Close this session and start a new one.",
-    "tx_other_tab": "Another tab of this browser is sending these files. Keep that tab open until the transfer ends.",
+    "tx_other_tab": "Another tab of this browser is sending these files. Keep that tab open, and in front, until the transfer ends.",
     "verifying_sha": "Checking file integrity (SHA-256)…",
     "version_web": "Share Anywhere Web {version}",
     "via_code": "joined with the code",

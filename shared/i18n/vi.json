@@ -1363,7 +1363,7 @@
     "tx_err_unauthorized": "Thiết bị gửi không chấp nhận thiết bị này. Hãy nhờ người gửi chia sẻ lại.",
     "tx_err_unreachable": "Không kết nối được với người gửi. Hãy nhờ họ giữ phiên này mở, rồi thử lại.",
     "tx_no_files": "Tab này không còn giữ các tệp bạn đã chọn (trang đã được tải lại). Hãy đóng phiên này và tạo phiên mới.",
-    "tx_other_tab": "Một thẻ khác của trình duyệt này đang gửi các tệp này. Hãy giữ thẻ đó mở cho đến khi truyền xong.",
+    "tx_other_tab": "Một thẻ khác của trình duyệt này đang gửi các tệp này. Hãy giữ thẻ đó mở và ở phía trước cho đến khi truyền xong.",
     "verifying_sha": "Đang kiểm tra toàn vẹn tệp (SHA-256)…",
     "version_web": "Share Anywhere Web {version}",
     "via_code": "vào bằng mã",

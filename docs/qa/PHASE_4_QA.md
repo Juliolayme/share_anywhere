@@ -152,3 +152,16 @@ Nightly [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/
 | No unit test for the History merge | P2 | Test: a reloaded tab with no other tab holding the files keeps the larger byte counts, the earlier route and the creation time |
 | E16 listed removed keys; E15 named TR-6 only | P2 | E16 lists `open_session_meta`; E15 names TR-4 and TR-6 |
 | No Web Locks: a second tab answers offers with "no files" | P2 | Documented in TRANSFER_PROTOCOL §5.1; backlog |
+
+## Round 7 — commit eafc23c (code as 17796e1) — PASS
+
+0 P0, 0 P1, 4 P2 findings. The round-6 findings were confirmed resolved. Keep-screen-on was checked for the single-tab sender (immediate), a reloaded tab (after load) and the mirroring tab (no hold while the serving tab holds; takes over within about 2 s when it closes). CI 42937529314 and Nightly 42937529417 on 17796e1 are green with no retries.
+
+### Resolution of round 7 P2 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| The mirroring state was not recorded in DESIGN_DEVIATIONS | P2 | G23 |
+| ARCHITECTURE §7.1 lacked the mirroring-tab rule | P2 | Stated in §7.1; UX_SCREEN_MAP TR-4 points to it |
+| No wake lock while the mirroring tab is in front and the serving tab hidden | P2 | `product.tx_other_tab` now asks the user to keep the sending tab open and in front (EN/VI); §7.1 explains why. Holding from the mirroring tab stays in the backlog |
+| Minor test and doc gaps | P2 | TESTING_AND_CI describes the no-Pause assertion; the unit test's coverage gap stays (the controller returns early before any call) |

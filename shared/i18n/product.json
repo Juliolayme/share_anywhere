@@ -262,7 +262,7 @@
     "open_session_close_named": "Close {name}",
     "open_session_closed": "Session closed. You can create a new session now.",
     "open_session_meta": "Started {time} · {joined}/{max} receivers · {window}",
-    "tx_other_tab": "Another tab of this browser is sending these files. Keep that tab open until the transfer ends."
+    "tx_other_tab": "Another tab of this browser is sending these files. Keep that tab open, and in front, until the transfer ends."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -526,6 +526,6 @@
     "open_session_close_named": "Đóng {name}",
     "open_session_closed": "Đã đóng phiên. Bây giờ bạn có thể tạo phiên mới.",
     "open_session_meta": "Bắt đầu {time} · {joined}/{max} người nhận · {window}",
-    "tx_other_tab": "Một thẻ khác của trình duyệt này đang gửi các tệp này. Hãy giữ thẻ đó mở cho đến khi truyền xong."
+    "tx_other_tab": "Một thẻ khác của trình duyệt này đang gửi các tệp này. Hãy giữ thẻ đó mở và ở phía trước cho đến khi truyền xong."
   }
 }

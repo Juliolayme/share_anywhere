@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PersistableBundle
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -296,6 +297,7 @@ class ClipboardRuntime(
     /** The window gained input focus: Android now allows a read, so what was copied elsewhere is captured once. */
     fun onWindowFocus(hasFocus: Boolean) {
         windowFocused = hasFocus
+        Log.d(TAG, "window focus=$hasFocus listening=${_listening.value}")
         if (hasFocus && _listening.value) captureCurrent()
     }
 
@@ -317,7 +319,9 @@ class ClipboardRuntime(
         if (!_listening.value) return
         scope.launch {
             val read = readClip()
-            if (read is ClipRead.Text) capture(read.text, CaptureSource.AUTO, flagged = read.flagged)
+            val result = if (read is ClipRead.Text) capture(read.text, CaptureSource.AUTO, flagged = read.flagged) else null
+            // Kinds only, never the text: enough to tell a refused read from a skip or a sync in a device log.
+            Log.d(TAG, "auto capture: read=${read::class.simpleName} result=${result?.let { it::class.simpleName }} focus=$windowFocused")
         }
     }
 
@@ -392,6 +396,7 @@ class ClipboardRuntime(
     }
 
     companion object {
+        private const val TAG = "SA-CLIPBOARD"
         const val CHANNEL = "clipboard"
         const val NOTIFICATION_ID = 0x5A11
         const val ACTION_OPEN = "app.shareanywhere.OPEN_CLIPBOARD"

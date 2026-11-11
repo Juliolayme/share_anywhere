@@ -47,7 +47,6 @@ class SafFolderTest {
         }
 
     private val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-    private val picker = Pattern.compile("com\\.(google\\.)?android\\.documentsui")
 
     private fun text(regex: String) = By.text(Pattern.compile(regex, Pattern.CASE_INSENSITIVE))
 
@@ -83,10 +82,12 @@ class SafFolderTest {
 
                     // DocumentsUI opens in a folder that allows new folders: New folder (a toolbar action, or under More options),
                     // name it, open it, then Use this folder and Allow.
-                    assertTrue("system picker opened", device.wait(Until.hasObject(By.pkg(picker)), 20_000))
                     val name = "SA-${System.currentTimeMillis() % 100000}"
+                    // Wait for the picker's own controls (its package query is unreliable while it draws).
                     val newFolder = By.res(Pattern.compile(".*:id/option_menu_create_dir"))
-                    val direct = device.wait(Until.findObject(newFolder), 5_000)
+                    val more = By.desc(Pattern.compile("More options", Pattern.CASE_INSENSITIVE))
+                    assertTrue("system picker opened", device.wait(Until.hasObject(newFolder), 30_000) || device.hasObject(more))
+                    val direct = device.findObject(newFolder)
                     if (direct != null) {
                         direct.click()
                     } else {

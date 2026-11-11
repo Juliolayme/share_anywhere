@@ -47,18 +47,17 @@ class FgsBudgetTest {
     @After
     fun restore() {
         device.executeShellCommand("device_config delete activity_manager data_sync_fgs_timeout_duration")
-        device.executeShellCommand("am compat reset FGS_INTRODUCE_TIME_LIMITS app.shareanywhere")
     }
 
     @Test
     fun theBudgetEndingPausesTheTransferWhichResumes() {
         Backend.assume()
         Backend.markWelcomed()
-        // Android's documented test setup for the dataSync limit: the compat change on for this app, and a short budget.
-        device.executeShellCommand("am compat enable FGS_INTRODUCE_TIME_LIMITS app.shareanywhere")
-        device.executeShellCommand("device_config put activity_manager data_sync_fgs_timeout_duration 4000")
+        // A short dataSync budget (Android's documented test knob). The app targets API 35, so the limit already applies;
+        // `am compat enable` is not used because it restarts the app's process, which hosts this test.
+        device.executeShellCommand("device_config put activity_manager data_sync_fgs_timeout_duration 2000")
         val entry = Backend.entry()
-        val (file, sum) = TestPeer.file("budget-${System.nanoTime()}.bin", 160 * 1024 * 1024)
+        val (file, sum) = TestPeer.file("budget-${System.nanoTime()}.bin", 512 * 1024 * 1024)
         TestPeer(Backend.Peer.create()).use { peer ->
             val view = runBlocking { peer.peer.api.create(listOf(FileInput(file.name, file.length(), "application/octet-stream")), false) }
             runBlocking { peer.sender(view.id, file, view.files!!.single().id, "application/octet-stream") }
@@ -82,6 +81,11 @@ class FgsBudgetTest {
 
                     // The budget only runs while the app is in the background (being in front resets it).
                     compose.waitUntil(15_000) { TransferService.running }
+                    android.util.Log.i(
+                        "SA-TEST",
+                        "budget=" + device.executeShellCommand("device_config get activity_manager data_sync_fgs_timeout_duration").trim() +
+                            "\n" + device.executeShellCommand("dumpsys activity services app.shareanywhere").take(3000)
+                    )
                     device.pressHome()
                     val paused = runBlocking {
                         withTimeout(60_000) {

@@ -89,11 +89,14 @@ class ScreenshotTest {
             compose.dumpOnFailure {
                 compose.waitForTag(ScreenIds.SESSION, 30_000)
                 save(variant, ScreenIds.SESSION)
-                runBlocking { entry.sessionsApi().close(mine.id) }
-
+            }
+        }
+        runBlocking { entry.sessionsApi().close(mine.id) }
+        // The session screen keeps Back for its close sheet: the rest starts from a fresh launch.
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            compose.dumpOnFailure {
                 // Account flow from Settings, then the signed-in tabs.
-                device.pressBack()
-                compose.waitForTag(ScreenIds.HOME, 15_000)
+                compose.waitForTag(ScreenIds.HOME, 30_000)
                 compose.onNodeWithTag("nav.${ScreenIds.SETTINGS}").performClick()
                 compose.waitForTag("settings.create", 15_000)
                 compose.onNodeWithTag("settings.create").tap()
@@ -117,7 +120,7 @@ class ScreenshotTest {
                 compose.onNodeWithTag("clipboard.settings-link").tap()
                 compose.waitForTag(ScreenIds.CLIPBOARD_SETTINGS)
                 save(variant, ScreenIds.CLIPBOARD_SETTINGS)
-                device.pressBack()
+                back(scenario)
                 for (route in listOf(ScreenIds.DEVICES, ScreenIds.SETTINGS)) {
                     compose.onNodeWithTag("nav.$route").performClick()
                     compose.waitForTag(route)
@@ -148,6 +151,9 @@ class ScreenshotTest {
         TestStorage().openOutputFile("screenshots/$variant/$name.png").use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    /** Back through the Activity's dispatcher (device Back would first only hide the keyboard). */
+    private fun back(scenario: ActivityScenario<MainActivity>) = scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+
     private fun tab(route: String, variant: String) {
         compose.onNodeWithTag("nav.$route").performClick()
         compose.waitForTag(route)
@@ -157,7 +163,7 @@ class ScreenshotTest {
     private fun capture(variant: String, theme: ThemeMode, fontScale: Float) {
         device.executeShellCommand("settings put system font_scale $fontScale")
         runBlocking { Backend.entry().settingsRepository().setTheme(theme) }
-        ActivityScenario.launch(MainActivity::class.java).use {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             compose.dumpOnFailure {
                 compose.waitForTag(ScreenIds.WELCOME)
                 save(variant, ScreenIds.WELCOME)
@@ -173,12 +179,12 @@ class ScreenshotTest {
                 compose.onNodeWithTag("signin.forgot").tap()
                 compose.waitForTag(ScreenIds.FORGOT)
                 save(variant, ScreenIds.FORGOT)
-                device.pressBack()
+                back(scenario)
                 compose.waitForTag(ScreenIds.SIGNIN)
                 compose.onNodeWithTag("signin.create").tap()
                 compose.waitForTag(ScreenIds.SIGNUP)
                 save(variant, ScreenIds.SIGNUP)
-                device.pressBack()
+                back(scenario)
 
                 // Receive: the code entry tab (the camera tab needs a camera).
                 compose.onNodeWithTag("nav.${ScreenIds.HOME}").performClick()

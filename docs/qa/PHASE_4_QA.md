@@ -132,3 +132,23 @@ Nightly [42913806192](https://github.com/Juliolayme/share_anywhere/actions/runs/
 | TESTING_AND_CI outdated for multi.spec | P2 | Updated with the late-receiver and second-tab tests |
 | Report numbers wrong | P2 | Corrected |
 | EN copy nits | P2 | "a new one" / "a new session" |
+
+## Round 6 — commit e940ee0 (code as 7e43912) — FAIL
+
+0 P0, 1 P1, 6 P2 findings. The round-5 findings were confirmed resolved; CI and nightly on 7e43912 passed with no retries.
+
+**Why it failed:**
+
+- in the mirroring tab, Pause showed Paused everywhere while bytes kept flowing, and Resume showed Transferring while the serving tab's engine stayed paused.
+
+### Resolution of round 6 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Pause and Resume in the mirroring tab did not control the transfer | P1 | The mirroring tab is a viewer for Pause and Resume, which steer the serving tab's own connection. The buttons are not offered there, and the controller ignores them when `elsewhere`. Remove, Block, Stop all and Close stay: they are server actions the serving tab and the receiver apply. Unit test; the two-tab e2e checks that the second tab's dashboard has no Pause but has Remove while the transfer runs. UX_SCREEN_MAP TR-6 |
+| The mirroring tab still ran the 10-minute reconnect window | P2 | The window is skipped when `elsewhere` |
+| The mirroring tab never showed speed or ETA (always estimating) | P2 | Speed and ETA are not shown there (no throughput samples); progress comes from the server records |
+| Keep-open banner and screen hold flashed before load in a tab without files | P2 | Neither appears until the tab knows it serves (`hasFiles`, or loaded and no other tab holds the files) |
+| No unit test for the History merge | P2 | Test: a reloaded tab with no other tab holding the files keeps the larger byte counts, the earlier route and the creation time |
+| E16 listed removed keys; E15 named TR-6 only | P2 | E16 lists `open_session_meta`; E15 names TR-4 and TR-6 |
+| No Web Locks: a second tab answers offers with "no files" | P2 | Documented in TRANSFER_PROTOCOL §5.1; backlog |

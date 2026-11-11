@@ -108,7 +108,9 @@ export default function TransferDashboard() {
   const windowOpen = !!s.windowEndsAt && Date.parse(s.windowEndsAt) > now + s.serverOffset;
   // A tab that lost its picked files (after a reload) cannot send, so its transfers do not hold the screen.
   // Held on TR-7 too while the window is open: a late receiver may still join (docs/ARCHITECTURE.md §7.1).
-  const holdForWindow = windowOpen && !s.ended && !s.elsewhere;
+  // Until a tab without files knows whether another tab serves (load), it neither holds nor shows the banner.
+  const serving = s.hasFiles || ((s.loaded || failed) && !s.elsewhere);
+  const holdForWindow = windowOpen && !s.ended && serving;
   const pill = useKeepAwake((s.hasFiles && active) || holdForWindow);
   const [error, setError] = useState<string | null>(null);
   // Where Close leads: the session screen, or a new transfer (TR-7 "New transfer" closes a finished session).
@@ -126,7 +128,8 @@ export default function TransferDashboard() {
   const n = s.receivers.length;
   const overallDone = s.receivers.reduce((a, r) => a + r.verified, 0);
   const overallTotal = n * total;
-  const groupSeconds = groupEta(s.receivers);
+  // A tab mirroring another tab has no throughput samples: no ETA there.
+  const groupSeconds = s.elsewhere ? undefined : groupEta(s.receivers);
   const overallEta = useEta();
   const counts = ORDER.map((st) => ({ st, n: s.receivers.filter((r) => r.status === st).length })).filter(
     (c) => c.n > 0,
@@ -183,7 +186,7 @@ export default function TransferDashboard() {
 
   return (
     <Screen id={screen}>
-      {!s.elsewhere && (!s.final || holdForWindow) && <KeepOpenBanner state={pill} />}
+      {serving && (!s.final || holdForWindow) && <KeepOpenBanner state={pill} />}
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-[6px]">
@@ -289,6 +292,7 @@ export default function TransferDashboard() {
                 onRemove={() => remove(r)}
                 onBlock={() => setBlockTarget(r)}
                 live={!s.ended}
+                mirror={s.elsewhere}
               />
             ))}
           </div>
@@ -447,6 +451,7 @@ function ReceiverCard({
   onRemove,
   onBlock,
   live,
+  mirror,
 }: {
   r: TxReceiver;
   onPause: () => void;
@@ -455,6 +460,8 @@ function ReceiverCard({
   onBlock: () => void;
   /** The session is still live: Remove and Block are offered. */
   live: boolean;
+  /** Another tab of this browser serves this receiver: no speed or ETA here, and no Pause or Resume. */
+  mirror: boolean;
 }) {
   const { t, locale } = useI18n();
   const eta = useEta();
@@ -484,7 +491,7 @@ function ReceiverCard({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <RouteChip route={['reconnecting', 'connecting', 'offline', 'waiting'].includes(r.status) ? null : r.route} />
-        {!ended && <span className="font-mono text-[12px] text-fg-2">{speed(r.bytesPerSecond)}</span>}
+        {!ended && !mirror && <span className="font-mono text-[12px] text-fg-2">{speed(r.bytesPerSecond)}</span>}
       </div>
       <div className="flex flex-col gap-[6px]">
         <div className="flex justify-between gap-2 text-[13px]">
@@ -497,7 +504,9 @@ function ReceiverCard({
                   ? t('product.transfer_offline')
                   : r.status === 'paused'
                     ? t('web.st.paused')
-                    : eta(r.eta)}
+                    : mirror
+                      ? null
+                      : eta(r.eta)}
             </span>
           )}
         </div>
@@ -510,12 +519,12 @@ function ReceiverCard({
         <p className="m-0 rounded-[10px] bg-danger-soft px-3 py-[10px] text-[13px] text-danger-ink">{t(r.error)}</p>
       )}
       <div className="flex flex-wrap gap-[6px]">
-        {txActive(r.status) && (
+        {txActive(r.status) && !mirror && (
           <Button size="sm" icon={Pause} onClick={onPause} aria-label={t('product.pause_named', { name: r.name })}>
             {t('web.pause')}
           </Button>
         )}
-        {r.status === 'paused' && (
+        {r.status === 'paused' && !mirror && (
           <Button
             size="sm"
             variant="send"

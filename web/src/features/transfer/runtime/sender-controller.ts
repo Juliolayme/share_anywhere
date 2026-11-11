@@ -402,6 +402,8 @@ export class SenderController extends Observable<TxState> {
   }
 
   pause(pid: string): void {
+    // Pause and resume steer this tab's own connection; a tab mirroring another tab offers neither.
+    if (this.state_.elsewhere) return;
     const p = this.peers.get(pid);
     this.resuming.delete(pid);
     p?.conn?.pause();
@@ -410,6 +412,7 @@ export class SenderController extends Observable<TxState> {
   }
 
   resume(pid: string): void {
+    if (this.state_.elsewhere) return;
     const p = this.peers.get(pid);
     this.resuming.add(pid); // until the server stops saying PAUSED for this receiver
     this.patch(pid, { status: this.live(pid) ? 'transferring' : 'reconnecting' });
@@ -484,7 +487,9 @@ export class SenderController extends Observable<TxState> {
    */
   private syncWindow(pid: string): void {
     const r = this.state_.receivers.find((x) => x.participantId === pid);
-    const down = !!r && (r.status === 'reconnecting' || r.status === 'connecting') && !this.live(pid);
+    // The reconnect window belongs to the tab that serves; a mirroring tab only shows the server records.
+    const down =
+      !this.state_.elsewhere && !!r && (r.status === 'reconnecting' || r.status === 'connecting') && !this.live(pid);
     if (!down) return this.clearDownTimer(pid);
     if (this.downTimers.has(pid)) return;
     this.downTimers.set(

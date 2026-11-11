@@ -558,4 +558,77 @@ describe('SenderController', () => {
       delete (globalThis.navigator as { locks?: unknown }).locks;
     }
   });
+  it('History merge after a reload: never fewer bytes than recorded, and the earlier route is kept', async () => {
+    const stored = new Map<string, Record<string, unknown>>([
+      [
+        'tx:s1',
+        {
+          id: 'tx:s1',
+          status: 'failed',
+          transferredBytes: 6,
+          files: [{ name: 'a.bin', size: 10, transferredBytes: 6 }],
+          route: 'relay',
+          createdAt: 1000,
+        },
+      ],
+    ]);
+    const tx = new SenderController({
+      sessionId: 's1',
+      api: {
+        list: async () => ({
+          role: 'sender',
+          transfers: [{ id: 't1', participant_id: 'p1', file_id: 'f1', status: 'FAILED', verified_bytes: 4 }],
+          peers: [],
+        }),
+        turn: async () => {
+          throw new Error('no TURN in this test');
+        },
+      } as unknown as TransfersApi,
+      view: async () =>
+        ({
+          id: 's1',
+          status: 'ACTIVE',
+          files: [{ id: 'f1', name: 'a.bin', size: 10, mime: 'x' }],
+          participants: [{ id: 'p1', role: 'receiver', status: 'JOINED', display_name: 'R', platform: 'Web' }],
+          join_window: { state: 'EXPIRED' },
+          server_time: new Date().toISOString(),
+        }) as unknown as SessionView,
+      socket: { subscribe: () => () => undefined, send: () => true } as unknown as SessionSocket,
+      history: {
+        add: async (e: Record<string, unknown>) => void stored.set(e.id as string, e),
+        list: async () => [...stored.values()],
+      } as unknown as HistoryStore,
+      files: undefined, // reloaded: no files, and no other tab holds them (no Web Locks here)
+    });
+    await tx.init();
+    expect(tx.state.final).toBe('failed');
+    await vi.waitFor(() =>
+      expect(stored.get('tx:s1')).toMatchObject({
+        status: 'failed',
+        transferredBytes: 6,
+        files: [{ name: 'a.bin', size: 10, transferredBytes: 6 }],
+        route: 'relay',
+        createdAt: 1000,
+      }),
+    );
+    tx.dispose();
+  });
+  it('a mirroring tab offers no Pause or Resume of its own', async () => {
+    Object.defineProperty(globalThis.navigator, 'locks', {
+      configurable: true,
+      value: { query: async () => ({ held: [{ name: filesLockName('s1') }], pending: [] }) },
+    });
+    try {
+      const t = setup('TRANSFERRING');
+      await t.tx.init();
+      expect(t.tx.state.elsewhere).toBe(true);
+      const before = t.card();
+      t.tx.pause('p1');
+      t.tx.resume('p1');
+      expect(t.card()).toBe(before);
+      t.tx.dispose();
+    } finally {
+      delete (globalThis.navigator as { locks?: unknown }).locks;
+    }
+  });
 });

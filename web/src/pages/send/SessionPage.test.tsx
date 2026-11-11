@@ -88,7 +88,7 @@ describe('session (TR-4/TR-5)', () => {
     expect(screen.getByTestId('countdown')).toHaveTextContent('10:00');
     expect(screen.getByRole('img', { name: 'QR code to join this session' })).toBeInTheDocument();
     expect(screen.getByTestId('session-link')).toHaveTextContent('/j/');
-    expect(screen.getByTestId('keep-open-banner')).toBeInTheDocument();
+    expect(await screen.findByTestId('keep-open-banner')).toBeInTheDocument();
     expect(screen.getByTestId('no-receivers')).toBeInTheDocument();
     expect(document.querySelector('[data-screen="session"]')).not.toBeNull();
   });

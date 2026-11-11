@@ -231,9 +231,18 @@ test('a second tab of the sender on the same session leaves the transfer to the 
   // The second tab knows another tab sends the files (no "reloaded, start again" alert, no keep-open banner).
   await expect(second.getByText('Another tab of this browser is sending these files', { exact: false })).toBeVisible();
   await expect(second.getByText('This tab no longer has the files', { exact: false })).toHaveCount(0);
+  await senderHook(sender, s.id, { pace: 400 });
   const rx = await receiver(browser, browserName, 'Receiver Tabs');
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
+  // The second tab's dashboard mirrors the transfer but offers no Pause or Resume (those steer the serving tab).
+  await second.goto(`/send/session/${s.id}/transfers`);
+  await expect(card(second, 'Receiver Tabs')).toHaveAttribute('data-status', /transferring|connecting/, {
+    timeout: 30_000,
+  });
+  await expect(card(second, 'Receiver Tabs').getByRole('button', { name: 'Pause Receiver Tabs' })).toHaveCount(0);
+  await expect(card(second, 'Receiver Tabs').getByRole('button', { name: 'Remove Receiver Tabs' })).toBeVisible();
+  await senderHook(sender, s.id, { pace: 0 });
   await expect(result(rx)).toHaveAttribute('data-result', 'completed', { timeout: 90_000 });
   expect(await downloadAndHash(rx, name)).toBe(f.sha256);
   // History records what the tab with the files sent; the mirroring tab does not overwrite it.

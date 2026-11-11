@@ -93,11 +93,14 @@ export default function SessionPage() {
   }, [live, win?.state, left, load]);
 
   // The sender's engine answers receivers' offers while this screen (or the dashboard) is open.
-  const [, txState] = useSender(id, live && view?.role === 'sender');
+  const [, txState, txFailed] = useSender(id, live && view?.role === 'sender');
   const transferring = txState.receivers.some((r) => txActive(r.status));
   // The screen stays on while the join window is open or transfers run (docs/ARCHITECTURE.md §7.1).
   // A tab that only mirrors another tab's transfer (txState.elsewhere) leaves the screen to that tab.
-  const pill = useKeepAwake((windowOpen && !txState.elsewhere) || (txState.hasFiles && transferring));
+  // Until a tab without files knows whether another tab serves (load), it neither holds nor shows the banner;
+  // if loading fails it behaves as before (it cannot know, and the open window still needs the screen).
+  const serving = txState.hasFiles || ((txState.loaded || txFailed) && !txState.elsewhere);
+  const pill = useKeepAwake((windowOpen && serving) || (txState.hasFiles && transferring));
 
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -197,7 +200,7 @@ export default function SessionPage() {
 
   return (
     <Screen id={screenId}>
-      {!txState.elsewhere && <KeepOpenBanner state={pill} />}
+      {serving && <KeepOpenBanner state={pill} />}
       {txState.loaded && !txState.hasFiles && txState.elsewhere && (
         <Banner tone="info" role="status" title={t('product.tx_other_tab')} />
       )}

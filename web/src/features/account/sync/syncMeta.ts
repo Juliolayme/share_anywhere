@@ -1,8 +1,9 @@
 /**
  * Per-account sync bookkeeping in IndexedDB (`share-anywhere-sync`), next to the history database: the history
  * pull cursor, which local entries were uploaded under which `entry_id`, deletions waiting for the network, and
- * the one-time "copy this device's history" import. None of it is secret (no keys, no plaintext beyond entry
- * ids), and it is erased with the key store when the device leaves the account. Never in Web Storage.
+ * the one-time "copy this device's history" import, and the devices this browser revoked that its key rotations must
+ * keep excluding (contract I.4). None of it is secret (no keys, no plaintext beyond entry and device ids), and it is
+ * erased with the key store when the device leaves the account. Never in Web Storage.
  */
 export interface AccountSyncMeta {
   userId: string;
@@ -34,6 +35,13 @@ export interface SyncMetaStore {
   /** The account whose keys this browser holds, if any. */
   owner(): Promise<string | null>;
   setOwner(userId: string | null): Promise<void>;
+  /**
+   * Device IDs this browser revoked that every key rotation it makes must exclude until one that excluded them has gone
+   * through (docs/SECURITY_MODEL.md §7). Kept under its own record so a sync pass writing the bookkeeping never
+   * overwrites it.
+   */
+  excluded(userId: string): Promise<string[]>;
+  setExcluded(userId: string, ids: readonly string[]): Promise<void>;
   /** Erases every record (the device left the account). */
   wipe(): Promise<void>;
 }
@@ -91,6 +99,12 @@ export function openSyncMeta(factory: IDBFactory = indexedDB): SyncMetaStore {
     },
     put: (meta) => write((s) => s.put(meta, `acct:${meta.userId}`)),
     owner: async () => (await get<string>('owner')) ?? null,
+    async excluded(userId) {
+      const ids = await get<unknown>(`excl:${userId}`);
+      return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    },
+    setExcluded: (userId, ids) =>
+      write((s) => (ids.length ? s.put([...ids], `excl:${userId}`) : s.delete(`excl:${userId}`))),
     setOwner: (userId) => write((s) => (userId ? s.put(userId, 'owner') : s.delete('owner'))),
     wipe: () => write((s) => s.clear()),
   };

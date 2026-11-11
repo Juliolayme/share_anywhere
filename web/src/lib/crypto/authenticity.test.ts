@@ -3,6 +3,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { generateAdk } from './adk';
 import {
+  recoveryKeyMessage,
+  recoveryKeySignature,
   rotationMessage,
   signWithAdk,
   verifyKeyOf,
@@ -15,10 +17,10 @@ import { prepareKeySetup, recoverWithPhrase, type RecoveryResponse } from './boo
 import { getOrCreateDeviceKey, proveDeviceKey } from './device-key';
 import { b64uDecode, b64uEncode, utf8 } from './encoding';
 import { acceptPairing, createPairingKeys, wrapForPairing } from './pairing';
-import { acceptPendingBlobs, prepareRotation } from './rotation';
+import { acceptPendingBlobs, importChain, prepareRotation } from './rotation';
 import { openKeyStore, type KeyStore } from './store';
 import { wrapAdk, wrapChain } from './wrap';
-import type { X25519KeyPair } from './x25519';
+import { generateX25519, type X25519KeyPair } from './x25519';
 
 /**
  * Key authenticity rules (contract A.6, docs/CLIPBOARD_PROTOCOL.md §1) and the QA P0-1 attacks: an added device that
@@ -63,7 +65,11 @@ async function account() {
     params: setup.request.params,
     recovery_anchor: setup.request.recovery_anchor,
   };
-  return { a, b, setup, versions, recovery, chain: [] as { key_version: number; blob: string }[] };
+  const recoveryKey = {
+    public_key: setup.request.recovery_public_key,
+    signature: setup.request.recovery_key_signature,
+  };
+  return { a, b, setup, versions, recovery, recoveryKey, chain: [] as { key_version: number; blob: string }[] };
 }
 
 /**
@@ -101,6 +107,7 @@ describe('rotation pickup (acceptPendingBlobs)', () => {
     const rot = await prepareRotation(a.store, {
       serverKeyVersion: 1,
       recoveryPublicKey: setup.request.recovery_public_key,
+      recoverySignature: setup.request.recovery_key_signature,
       devices: [await registration(a), await registration(b)],
     });
     // The request carries verify_key(2) and a signature by version 1 over the A.3 message.
@@ -174,6 +181,7 @@ describe('rotating (prepareRotation)', () => {
     const rot = await prepareRotation(a.store, {
       serverKeyVersion: 1,
       recoveryPublicKey: setup.request.recovery_public_key,
+      recoverySignature: setup.request.recovery_key_signature,
       devices: [good, selfProven, { ...replayed }, future, { device_id: ID.A, public_key: null }],
     });
     expect(rot.request.device_blobs.map((d) => d.device_id)).toEqual([ID.B]);
@@ -195,6 +203,7 @@ describe('recovery (recoverWithPhrase)', () => {
       acct.setup.phrase,
       acct.recovery,
       { chain: [], versions: acct.versions },
+      acct.recoveryKey,
       {
         worker: false,
       },
@@ -212,6 +221,7 @@ describe('recovery (recoverWithPhrase)', () => {
         acct.setup.phrase,
         response,
         { chain: [forged.link], versions: [...acct.versions, forged.version] },
+        acct.recoveryKey,
         {
           worker: false,
         },
@@ -231,7 +241,9 @@ describe('recovery (recoverWithPhrase)', () => {
     };
     const versions = [{ key_version: 1, verify_key: b64uEncode(await verifyKeyOf(evil.raw)), signature: null }];
     await expect(
-      recoverWithPhrase(c.store, acct.setup.phrase, response, { chain: [], versions }, { worker: false }),
+      recoverWithPhrase(c.store, acct.setup.phrase, response, { chain: [], versions }, acct.recoveryKey, {
+        worker: false,
+      }),
     ).rejects.toMatchObject({ code: 'recovery_unverified' });
     expect(await c.store.currentVersion()).toBe(0);
   }, 30_000);
@@ -242,14 +254,26 @@ describe('recovery (recoverWithPhrase)', () => {
     anchor[0] = (anchor[0] ?? 0) ^ 1;
     const state = { chain: [], versions: acct.versions };
     await expect(
-      recoverWithPhrase(c.store, acct.setup.phrase, { ...acct.recovery, recovery_anchor: b64uEncode(anchor) }, state, {
-        worker: false,
-      }),
+      recoverWithPhrase(
+        c.store,
+        acct.setup.phrase,
+        { ...acct.recovery, recovery_anchor: b64uEncode(anchor) },
+        state,
+        acct.recoveryKey,
+        { worker: false },
+      ),
     ).rejects.toMatchObject({ code: 'recovery_unverified' });
     await expect(
-      recoverWithPhrase(c.store, acct.setup.phrase, { ...acct.recovery, recovery_anchor: null }, state, {
-        worker: false,
-      }),
+      recoverWithPhrase(
+        c.store,
+        acct.setup.phrase,
+        { ...acct.recovery, recovery_anchor: null },
+        state,
+        acct.recoveryKey,
+        {
+          worker: false,
+        },
+      ),
     ).rejects.toMatchObject({ code: 'keys_legacy' });
     expect(await c.store.currentVersion()).toBe(0);
   }, 60_000);
@@ -261,6 +285,7 @@ describe('signature chain and pairing receive', () => {
     const rot = await prepareRotation(a.store, {
       serverKeyVersion: 1,
       recoveryPublicKey: setup.request.recovery_public_key,
+      recoverySignature: setup.request.recovery_key_signature,
       devices: [],
     });
     const v2 = { key_version: 2, verify_key: rot.request.verify_key, signature: rot.request.signature };
@@ -312,4 +337,144 @@ describe('signature chain and pairing receive', () => {
     expect(await n.store.currentVersion()).toBe(0);
     expect(await acceptPairing(n.store, pairing, wrapped, { chain: [], versions })).toBe(1);
   });
+});
+
+describe('authenticated recovery key (contract H, QA round 3 P0-1)', () => {
+  it('setup signs the recovery public key with ADK v1 (H.1)', () => {
+    const { setup } = acct;
+    const message = utf8(recoveryKeyMessage(b64uDecode(setup.request.recovery_public_key)));
+    const sig = b64uDecode(setup.request.recovery_key_signature);
+    expect(verifySignature(sig, message, b64uDecode(setup.request.verify_key))).toBe(true);
+    expect(message.length).toBeGreaterThan(0);
+  });
+
+  it('prepareRotation refuses a recovery key its own ADK v1 did not sign: nothing to send (H.3)', async () => {
+    const { a, setup } = acct;
+    const attacker = await generateX25519();
+    const attackerKey = b64uEncode(attacker.publicKey);
+    for (const recoverySignature of [
+      undefined,
+      'not base64!',
+      setup.request.recovery_key_signature, // the genuine signature replayed for the attacker's key
+      b64uEncode(await recoveryKeySignature(generateAdk(1).raw, attacker.publicKey)), // signed by another ADK
+    ]) {
+      await expect(
+        prepareRotation(a.store, {
+          serverKeyVersion: 1,
+          recoveryPublicKey: attackerKey,
+          recoverySignature,
+          devices: [],
+        }),
+      ).rejects.toMatchObject({ code: 'unverified' });
+    }
+    await expect(
+      prepareRotation(a.store, {
+        serverKeyVersion: 1,
+        recoveryPublicKey: setup.request.recovery_public_key,
+        recoverySignature: null,
+        devices: [],
+      }),
+    ).rejects.toMatchObject({ code: 'keys_legacy' });
+    expect(await a.store.currentVersion()).toBe(1);
+  });
+
+  it('prepareRotation needs ADK v1 to check the signature (H.3)', async () => {
+    const lone = await device(ID.X);
+    await lone.store.saveAdk(2, generateAdk(2).raw);
+    await expect(
+      prepareRotation(lone.store, {
+        serverKeyVersion: 2,
+        recoveryPublicKey: acct.setup.request.recovery_public_key,
+        recoverySignature: acct.setup.request.recovery_key_signature,
+        devices: [],
+      }),
+    ).rejects.toMatchObject({ code: 'unverified' });
+  });
+
+  it('recovery refuses a mismatched or unsigned recovery key (H.4)', async () => {
+    const c = await device(ID.B);
+    const state = { chain: [], versions: acct.versions };
+    const other = b64uEncode((await generateX25519()).publicKey);
+    const opts = { worker: false };
+    // The account lists another key than the phrase derives (even with a valid-looking signature for it).
+    await expect(
+      recoverWithPhrase(
+        c.store,
+        acct.setup.phrase,
+        acct.recovery,
+        state,
+        { ...acct.recoveryKey, public_key: other },
+        opts,
+      ),
+    ).rejects.toMatchObject({ code: 'recovery_unverified' });
+    await expect(recoverWithPhrase(c.store, acct.setup.phrase, acct.recovery, state, null, opts)).rejects.toMatchObject(
+      {
+        code: 'recovery_unverified',
+      },
+    );
+    // The phrase's key, but the signature is missing, tampered, or legacy (null).
+    const sig = b64uDecode(acct.recoveryKey.signature);
+    sig[3] = (sig[3] ?? 0) ^ 1;
+    for (const signature of [undefined, b64uEncode(sig)]) {
+      await expect(
+        recoverWithPhrase(c.store, acct.setup.phrase, acct.recovery, state, { ...acct.recoveryKey, signature }, opts),
+      ).rejects.toMatchObject({ code: 'recovery_unverified' });
+    }
+    await expect(
+      recoverWithPhrase(
+        c.store,
+        acct.setup.phrase,
+        acct.recovery,
+        state,
+        { ...acct.recoveryKey, signature: null },
+        opts,
+      ),
+    ).rejects.toMatchObject({ code: 'keys_legacy' });
+    expect(await c.store.currentVersion()).toBe(0);
+  }, 120_000);
+});
+
+describe('importChain verifies the older versions it stores (contract I.6)', () => {
+  it('stores ADK(v-1) only when it matches versions[v-1] and signed version v over the link', async () => {
+    const { a, setup, versions } = acct;
+    const owner = { store: await openKeyStore({ factory: new IDBFactory() }) };
+    const adk1 = await a.store.unwrapAdkRaw(1);
+    await owner.store.saveAdk(1, adk1);
+    const rot = await prepareRotation(owner.store, {
+      serverKeyVersion: 1,
+      recoveryPublicKey: setup.request.recovery_public_key,
+      recoverySignature: setup.request.recovery_key_signature,
+      devices: [],
+    });
+    await rot.commit();
+    const adk2 = await owner.store.unwrapAdkRaw(2);
+    const v2 = { key_version: 2, verify_key: rot.request.verify_key, signature: rot.request.signature };
+    const chain = [{ key_version: 2, blob: rot.request.chain_blob }];
+    const fresh = async () => {
+      const s = await openKeyStore({ factory: new IDBFactory() });
+      await s.saveAdk(2, adk2);
+      return s;
+    };
+    // Another verify key listed for v1: refused, nothing stored.
+    const wrongV1 = [
+      { key_version: 1, verify_key: b64uEncode(await verifyKeyOf(generateAdk(1).raw)), signature: null },
+    ];
+    let s = await fresh();
+    await expect(importChain(s, { chain, versions: [...wrongV1, v2] })).rejects.toMatchObject({ code: 'unverified' });
+    expect(await s.allVersions()).toEqual([2]);
+    // A tampered signature on v2: refused; a legacy (null) one: keys_legacy.
+    const sig = b64uDecode(rot.request.signature);
+    sig[0] = (sig[0] ?? 0) ^ 1;
+    s = await fresh();
+    await expect(
+      importChain(s, { chain, versions: [...versions, { ...v2, signature: b64uEncode(sig) }] }),
+    ).rejects.toMatchObject({ code: 'unverified' });
+    await expect(importChain(s, { chain, versions: [...versions, { ...v2, signature: null }] })).rejects.toMatchObject({
+      code: 'keys_legacy',
+    });
+    expect(await s.allVersions()).toEqual([2]);
+    // The genuine list: v1 stored.
+    expect(await importChain(s, { chain, versions: [...versions, v2] })).toEqual([1]);
+    expect(await s.unwrapAdkRaw(1)).toEqual(adk1);
+  }, 30_000);
 });

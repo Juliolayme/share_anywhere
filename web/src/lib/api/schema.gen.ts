@@ -518,7 +518,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters, verify_key(1), and the recovery anchor. */
+        /** Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters, verify_key(1), the recovery anchor, and the signature by version 1 over the recovery public key. */
         post: operations["setupKeys"];
         delete?: never;
         options?: never;
@@ -1136,6 +1136,7 @@ export interface components {
             ciphertext: components["schemas"]["Base64Url"];
             /** Format: uuid */
             entry_id: string;
+            /** @description The account's current key version (409 key_version_conflict otherwise). */
             key_version: number;
             /** @description 12 bytes. */
             nonce: components["schemas"]["Base64Url"];
@@ -1201,6 +1202,8 @@ export interface components {
             params: components["schemas"]["Argon2Spec"];
             recovery_anchor: components["schemas"]["RecoveryAnchor"];
             recovery_blob: components["schemas"]["WrappedBlob"];
+            /** @description Ed25519 by the signing key of ADK(1) over "sa-recoverykey-v1|" + b64u(recovery_public_key); verified with verify_key. */
+            recovery_key_signature: components["schemas"]["Signature"];
             recovery_public_key: components["schemas"]["PublicKey"];
             /** @description 16 to 64 bytes. */
             salt: components["schemas"]["Base64Url"];
@@ -1355,6 +1358,8 @@ export interface components {
             params: components["schemas"]["Argon2Spec"];
             public_key: components["schemas"]["PublicKey"];
             salt: components["schemas"]["Base64Url"];
+            /** @description The setup-time signature by ADK(1) over "sa-recoverykey-v1|" + b64u(public_key). A rotating client verifies it with the verify_key(1) it derives from its own ADK(1) before wrapping a new ADK to public_key, and refuses otherwise. Null for legacy accounts set up before it existed (clients refuse to rotate). The recovery public key never changes after setup (docs/ADR/0015-authenticated-recovery-key.md). */
+            signature: components["schemas"]["Signature"] | null;
         };
         RefreshRequest: {
             /** @description Native apps only. The Web sends no body and uses the sa_device cookie. */
@@ -2125,7 +2130,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description key_version_conflict (key_version is newer than the account's). */
+            /** @description key_version_conflict (key_version is not the account's current version; nothing stored. The client picks up the new key and retries). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2497,7 +2502,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /** @description recovery_key_unverified (recovery_key_signature does not verify with verify_key over "sa-recoverykey-v1|" + b64u(recovery_public_key); nothing stored), account_required, or device_not_added. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description keys_exist. */
             409: {
                 headers: {

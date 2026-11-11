@@ -646,7 +646,9 @@ type HistoryEntryRequest struct {
 	// Ciphertext AES-256-GCM ciphertext and tag, at most 64 KB decoded.
 	Ciphertext Base64Url          `json:"ciphertext"`
 	EntryId    openapi_types.UUID `json:"entry_id"`
-	KeyVersion int                `json:"key_version"`
+
+	// KeyVersion The account's current key version (409 key_version_conflict otherwise).
+	KeyVersion int `json:"key_version"`
 
 	// Nonce 12 bytes.
 	Nonce Base64Url `json:"nonce"`
@@ -743,6 +745,9 @@ type KeysSetupRequest struct {
 
 	// RecoveryBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
 	RecoveryBlob WrappedBlob `json:"recovery_blob"`
+
+	// RecoveryKeySignature Ed25519 by the signing key of ADK(1) over "sa-recoverykey-v1|" + b64u(recovery_public_key); verified with verify_key.
+	RecoveryKeySignature Signature `json:"recovery_key_signature"`
 
 	// RecoveryPublicKey X25519 public key, exactly 32 bytes, base64url without padding.
 	RecoveryPublicKey PublicKey `json:"recovery_public_key"`
@@ -953,6 +958,9 @@ type RecoveryInfo struct {
 
 	// Salt Binary data as base64url without padding.
 	Salt Base64Url `json:"salt"`
+
+	// Signature The setup-time signature by ADK(1) over "sa-recoverykey-v1|" + b64u(public_key). A rotating client verifies it with the verify_key(1) it derives from its own ADK(1) before wrapping a new ADK to public_key, and refuses otherwise. Null for legacy accounts set up before it existed (clients refuse to rotate). The recovery public key never changes after setup (docs/ADR/0015-authenticated-recovery-key.md).
+	Signature *Signature `json:"signature"`
 }
 
 // RefreshRequest defines model for RefreshRequest.

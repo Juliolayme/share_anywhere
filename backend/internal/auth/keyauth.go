@@ -13,8 +13,9 @@ import (
 //	verify_key(v) = Ed25519 public key of sign_seed(v)
 //
 // so only a holder of ADK(v) can sign as version v. The server stores verify_key(v) for every version and
-// checks two signatures with it: a rotation to v+1 must be signed by version v, and a device wrapping key
-// must carry a proof signed by a version the device holds. The server never sees an ADK or a signing key;
+// checks three signatures with it: a rotation to v+1 must be signed by version v, a device wrapping key
+// must carry a proof signed by the current version, and the recovery public key posted at setup must be
+// signed by version 1. The server never sees an ADK or a signing key;
 // clients derive them (web/src/lib/crypto/). The byte layouts below are pinned by the key_authenticity
 // section of shared/protocol/schemas/clipboard-vectors.json.
 const (
@@ -38,6 +39,14 @@ func RotationMessage(newVersion int, newVerifyKey, chainBlob []byte) []byte {
 // version: "sa-devkey-v1|" + device ID (lowercase canonical UUID) + "|" + key_version + "|" + b64u(public_key).
 func DeviceKeyMessage(deviceID string, keyVersion int, publicKey []byte) []byte {
 	return []byte("sa-devkey-v1|" + deviceID + "|" + strconv.Itoa(keyVersion) + "|" + enc(publicKey))
+}
+
+// RecoveryKeyMessage is what the signing key of version 1 signs at setup to vouch for the recovery public key:
+// "sa-recoverykey-v1|" + b64u(recovery_public_key). A rotating device checks it with the verify_key(1) it derives
+// from its own ADK(1) before wrapping a new ADK to that key, so a server cannot substitute a recovery key of its
+// own (docs/ADR/0015-authenticated-recovery-key.md).
+func RecoveryKeyMessage(recoveryPublicKey []byte) []byte {
+	return []byte("sa-recoverykey-v1|" + enc(recoveryPublicKey))
 }
 
 // AnchorMessage is what the recovery-anchor key MACs (HMAC-SHA256) to bind verify_key(1) to the phrase:

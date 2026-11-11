@@ -19,6 +19,8 @@ export {
   checkDeviceKeyProof,
   deviceKeyProof,
   recoveryAnchor,
+  recoveryKeyMessage,
+  recoveryKeySignature,
   rotationMessage,
   verifyKeyOf,
   verifySignature,

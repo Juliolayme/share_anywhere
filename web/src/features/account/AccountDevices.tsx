@@ -213,9 +213,8 @@ export default function AccountDevices() {
     if (!revoking) return;
     setBusy(true);
     try {
-      await api.revokeDevice(revoking.id);
-      // Never wrap the new key to the device just revoked, whatever the server lists (contract D.3).
-      const r = await account.rotateKeys([revoking.id]);
+      // Revokes, then rotates with the device excluded (now and in every later rotation until one succeeds).
+      const r = await account.revokeDevice(revoking.id);
       if (r !== 'failed') {
         toast.show(t(r === 'rotated' ? 'product.revoke_done' : 'product.revoke_done_nokeys', { name: revoking.name }));
       }

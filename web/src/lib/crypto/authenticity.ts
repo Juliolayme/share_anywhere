@@ -90,6 +90,51 @@ export function deviceKeyMessage(deviceId: string, keyVersion: number, publicKey
   return `sa-devkey-v1|${id}|${keyVersion}|${b64uEncode(publicKey)}`;
 }
 
+/**
+ * `"sa-recoverykey-v1|" + b64u(recovery_public_key)` (contract H.1): signed at setup by version 1 so a rotating device
+ * can check, with the verify_key(1) it derives from its own ADK(1), that the recovery public key the server returns is
+ * the one the account was set up with (docs/ADR/0015-authenticated-recovery-key.md).
+ */
+export function recoveryKeyMessage(recoveryPublicKey: Uint8Array): string {
+  assertLength(recoveryPublicKey, 32, 'recovery public key');
+  return `sa-recoverykey-v1|${b64uEncode(recoveryPublicKey)}`;
+}
+
+/** `recovery_key_signature` of setup: Ed25519 by ADK(1)'s signing key over {@link recoveryKeyMessage}. */
+export async function recoveryKeySignature(adkV1Raw: Uint8Array, recoveryPublicKey: Uint8Array): Promise<Bytes> {
+  return signWithAdk(adkV1Raw, utf8(recoveryKeyMessage(recoveryPublicKey)));
+}
+
+/**
+ * Throws unless `signature` (`recovery.signature` of `GET /v1/keys`) is a valid signature by `verifyKeyV1` over the
+ * recovery public key `publicKey` (base64url). `null` is a legacy account set up before the signature existed
+ * (`keys_legacy`); anything else that does not verify, including a missing or malformed field, is `unverified`.
+ */
+export function assertRecoveryKeySigned(
+  publicKey: string,
+  signature: string | null | undefined,
+  verifyKeyV1: Uint8Array,
+): void {
+  if (signature === null) {
+    throw new CryptoError(
+      'keys_legacy',
+      'the recovery key predates its signature: the account keys must be set up again',
+    );
+  }
+  if (typeof signature !== 'string') throw unverified('the recovery key is not signed');
+  let message: Uint8Array;
+  let sig: Bytes;
+  try {
+    message = utf8(recoveryKeyMessage(b64uDecode(publicKey)));
+    sig = b64uDecode(signature);
+  } catch {
+    throw unverified('malformed recovery key or signature');
+  }
+  if (!verifySignature(sig, message, verifyKeyV1)) {
+    throw unverified('the recovery key is not signed by the first account key version');
+  }
+}
+
 /** `"sa-anchor-v1|" + b64u(verify_key(1))` (A.2). */
 export function anchorMessage(verifyKeyV1: Uint8Array): string {
   assertLength(verifyKeyV1, VERIFY_KEY_BYTES, 'verify key');

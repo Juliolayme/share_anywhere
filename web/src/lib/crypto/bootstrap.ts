@@ -2,7 +2,9 @@ import { FIRST_KEY_VERSION, generateAdk } from './adk';
 import {
   assertAdkMatchesVersion,
   assertAnchoredOnHeld,
+  assertRecoveryKeySigned,
   recoveryAnchor,
+  recoveryKeySignature,
   verifyKeyOf,
   verifySignatureChain,
   versionVerifyKey,
@@ -27,6 +29,8 @@ export interface SetupRequest {
   verify_key: string;
   /** HMAC of verify_key(1) under a key only the recovery phrase derives. */
   recovery_anchor: string;
+  /** Ed25519 by ADK v1 over `"sa-recoverykey-v1|" + b64u(recovery_public_key)` (contract H.1). */
+  recovery_key_signature: string;
 }
 
 export interface PreparedSetup {
@@ -47,10 +51,13 @@ export async function prepareKeySetup(store: KeyStore, options: DeriveOptions = 
   let blob: Uint8Array;
   let verifyKey: Bytes;
   let anchor: Bytes;
+  let recoveryKeySig: Bytes;
   try {
     blob = await wrapAdk(adk.raw, recovery.keyPair.publicKey, 'recovery', adk.version);
     verifyKey = await verifyKeyOf(adk.raw);
     anchor = await recoveryAnchor(recovery.anchorKey, verifyKey);
+    // Vouches for the recovery public key with ADK v1, so later rotations never wrap to a key the server chose.
+    recoveryKeySig = await recoveryKeySignature(adk.raw, recovery.keyPair.publicKey);
   } catch (err) {
     zeroize(adk.raw);
     throw err;
@@ -64,6 +71,7 @@ export async function prepareKeySetup(store: KeyStore, options: DeriveOptions = 
       recovery_blob: b64uEncode(blob),
       verify_key: b64uEncode(verifyKey),
       recovery_anchor: b64uEncode(anchor),
+      recovery_key_signature: b64uEncode(recoveryKeySig),
     },
     phrase: recovery.phrase,
     keyVersion: adk.version,
@@ -93,6 +101,13 @@ export interface RecoveryResponse {
   recovery_anchor: string | null;
 }
 
+/** `recovery` of `GET /v1/keys`: the recovery public key and the setup signature over it (null for legacy accounts). */
+export interface RecoveryKeyInfo {
+  public_key: string;
+  /** Required by the API; a missing value (undefined) is treated as unsigned. */
+  signature?: string | null | undefined;
+}
+
 function recoveryUnverified(message: string, cause?: unknown): CryptoError {
   return new CryptoError('recovery_unverified', message, cause === undefined ? undefined : { cause });
 }
@@ -101,6 +116,9 @@ function recoveryUnverified(message: string, cause?: unknown): CryptoError {
  * Unwraps the newest ADK with the phrase, verifies it, and stores it. A wrong (but well-formed) phrase fails with
  * `decrypt_failed`; a malformed one with `invalid_phrase`. Before anything is stored (contract A.6 "Recovery"):
  * - the recovery anchor, which only the phrase can compute, must authenticate `versions[1].verify_key`;
+ * - the recovery public key the phrase derives must equal `recoveryKey.public_key` (`GET /v1/keys`), and
+ *   `recoveryKey.signature` must verify with that `versions[1].verify_key` (contract H.4), so the key later rotations
+ *   wrap to is the phrase's own;
  * - every rotation 2..v must be signed by the version before it (`chain` = `GET /v1/keys/chain`);
  * - the recovered ADK(v) must derive `versions[v].verify_key`;
  * - when this device already holds an ADK, the account must also be consistent with it (contract F.1,
@@ -112,6 +130,7 @@ export async function recoverWithPhrase(
   phrase: string,
   response: RecoveryResponse,
   chain: ChainState,
+  recoveryKey: RecoveryKeyInfo | null,
   options: DeriveOptions = {},
 ): Promise<number> {
   const v = response.key_version;
@@ -128,10 +147,16 @@ export async function recoverWithPhrase(
       throw new CryptoError('keys_legacy', 'this account has no recovery anchor: its keys must be set up again');
     }
     try {
-      const expected = await recoveryAnchor(anchorKey, versionVerifyKey(chain.versions, 1));
+      const verifyKeyV1 = versionVerifyKey(chain.versions, 1);
+      const expected = await recoveryAnchor(anchorKey, verifyKeyV1);
       if (!equalBytes(expected, b64uDecode(response.recovery_anchor))) {
         throw recoveryUnverified('the recovery anchor does not match the first verify key');
       }
+      // verify_key(1) is now anchored to the phrase: the recovery key on record must be the phrase's and signed by it.
+      if (!recoveryKey || !equalBytes(keyPair.publicKey, b64uDecode(recoveryKey.public_key))) {
+        throw recoveryUnverified('the account lists another recovery key than this phrase derives');
+      }
+      assertRecoveryKeySigned(recoveryKey.public_key, recoveryKey.signature, verifyKeyV1);
       verifySignatureChain(chain, v);
       await assertAdkMatchesVersion(raw, chain.versions, v);
       await assertAnchoredOnHeld(store, chain, v, raw);

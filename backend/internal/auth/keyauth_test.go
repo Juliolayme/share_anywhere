@@ -70,6 +70,11 @@ type keyAuthVectors struct {
 		MessageUTF8    string `json:"message_utf8"`
 		RecoveryAnchor string `json:"recovery_anchor"`
 	} `json:"anchor"`
+	RecoveryKey struct {
+		PublicKey   string `json:"public_key"`
+		MessageUTF8 string `json:"message_utf8"`
+		Signature   string `json:"signature"`
+	} `json:"recovery_key"`
 }
 
 type vectorsFile struct {
@@ -91,7 +96,7 @@ func unhex(t *testing.T, s string) []byte {
 }
 
 // buildKeyAuthVectors computes the section from the fixed inputs (chain.adk_v1, chain.adk_v2, chain.blob,
-// a fixed device ID, public key 0x40..0x5f, and recovery seed 0x60..0x7f).
+// a fixed device ID, public key 0x40..0x5f, recovery seed 0x60..0x7f, and recovery public key 0x80..0x9f).
 func buildKeyAuthVectors(t *testing.T, adk1, adk2, chainBlob []byte) keyAuthVectors {
 	t.Helper()
 	sk1, sk2 := signKey(adk1), signKey(adk2)
@@ -116,6 +121,11 @@ func buildKeyAuthVectors(t *testing.T, adk1, adk2, chainBlob []byte) keyAuthVect
 	key, anchor := recoveryAnchor(seed, vk1)
 	v.Anchor.RecoverySeed, v.Anchor.AnchorKey = hex.EncodeToString(seed), hex.EncodeToString(key)
 	v.Anchor.MessageUTF8, v.Anchor.RecoveryAnchor = string(AnchorMessage(vk1)), hex.EncodeToString(anchor)
+
+	recPub := seq(0x80, 32)
+	rk := RecoveryKeyMessage(recPub)
+	v.RecoveryKey.PublicKey, v.RecoveryKey.MessageUTF8 = hex.EncodeToString(recPub), string(rk)
+	v.RecoveryKey.Signature = hex.EncodeToString(ed25519.Sign(sk1, rk))
 	return v
 }
 
@@ -162,7 +172,15 @@ func TestKeyAuthenticityVectors(t *testing.T) {
 	if verifySig(vk1, other, unhex(t, got.DeviceKey.Proof)) {
 		t.Fatal("device proof must not verify for another device ID")
 	}
+	if !verifySig(vk1, []byte(got.RecoveryKey.MessageUTF8), unhex(t, got.RecoveryKey.Signature)) {
+		t.Fatal("recovery key signature must verify with verify_key_v1")
+	}
+	if verifySig(vk2, []byte(got.RecoveryKey.MessageUTF8), unhex(t, got.RecoveryKey.Signature)) ||
+		verifySig(vk1, RecoveryKeyMessage(seq(0x81, 32)), unhex(t, got.RecoveryKey.Signature)) {
+		t.Fatal("recovery key signature must not verify with verify_key_v2 or for another key")
+	}
 	if !bytes.HasPrefix([]byte(got.Rotation.MessageUTF8), []byte("sa-rotate-v1|2|")) ||
+		!bytes.HasPrefix([]byte(got.RecoveryKey.MessageUTF8), []byte("sa-recoverykey-v1|")) ||
 		!bytes.HasPrefix([]byte(got.DeviceKey.MessageUTF8), []byte("sa-devkey-v1|00000000-0000-4000-8000-000000000001|1|")) ||
 		!bytes.HasPrefix([]byte(got.Anchor.MessageUTF8), []byte("sa-anchor-v1|")) {
 		t.Fatal("message prefixes changed")

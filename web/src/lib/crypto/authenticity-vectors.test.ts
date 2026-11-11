@@ -15,7 +15,10 @@ import {
   checkDeviceKeyProof,
   deviceKeyMessage,
   deviceKeyProof,
+  assertRecoveryKeySigned,
   recoveryAnchor,
+  recoveryKeyMessage,
+  recoveryKeySignature,
   rotationMessage,
   signSeed,
   signWithAdk,
@@ -37,6 +40,7 @@ interface Vectors {
     rotation: { key_version: number; chain_blob_sha256: string; message_utf8: string; signature: string };
     device_key: { device_id: string; key_version: number; public_key: string; message_utf8: string; proof: string };
     anchor: { recovery_seed: string; anchor_key: string; message_utf8: string; recovery_anchor: string };
+    recovery_key: { public_key: string; message_utf8: string; signature: string };
   };
 }
 
@@ -91,5 +95,22 @@ describe('clipboard-vectors.json key_authenticity', () => {
     expect(hex(await anchorKeyBytes(seed))).toBe(a.anchor_key);
     expect(anchorMessage(fromHex(ka.verify_key_v1))).toBe(a.message_utf8);
     expect(hex(await recoveryAnchor(await anchorKeyFromSeed(seed), fromHex(ka.verify_key_v1)))).toBe(a.recovery_anchor);
+  });
+
+  it('builds the recovery key message and reproduces and accepts the setup signature (contract H.5)', async () => {
+    const r = ka.recovery_key;
+    const pub = fromHex(r.public_key);
+    expect(recoveryKeyMessage(pub)).toBe(r.message_utf8);
+    expect(hex(await recoveryKeySignature(adkV1, pub))).toBe(r.signature);
+    const vk1 = fromHex(ka.verify_key_v1);
+    expect(verifySignature(fromHex(r.signature), utf8(r.message_utf8), vk1)).toBe(true);
+    expect(verifySignature(fromHex(r.signature), utf8(r.message_utf8), fromHex(ka.verify_key_v2))).toBe(false);
+    const sig = b64uEncode(fromHex(r.signature));
+    expect(() => assertRecoveryKeySigned(b64uEncode(pub), sig, vk1)).not.toThrow();
+    const other = pub.slice();
+    other[0] = (other[0] ?? 0) ^ 1;
+    expect(() => assertRecoveryKeySigned(b64uEncode(other), sig, vk1)).toThrow(
+      expect.objectContaining({ code: 'unverified' }),
+    );
   });
 });

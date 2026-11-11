@@ -32,6 +32,10 @@ type RecoveryInfo struct {
 	PublicKey string     `json:"public_key"`
 	Salt      string     `json:"salt"`
 	Params    Argon2Spec `json:"params"`
+	// Signature is the setup-time signature by version 1 over RecoveryKeyMessage(public_key); null for accounts
+	// set up before it existed (legacy: clients refuse to rotate). The recovery public key never changes after
+	// setup, so neither does this.
+	Signature *string `json:"signature"`
 }
 
 // DeviceKey is one added device and its wrapping public key with the proof that it holds ADK(key_version)
@@ -79,15 +83,16 @@ func (s *Service) Keys(ctx context.Context, id access.Identity) (KeysState, erro
 	}
 	now := s.cfg.Clock.Now()
 	out := KeysState{Devices: []DeviceKey{}, Pending: []PendingBlob{}}
-	var pub, salt []byte
+	var pub, salt, recSig []byte
 	var m, t, p *int
 	if err := s.cfg.Pool.QueryRow(ctx,
-		`SELECT key_version, rotation_due, recovery_public_key, recovery_salt, recovery_m, recovery_t, recovery_p FROM account_keys WHERE user_id = $1::uuid`,
-		se.UserID).Scan(&out.KeyVersion, &out.RotationDue, &pub, &salt, &m, &t, &p); err != nil {
+		`SELECT key_version, rotation_due, recovery_public_key, recovery_salt, recovery_m, recovery_t, recovery_p, recovery_key_signature
+		   FROM account_keys WHERE user_id = $1::uuid`,
+		se.UserID).Scan(&out.KeyVersion, &out.RotationDue, &pub, &salt, &m, &t, &p, &recSig); err != nil {
 		return KeysState{}, err
 	}
 	if pub != nil && m != nil && t != nil && p != nil {
-		out.Recovery = &RecoveryInfo{PublicKey: enc(pub), Salt: enc(salt), Params: Argon2Spec{M: *m, T: *t, P: *p}}
+		out.Recovery = &RecoveryInfo{PublicKey: enc(pub), Salt: enc(salt), Params: Argon2Spec{M: *m, T: *t, P: *p}, Signature: optEnc(recSig)}
 	}
 	rows, err := s.cfg.Pool.Query(ctx,
 		`SELECT a.device_id::text, k.public_key, k.key_version, k.proof FROM auth_sessions a
@@ -220,6 +225,9 @@ type SetupInput struct {
 	VerifyKey string `json:"verify_key"`
 	// RecoveryAnchor is HMAC-SHA256 of AnchorMessage(verify_key(1)) under a key derived from the recovery seed.
 	RecoveryAnchor string `json:"recovery_anchor"`
+	// RecoveryKeySignature is the Ed25519 signature by version 1 (verify_key) over
+	// RecoveryKeyMessage(recovery_public_key).
+	RecoveryKeySignature string `json:"recovery_key_signature"`
 }
 
 // lockKeys locks the account's key row for the rest of tx and returns the current version.
@@ -229,7 +237,11 @@ func lockKeys(ctx context.Context, tx pgx.Tx, userID string) (int, error) {
 	return v, err
 }
 
-// SetupKeys records the first ADK version (wrapped to the recovery key) and the recovery metadata.
+// SetupKeys records the first ADK version (wrapped to the recovery key) and the recovery metadata. The
+// recovery public key must be signed by version 1 (recovery_key_signature, checked with the posted verify_key:
+// 400 invalid_request if malformed, 403 recovery_key_unverified if it does not verify, nothing stored), and the
+// signature is kept so every device can check the key before a rotation wraps a new ADK to it
+// (docs/ADR/0015-authenticated-recovery-key.md).
 func (s *Service) SetupKeys(ctx context.Context, id access.Identity, in SetupInput) (int, error) {
 	se, err := s.require(ctx, id, true)
 	if err != nil {
@@ -240,8 +252,12 @@ func (s *Service) SetupKeys(ctx context.Context, id access.Identity, in SetupInp
 	blob, ok3 := validBlob(in.RecoveryBlob, minWrapBlob)
 	vk, ok4 := validKey(in.VerifyKey)
 	anchor, ok5 := validKey(in.RecoveryAnchor)
-	if !ok1 || !ok2 || len(salt) < 16 || len(salt) > 64 || !ok3 || !ok4 || !ok5 || !in.Params.valid() {
+	recSig, ok6 := b64(in.RecoveryKeySignature)
+	if !ok1 || !ok2 || len(salt) < 16 || len(salt) > 64 || !ok3 || !ok4 || !ok5 || !ok6 || len(recSig) != signatureLen || !in.Params.valid() {
 		return 0, ErrInvalid
+	}
+	if !verifySig(vk, RecoveryKeyMessage(pub), recSig) {
+		return 0, ErrRecoveryKeyUnverified
 	}
 	now := s.cfg.Clock.Now()
 	err = pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
@@ -259,8 +275,9 @@ func (s *Service) SetupKeys(ctx context.Context, id access.Identity, in SetupInp
 		}
 		_, err = tx.Exec(ctx,
 			`UPDATE account_keys SET key_version = 1, recovery_public_key = $2, recovery_salt = $3, recovery_m = $4,
-			        recovery_t = $5, recovery_p = $6, recovery_anchor = $7, updated_at = $8 WHERE user_id = $1::uuid`,
-			se.UserID, pub, salt, in.Params.M, in.Params.T, in.Params.P, anchor, now)
+			        recovery_t = $5, recovery_p = $6, recovery_anchor = $7, recovery_key_signature = $8, updated_at = $9
+			  WHERE user_id = $1::uuid`,
+			se.UserID, pub, salt, in.Params.M, in.Params.T, in.Params.P, anchor, recSig, now)
 		return err
 	})
 	if err != nil {

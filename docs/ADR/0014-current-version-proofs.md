@@ -1,6 +1,6 @@
 # ADR 0014: Current-version key proofs, rotation owed after departures, and pairing anchored on held keys
 
-Status: Accepted (Phase 5A QA round 2, 2026-11-11). Amends ADR 0012.
+Status: Accepted (Phase 5A QA round 2, 2026-11-11). Amends ADR 0012. Amended by ADR 0015.
 
 ## Context
 

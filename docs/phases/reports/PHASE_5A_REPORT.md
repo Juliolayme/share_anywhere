@@ -1,6 +1,6 @@
 # Phase 5A report: accounts, device linking, Devices list, cloud history
 
-Status: implemented and tested on the Web; QA round 1 failed (two P0s) and round 2 failed (two P1s); both rounds' findings are fixed, QA round 3 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
+Status: implemented and tested on the Web; QA rounds 1 (two P0s), 2 (two P1s) and 3 (one P0) failed; every P0/P1 is fixed, QA round 4 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -25,6 +25,7 @@ Status: implemented and tested on the Web; QA round 1 failed (two P0s) and round
   - A device wrapping key needs a proof signed with the ADK (`403 device_key_unproven` otherwise), so keys are only wrapped to devices that already hold the ADK.
   - Clients verify the chain link and verify key before taking a rotated key, wrap only to proven keys, and check recovery against an anchor derived from the phrase.
   - Proofs must be by the current version and devices re-prove after every new version; rotations wrap exactly the devices proven at the current version and never the device just revoked; a rotation is owed (`rotation_due`) whenever a device with a key leaves the account, and the next ready device performs it; pairing on a device that already holds keys is anchored on those keys (ADR 0014, QA round 2).
+  - The recovery public key is signed with ADK(1)'s signing key at setup; a device rotates only after checking that signature with its own ADK(1), so a server cannot substitute a recovery key and receive new ADKs (ADR 0015, QA round 3). History entries must use the current key version.
   - Go, Vitest and e2e tests cover the QA attacks and each rule; shared vectors are in `key_authenticity`.
 - **Account session hardening** (ADR 0013).
   - A not-added Web session is bound to the `sa_acct` browser-session cookie (PRD §2) and ends when the browser session does.
@@ -98,8 +99,8 @@ Guest suites (`pairing`, `transfer`, `history`, `keep-awake`, `guest`) still pas
 
 Latest local run (CI runs and the phase's CI history are listed at the top of `docs/qa/PHASE_5A_QA.md`):
 
-- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 47 files, 334 tests passed.
-- `pnpm -C web build`: main JS 114,198 bytes gzip (budget 122,880).
+- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 47 files, 354 tests passed.
+- `pnpm -C web build`: main JS 114,781 bytes gzip (budget 122,880).
 - `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md`: pass.
 - `go test ./...` with `TEST_DATABASE_URL` (PostgreSQL 16, go1.27.4): pass. `golangci-lint run ./...`: 0 issues. `govulncheck`: nothing reachable.
 - Playwright account suite: 19 passed in each of the five projects (`--retries=0`). Guest suites on chromium-desktop: 45 passed, 1 skipped (WebKit-only private-window test).
@@ -149,4 +150,5 @@ On `claude/practical-lovelace-avlb5g`:
 - 5fdffe0: go1.27.4
 - 3987ac8: e2e first-block wait
 - 4446bee: QA round 1 fixes (key authenticity, session hardening)
-- the QA round 2 fix commit that follows them (current-version proofs, owed rotation, anchored pairing)
+- f585651: QA round 2 fixes (current-version proofs, owed rotation, anchored pairing)
+- the QA round 3 fix commit that follows them (authenticated recovery key)

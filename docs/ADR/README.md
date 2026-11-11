@@ -17,4 +17,5 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0011](0011-refresh-reuse-grace.md) | Grace window for the previous refresh secret | Accepted, partly superseded by 0013 |
 | [0012](0012-key-authenticity.md) | Key authenticity for account key versions and device wrapping keys | Accepted, amended by 0014 |
 | [0013](0013-session-hardening.md) | Account session hardening (browser-session binding, retired refresh secrets) | Accepted |
-| [0014](0014-current-version-proofs.md) | Current-version key proofs, rotation owed after departures, and pairing anchored on held keys | Accepted |
+| [0014](0014-current-version-proofs.md) | Current-version key proofs, rotation owed after departures, and pairing anchored on held keys | Accepted, amended by 0015 |
+| [0015](0015-authenticated-recovery-key.md) | Authenticated recovery key and key checks in open tabs | Accepted |

@@ -74,6 +74,7 @@ function makeAccount(over: Partial<AccountValue> = {}): AccountValue {
     refreshKeys: vi.fn(async () => 'ready' as const),
     refreshMe: vi.fn(async () => undefined),
     rotateKeys: vi.fn(async () => 'rotated' as const),
+    revokeDevice: vi.fn(async () => 'rotated' as const),
     syncNow: vi.fn(async () => undefined),
     ...over,
   };
@@ -258,17 +259,13 @@ describe('key rotation state on Devices (D.3, E.3)', () => {
     expect(account.rotateKeys).toHaveBeenCalledWith([]);
   });
 
-  it('revoking a device rotates with that device excluded', async () => {
-    const revokeDevice = vi.fn(async () => undefined);
-    account = makeAccount({
-      api: { devices: vi.fn(async () => ({ devices })), revokeDevice } as unknown as AccountValue['api'],
-    });
+  it('revoking a device revokes and rotates through the account (the device stays excluded, I.4)', async () => {
     show(<AccountDevices />);
     await userEvent.click(await screen.findByRole('button', { name: 'Revoke Phone' }));
     const dialog = await screen.findByRole('dialog');
     await userEvent.click(within(dialog).getByRole('button', { name: /Revoke/ }));
-    await waitFor(() => expect(account.rotateKeys).toHaveBeenCalledWith(['d-2']));
-    expect(revokeDevice).toHaveBeenCalledWith('d-2');
+    await waitFor(() => expect(account.revokeDevice).toHaveBeenCalledWith('d-2'));
+    expect(await screen.findByText('Phone revoked · keys rotated')).toBeInTheDocument();
   });
 
   it('Devices and Settings show the refused state with Pair again / Use recovery phrase', () => {

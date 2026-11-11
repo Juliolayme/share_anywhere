@@ -356,7 +356,7 @@ func (h *HTTP) registerKey(w http.ResponseWriter, r *http.Request) {
 func (h *HTTP) setupKeys(w http.ResponseWriter, r *http.Request) {
 	var b SetupInput
 	if err := httpx.Decode(r, &b, maxKeysBody, false); err != nil {
-		httpx.BadRequest(w, "Expected recovery_public_key, salt, params, recovery_blob, verify_key, and recovery_anchor.")
+		httpx.BadRequest(w, "Expected recovery_public_key, salt, params, recovery_blob, verify_key, recovery_anchor, and recovery_key_signature.")
 		return
 	}
 	v, err := h.svc.SetupKeys(r.Context(), ident(r), b)

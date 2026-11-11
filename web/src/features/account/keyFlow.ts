@@ -82,11 +82,44 @@ async function ackAccepted(api: AccountApi, versions: number[]) {
   for (const v of versions) await api.ackPending(v).catch(() => undefined);
 }
 
-/** Older ADK versions through the chain (fetched unless the caller already has it). Returns the versions added. */
+/**
+ * Older ADK versions through the chain (fetched unless the caller already has it), each checked against the signed
+ * version list before it is stored (contract I.6). Returns the versions added.
+ */
 async function importOlder(api: AccountApi, store: KeyStore, chain?: KeyChain): Promise<number[]> {
   const local = await store.currentVersion();
   if (local < 2 || (await store.allVersions()).length >= local) return [];
-  return importChain(store, (chain ?? (await api.chain())).chain);
+  return importChain(store, chain ?? (await api.chain()));
+}
+
+const lower = (ids: readonly string[]) => [...new Set(ids.map((id) => id.toLowerCase()))];
+
+/** Revoked device IDs still to exclude (contract I.4); an unreadable store gives none (the caller's list still applies). */
+async function pendingExclusions(userId: string): Promise<string[]> {
+  return syncMeta()
+    .excluded(userId)
+    .catch(() => []);
+}
+
+/**
+ * Contract I.4: remembers devices this browser revoked (IndexedDB, next to the sync bookkeeping, never Web Storage), so
+ * every rotation it makes keeps excluding them until one that excluded them has gone through, even if the tab closes
+ * between the revoke and the rotation, or the rotation fails and is retried later as an owed one.
+ */
+export async function rememberRevoked(userId: string, ids: readonly string[]): Promise<void> {
+  if (!ids.length) return;
+  const meta = syncMeta();
+  await meta.setExcluded(userId, lower([...(await meta.excluded(userId)), ...ids]));
+}
+
+/** Drops IDs from the remembered exclusions (a rotation that excluded them succeeded, or the revoke was refused). */
+export async function forgetRevoked(userId: string, ids: readonly string[]): Promise<void> {
+  const meta = syncMeta();
+  const drop = new Set(lower(ids));
+  await meta.setExcluded(
+    userId,
+    (await meta.excluded(userId)).filter((id) => !drop.has(id)),
+  );
 }
 
 const apiCode = (e: unknown, ...codes: string[]) => e instanceof ApiError && codes.includes(e.code);
@@ -116,10 +149,14 @@ async function checkAndRotate(api: AccountApi, userId: string, deviceId: string)
   try {
     await rotateNow(api, userId, deviceId, [], true);
   } catch (e) {
-    const status = rotationErrorStatus(e);
-    // A refusal is a key state of its own; anything else (offline, a race that did not settle) stays owed.
-    if (status) return { ...check, status, rotationOwed: false };
-    return { ...check, rotationOwed: true };
+    // `not_ready` (another device rotated meanwhile and this one lacks the newest key, contract I.5): the fresh key
+    // check below picks the key up or says to pair; it is not a failed rotation to retry.
+    if (!(e instanceof KeyStateError && e.code === 'not_ready')) {
+      const status = rotationErrorStatus(e);
+      // A refusal is a key state of its own; anything else (offline, a race that did not settle) stays owed.
+      if (status) return { ...check, status, rotationOwed: false };
+      return { ...check, rotationOwed: true };
+    }
   }
   const after = await checkKeysNow(api, userId, deviceId);
   return { ...after, newVersions: [...check.newVersions, ...after.newVersions] };
@@ -186,7 +223,13 @@ async function checkKeysNow(api: AccountApi, userId: string, deviceId: string): 
         continue;
       }
       if (apiCode(e, 'keys_legacy')) legacy = true;
-      else if (apiCode(e, 'device_key_unproven', 'key_version_conflict')) refused = true;
+      else if (apiCode(e, 'key_version_conflict')) {
+        // A second conflict (contract I.1): when the account moved past every version this device holds, it was left
+        // behind (it got no blob for a version in between) and must pair again (`pair`); at an equal version the
+        // server is refusing this device's own proof (`refused`).
+        state = await api.keys();
+        if (state.key_version <= (await store.currentVersion())) refused = true;
+      } else if (apiCode(e, 'device_key_unproven')) refused = true;
       else throw e;
       break;
     }
@@ -268,9 +311,10 @@ export async function recoverKeys(
   onProgress?: (fraction: number) => void,
 ): Promise<number> {
   const store = await keyStore();
-  const [rec, chain] = await Promise.all([api.recovery(), api.chain()]);
-  // Anchor, signature chain and verify key are checked before anything is stored (contract A.6 "Recovery").
-  const v = await recoverWithPhrase(store, phrase, rec, chain, onProgress ? { onProgress } : {});
+  const [rec, chain, state] = await Promise.all([api.recovery(), api.chain(), api.keys()]);
+  // Anchor, recovery key and its signature, signature chain and verify key are checked before anything is stored
+  // (contract A.6 "Recovery", H.4).
+  const v = await recoverWithPhrase(store, phrase, rec, chain, state.recovery, onProgress ? { onProgress } : {});
   void requestPersistentStorage();
   await importOlder(api, store, chain);
   return v;
@@ -319,12 +363,16 @@ export async function sendKeyTo(api: AccountApi, userId: string, deviceId: strin
 
 /**
  * After revoking a device (DV-2), or when the server says a rotation is owed (contract E.3): generate ADK(v+1), wrap
- * it for the recovery key and every remaining added device whose key is proven by the current version (never to the
- * IDs in `exclude`, such as the device just revoked), sign it with version v, and store it once the server accepts.
+ * it for the recovery key (only once its setup signature verifies with this device's own ADK(1), contract H.3) and
+ * every remaining added device whose key is proven by the current version (never to the IDs in `exclude`, such as the
+ * device just revoked, nor to any revoked device remembered from an earlier call until a rotation that excluded it went
+ * through, contract I.4), sign it with version v, and store it once the server accepts.
  * `devices_changed` (a device was added, removed or re-proved meanwhile; its body lists `missing` and `unexpected`
- * IDs) and `key_version_conflict` (another device rotated first) refresh the key state and retry once. A refusal of this
- * device's own rotation (`rotation_unauthorized`, a conflict that persists) is `refused` for the caller
- * ({@link rotationErrorStatus}).
+ * IDs) and `key_version_conflict` (another device rotated first) refresh the key state and retry once; after a conflict,
+ * when the account already moved past the version this rotation started from and no rotation is owed any more, another
+ * device made it: this one picks up its blob and does not rotate again (contract I.2). A refusal of this device's own
+ * rotation (`rotation_unauthorized`, a conflict that persists) is `refused` for the caller ({@link rotationErrorStatus}),
+ * an unverifiable recovery key `rejected`.
  */
 export function rotateKeys(
   api: AccountApi,
@@ -332,7 +380,10 @@ export function rotateKeys(
   deviceId: string,
   exclude: readonly string[] = [],
 ): Promise<'rotated' | 'none'> {
-  return enqueue(() => rotateNow(api, userId, deviceId, exclude, false));
+  return enqueue(async () => {
+    await rememberRevoked(userId, exclude).catch(() => undefined);
+    return rotateNow(api, userId, deviceId, exclude, false);
+  });
 }
 
 async function rotateNow(
@@ -344,10 +395,14 @@ async function rotateNow(
   owed: boolean,
 ): Promise<'rotated' | 'none'> {
   const store = await keyStore();
+  const excluded = lower([...exclude, ...(await pendingExclusions(userId))]);
+  /** The version a rotation refused with `key_version_conflict` started from (I.2). */
+  let conflictedFrom: number | null = null;
   for (let attempt = 0; ; attempt++) {
     const check = await checkKeysNow(api, userId, deviceId);
     const { state } = check;
     if (state.key_version === 0 || !state.recovery || (owed && !state.rotation_due)) return 'none';
+    if (conflictedFrom !== null && state.key_version > conflictedFrom && !state.rotation_due) return 'rotated';
     if (check.status === 'rejected' || check.status === 'refused' || check.status === 'legacy') {
       throw new KeyStateError(check.status);
     }
@@ -355,8 +410,9 @@ async function rotateNow(
     const prep = await prepareRotation(store, {
       serverKeyVersion: state.key_version,
       recoveryPublicKey: state.recovery.public_key,
+      recoverySignature: state.recovery.signature,
       devices: state.devices,
-      exclude,
+      exclude: excluded,
     });
     try {
       await api.rotate(prep.request);
@@ -370,6 +426,7 @@ async function rotateNow(
         // The body lists `missing` and `unexpected` device IDs (contract D.2). Either way the refreshed GET /v1/keys is
         // the truth: a device that left drops out, one that re-proved at the current version gets a blob, and this
         // device re-proves first if it was behind.
+        if (e.code === 'key_version_conflict') conflictedFrom = state.key_version;
         continue;
       }
       throw e;
@@ -377,6 +434,7 @@ async function rotateNow(
     await prep.commit();
     // The server keeps a safety copy wrapped to this device; it is stored now, so acknowledge it.
     await api.ackPending(prep.request.key_version).catch(() => undefined);
+    await forgetRevoked(userId, excluded).catch(() => undefined);
     return 'rotated';
   }
 }

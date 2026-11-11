@@ -92,6 +92,11 @@ export interface SyncDeps {
   enabled: boolean;
   /** Device names by ID (GET /v1/devices) for the origin shown on pulled entries. */
   deviceNames?: Map<string, string>;
+  /**
+   * Runs a key check (picks up a rotation, re-proves). Called when an upload is refused with `409 key_version_conflict`
+   * (the account moved to a newer key than this device used); the upload is then retried once with the newest key.
+   */
+  onKeyConflict?: () => Promise<unknown>;
 }
 
 export interface SyncResult {
@@ -119,12 +124,11 @@ async function flushDeletes(deps: SyncDeps, meta: AccountSyncMeta) {
   }
 }
 
-async function push(deps: SyncDeps, meta: AccountSyncMeta): Promise<number> {
-  if (!deps.enabled && !meta.importPending) return 0;
+/** Uploads entries not uploaded yet under the newest held key; `count` tracks progress across a retry. */
+async function pushOnce(deps: SyncDeps, meta: AccountSyncMeta, count: { pushed: number }) {
   const v = await deps.keys.currentVersion();
-  if (v === 0) return 0;
+  if (v === 0) return;
   const key = await deps.keys.loadSubkeys(v, 'history');
-  let pushed = 0;
   for (const entry of await deps.history.list()) {
     if (entry.id.startsWith(SYNC_PREFIX) || meta.uploaded[entry.id]) continue;
     if (!meta.importPending && entry.createdAt < meta.pushSince) continue;
@@ -132,10 +136,29 @@ async function push(deps: SyncDeps, meta: AccountSyncMeta): Promise<number> {
     const item = await encryptItem(key, entryId, v, payloadOf(entry));
     await deps.api.addHistoryEntry({ entry_id: entryId, key_version: v, ...itemToWire(item) });
     meta.uploaded[entry.id] = entryId;
-    pushed++;
+    count.pushed++;
   }
   meta.importPending = false;
-  return pushed;
+}
+
+/**
+ * Uploads local entries. New entries must use the account's current key version: `409 key_version_conflict` means a
+ * rotation happened that this device has not picked up yet, so it runs a key check and retries once with the newest key
+ * (docs/ADR/0015-authenticated-recovery-key.md); a second conflict propagates (the device may need to pair again).
+ */
+async function push(deps: SyncDeps, meta: AccountSyncMeta): Promise<number> {
+  if (!deps.enabled && !meta.importPending) return 0;
+  const count = { pushed: 0 };
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await pushOnce(deps, meta, count);
+      return count.pushed;
+    } catch (e) {
+      const conflict = e instanceof ApiError && e.code === 'key_version_conflict';
+      if (!conflict || attempt > 0 || !deps.onKeyConflict) throw e;
+      await deps.onKeyConflict();
+    }
+  }
 }
 
 /**

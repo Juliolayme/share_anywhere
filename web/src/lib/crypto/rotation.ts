@@ -1,14 +1,17 @@
 import { generateAdk } from './adk';
 import {
+  assertRecoveryKeySigned,
   assertRotationLink,
   checkDeviceKeyProof,
   rotationMessage,
   signWithAdk,
   verifyKeyOf,
+  verifySignature,
+  versionVerifyKey,
   type ChainState,
 } from './authenticity';
 import { CryptoError, invalid } from './errors';
-import { assertVersion, b64uDecode, b64uEncode, utf8, zeroize, type Bytes } from './encoding';
+import { assertVersion, b64uDecode, b64uEncode, equalBytes, utf8, zeroize, type Bytes } from './encoding';
 import type { KeyStore } from './store';
 import { unwrapAdk, unwrapChain, wrapAdk, wrapChain } from './wrap';
 import type { X25519KeyPair } from './x25519';
@@ -18,7 +21,9 @@ import type { X25519KeyPair } from './x25519';
  * authenticity in docs/CLIPBOARD_PROTOCOL.md §1). The rotating device generates ADK(v+1), chains ADK(v) under it,
  * wraps it to the recovery public key and to every remaining added device whose key registration is proven by the
  * current version v (checked with this device's own ADK(v)), signs the rotation with version v, and stores ADK(v+1)
- * only after the server accepts.
+ * only after the server accepts. The recovery public key is used only once its setup signature verifies with the
+ * verify_key(1) this device derives from its own ADK(1) (contract H.3), so a server cannot obtain new keys by listing a
+ * recovery key of its own.
  */
 export interface DeviceKeyInfo {
   device_id: string;
@@ -66,6 +71,11 @@ export interface RotationInput {
   /** `recovery.public_key` from `GET /v1/keys`. */
   recoveryPublicKey: string;
   /**
+   * `recovery.signature` from `GET /v1/keys`: by ADK(1) over the recovery public key (contract H.1). Null (legacy
+   * account) refuses with `keys_legacy`; missing, malformed or not verifying refuses with `unverified`.
+   */
+  recoverySignature: string | null | undefined;
+  /**
    * `devices` from `GET /v1/keys`. Every device whose key is proven by the current version gets a blob, this one
    * included: if storing locally fails after the server accepted, the device can still pick up its own pending blob.
    */
@@ -89,6 +99,29 @@ function skipReason(
   return checkDeviceKeyProof(verifyKey, d.device_id, v, d.public_key, d.proof) ? null : 'unproven';
 }
 
+/**
+ * Contract H.3: the recovery public key must carry a setup signature that verifies with verify_key(1) derived from this
+ * device's own ADK(1) (held after the chain import). Throws `unverified` (no ADK(1), or the signature does not verify)
+ * or `keys_legacy` (null signature); nothing is generated or sent.
+ */
+async function assertRecoveryKeyOwn(
+  store: KeyStore,
+  recoveryPublicKey: string,
+  signature: string | null | undefined,
+): Promise<void> {
+  if (!(await store.hasAdk(1))) {
+    throw new CryptoError('unverified', 'this device lacks ADK version 1 to check the recovery key against');
+  }
+  const adkV1 = await store.unwrapAdkRaw(1);
+  let verifyKeyV1: Bytes;
+  try {
+    verifyKeyV1 = await verifyKeyOf(adkV1);
+  } finally {
+    zeroize(adkV1);
+  }
+  assertRecoveryKeySigned(recoveryPublicKey, signature, verifyKeyV1);
+}
+
 export async function prepareRotation(store: KeyStore, input: RotationInput): Promise<PreparedRotation> {
   assertVersion(input.serverKeyVersion);
   const local = await store.currentVersion();
@@ -98,6 +131,7 @@ export async function prepareRotation(store: KeyStore, input: RotationInput): Pr
       `local ADK version ${local} differs from the server's ${input.serverKeyVersion}; accept pending keys first`,
     );
   }
+  await assertRecoveryKeyOwn(store, input.recoveryPublicKey, input.recoverySignature);
   const exclude = new Set((input.exclude ?? []).map((id) => id.toLowerCase()));
   const next = generateAdk(local + 1);
   const previous = await store.unwrapAdkRaw(local);
@@ -217,9 +251,14 @@ export interface ChainLink {
 /**
  * Walks the chain down from the newest stored ADK and stores every older version it can open, so entries
  * written before a rotation (or before this device paired) stay readable. Returns the versions added.
+ *
+ * Each older ADK(v-1) is checked before it is stored (contract I.6): it must derive `versions[v-1].verify_key`, and
+ * `versions[v].signature` must verify with that key over the rotation message built from chain link v
+ * ({@link rotationMessage}(v, `versions[v].verify_key`, link v)). Otherwise the walk stops with `unverified` (or
+ * `keys_legacy` for a legacy row) and nothing more is stored. `state` is `GET /v1/keys/chain`.
  */
-export async function importChain(store: KeyStore, chain: readonly ChainLink[]): Promise<number[]> {
-  const links = new Map(chain.map((l) => [l.key_version, l.blob]));
+export async function importChain(store: KeyStore, state: ChainState): Promise<number[]> {
+  const links = new Map(state.chain.map((l) => [l.key_version, l.blob]));
   const added: number[] = [];
   for (let v = await store.currentVersion(); v >= 2; v--) {
     if (await store.hasAdk(v - 1)) continue;
@@ -228,7 +267,14 @@ export async function importChain(store: KeyStore, chain: readonly ChainLink[]):
     const raw = await store.unwrapAdkRaw(v);
     let previous: Bytes | null = null;
     try {
-      previous = await unwrapChain(b64uDecode(blob), raw, v);
+      let link: Bytes;
+      try {
+        link = b64uDecode(blob);
+      } catch {
+        throw new CryptoError('unverified', `malformed chain link for version ${v}`);
+      }
+      previous = await unwrapChain(link, raw, v);
+      await assertOlderVersion(state, v, previous, link);
       await store.saveAdk(v - 1, previous);
       added.push(v - 1);
     } finally {
@@ -236,4 +282,27 @@ export async function importChain(store: KeyStore, chain: readonly ChainLink[]):
     }
   }
   return added;
+}
+
+/** I.6: ADK(v-1) opened from chain link v derives `versions[v-1].verify_key`, which signed version v over that link. */
+async function assertOlderVersion(state: ChainState, v: number, previous: Uint8Array, link: Uint8Array) {
+  const expected = versionVerifyKey(state.versions, v - 1);
+  const own = await verifyKeyOf(previous);
+  if (!equalBytes(own, expected)) {
+    throw new CryptoError('unverified', `ADK version ${v - 1} from the chain does not match the account's verify key`);
+  }
+  const row = state.versions.find((r) => r.key_version === v);
+  if (row?.signature === null) {
+    throw new CryptoError('keys_legacy', 'the account keys predate key authenticity and must be set up again');
+  }
+  let signature: Bytes;
+  try {
+    signature = b64uDecode(row?.signature ?? '');
+  } catch {
+    throw new CryptoError('unverified', `malformed signature for version ${v}`);
+  }
+  const message = utf8(rotationMessage(v, versionVerifyKey(state.versions, v), link));
+  if (!verifySignature(signature, message, own)) {
+    throw new CryptoError('unverified', `version ${v} is not signed by version ${v - 1}`);
+  }
 }

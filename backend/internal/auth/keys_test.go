@@ -21,7 +21,13 @@ func setupBody() map[string]any {
 		"recovery_public_key": key32(9), "salt": blob(16, 1),
 		"params": map[string]any{"m": 65536, "t": 3, "p": 1}, "recovery_blob": blob(92, 2),
 		"verify_key": enc(verifyKeyOf(adk(1))), "recovery_anchor": enc(anchor),
+		"recovery_key_signature": recoveryKeySig(adk(1), pub32(9)),
 	}
+}
+
+// recoveryKeySig is the setup signature by signer (a real setup passes adk(1)) over the recovery public key.
+func recoveryKeySig(signer, recoveryPub []byte) string {
+	return enc(ed25519.Sign(signKey(signer), RecoveryKeyMessage(recoveryPub)))
 }
 
 // deviceKeyBody registers pub for deviceID with a proof by adk(v).
@@ -87,7 +93,8 @@ func TestKeysSetupRotateAndConflicts(t *testing.T) {
 
 	r = e.do("GET", "/v1/keys", tokB, nil)
 	rec := r.body["recovery"].(map[string]any)
-	if rec["public_key"] != key32(9) || rec["salt"] != blob(16, 1) || rec["params"].(map[string]any)["m"].(float64) != 65536 {
+	if rec["public_key"] != key32(9) || rec["salt"] != blob(16, 1) || rec["params"].(map[string]any)["m"].(float64) != 65536 ||
+		rec["signature"] != recoveryKeySig(adk(1), pub32(9)) {
 		t.Fatalf("recovery: %s", r.raw)
 	}
 	keys := map[string]map[string]any{}
@@ -655,5 +662,78 @@ func TestKeysStateShape(t *testing.T) {
 		if _, ok := d[k]; !ok || len(d) != 4 {
 			t.Fatalf("device key item: %v", d)
 		}
+	}
+}
+
+// TestSetupRequiresRecoveryKeySignature (QA round 3 P0-1, docs/ADR/0015-authenticated-recovery-key.md): setup
+// stores the recovery public key only with a signature by version 1 over it (400 when missing or malformed,
+// 403 recovery_key_unverified when it does not verify: by another ADK, over another key, or with a verify
+// key that does not match); nothing is stored on refusal. GET /v1/keys returns the stored signature, and a
+// legacy row (set up before migration 0009) reports null.
+func TestSetupRequiresRecoveryKeySignature(t *testing.T) {
+	e := newEnv(t)
+	_, tokA := e.signup("una@example.com", true)
+	for _, bad := range []any{nil, "", "not base64!", blob(63, 1), blob(65, 1)} {
+		b := setupBody()
+		if bad == nil {
+			delete(b, "recovery_key_signature")
+		} else {
+			b["recovery_key_signature"] = bad
+		}
+		e.want(e.do("POST", "/v1/keys/setup", tokA, b), 400, "invalid_request")
+	}
+	for name, sig := range map[string]string{
+		"other ADK":     recoveryKeySig(adk(2), pub32(9)),
+		"other key":     recoveryKeySig(adk(1), pub32(8)),
+		"zero":          enc(make([]byte, 64)),
+		"anchor domain": enc(ed25519.Sign(signKey(adk(1)), AnchorMessage(pub32(9)))),
+	} {
+		b := setupBody()
+		b["recovery_key_signature"] = sig
+		r := e.do("POST", "/v1/keys/setup", tokA, b)
+		if r.code != 403 || r.str("error") != "recovery_key_unverified" {
+			t.Fatalf("%s: got %d %s", name, r.code, r.raw)
+		}
+	}
+	// A server-chosen verify_key cannot vouch for the key either unless it also signs: the signature is checked
+	// with the posted verify_key, so a mismatch between the two is refused.
+	b := setupBody()
+	b["verify_key"] = enc(verifyKeyOf(adk(3)))
+	e.want(e.do("POST", "/v1/keys/setup", tokA, b), 403, "recovery_key_unverified")
+	r := e.do("GET", "/v1/keys", tokA, nil)
+	if r.body["key_version"].(float64) != 0 || r.body["recovery"] != nil {
+		t.Fatalf("a refused setup stored something: %s", r.raw)
+	}
+
+	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+	r = e.do("GET", "/v1/keys", tokA, nil)
+	rec := r.body["recovery"].(map[string]any)
+	if len(rec) != 4 || rec["signature"] != recoveryKeySig(adk(1), pub32(9)) {
+		t.Fatalf("recovery with signature: %s", r.raw)
+	}
+	sig, _ := b64(rec["signature"].(string))
+	pub, _ := b64(rec["public_key"].(string))
+	if !verifySig(verifyKeyOf(adk(1)), RecoveryKeyMessage(pub), sig) {
+		t.Fatal("stored signature must verify with verify_key(1)")
+	}
+	// The signature is stored once and never changes: a rotation leaves it (and the recovery key) as they were.
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
+	if again := e.do("GET", "/v1/keys", tokA, nil).body["recovery"].(map[string]any); again["signature"] != rec["signature"] ||
+		again["public_key"] != rec["public_key"] {
+		t.Fatalf("recovery after rotation: %v", again)
+	}
+
+	// Legacy: a row without the signature reports null (clients refuse to rotate with keys_legacy).
+	if _, err := e.pool.Exec(ctx, `UPDATE account_keys SET recovery_key_signature = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	r = e.do("GET", "/v1/keys", tokA, nil)
+	rec = r.body["recovery"].(map[string]any)
+	if v, ok := rec["signature"]; !ok || v != nil || rec["public_key"] != key32(9) {
+		t.Fatalf("legacy recovery: %s", r.raw)
+	}
+	// The column only holds 64-byte signatures.
+	if _, err := e.pool.Exec(ctx, `UPDATE account_keys SET recovery_key_signature = '\x00'`); err == nil {
+		t.Fatal("recovery_key_signature must be 64 bytes")
 	}
 }

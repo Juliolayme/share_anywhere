@@ -60,6 +60,12 @@ export interface AccountValue {
    * are reflected in `keys` (a refusal) or `rotationFailed`, never thrown.
    */
   rotateKeys: (exclude: string[]) => Promise<'rotated' | 'none' | 'failed'>;
+  /**
+   * DV-2: revokes another device and rotates with it excluded. The device ID is remembered (IndexedDB) before the
+   * revoke, so every later rotation of this browser keeps excluding it until one that did has gone through (contract
+   * I.4). Throws when the revoke itself fails; rotation failures are reported like {@link rotateKeys}.
+   */
+  revokeDevice: (id: string) => Promise<'rotated' | 'none' | 'failed'>;
   syncNow: () => Promise<void>;
 }
 
@@ -67,6 +73,9 @@ const AccountContext = createContext<AccountValue | null>(null);
 
 /** Non-secret marker that this browser holds account keys, so a guest load can erase leftovers cheaply. */
 const KEYS_MARKER = 'accountKeys';
+
+/** Background key checks (tab shown again, the 30 s tick) run at most this often, one at a time (contract I.3). */
+export const KEY_CHECK_INTERVAL_MS = 30_000;
 
 function channel(): BroadcastChannel | null {
   try {
@@ -99,6 +108,8 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
   const prevClaims = useRef<TokenClaims | null>(client.claims);
   const bc = useRef<BroadcastChannel | null>(null);
   const syncing = useRef<Promise<void> | null>(null);
+  /** Key checks in flight and when the last one started (background checks are throttled on both). */
+  const keyChecks = useRef({ inFlight: 0, lastAt: 0 });
 
   const phase = phaseOf(claims, enabled);
   const userId = phase === 'signed_in' ? (claims?.acct ?? null) : null;
@@ -167,9 +178,15 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
     void loadMe();
   }, [loadMe, added]);
 
+  /**
+   * Runs a key check and reflects it. A `quiet` (background) check shows no "checking" state and keeps the current one
+   * when it only failed to reach the server, so a ready tab does not flip to an error while briefly offline.
+   */
   const runKeyCheck = useCallback(
-    async (acct: string, dev: string): Promise<KeyStatus> => {
-      setKeys((k) => (k === 'ready' ? k : 'checking'));
+    async (acct: string, dev: string, quiet = false): Promise<KeyStatus> => {
+      if (!quiet) setKeys((k) => (k === 'ready' ? k : 'checking'));
+      keyChecks.current.inFlight++;
+      keyChecks.current.lastAt = Date.now();
       try {
         const flow = await keyFlow();
         const res = await flow.checkKeys(api, acct, dev);
@@ -181,8 +198,10 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
         return res.status;
       } catch (e) {
         const status = keyErrorStatus(e);
-        setKeys(status);
+        if (!quiet || status !== 'error') setKeys(status);
         return status;
+      } finally {
+        keyChecks.current.inFlight--;
       }
     },
     [api],
@@ -200,6 +219,30 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
     void refreshKeys();
   }, [refreshKeys]);
 
+  /**
+   * Contract I.3: open tabs pick up rotations (and re-prove, and make owed rotations) without a reload: a quiet key
+   * check when the tab becomes visible and on the 30 s tick, at most one in flight and at most once per 30 s.
+   */
+  const backgroundKeyCheck = useCallback(() => {
+    if (!userId || !added || !deviceId) return;
+    const c = keyChecks.current;
+    if (c.inFlight > 0 || Date.now() - c.lastAt < KEY_CHECK_INTERVAL_MS) return;
+    void runKeyCheck(userId, deviceId, true);
+  }, [userId, added, deviceId, runKeyCheck]);
+
+  useEffect(() => {
+    if (!userId || !added || !deviceId || typeof document === 'undefined') return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') backgroundKeyCheck();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    const id = setInterval(onVisible, KEY_CHECK_INTERVAL_MS);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(id);
+    };
+  }, [userId, added, deviceId, backgroundKeyCheck]);
+
   const rotateKeys = useCallback(
     async (exclude: string[]): Promise<'rotated' | 'none' | 'failed'> => {
       if (!userId || !added || !deviceId) return 'failed';
@@ -210,6 +253,13 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
         await runKeyCheck(userId, deviceId);
         return r;
       } catch (e) {
+        if (e instanceof Error && e.name === 'KeyStateError' && (e as { code?: string }).code === 'not_ready') {
+          // This device lacks the newest key (another device rotated meanwhile): a key check picks it up or says to
+          // pair, instead of offering a Retry that cannot work (contract I.5).
+          setRotationFailed(false);
+          await runKeyCheck(userId, deviceId);
+          return 'failed';
+        }
         const status = flow.rotationErrorStatus(e);
         if (status) setKeys(status);
         else setRotationFailed(true);
@@ -217,6 +267,28 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
       }
     },
     [api, userId, added, deviceId, runKeyCheck],
+  );
+
+  const revokeDevice = useCallback(
+    async (id: string): Promise<'rotated' | 'none' | 'failed'> => {
+      if (userId) {
+        const flow = await keyFlow();
+        await flow.rememberRevoked(userId, [id]).catch(() => undefined);
+        try {
+          await api.revokeDevice(id);
+        } catch (e) {
+          // The server answered and kept the device: it must not stay excluded from later rotations. When the request
+          // did not get an answer (offline), the device may be revoked already, so it stays excluded to be safe.
+          if (e instanceof ApiError) await flow.forgetRevoked(userId, [id]).catch(() => undefined);
+          throw e;
+        }
+      } else {
+        await api.revokeDevice(id);
+      }
+      // Never wrap the new key to the device just revoked, whatever the server lists (contract D.3).
+      return rotateKeys([id]);
+    },
+    [api, userId, rotateKeys],
   );
 
   const syncNow = useCallback(async () => {
@@ -241,6 +313,8 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
           deviceId,
           enabled: me?.history_sync === true,
           deviceNames: names,
+          // An upload under an older key than the account's (409 key_version_conflict): pick up the rotation, retry once.
+          onKeyConflict: () => runKeyCheck(userId, deviceId, true),
         });
         if (res.pulled || res.removed) await history.refresh();
         setSync({ state: 'ok', at: Date.now(), unreadable: res.unreadable });
@@ -255,7 +329,7 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
     })();
     syncing.current = run;
     return run;
-  }, [api, userId, added, deviceId, keys, me?.history_sync, history]);
+  }, [api, userId, added, deviceId, keys, me?.history_sync, history, runKeyCheck]);
 
   // Sync when the device becomes ready (a pending "copy history" import runs even with sync off), then every
   // 30 s while sync is on and the tab is visible.
@@ -265,10 +339,12 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
     void syncNow();
     if (!me.history_sync) return;
     const id = setInterval(() => {
-      if (document.visibilityState === 'visible') void syncNow();
+      if (document.visibilityState !== 'visible') return;
+      backgroundKeyCheck();
+      void syncNow();
     }, 30_000);
     return () => clearInterval(id);
-  }, [keys, me, syncNow, keyEpoch]);
+  }, [keys, me, syncNow, keyEpoch, backgroundKeyCheck]);
 
   // Local deletions tombstone the synced copies while sync is on (queued when offline).
   useEffect(() => {
@@ -373,6 +449,7 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
       refreshKeys,
       refreshMe: loadMe,
       rotateKeys,
+      revokeDevice,
       syncNow,
     }),
     [
@@ -396,6 +473,7 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
       refreshKeys,
       loadMe,
       rotateKeys,
+      revokeDevice,
       syncNow,
     ],
   );

@@ -70,6 +70,7 @@ describe('account key flows', () => {
         params: { m: number; t: number; p: number };
         blob: string;
         anchor: string;
+        signature: string;
       },
       devices: new Map<string, Awaited<ReturnType<typeof registered>>>(),
       pending: new Map<string, PendingBlob[]>(),
@@ -90,6 +91,7 @@ describe('account key flows', () => {
       public_key: setup.request.recovery_public_key,
       blob: setup.request.recovery_blob,
       anchor: setup.request.recovery_anchor,
+      signature: setup.request.recovery_key_signature,
     };
     server.versions.push({ key_version: 1, verify_key: setup.request.verify_key, signature: null });
     await setup.commit();
@@ -131,8 +133,9 @@ describe('account key flows', () => {
       params: rec.params,
       recovery_anchor: rec.anchor,
     };
+    const recoveryKey = { public_key: rec.public_key, signature: rec.signature };
     await expect(
-      recoverWithPhrase(c.store, 'zoo zoo zoo', response, chainState(), { worker: false }),
+      recoverWithPhrase(c.store, 'zoo zoo zoo', response, chainState(), recoveryKey, { worker: false }),
     ).rejects.toMatchObject({
       code: 'invalid_phrase',
     });
@@ -142,11 +145,14 @@ describe('account key flows', () => {
         'legal winner thank year wave sausage worth useful legal winner thank yellow',
         response,
         chainState(),
+        recoveryKey,
         { worker: false },
       ),
     ).rejects.toMatchObject({ code: 'decrypt_failed' });
     expect(
-      await recoverWithPhrase(c.store, ` ${setup.phrase.toUpperCase()} `, response, chainState(), { worker: false }),
+      await recoverWithPhrase(c.store, ` ${setup.phrase.toUpperCase()} `, response, chainState(), recoveryKey, {
+        worker: false,
+      }),
     ).toBe(1);
     server.devices.set(c.id, await registered(c));
     expect(await readEntry(c, old)).toBe('written with v1');
@@ -157,6 +163,7 @@ describe('account key flows', () => {
     const rotation = await prepareRotation(a.store, {
       serverKeyVersion: server.keyVersion,
       recoveryPublicKey: rec.public_key,
+      recoverySignature: rec.signature,
       devices: [
         ...server.devices.values(),
         forgedProof,
@@ -208,12 +215,13 @@ describe('account key flows', () => {
       setup.phrase,
       { ...response, key_version: 2, recovery_blob: rotation.request.recovery_blob },
       chainState(),
+      recoveryKey,
       { worker: false },
     );
     expect(recovered).toBe(2);
     await expect(readEntry(e, old)).rejects.toMatchObject({ code: 'not_found' });
-    expect(await importChain(e.store, server.chain)).toEqual([1]);
-    expect(await importChain(e.store, server.chain)).toEqual([]);
+    expect(await importChain(e.store, chainState())).toEqual([1]);
+    expect(await importChain(e.store, chainState())).toEqual([]);
     expect(await readEntry(e, old)).toBe('written with v1');
     expect(await readEntry(e, fresh)).toBe('written with v2');
   }, 90_000);
@@ -221,7 +229,12 @@ describe('account key flows', () => {
   it('rotation refuses to start when the device is behind the server', async () => {
     const a = await device(ID.A);
     await expect(
-      prepareRotation(a.store, { serverKeyVersion: 1, recoveryPublicKey: publicKeyB64(a.key), devices: [] }),
+      prepareRotation(a.store, {
+        serverKeyVersion: 1,
+        recoveryPublicKey: publicKeyB64(a.key),
+        recoverySignature: null,
+        devices: [],
+      }),
     ).rejects.toMatchObject({ code: 'not_found' });
   });
 

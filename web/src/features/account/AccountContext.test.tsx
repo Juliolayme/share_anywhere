@@ -9,9 +9,33 @@ import { writePref } from '../../lib/storage';
 import { AccountProvider, keyErrorStatus, useAccount } from './AccountContext';
 
 const wipe = vi.fn(async () => undefined);
+type Fn<R> = (...args: unknown[]) => Promise<R>;
+interface Check {
+  status: string;
+  keyVersion: number;
+  state: object;
+  newVersions: number[];
+  rotationOwed: boolean;
+}
+const flow = vi.hoisted(() => ({
+  checkKeys: vi.fn<Fn<Check>>(async () => ({
+    status: 'pair',
+    keyVersion: 1,
+    state: {},
+    newVersions: [],
+    rotationOwed: false,
+  })),
+  rotateKeys: vi.fn<Fn<'rotated' | 'none'>>(async () => 'rotated'),
+  rememberRevoked: vi.fn<Fn<undefined>>(async () => undefined),
+  forgetRevoked: vi.fn<Fn<undefined>>(async () => undefined),
+}));
 vi.mock('./keyFlow', () => ({
   wipeAccountData: () => wipe(),
-  checkKeys: vi.fn(async () => ({ status: 'pair', keyVersion: 1, state: {} })),
+  checkKeys: flow.checkKeys,
+  rotateKeys: flow.rotateKeys,
+  rememberRevoked: flow.rememberRevoked,
+  forgetRevoked: flow.forgetRevoked,
+  rotationErrorStatus: () => null,
   keyStore: vi.fn(),
   syncMeta: () => ({ get: async (userId: string) => ({ userId }), put: async () => undefined }),
 }));
@@ -65,6 +89,7 @@ function setup(initial: object, { offline = false, meFailures = 0 } = {}) {
       if (url === '/v1/auth/signin')
         return json(200, { ...sessionFor('d1', { acct: 'u1' }), account: { id: 'u1', email: 'minh@example.com' } });
       if (url === '/v1/auth/signout') return json(200, sessionFor('d2', {}));
+      if (url === '/v1/devices/d-gone' && init.method === 'DELETE') return new Response(null, { status: 204 });
       return json(404, { error: 'not_found' });
     }) as unknown as typeof fetch,
   });
@@ -103,7 +128,13 @@ function setup(initial: object, { offline = false, meFailures = 0 } = {}) {
   };
 }
 
-beforeEach(() => wipe.mockClear());
+beforeEach(() => {
+  wipe.mockClear();
+  flow.checkKeys.mockClear();
+  flow.rotateKeys.mockClear();
+  flow.rememberRevoked.mockClear();
+  flow.forgetRevoked.mockClear();
+});
 
 describe('AccountProvider', () => {
   it('offline at load: unknown, with an account hint only when this browser held account keys (P2-7)', async () => {
@@ -180,5 +211,106 @@ describe('AccountProvider', () => {
     await waitFor(() => expect(wipe).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId('probe')).toHaveTextContent('guest');
     expect(t.client.device?.id).toBe('d1');
+  });
+
+  it('open tabs check keys when shown again and on the 30 s tick, throttled to one per 30 s (I.3)', async () => {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const t = setup({ acct: 'u1', dl: true });
+      await waitFor(() => expect(flow.checkKeys).toHaveBeenCalledTimes(1));
+      expect(t.account().added).toBe(true);
+      const show = () => act(() => void document.dispatchEvent(new Event('visibilitychange')));
+      expect(document.visibilityState).toBe('visible');
+      now += 10_000;
+      await show();
+      expect(flow.checkKeys).toHaveBeenCalledTimes(1); // within 30 s of the last check
+      now += 25_000;
+      let release: () => void = () => undefined;
+      flow.checkKeys.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () =>
+              resolve({ status: 'ready', keyVersion: 2, state: {}, newVersions: [], rotationOwed: false });
+          }),
+      );
+      await show();
+      await waitFor(() => expect(flow.checkKeys).toHaveBeenCalledTimes(2));
+      now += 40_000;
+      await show(); // one already in flight
+      expect(flow.checkKeys).toHaveBeenCalledTimes(2);
+      await act(async () => release());
+      await waitFor(() => expect(t.account().keys).toBe('ready'));
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('a background key check that cannot reach the server keeps the current state (I.3)', async () => {
+    let now = 2_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      flow.checkKeys.mockImplementationOnce(async () => ({
+        status: 'ready',
+        keyVersion: 1,
+        state: {},
+        newVersions: [],
+        rotationOwed: false,
+      }));
+      const t = setup({ acct: 'u1', dl: true });
+      await waitFor(() => expect(t.account().keys).toBe('ready'));
+      flow.checkKeys.mockImplementationOnce(async () => {
+        throw new TypeError('Failed to fetch');
+      });
+      now += 31_000;
+      await act(() => void document.dispatchEvent(new Event('visibilitychange')));
+      await waitFor(() => expect(flow.checkKeys).toHaveBeenCalledTimes(2));
+      expect(t.account().keys).toBe('ready');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('a rotation that finds this device without the newest key runs a key check, not the Retry banner (I.5)', async () => {
+    const t = setup({ acct: 'u1', dl: true });
+    await waitFor(() => expect(flow.checkKeys).toHaveBeenCalledTimes(1));
+    flow.rotateKeys.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('key state: not_ready'), { name: 'KeyStateError', code: 'not_ready' });
+    });
+    let r: string | undefined;
+    await act(async () => {
+      r = await t.account().rotateKeys([]);
+    });
+    expect(r).toBe('failed');
+    expect(flow.checkKeys).toHaveBeenCalledTimes(2);
+    expect(t.account().rotationFailed).toBe(false);
+  });
+
+  it('revokeDevice remembers the device before revoking, then rotates with it excluded (I.4)', async () => {
+    const t = setup({ acct: 'u1', dl: true });
+    await waitFor(() => expect(flow.checkKeys).toHaveBeenCalled());
+    flow.rememberRevoked.mockImplementationOnce(async () => void t.calls.push('remember'));
+    flow.rotateKeys.mockImplementationOnce(async () => {
+      t.calls.push('rotate');
+      return 'rotated';
+    });
+    let r: string | undefined;
+    await act(async () => {
+      r = await t.account().revokeDevice('d-gone');
+    });
+    expect(r).toBe('rotated');
+    expect(flow.rememberRevoked).toHaveBeenCalledWith('u1', ['d-gone']);
+    expect(t.calls.filter((c) => !c.startsWith('GET') && !c.includes('token'))).toEqual([
+      'remember',
+      'DELETE /v1/devices/d-gone',
+      'rotate',
+    ]);
+    expect(flow.rotateKeys.mock.calls[0]?.slice(1)).toEqual(['u1', 'd1', ['d-gone']]);
+    expect(flow.forgetRevoked).not.toHaveBeenCalled();
+
+    // The server refuses the revoke (it answered, the device stays): it is not kept excluded.
+    await expect(act(() => t.account().revokeDevice('d-other'))).rejects.toMatchObject({ code: 'not_found' });
+    expect(flow.forgetRevoked).toHaveBeenCalledWith('u1', ['d-other']);
+    expect(flow.rotateKeys).toHaveBeenCalledTimes(1);
   });
 });

@@ -5,8 +5,11 @@ import { ApiError, NetworkError } from '../../lib/api/errors';
 import {
   b64uEncode,
   checkDeviceKeyProof,
+  deviceKeyProof,
   generateAdk,
   generateX25519,
+  recoveryKeySignature,
+  unwrapAdk,
   verifyKeyOf,
   type DeviceKeyRegistration,
 } from '../../lib/crypto';
@@ -26,8 +29,14 @@ const OTHER = '00000000-0000-4000-8000-0000000000d2';
 const USER = 'u-1';
 
 const adk1 = generateAdk(1);
-const recoveryPublicKey = b64uEncode((await generateX25519()).publicKey);
-const recovery = { public_key: recoveryPublicKey, salt: 'AAAAAAAAAAAAAAAAAAAAAA', params: { m: 65536, t: 3, p: 1 } };
+const recoveryPair = await generateX25519();
+/** The account's recovery key as `GET /v1/keys` lists it: signed at setup by ADK v1 (contract H.1). */
+const recovery = {
+  public_key: b64uEncode(recoveryPair.publicKey),
+  salt: 'AAAAAAAAAAAAAAAAAAAAAA',
+  params: { m: 65536, t: 3, p: 1 },
+  signature: b64uEncode(await recoveryKeySignature(adk1.raw, recoveryPair.publicKey)),
+};
 
 type Handler<T> = (arg: T, call: number) => void;
 
@@ -298,7 +307,6 @@ describe('owed rotation (rotation_due, E.3)', () => {
   it('a ready device rotates on the key check and wraps only to current-version proofs', async () => {
     const { store, fake } = await readyAtV1();
     const other = await generateX25519();
-    const { deviceKeyProof } = await import('../../lib/crypto');
     const proof = await deviceKeyProof(adk1.raw, 1, OTHER, other.publicKey);
     fake.setState({ rotation_due: true, devices: [...fake.state.devices, { device_id: OTHER, ...proof }] });
     const res = await checkKeys(fake.api, USER, DEVICE);
@@ -334,7 +342,6 @@ describe('owed rotation (rotation_due, E.3)', () => {
   it('devices_changed (missing / unexpected) refreshes the key state and retries once', async () => {
     const { fake } = await readyAtV1();
     const other = await generateX25519();
-    const { deviceKeyProof } = await import('../../lib/crypto');
     const proof = await deviceKeyProof(adk1.raw, 1, OTHER, other.publicKey);
     const raced = fakeApi({
       state: { ...fake.state, devices: [...fake.state.devices, { device_id: OTHER, ...proof }] },
@@ -386,7 +393,6 @@ describe('owed rotation (rotation_due, E.3)', () => {
   it('rotateKeys never wraps to an excluded (just revoked) device', async () => {
     const { fake } = await readyAtV1();
     const other = await generateX25519();
-    const { deviceKeyProof } = await import('../../lib/crypto');
     const proof = await deviceKeyProof(adk1.raw, 1, OTHER, other.publicKey);
     fake.setState({ devices: [...fake.state.devices, { device_id: OTHER, ...proof }] });
     expect(await rotateKeys(fake.api, USER, DEVICE, [OTHER])).toBe('rotated');
@@ -417,5 +423,222 @@ describe('refused vs rejected mapping (F.3)', () => {
     expect(rotationErrorStatus(new ApiError(409, 'keys_legacy', 'legacy'))).toBe('legacy');
     expect(rotationErrorStatus(new NetworkError())).toBeNull();
     expect(rotationErrorStatus(new ApiError(409, 'devices_changed', 'changed'))).toBeNull();
+  });
+});
+
+/**
+ * QA round 3 (contract H, I). The first three tests are the QA reviewer's scratch proofs (qa5a3/vt) turned around:
+ * the attack, the misleading state and the second rotation no longer happen.
+ */
+describe('QA round 3: authenticated recovery key, left-behind state, no double rotation', () => {
+  it('QA3 P0-1: a substituted recovery key gets no blob, no rotation request is sent, state rejected (H.3)', async () => {
+    const store = await keyStore();
+    await store.saveAdk(1, adk1.raw);
+    const attacker = await generateX25519(); // the server's own X25519 key
+    const substitutes = [
+      undefined, // the QA proof: no signature at all
+      b64uEncode(await recoveryKeySignature(generateAdk(1).raw, attacker.publicKey)), // signed by an ADK it chose
+      recovery.signature, // the genuine signature, replayed for another key
+    ];
+    for (const signature of substitutes) {
+      const fake = fakeApi({
+        state: {
+          key_version: 1,
+          recovery: { ...recovery, public_key: b64uEncode(attacker.publicKey), signature } as KeysState['recovery'],
+          devices: [],
+          pending: [],
+          rotation_due: true,
+        },
+      });
+      const res = await checkKeys(fake.api, USER, DEVICE); // no user action: just a key check
+      expect(fake.api.rotate).not.toHaveBeenCalled();
+      expect(res.status).toBe('rejected');
+      expect(res.rotationOwed).toBe(false);
+      expect(await store.allVersions()).toEqual([1]);
+      // Devices "Rotate keys" is refused the same way, before anything is sent.
+      await expect(rotateKeys(fake.api, USER, DEVICE)).rejects.toMatchObject({ code: 'unverified' });
+      expect(fake.api.rotate).not.toHaveBeenCalled();
+    }
+  });
+
+  it('the genuine recovery key still gets the new ADK, which only the phrase holder can open (H.3)', async () => {
+    const { store, fake } = await readyAtV1();
+    fake.setState({ rotation_due: true });
+    expect((await checkKeys(fake.api, USER, DEVICE)).keyVersion).toBe(2);
+    const sent = fake.calls.rotate[0] as KeysRotateRequest;
+    const { b64uDecode } = await import('../../lib/crypto');
+    const opened = await unwrapAdk(b64uDecode(sent.recovery_blob), recoveryPair, 'recovery', 2);
+    expect(opened).toEqual(await store.unwrapAdkRaw(2));
+  });
+
+  it('a legacy account (null recovery signature) does not rotate: legacy', async () => {
+    const store = await keyStore();
+    await store.saveAdk(1, adk1.raw);
+    const fake = fakeApi({
+      state: {
+        key_version: 1,
+        recovery: { ...recovery, signature: null },
+        devices: [],
+        pending: [],
+        rotation_due: true,
+      },
+    });
+    expect((await checkKeys(fake.api, USER, DEVICE)).status).toBe('legacy');
+    expect(fake.api.rotate).not.toHaveBeenCalled();
+  });
+
+  it('a device that cannot get ADK v1 through the chain does not rotate: rejected', async () => {
+    const store = await keyStore();
+    const adk2 = generateAdk(2);
+    await store.saveAdk(2, adk2.raw); // no chain link to v1 is offered
+    const fake = fakeApi({ state: { key_version: 2, recovery, devices: [], pending: [], rotation_due: true } });
+    expect((await checkKeys(fake.api, USER, DEVICE)).status).toBe('rejected');
+    expect(fake.api.rotate).not.toHaveBeenCalled();
+  });
+
+  it('QA3 P2-1: a device left behind across two rotations shows pair, not refused (I.1)', async () => {
+    const adk2 = generateAdk(2);
+    const store = await keyStore();
+    await store.saveAdk(1, adk1.raw);
+    const { getOrCreateDeviceKey, proveDeviceKey } = await import('../../lib/crypto');
+    const { keyPair } = await getOrCreateDeviceKey(store);
+    const reg1 = await proveDeviceKey(store, DEVICE, keyPair);
+    if (!reg1) throw new Error('no registration');
+    const fake = fakeApi({
+      state: {
+        key_version: 3,
+        recovery: null,
+        devices: [{ device_id: DEVICE, ...reg1 }],
+        pending: [
+          {
+            key_version: 2,
+            blob: b64uEncode(await wrapAdk(adk2.raw, keyPair.publicKey, 'rotate', 2)),
+            from_device_id: OTHER,
+          },
+        ],
+        rotation_due: false,
+      },
+      chain: {
+        chain: [{ key_version: 2, blob: b64uEncode(await wrapChain(adk2.raw, adk1.raw, 2)) }],
+        versions: [
+          ...(await versionsUpTo1()),
+          { key_version: 2, verify_key: b64uEncode(await verifyKeyOf(adk2.raw)), signature: 'x' },
+        ],
+      },
+      register: () => {
+        throw new ApiError(409, 'key_version_conflict', 'conflict');
+      },
+    });
+    const res = await checkKeys(fake.api, USER, DEVICE);
+    expect(res.status).toBe('pair');
+    expect(await store.currentVersion()).toBe(2); // it picked up v2, but v3 never reached it
+    expect(fake.api.registerKey).toHaveBeenCalledTimes(2);
+  });
+
+  it('QA3 P2-2: revoke rotation after another device already made the owed rotation does not rotate again (I.2)', async () => {
+    const L = '00000000-0000-4000-8000-0000000000d3';
+    const adk2 = generateAdk(2);
+    const { store, fake } = await readyAtV1();
+    const deviceKey = await store.loadDeviceKey();
+    if (!deviceKey) throw new Error('no device key');
+    const tries: number[] = [];
+    const raced = fakeApi({
+      state: { ...fake.state, rotation_due: true }, // L was revoked from this device's Devices screen
+      rotate: (req) => {
+        tries.push(req.key_version); // any rotation after the conflict
+      },
+    });
+    const blob = b64uEncode(await wrapAdk(adk2.raw, deviceKey.publicKey, 'rotate', 2));
+    const chain: KeyChain = {
+      chain: [{ key_version: 2, blob: b64uEncode(await wrapChain(adk2.raw, adk1.raw, 2)) }],
+      versions: [
+        ...(await versionsUpTo1()),
+        { key_version: 2, verify_key: b64uEncode(await verifyKeyOf(adk2.raw)), signature: 'x' },
+      ],
+    };
+    (raced.api.chain as unknown as { mockImplementation: (f: () => Promise<KeyChain>) => void }).mockImplementation(
+      async () => chain,
+    );
+    const rotate = raced.api.rotate as unknown as { mockImplementationOnce: (f: () => Promise<never>) => void };
+    rotate.mockImplementationOnce(async () => {
+      // B made the owed rotation first (excluding L, honest server) and wrapped v2 to this device.
+      tries.push(2);
+      raced.setState({
+        key_version: 2,
+        rotation_due: false,
+        pending: [{ key_version: 2, blob, from_device_id: OTHER }],
+      });
+      throw new ApiError(409, 'key_version_conflict', 'conflict');
+    });
+    expect(await rotateKeys(raced.api, USER, DEVICE, [L])).toBe('rotated');
+    expect(tries).toEqual([2]); // one attempt; no second rotation to v3
+    expect(raced.state.key_version).toBe(2);
+    expect(await store.unwrapAdkRaw(2)).toEqual(adk2.raw); // it picked up B's blob instead
+    // This device's own excluding rotation never went through, so L stays remembered (I.4).
+    expect(await syncMeta().excluded(USER)).toEqual([L]);
+  });
+
+  it('remembers revoked devices and keeps excluding them until an excluding rotation succeeds (I.4)', async () => {
+    const { fake } = await readyAtV1();
+    const other = await generateX25519();
+    const proof = await deviceKeyProof(adk1.raw, 1, OTHER, other.publicKey);
+    let fail = true;
+    // The server keeps listing OTHER with a valid v1 proof (a colluding departed device re-listed in an owed rotation).
+    const flaky = fakeApi({
+      state: { ...fake.state, devices: [...fake.state.devices, { device_id: OTHER, ...proof }] },
+      rotate: () => {
+        if (fail) throw new NetworkError();
+      },
+    });
+    await expect(rotateKeys(flaky.api, USER, DEVICE, [OTHER.toUpperCase()])).rejects.toBeInstanceOf(NetworkError);
+    expect(await syncMeta().excluded(USER)).toEqual([OTHER]);
+    fail = false;
+    flaky.setState({ rotation_due: true });
+    const res = await checkKeys(flaky.api, USER, DEVICE); // an owed rotation: the caller passes no exclusions
+    expect(res.keyVersion).toBe(2);
+    expect(flaky.calls.rotate.at(-1)?.device_blobs.map((b) => b.device_id)).toEqual([DEVICE]);
+    expect(await syncMeta().excluded(USER)).toEqual([]);
+  });
+
+  it('an owed rotation that finds this device without the newest key runs a key check instead (I.5)', async () => {
+    const { fake } = await readyAtV1();
+    fake.setState({ rotation_due: true });
+    const read = fake.api.keys as unknown as { mockImplementation: (f: () => Promise<KeysState>) => void };
+    let n = 0;
+    const base = fake.state;
+    read.mockImplementation(async () => {
+      n++;
+      // Between this check and the rotation another device rotated to v2 without a blob for this one.
+      return n === 1 ? base : { ...base, key_version: 2, rotation_due: true };
+    });
+    const res = await checkKeys(fake.api, USER, DEVICE);
+    expect(fake.api.rotate).not.toHaveBeenCalled();
+    expect(res.status).toBe('pair');
+    expect(res.rotationOwed).toBe(false);
+  });
+
+  it('importChain verifies older versions; a forged older key is not stored (I.6)', async () => {
+    const store = await keyStore();
+    const adk2 = generateAdk(2);
+    await store.saveAdk(2, adk2.raw);
+    const evil1 = generateAdk(1);
+    // The server offers a chain link it cannot make (only an ADK(2) holder can) — here it replays a real link to
+    // another account's v1 and lists that key's verify key, with a signature not by it.
+    const fake = fakeApi({
+      state: { key_version: 2, recovery, devices: [], pending: [], rotation_due: false },
+      chain: {
+        chain: [{ key_version: 2, blob: b64uEncode(await wrapChain(adk2.raw, evil1.raw, 2)) }],
+        versions: [
+          { key_version: 1, verify_key: b64uEncode(await verifyKeyOf(evil1.raw)), signature: null },
+          {
+            key_version: 2,
+            verify_key: b64uEncode(await verifyKeyOf(adk2.raw)),
+            signature: b64uEncode(new Uint8Array(64)),
+          },
+        ],
+      },
+    });
+    await expect(checkKeys(fake.api, USER, DEVICE)).rejects.toMatchObject({ code: 'unverified' });
+    expect(await store.allVersions()).toEqual([2]);
   });
 });

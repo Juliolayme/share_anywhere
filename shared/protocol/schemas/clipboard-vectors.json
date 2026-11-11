@@ -132,6 +132,11 @@
       "anchor_key": "5a969874c0dc3e163d6a3d12a5cb8ce3f17d611cd7fed331c76f8f52eaf5696f",
       "message_utf8": "sa-anchor-v1|T3rZE4yoHq-IJHrxqNSvl7RPQUerVpPNd7JzfhVQQr8",
       "recovery_anchor": "0d5136c80ca2a5b3f5b29f16e8d4c69d5e9ef7c5ca6ef55a087c17b8d92a8a04"
+    },
+    "recovery_key": {
+      "public_key": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+      "message_utf8": "sa-recoverykey-v1|gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8",
+      "signature": "df3154c2c9656e2c1463c649337f6f735eaf2641da6bb2b77fe540e4e522b7cb6a247023c2bd8f37537f601b8064ce7813271664b7b7cc9a019b85531ed1f906"
     }
   }
 }

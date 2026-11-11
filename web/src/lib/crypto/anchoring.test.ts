@@ -2,7 +2,14 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 import { generateAdk } from './adk';
-import { deviceKeyProof, rotationMessage, signWithAdk, verifyKeyOf, type ChainState } from './authenticity';
+import {
+  deviceKeyProof,
+  recoveryKeySignature,
+  rotationMessage,
+  signWithAdk,
+  verifyKeyOf,
+  type ChainState,
+} from './authenticity';
 import { b64uEncode, utf8 } from './encoding';
 import { acceptPairing, createPairingKeys, pairingFingerprint, wrapForPairing } from './pairing';
 import { prepareRotation } from './rotation';
@@ -26,8 +33,10 @@ const ID = {
 const rnd = () => crypto.getRandomValues(new Uint8Array(32));
 const store = () => openKeyStore({ factory: new IDBFactory() });
 
-async function recoveryKey() {
-  return b64uEncode((await generateX25519()).publicKey);
+/** A recovery key signed by ADK v1 (contract H.1), as `GET /v1/keys` lists it for a genuine account. */
+async function recoveryFor(adk1: Uint8Array) {
+  const pub = (await generateX25519()).publicKey;
+  return { recoveryPublicKey: b64uEncode(pub), recoverySignature: b64uEncode(await recoveryKeySignature(adk1, pub)) };
 }
 
 /** A genuine account at v2: v1 set up, then rotated by a holder of v1. Returns the owner store and the server view. */
@@ -37,7 +46,7 @@ async function accountAtV2() {
   await owner.saveAdk(1, adk1.raw);
   const rot = await prepareRotation(owner, {
     serverKeyVersion: 1,
-    recoveryPublicKey: await recoveryKey(),
+    ...(await recoveryFor(adk1.raw)),
     devices: [],
   });
   await rot.commit();
@@ -69,7 +78,7 @@ describe('prepareRotation wraps only to proofs by the current version (D.3)', ()
     const reg = await deviceKeyProof(adk1, 1, ID.THIEF, thief.publicKey);
     const prep = await prepareRotation(s, {
       serverKeyVersion: 2,
-      recoveryPublicKey: await recoveryKey(),
+      ...(await recoveryFor(adk1)),
       devices: [{ device_id: ID.THIEF, ...reg }],
     });
     expect(prep.skipped).toEqual([{ device_id: ID.THIEF, reason: 'stale' }]);
@@ -90,7 +99,7 @@ describe('prepareRotation wraps only to proofs by the current version (D.3)', ()
     const forged = { device_id: ID.THIEF, ...(await deviceKeyProof(rnd(), 2, ID.THIEF, await key())) };
     const prep = await prepareRotation(s, {
       serverKeyVersion: 2,
-      recoveryPublicKey: await recoveryKey(),
+      ...(await recoveryFor(adk1)),
       devices: [b, c, revoked, forged, { device_id: ID.C, public_key: null, key_version: null, proof: null }],
       exclude: [ID.A.toUpperCase()],
     });

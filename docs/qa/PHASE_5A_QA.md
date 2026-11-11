@@ -9,6 +9,7 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [42961740565](https://github.com/Juliolayme/share_anywhere/actions/runs/42961740565) on e3289ba: backend, web, protocol, docs, compose and e2e-web in all five projects passed with no retries (account suite included); `security` failed on a new Go advisory, GO-2026-6859 (net/http, fixed in go1.27.4). Fixed in 5fdffe0 (toolchain go1.27.4).
 - [42962832188](https://github.com/Juliolayme/share_anywhere/actions/runs/42962832188) on 5fdffe0: every job green, `security` included. One WebKit test (`p2p.spec.ts` reconnect) passed on retry: it waited only the default 5 s for the first verified block. 3987ac8 gives it 30 s like the other specs in the file.
 - [42967732687](https://github.com/Juliolayme/share_anywhere/actions/runs/42967732687) on 4446bee (QA round 1 fixes): every job green, e2e first attempt in all five projects (chromium 63, firefox 62, webkit 63, android-chrome 56, ios-safari 56).
+- [42974283806](https://github.com/Juliolayme/share_anywhere/actions/runs/42974283806) on f585651 (QA round 2 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - Nightly [42961754657](https://github.com/Juliolayme/share_anywhere/actions/runs/42961754657) on e3289ba: every job passed. It generated the new mobile snapshot baselines (header Sign in chip), committed in 9874e3f.
 
 ## Round 1 — commit e3289ba — FAIL
@@ -85,3 +86,34 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 | History banner disappears when `/v1/me` fails | P2 | Error with Retry; no "Syncing…" without a history store |
 | Legacy keys are a dead end | P2 | Kept as documented (pre-release data only) |
 | Report gaps | P2 | Report §4 and §9 completed with commit hashes and CI links |
+
+## Round 3 — commit f585651 — FAIL
+
+1 P0, 0 P1, 8 P2 findings. Every command, the backend and Web suites, and the account e2e suite (19 tests in each of the five projects) passed. Every round-2 finding was verified fixed. The round-2 attack scripts are blocked, live and in unit tests.
+
+**What held up under review:**
+
+- Old-version proofs refused, and rotations wrap exactly the devices proven at the current version.
+- `rotation_due` is set on departure and cleared by rotation.
+- Pairing and recovery are anchored on held keys, with no rollback or wipe.
+- Pending pickup is verified.
+- History banner states, guest-first, flags, i18n and tokens hold.
+- No round-1 regressions.
+
+**Why it failed:**
+
+- **P0-1:** rotations wrapped the new ADK to the recovery public key from `GET /v1/keys`, which nothing authenticated. With the automatic owed rotation, a dishonest or write-compromised server could substitute its own key and obtain every new ADK with no user action. QA proved this against the client code with a stub server.
+
+### Resolution of round 3 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Unauthenticated recovery public key in rotations | P0 | Setup signs the recovery public key with ADK(1)'s signing key (`recovery_key_signature`). A rotating device verifies it with its own verify_key(1) and otherwise refuses to rotate. Recovery checks it too. Vectors and tests added (ADR 0015) |
+| Left-behind device shows "refused" | P2 | A repeated conflict with a newer server version gives `pair` |
+| Double rotation after a concurrent owed rotation | P2 | Stops when another device already rotated and `rotation_due` is clear |
+| Open tabs pick up rotations only on load; old-key uploads | P2 | Key check on visibility and on the sync tick. History entries must use the current version (`409 key_version_conflict`, then key check and retry). ADR wording corrected |
+| Dishonest-server consequences of `rotation_due` undocumented | P2 | Documented. Revoked device IDs are persisted and excluded until an excluding rotation succeeds |
+| `not_ready` rotation shows a misleading Retry | P2 | Runs a key check instead |
+| `importChain` stores older versions unchecked | P2 | Checks the verify key and the signed chain link |
+| Unregistered departing device does not set `rotation_due` | P2 | Documented |
+| Report §9 hash, CI for HEAD | P2 | Report and CI history updated |

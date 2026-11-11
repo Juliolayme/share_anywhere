@@ -161,11 +161,32 @@ func TestHistoryIdempotentAndTombstones(t *testing.T) {
 		t.Fatalf("repost of deleted entry: %s", r.raw)
 	}
 
+	// After a rotation new entries must use the current version (docs/ADR/0015-authenticated-recovery-key.md):
+	// an older one is 409 key_version_conflict and nothing is stored, the current one is accepted, and a retry of
+	// an entry already stored still returns its original seq.
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
+	idOld := newID()
+	e.want(e.do("POST", "/v1/history/entries", tokB, entryBody(idOld, 1)), 409, "key_version_conflict")
+	e.want(e.do("POST", "/v1/history/entries", tokB, entryBody(newID(), 3)), 409, "key_version_conflict")
+	var stored int
+	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM history_entries WHERE entry_id = $1::uuid`, idOld).Scan(&stored)
+	if stored != 0 {
+		t.Fatal("an entry under an old key version was stored")
+	}
+	if r := e.do("POST", "/v1/history/entries", tokA, entryBody(id2, 1)); r.code != 201 || r.body["seq"].(float64) != 2 {
+		t.Fatalf("idempotent retry of an entry stored before the rotation: %s", r.raw)
+	}
+	r2 := e.do("POST", "/v1/history/entries", tokB, entryBody(idOld, 2))
+	e.want(r2, 201, "")
+	if r2.body["seq"].(float64) != 5 {
+		t.Fatalf("entry under the current version: %s", r2.raw)
+	}
+
 	// Clear: every live entry becomes a tombstone with a new seq.
 	e.want(e.do("DELETE", "/v1/history", tokA, nil), 204, "")
-	r = e.do("GET", "/v1/history/entries?after=4", tokB, nil)
+	r = e.do("GET", "/v1/history/entries?after=5", tokB, nil)
 	es = r.body["entries"].([]any)
-	if len(es) != 2 || r.body["next_after"].(float64) != 6 {
+	if len(es) != 3 || r.body["next_after"].(float64) != 8 {
 		t.Fatalf("clear: %s", r.raw)
 	}
 	for _, x := range es {

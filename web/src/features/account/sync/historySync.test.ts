@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { generateAdk, openKeyStore, type KeyStore } from '../../../lib/crypto';
-import { NetworkError } from '../../../lib/api/errors';
+import { ApiError, NetworkError } from '../../../lib/api/errors';
 import { openHistoryStore, type HistoryEntry, type HistoryStore } from '../../history/store/history-store';
 import type { AccountApi, RemoteHistoryEntry } from '../api';
 import {
@@ -266,6 +266,39 @@ describe('cloud history sync', () => {
     expect(rewindForNewKeys(meta, [1, 2])).toBe(true);
     expect(meta).toMatchObject({ cursor: 11, retrySeq: null, retryVersions: [] });
     expect(rewindForNewKeys({ ...emptyMeta('u1'), cursor: 5 }, [1, 2, 3])).toBe(false);
+  });
+
+  it('an upload under an older key (409 key_version_conflict) runs a key check and retries once with the newest key (I.3)', async () => {
+    const server = fakeServer();
+    const adk2 = generateAdk(2);
+    const a = await device('dev-a', [adk1]);
+    await a.meta.put({ ...(await a.meta.get('u1')), pushSince: 0 });
+    await a.history.add(entry('tx:s1', 'one.pdf'));
+    await a.history.add(entry('tx:s2', 'two.pdf'));
+    // The account rotated to v2 while this tab was open: the server takes only the current version.
+    const add = server.api.addHistoryEntry;
+    let current = 2;
+    server.api.addHistoryEntry = async (req) => {
+      if (req.key_version !== current) throw new ApiError(409, 'key_version_conflict', 'conflict');
+      return add(req);
+    };
+    const onKeyConflict = vi.fn(async () => {
+      await a.keys.saveAdk(2, adk2.raw); // the key check picked up the rotation blob
+    });
+    const res = await syncHistory({ ...deps(server, a), onKeyConflict });
+    expect(onKeyConflict).toHaveBeenCalledTimes(1);
+    expect(res.pushed).toBe(2);
+    expect([...server.rows.values()].map((r) => r.key_version)).toEqual([2, 2]);
+
+    // A second conflict after the key check (the device was left behind) propagates; nothing is marked uploaded.
+    current = 3;
+    await a.history.add(entry('tx:s3', 'three.pdf'));
+    const again = vi.fn(async () => undefined);
+    await expect(syncHistory({ ...deps(server, a), onKeyConflict: again })).rejects.toMatchObject({
+      code: 'key_version_conflict',
+    });
+    expect(again).toHaveBeenCalledTimes(1);
+    expect((await a.meta.get('u1')).uploaded['tx:s3']).toBeUndefined();
   });
 
   it('validates decrypted entries and derives stable UUIDs per device', async () => {

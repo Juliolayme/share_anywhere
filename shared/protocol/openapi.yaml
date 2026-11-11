@@ -1041,7 +1041,7 @@ paths:
     post:
       operationId: setupKeys
       x-sa-access: account+device
-      summary: Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters, verify_key(1), and the recovery anchor.
+      summary: Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters, verify_key(1), the recovery anchor, and the signature by version 1 over the recovery public key.
       requestBody:
         required: true
         content:
@@ -1055,7 +1055,11 @@ paths:
               schema: { $ref: "#/components/schemas/KeyVersion" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "403":
+          description: recovery_key_unverified (recovery_key_signature does not verify with verify_key over "sa-recoverykey-v1|" + b64u(recovery_public_key); nothing stored), account_required, or device_not_added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "409":
           description: keys_exist.
           content:
@@ -1287,7 +1291,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409":
-          description: key_version_conflict (key_version is newer than the account's).
+          description: key_version_conflict (key_version is not the account's current version; nothing stored. The client picks up the new key and retries).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1894,11 +1898,20 @@ components:
         p: { type: integer, minimum: 1, maximum: 4 }
     RecoveryInfo:
       type: object
-      required: [public_key, salt, params]
+      required: [public_key, salt, params, signature]
       properties:
         public_key: { $ref: "#/components/schemas/PublicKey" }
         salt: { $ref: "#/components/schemas/Base64Url" }
         params: { $ref: "#/components/schemas/Argon2Spec" }
+        signature:
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+          nullable: true
+          description: >-
+            The setup-time signature by ADK(1) over "sa-recoverykey-v1|" + b64u(public_key). A rotating client verifies it with the
+            verify_key(1) it derives from its own ADK(1) before wrapping a new ADK to public_key, and refuses otherwise. Null for legacy
+            accounts set up before it existed (clients refuse to rotate). The recovery public key never changes after setup
+            (docs/ADR/0015-authenticated-recovery-key.md).
     DeviceKey:
       type: object
       required: [device_id, public_key, key_version, proof]
@@ -1947,7 +1960,7 @@ components:
             rotation clears it (docs/ADR/0014-current-version-proofs.md).
     KeysSetupRequest:
       type: object
-      required: [recovery_public_key, salt, params, recovery_blob, verify_key, recovery_anchor]
+      required: [recovery_public_key, salt, params, recovery_blob, verify_key, recovery_anchor, recovery_key_signature]
       additionalProperties: false
       properties:
         recovery_public_key: { $ref: "#/components/schemas/PublicKey" }
@@ -1957,6 +1970,9 @@ components:
         verify_key: { allOf: [{ $ref: "#/components/schemas/VerifyKey" }], description: verify_key(1). }
         recovery_anchor:
           allOf: [{ $ref: "#/components/schemas/RecoveryAnchor" }]
+        recovery_key_signature:
+          allOf: [{ $ref: "#/components/schemas/Signature" }]
+          description: Ed25519 by the signing key of ADK(1) over "sa-recoverykey-v1|" + b64u(recovery_public_key); verified with verify_key.
     KeyVersion:
       type: object
       required: [key_version]
@@ -2083,7 +2099,7 @@ components:
       additionalProperties: false
       properties:
         entry_id: { type: string, format: uuid }
-        key_version: { type: integer, minimum: 1 }
+        key_version: { type: integer, minimum: 1, description: "The account's current key version (409 key_version_conflict otherwise)." }
         nonce: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: 12 bytes. }
         ciphertext: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: "AES-256-GCM ciphertext and tag, at most 64 KB decoded." }
     HistoryEntry:

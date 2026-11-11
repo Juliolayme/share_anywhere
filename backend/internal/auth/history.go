@@ -62,7 +62,8 @@ func lockHistory(ctx context.Context, tx pgx.Tx, userID string) (int64, error) {
 }
 
 // AddEntry stores an encrypted entry and returns its seq. Repeating an entry_id returns the original seq and
-// changes nothing (idempotent retries from an offline queue).
+// changes nothing (idempotent retries from an offline queue). A new entry must be encrypted under the
+// account's current key version (409 key_version_conflict otherwise, nothing stored).
 func (s *Service) AddEntry(ctx context.Context, id access.Identity, in EntryInput) (int64, error) {
 	se, err := s.require(ctx, id, true)
 	if err != nil {
@@ -86,11 +87,14 @@ func (s *Service) AddEntry(ctx context.Context, id access.Identity, in EntryInpu
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		// New entries must use the current key (docs/ADR/0015-authenticated-recovery-key.md): a device that
+		// missed a rotation gets 409 key_version_conflict, picks up the new key, and retries. FOR SHARE holds
+		// off a concurrent rotation (which locks the row FOR UPDATE) until this entry is stored.
 		var current int
-		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid`, se.UserID).Scan(&current); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&current); err != nil {
 			return err
 		}
-		if in.KeyVersion > current {
+		if in.KeyVersion != current {
 			return ErrKeyVersion
 		}
 		maxSeq, err := lockHistory(ctx, tx, se.UserID)

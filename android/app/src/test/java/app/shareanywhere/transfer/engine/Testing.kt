@@ -37,28 +37,42 @@ class MemChannel(private val scope: CoroutineScope, override val maxMessageSize:
         check(max == null || data.size <= max) { "message of ${data.size} bytes over the limit" }
         sent++
         synchronized(this) { bufferedAmount += data.size }
-        val copy = data.copyOf()
-        val d = delayMs
-        peer.scope.launch {
-            if (d > 0) delay(d)
-            synchronized(this@MemChannel) { bufferedAmount -= data.size }
-            scope.launch { listener?.onBufferedAmountChange() }
-            if (peer.state != "closed") peer.listener?.onMessage(copy)
-        }
+        outbox().trySend(data.copyOf())
         return true
     }
+
+    // One delivery coroutine per direction keeps messages in order even with [delayMs] (separate delay() timers with the
+    // same deadline are not FIFO), as SCTP's ordered stream does. The close marker queues behind the data.
+    private val closeMarker = ByteArray(0)
+    private var box: kotlinx.coroutines.channels.Channel<ByteArray>? = null
+
+    @Synchronized
+    private fun outbox(): kotlinx.coroutines.channels.Channel<ByteArray> =
+        box ?: kotlinx.coroutines.channels.Channel<ByteArray>(kotlinx.coroutines.channels.Channel.UNLIMITED).also { ch ->
+            box = ch
+            peer.scope.launch {
+                for (msg in ch) {
+                    val d = delayMs
+                    if (d > 0) delay(d)
+                    if (msg === closeMarker) {
+                        state = "closed"
+                        peer.state = "closed"
+                        scope.launch { listener?.onClose() }
+                        peer.listener?.onClose()
+                        break
+                    }
+                    synchronized(this@MemChannel) { bufferedAmount -= msg.size }
+                    scope.launch { listener?.onBufferedAmountChange() }
+                    if (peer.state != "closed") peer.listener?.onMessage(msg)
+                }
+            }
+        }
 
     override fun close() {
         if (state != "open") return
         state = "closing"
-        // Queued deliveries go first (same ordered dispatcher), then both ends close.
-        peer.scope.launch {
-            delay(delayMs + 1)
-            state = "closed"
-            peer.state = "closed"
-            scope.launch { listener?.onClose() }
-            peer.listener?.onClose()
-        }
+        // Queued deliveries go first, then both ends close.
+        outbox().trySend(closeMarker)
     }
 
     companion object {

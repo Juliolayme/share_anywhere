@@ -30,21 +30,28 @@ interface TransferChannel {
     }
 }
 
-/** Waits until bufferedAmount drops to [low] or the channel closes; the engine calls [signal] on every change. */
+/**
+ * Waits until bufferedAmount drops to [low] or the channel closes; the engine calls [signal] on every change. Several
+ * coroutines may wait at once (the block pump and a fatal error's close), so every waiter is woken by each signal.
+ */
 class Drain {
-    private var waiter: CompletableDeferred<Unit>? = null
+    private val waiters = ArrayList<CompletableDeferred<Unit>>()
 
     suspend fun until(channel: TransferChannel, low: Long) {
         while (channel.isOpen && channel.bufferedAmount > low) {
             val w = CompletableDeferred<Unit>()
-            waiter = w
-            if (!channel.isOpen || channel.bufferedAmount <= low) break
-            w.await()
+            synchronized(waiters) { waiters += w }
+            try {
+                if (!channel.isOpen || channel.bufferedAmount <= low) break
+                w.await()
+            } finally {
+                synchronized(waiters) { waiters -= w }
+            }
         }
-        waiter = null
     }
 
     fun signal() {
-        waiter?.complete(Unit)
+        val all = synchronized(waiters) { waiters.toList() }
+        all.forEach { it.complete(Unit) }
     }
 }

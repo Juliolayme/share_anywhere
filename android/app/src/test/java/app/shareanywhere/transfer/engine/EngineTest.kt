@@ -23,15 +23,19 @@ class EngineTest {
     private class Rx {
         val sinks = HashMap<Int, MemorySink>()
         val persisted = HashMap<Int, Bitmap>()
-        var complete = false
-        val errors = mutableListOf<String>()
-        val doneFiles = mutableListOf<Pair<Int, Boolean>>()
+
+        @Volatile var complete = false
+
+        // Written on the engine's threads, read by the test thread.
+        val errors = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val doneFiles = java.util.concurrent.CopyOnWriteArrayList<Pair<Int, Boolean>>()
     }
 
     private class Tx {
-        var complete = false
-        val errors = mutableListOf<String>()
-        var authorized: String? = null
+        @Volatile var complete = false
+        val errors = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+        @Volatile var authorized: String? = null
     }
 
     private inner class Link(
@@ -185,7 +189,8 @@ class EngineTest {
         s.launch { stale.value() }.join()
         val l = Link(listOf(sent), sharedHashes = mapOf(0 to stale))
         l.start()
-        until { ErrorCodes.FILE_HASH_MISMATCH in l.rx.errors }
+        // The receiver reports the error, then the file result: wait for both (they arrive on the receiver's thread).
+        until { ErrorCodes.FILE_HASH_MISMATCH in l.rx.errors && l.rx.doneFiles.isNotEmpty() }
         assertEquals(listOf(0 to false), l.rx.doneFiles)
         assertEquals(false, l.rx.complete)
     }

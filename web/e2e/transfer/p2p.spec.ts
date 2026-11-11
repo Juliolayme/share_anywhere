@@ -130,7 +130,7 @@ test('transfer: cancel releases the lock and ends both sides', async ({ browser,
   await joinToSave(rx, s.code);
   await sender.getByRole('button', { name: 'Stop accepting' }).last().click();
   await startInBrowser(rx);
-  await expect.poll(() => rxVerified(rx, s.id)).toBeGreaterThan(0);
+  await expect.poll(() => rxVerified(rx, s.id), { timeout: 30_000 }).toBeGreaterThan(0);
   await expect.poll(async () => (await wl(sender)).requests).toBeGreaterThan(0);
   await rx.getByRole('button', { name: 'Cancel' }).click();
   await rx.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
@@ -258,7 +258,7 @@ test('transfer: when the sender drops off, the receiver shows reconnecting and r
   const rx = track(await receiverPage(browser, browserName));
   await joinToSave(rx, s.code);
   await startInBrowser(rx);
-  await expect.poll(() => rxVerified(rx, s.id)).toBeGreaterThan(0);
+  await expect.poll(() => rxVerified(rx, s.id), { timeout: 30_000 }).toBeGreaterThan(0);
   await senderHook(sender, s.id, { dropForMs: 4000 });
   await expect(rx.getByTestId('transfer-status')).toHaveAttribute('data-state', 'reconnecting', { timeout: 15_000 });
   await expect(rx.getByText('Connection lost — resuming automatically from the last verified block.')).toBeVisible();

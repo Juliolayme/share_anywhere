@@ -9,3 +9,7 @@
 a598989701ca93b1c326f9b08f1fbb8c4c16368b:shared/protocol/schemas/clipboard-vectors.json:generic-api-key:53
 a598989701ca93b1c326f9b08f1fbb8c4c16368b:shared/protocol/schemas/clipboard-vectors.json:generic-api-key:56
 a598989701ca93b1c326f9b08f1fbb8c4c16368b:web/src/lib/crypto/x25519.ts:generic-api-key:16
+
+# Phase 6.2 false positive (45ae141): a made-up share-link token in an Android unit test (SharingTest), never a
+# credential; the test now builds it at runtime.
+45ae1414bf3f5572bf17590a3d76cc3fff75830a:android/app/src/test/java/app/shareanywhere/sharing/SharingTest.kt:generic-api-key:14

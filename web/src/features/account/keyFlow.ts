@@ -387,16 +387,17 @@ export function rotateKeys(
 }
 
 /**
- * QA round 4 P2-1: a remembered exclusion whose revoke never reached the server (the request got no answer) would
- * make every rotation from this browser fail with `devices_changed` listing it as `missing`. When that happens, ask
- * the server for the account's devices: a remembered device still in the account was never revoked, so it is
- * forgotten here and gets its blob on the retry (the user can revoke it again). IDs the caller passed in this call
- * (a revoke that just succeeded) are never dropped.
+ * A remembered exclusion is a device this browser revoked whose excluding rotation has not gone through yet. If the
+ * server then answers `devices_changed` listing it as `missing` and still lists it in `GET /v1/devices`, the revoke
+ * did not take effect (the request got no answer) or the device signed in again before the rotation. Either way the
+ * user asked for that device to be revoked, so the revoke is sent again and the device stays excluded; it is never
+ * forgotten here, so a server cannot talk this browser into wrapping a new key to it (QA rounds 4 and 5). A server
+ * that keeps refusing can only block the rotation (denial of service). IDs revoked in this very call are left alone
+ * (their revoke just succeeded).
  */
-async function dropUnrevoked(
+async function completeRevokes(
   api: AccountApi,
-  userId: string,
-  excluded: string[],
+  excluded: readonly string[],
   body: unknown,
   explicit: readonly string[],
 ): Promise<void> {
@@ -410,10 +411,14 @@ async function dropUnrevoked(
   if (candidates.length === 0) return;
   const { devices } = await api.devices();
   const present = new Set(lower(devices.map((d) => d.id)));
-  const stillThere = candidates.filter((id) => present.has(id));
-  if (stillThere.length === 0) return;
-  await forgetRevoked(userId, stillThere).catch(() => undefined);
-  for (const id of stillThere) excluded.splice(excluded.indexOf(id), 1);
+  for (const id of candidates.filter((c) => present.has(c))) {
+    try {
+      await api.revokeDevice(id);
+    } catch (e) {
+      // Already gone (404) is fine; anything else surfaces through the next attempt's devices_changed.
+      if (!(e instanceof ApiError && e.status === 404)) throw e;
+    }
+  }
 }
 
 async function rotateNow(
@@ -460,7 +465,7 @@ async function rotateNow(
         // the truth: a device that left drops out, one that re-proved at the current version gets a blob, and this
         // device re-proves first if it was behind.
         if (e.code === 'key_version_conflict') conflictedFrom = state.key_version;
-        if (e.code === 'devices_changed') await dropUnrevoked(api, userId, excluded, e.body, exclude);
+        if (e.code === 'devices_changed') await completeRevokes(api, excluded, e.body, exclude);
         continue;
       }
       throw e;

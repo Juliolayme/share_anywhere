@@ -11,6 +11,7 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [42967732687](https://github.com/Juliolayme/share_anywhere/actions/runs/42967732687) on 4446bee (QA round 1 fixes): every job green, e2e first attempt in all five projects (chromium 63, firefox 62, webkit 63, android-chrome 56, ios-safari 56).
 - [42974283806](https://github.com/Juliolayme/share_anywhere/actions/runs/42974283806) on f585651 (QA round 2 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - [42980800030](https://github.com/Juliolayme/share_anywhere/actions/runs/42980800030) on 79f6446 (QA round 3 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
+- [42984689531](https://github.com/Juliolayme/share_anywhere/actions/runs/42984689531) on 7fa9f27 (QA round 4 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - Nightly [42961754657](https://github.com/Juliolayme/share_anywhere/actions/runs/42961754657) on e3289ba: every job passed. It generated the new mobile snapshot baselines (header Sign in chip), committed in 9874e3f.
 
 ## Round 1 — commit e3289ba — FAIL
@@ -149,3 +150,28 @@ Every Web, root and lint command passed. The account e2e suite passed 19 tests i
 | Chain-import authenticity scope | P2 | Documented as holding against parties without a newer ADK |
 | Report legacy wording; CI entry | P2 | Report §6 covers migrations 0007 and 0009; CI history updated |
 | History 409 path bypasses the throttle | P2 | Documented as bounded (at most two rotations per tick, denial of service only) |
+
+## Round 5 — commit 7fa9f27 — FAIL
+
+0 P0, 1 P1, 3 P2 findings.
+
+All commands passed, and the account e2e suite passed 19 tests in each of the five projects. Both round-4 P1s are verified fixed:
+
+- the race tests fail on the pre-fix code and pass 10 of 10 now;
+- the lock fix holds even without the pending filter;
+- the live race script finds 0 of 12;
+- a lock-stress probe across rotate, revokes, sign-out, registration, pairing wrap, history writes and the sweep found no deadlocks;
+- `TestHistorySeqParallel` passes 60 of 60, against 2 of 60 failing before the fix.
+
+**Why it failed:**
+
+- **P1-1:** the round-4 client rule for remembered exclusions forgot a remembered device when the server answered `devices_changed` listing it as `missing` and `GET /v1/devices` still listed it. A dishonest server colluding with that device, or a revoked device that signed in again, could get the new ADK wrapped to it. The owner documents still described the stricter rule.
+
+### Resolution of round 5 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Remembered exclusion dropped on the server's word | P1 | Replaced: a remembered device still listed is revoked again and stays excluded, and it is never re-included. A server that ignores the revoke can only block the rotation. CLIPBOARD_PROTOCOL §1.8 and §1.11 and SECURITY_MODEL §7 describe the rule and its real strength: by device ID, so it does not stop a colluding holder of the current ADK that proves a fresh ID. Vitest covers the repeated revoke, a server that ignores it, and IDs revoked in the same call |
+| Registration racing the device's own revoke left an orphan key row | P2 | `RegisterDeviceKey` locks the caller's live session row `FOR SHARE` inside its transaction, in `detach`'s lock order. `TestRegisterRacingOwnRevoke` fails on the old code and passes now |
+| `rejected` copy reused for a missing recovery key | P2 | Documented in CLIPBOARD_PROTOCOL §1.8 (an honest server always returns the signed recovery key) |
+| CI entry for HEAD | P2 | Added to the CI history |

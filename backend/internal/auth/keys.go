@@ -178,6 +178,19 @@ func (s *Service) RegisterDeviceKey(ctx context.Context, id access.Identity, in 
 		return ErrInvalid
 	}
 	return pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+		// Lock the caller's live account session first (the order detach uses: sessions, then account_keys), so a
+		// registration racing this device's own departure serializes with it: either the key row exists before the
+		// departure (which then sets rotation_due and deletes it) or the session is gone and nothing is stored
+		// (QA round 5 P2-1).
+		var live int
+		if err := tx.QueryRow(ctx,
+			`SELECT 1 FROM auth_sessions WHERE id = $1::uuid AND revoked_at IS NULL AND expires_at > $2 FOR SHARE`,
+			se.ID, s.cfg.Clock.Now()).Scan(&live); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrTokenStale
+			}
+			return err
+		}
 		var current int
 		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&current); err != nil {
 			return err

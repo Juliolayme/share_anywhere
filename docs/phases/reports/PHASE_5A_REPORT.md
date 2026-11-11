@@ -1,6 +1,6 @@
 # Phase 5A report: accounts, device linking, Devices list, cloud history
 
-Status: implemented and tested on the Web; QA rounds 1 (two P0s), 2 (two P1s), 3 (one P0) and 4 (two P1s) failed; every P0/P1 is fixed, QA round 5 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
+Status: implemented and tested on the Web; QA rounds 1 (two P0s), 2 (two P1s), 3 (one P0), 4 (two P1s) and 5 (one P1) failed; every P0/P1 is fixed, QA round 6 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -152,4 +152,5 @@ On `claude/practical-lovelace-avlb5g`:
 - 4446bee: QA round 1 fixes (key authenticity, session hardening)
 - f585651: QA round 2 fixes (current-version proofs, owed rotation, anchored pairing)
 - 79f6446: QA round 3 fixes (authenticated recovery key)
-- the QA round 4 fix commit that follows them (revoke/rotation serialization, history test)
+- 7fa9f27: QA round 4 fixes (revoke/rotation serialization, history test)
+- the QA round 5 fix commit that follows them (remembered exclusions revoke again; registration locks its session)

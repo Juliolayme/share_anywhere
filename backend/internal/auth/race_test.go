@@ -87,3 +87,43 @@ func TestPendingOnlyForRegisteredDevice(t *testing.T) {
 		t.Fatalf("a device without a registered key must not get blobs: %v", p.body["pending"])
 	}
 }
+
+// TestRegisterRacingOwnRevoke (QA round 5 P2-1): a device registering its key while it is being revoked never
+// ends up with a key row outside the account: either the registration landed first (the revoke then deletes it
+// and sets rotation_due) or it fails because the session is gone.
+func TestRegisterRacingOwnRevoke(t *testing.T) {
+	e := newEnv(t)
+	for i := 0; i < 40; i++ {
+		email := "regrace" + itoa(i) + "@example.com"
+		da, tokA := e.signup(email, true)
+		userID := e.ident(tokA).AccountID
+		e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+		e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(da.Device.ID, 1, pub32(1))), 204, "")
+		dl, tokL := e.signin(email, true)
+		var wg sync.WaitGroup
+		var reg, rev resp
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			reg = e.do("PUT", "/v1/keys/device", tokL, deviceKeyBody(dl.Device.ID, 1, pub32(3)))
+		}()
+		go func() { defer wg.Done(); rev = e.do("DELETE", "/v1/devices/"+dl.Device.ID, tokA, nil) }()
+		wg.Wait()
+		if rev.code != 204 {
+			t.Fatalf("iteration %d: revoke %d", i, rev.code)
+		}
+		var rows int
+		if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM device_keys WHERE device_id = $1::uuid`, dl.Device.ID).Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 0 {
+			t.Fatalf("iteration %d (register %d): key row left for the revoked device", i, reg.code)
+		}
+		if reg.code == 204 && !e.rotationDue(userID) {
+			t.Fatalf("iteration %d: the registration landed first, so the revoke must leave a rotation owed", i)
+		}
+		if reg.code != 204 && reg.code != 401 && reg.code != 403 {
+			t.Fatalf("iteration %d: register %d %v", i, reg.code, reg.body)
+		}
+	}
+}

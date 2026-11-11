@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -87,29 +88,29 @@ class SenderSessionTest {
             assertEquals("JOINED", runBlocking { alice.api.get(view.id).me?.status })
 
             // Create new code: a fresh window and a different code.
-            compose.onNodeWithTag("session.renew").performClick()
+            compose.onNodeWithTag("session.renew").performScrollTo().performClick()
             compose.waitForTag(ScreenIds.SESSION, 20_000)
             assertNotEquals(firstCode, code())
             val secondCode = code()
 
             // Remove revokes the receiver at once.
-            compose.onNodeWithTag("participant.remove").performClick()
+            compose.onNodeWithTag("participant.remove").performScrollTo().performClick()
             compose.waitUntil(20_000) { compose.onAllNodesWithTag("participant-card").fetchSemanticsNodes().isEmpty() }
             assertEquals("REMOVED", runBlocking { alice.api.get(view.id).me?.status })
 
             // Require approval: the next receiver waits for Approve.
-            compose.onNodeWithTag("session.approval").performClick()
+            compose.onNodeWithTag("session.approval").performScrollTo().performClick()
             compose.waitUntil(20_000) { runBlocking { entry.sessionsApi().get(view.id).requireApproval } }
             val bob = Backend.Peer.create("Safari on iPhone")
             val requested = runBlocking { bob.api.resolveCode(secondCode).let { bob.api.join(it.sessionId, it.joinTicket) } }
             assertEquals("REQUESTED", requested.participant.status)
             compose.waitForTag("request-card", 20_000)
-            compose.onNodeWithTag("participant.approve").performClick()
+            compose.onNodeWithTag("participant.approve").performScrollTo().performClick()
             compose.waitForTag("participant-card", 20_000)
             assertEquals("JOINED", runBlocking { bob.api.get(view.id).me?.status })
 
             // Block, after the confirmation dialog.
-            compose.onNodeWithTag("participant.block").performClick()
+            compose.onNodeWithTag("participant.block").performScrollTo().performClick()
             compose.onNodeWithText(Backend.entryString(R.string.product_block_confirm_h)).assertExists()
             compose.onNodeWithTag("dialog.confirm").performClick()
             compose.waitUntil(20_000) { compose.onAllNodesWithTag("participant-card").fetchSemanticsNodes().isEmpty() }

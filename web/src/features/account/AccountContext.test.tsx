@@ -312,5 +312,14 @@ describe('AccountProvider', () => {
     await expect(act(() => t.account().revokeDevice('d-other'))).rejects.toMatchObject({ code: 'not_found' });
     expect(flow.forgetRevoked).toHaveBeenCalledWith('u1', ['d-other']);
     expect(flow.rotateKeys).toHaveBeenCalledTimes(1);
+
+    // Fails closed (QA round 8): if the account's key version cannot be read, nothing is revoked.
+    flow.rememberRevoked.mockImplementationOnce(async () => {
+      throw new Error('offline');
+    });
+    const before = t.calls.filter((c) => c.startsWith('DELETE')).length;
+    await expect(act(() => t.account().revokeDevice('d-third'))).rejects.toThrow('offline');
+    expect(t.calls.filter((c) => c.startsWith('DELETE')).length).toBe(before);
+    expect(flow.rotateKeys).toHaveBeenCalledTimes(1);
   });
 });

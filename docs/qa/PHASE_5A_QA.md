@@ -14,6 +14,7 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [42984689531](https://github.com/Juliolayme/share_anywhere/actions/runs/42984689531) on 7fa9f27 (QA round 4 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - [42989102231](https://github.com/Juliolayme/share_anywhere/actions/runs/42989102231) on dd0df12 (QA round 5 fixes): every job green, but ios-safari passed one test on retry. On the first attempt, `account/signin-during-transfer.spec.ts` saw no verified block of the paced second transfer within 30 s, although both peers reported the connection as connected (before any sign-in). Under investigation (diagnostics for data-channel open and the first block to be added).
 - [42997152648](https://github.com/Juliolayme/share_anywhere/actions/runs/42997152648) on e41e6d3 (QA round 6 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
+- [43003792138](https://github.com/Juliolayme/share_anywhere/actions/runs/43003792138) on 9b76992 (QA round 7 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57); nightly 43003792203 green.
 - Nightly [42961754657](https://github.com/Juliolayme/share_anywhere/actions/runs/42961754657) on e3289ba: every job passed. It generated the new mobile snapshot baselines (header Sign in chip), committed in 9874e3f.
 
 ## Round 1 — commit e3289ba — FAIL
@@ -240,3 +241,18 @@ The round-6 server fix holds:
 | 60 s wait hides the event the diagnostics capture | P2 | Diagnostics are attached to a passing test too when they contain a data-channel open timeout, with a warning annotation; CI uploads artifacts always |
 | Pairing created during its device's departure | P2 | CreatePairing serializes on the account key row and re-checks the session. Lookup and wrap require the new device to have a live, added session. `TestPairingNotOfferedForDepartedDevice` covers it |
 | CI history and report hash | P2 | Added |
+
+## Round 8 — commit 9b76992 — PASS
+
+0 P0, 0 P1, 4 P2 findings. Every command passed, and the account e2e suite passed 19 tests in each of the five projects locally. CI 43003792138 was green on the first attempt in every job, and nightly 43003792203 was green.
+
+The round-7 P1 is verified fixed. The lag proof wraps the new key to the revoked device on e41e6d3 and does not on 9b76992. The pairing liveness fix is verified against the old code, which leaves rows behind and still allows lookup and wrap after the device leaves; the new code does neither. Every round 1–6 protection still holds in the live scripts and Go probes, and the extended lock stress found no deadlocks.
+
+### Resolution of round 8 findings (after the PASS)
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Two network failures in a row could still record a lagging version | P2 | Revoke fails closed. `rememberRevoked` throws when the server's `key_version` cannot be read, and the Devices screen then sends no `DELETE` and shows the error. Vitest covers both layers |
+| The raise could record a post-revoke version and revoke a re-added device again | P2 | The raise is removed; the version read before `DELETE` is the only one recorded |
+| Docs and comments out of step with the code | P2 | CLIPBOARD_PROTOCOL §1.8, SECURITY_MODEL §4 (pairing creation holds the key row `FOR SHARE`), and the `keyFlow.ts` comments corrected |
+| Report, test and log bookkeeping | P2 | Report test count and backlog (fair lock queue, ios-safari stall root cause) updated. `TestPairingNotOfferedForDepartedDevice` also asserts that wrap is refused. CI entry added |

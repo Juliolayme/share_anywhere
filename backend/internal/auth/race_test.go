@@ -205,4 +205,7 @@ func TestPairingNotOfferedForDepartedDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.want(e.do("GET", "/v1/keys/pairings/by-code/"+code, tokA, nil), 404, "not_found")
+	// Nor can it be wrapped.
+	wrap := map[string]any{"key_version": 1, "sender_public_key": key32(1), "blob": blob(92, 5)}
+	e.want(e.do("POST", "/v1/keys/pairings/by-code/"+code+"/wrap", tokA, wrap), 404, "not_found")
 }

@@ -98,8 +98,8 @@ async function importOlder(api: AccountApi, store: KeyStore, chain?: KeyChain): 
 const lower = (ids: readonly string[]) => [...new Set(ids.map((id) => id.toLowerCase()))];
 
 /**
- * A remembered exclusion is stored as `<device id>@<key version>`: the newest ADK version this browser held when it
- * revoked the device (older entries without a version count as version 0).
+ * A remembered exclusion is stored as `<device id>@<key version>`: the account's key version when the device was
+ * revoked (see rememberRevoked; older entries without a version count as version 0).
  */
 interface Remembered {
   id: string;
@@ -138,34 +138,19 @@ async function pendingExclusions(userId: string): Promise<string[]> {
  * Contract I.4: remembers devices this browser revoked (IndexedDB, next to the sync bookkeeping, never Web Storage), so
  * every rotation it makes keeps excluding them until one that excluded them has gone through, even if the tab closes
  * between the revoke and the rotation, or the rotation fails and is retried later as an owed one. Each ID is stored
- * with the newest ADK version this browser holds, so it can be dropped once it is provably obsolete
- * (`pruneRemembered`).
+ * with the account's key version at revoke time, so it can be dropped once it is provably obsolete (`pruneRemembered`).
  */
 export async function rememberRevoked(userId: string, ids: readonly string[], api?: AccountApi): Promise<void> {
   if (!ids.length) return;
-  // The version recorded is the newest the account is known to be at: this browser may lag the account (another
-  // device rotated and it has not picked the key up yet), and recording its own older version would make the entry
-  // look obsolete as soon as it catches up (QA round 7 P1).
+  // The version recorded is the account's version at revoke time: the larger of this browser's newest ADK and the
+  // server's key_version, read now, before DELETE /v1/devices/{id}. This browser may lag the account (another device
+  // rotated), and recording its own older version would make the entry look obsolete as soon as it catches up (QA
+  // round 7). If the server's version cannot be read, this throws and the caller does not revoke (fail closed, QA
+  // round 8); the user retries.
   const local = await (await keyStore()).currentVersion().catch(() => 0);
-  const server = api
-    ? await api
-        .keys()
-        .then((s) => s.key_version)
-        .catch(() => 0)
-    : 0;
+  const server = api ? (await api.keys()).key_version : 0;
   const v = Math.max(local, server);
   await saveRemembered(userId, [...(await remembered(userId)), ...lower(ids).map((id) => ({ id, v }))]);
-}
-
-/** Raises the recorded version of these remembered IDs to at least `v` (never lowers it). */
-async function raiseRemembered(userId: string, ids: readonly string[], v: number): Promise<void> {
-  const raise = new Set(lower(ids));
-  const list = await remembered(userId);
-  if (!list.some((r) => raise.has(r.id) && r.v < v)) return;
-  await saveRemembered(
-    userId,
-    list.map((r) => (raise.has(r.id) ? { id: r.id, v: Math.max(r.v, v) } : r)),
-  );
 }
 
 /** Drops IDs from the remembered exclusions (a rotation that excluded them succeeded, or the revoke was refused). */
@@ -179,8 +164,8 @@ export async function forgetRevoked(userId: string, ids: readonly string[]): Pro
 
 /**
  * QA round 6 P2-1: a remembered exclusion must not outlive its purpose (it would otherwise revoke the device again
- * if the user later adds it back). An entry remembered at version v is dropped, on a key check of a ready device,
- * when either holds:
+ * if the user later adds it back). An entry remembered at version v is dropped, at the start of a rotation by a ready
+ * device, when either holds:
  * - the account has rotated past v and the device has no registered key now: it can only come back by proving a key
  *   at the current version, which needs an ADK created after the revoke (a rotation excluded it), or
  * - the device holds a key proven at a version newer than v, checked with this browser's own copy of that version.
@@ -522,8 +507,6 @@ async function rotateNow(
   const store = await keyStore();
   {
     const first = await checkKeysNow(api, userId, deviceId);
-    // IDs revoked in this call were revoked at the account's current version at the latest.
-    if (exclude.length) await raiseRemembered(userId, exclude, first.state.key_version).catch(() => undefined);
     if (first.status === 'ready') await pruneRemembered(userId, store, first.state).catch(() => undefined);
   }
   const excluded = lower([...exclude, ...(await pendingExclusions(userId))]);

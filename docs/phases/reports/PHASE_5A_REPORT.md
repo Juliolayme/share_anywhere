@@ -1,6 +1,6 @@
 # Phase 5A report: accounts, device linking, Devices list, cloud history
 
-Status: implemented and tested on the Web; QA rounds 1 (two P0s), 2 (two P1s), 3 (one P0), 4 (two P1s), 5 (one P1), 6 (one P1) and 7 (one P1) failed; every P0/P1 is fixed, QA round 8 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
+Status: implemented and tested on the Web; QA rounds 1–7 failed (rounds 1 and 3 on P0s, the others on P1s) and every finding was fixed; QA round 8 passed with no P0 or P1 (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -99,7 +99,7 @@ Guest suites (`pairing`, `transfer`, `history`, `keep-awake`, `guest`) still pas
 
 Latest local run (CI runs and the phase's CI history are listed at the top of `docs/qa/PHASE_5A_QA.md`):
 
-- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 47 files, 358 tests passed.
+- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 47 files, 365 tests passed.
 - `pnpm -C web build`: main JS 114,781 bytes gzip (budget 122,880).
 - `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md`: pass.
 - `go test ./...` with `TEST_DATABASE_URL` (PostgreSQL 16, go1.27.4): pass. `golangci-lint run ./...`: 0 issues. `govulncheck`: nothing reachable.
@@ -126,7 +126,7 @@ New: `SA_MAIL_SINK` (`console`, `smtp`, `memory`), `SA_SMTP_ADDR`, `SA_SMTP_USER
 
 - P0: none known.
 - P1: Clipboard Sync (5B).
-- P2: shared revocation and rate-limit state for multiple instances; real SMTP check in staging; camera QR test on a device.
+- P2: shared revocation and rate-limit state for multiple instances; a fair per-account lock queue so history writes cannot delay departures (SECURITY_MODEL §4); real SMTP check in staging; camera QR test on a device; root cause of the ios-safari data-channel open stall seen once in CI 42989102231 (diagnostics now kept on passing runs).
 
 ## 8. Local run
 
@@ -155,4 +155,5 @@ On `claude/practical-lovelace-avlb5g`:
 - 7fa9f27: QA round 4 fixes (revoke/rotation serialization, history test)
 - dd0df12: QA round 5 fixes (remembered exclusions revoke again; registration race)
 - e41e6d3: QA round 6 fixes (key writes serialize with departures on the account key row)
-- the QA round 7 fix commit that follows them (exclusions record the account version; pairing liveness)
+- 9b76992: QA round 7 fixes (exclusions record the account version; pairing liveness)
+- the QA round 8 P2 commit that follows them (revoke fails closed; doc wording)

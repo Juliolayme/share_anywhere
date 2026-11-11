@@ -790,18 +790,15 @@ describe('QA round 7: an exclusion records the account version, not a lagging br
     expect(await syncMeta().excluded(USER)).toEqual([`${OTHER}@2`]);
   });
 
-  it('a revoke rotation raises the entry to the current version before pruning, so a failed rotation keeps it', async () => {
-    const { store, fake } = await readyAtV1();
-    const adk2 = generateAdk(2);
-    await store.saveAdk(2, adk2.raw); // this browser has just caught up to v2 (the QA scenario after the pickup)
-    fake.setState({ key_version: 2 });
-    await syncMeta().setExcluded(USER, [`${OTHER}@1`]); // remembered while it still lagged at v1
-    (fake.api.rotate as unknown as { mockImplementation: (f: () => Promise<never>) => void }).mockImplementation(
+  it('fails closed: when the server key version cannot be read nothing is remembered and the caller must not revoke', async () => {
+    const { fake } = await readyAtV1();
+    (fake.api.keys as unknown as { mockImplementationOnce: (f: () => Promise<never>) => void }).mockImplementationOnce(
       async () => {
         throw new NetworkError();
       },
     );
-    await expect(rotateKeys(fake.api, USER, DEVICE, [OTHER])).rejects.toBeInstanceOf(NetworkError);
-    expect(await syncMeta().excluded(USER)).toEqual([`${OTHER}@2`]);
+    const { rememberRevoked } = await import('./keyFlow');
+    await expect(rememberRevoked(USER, [OTHER], fake.api)).rejects.toBeInstanceOf(NetworkError);
+    expect(await syncMeta().excluded(USER)).toEqual([]);
   });
 });

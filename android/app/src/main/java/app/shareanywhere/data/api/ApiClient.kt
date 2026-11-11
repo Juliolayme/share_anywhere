@@ -46,15 +46,22 @@ class ApiClient(baseUrl: String, private val http: OkHttpClient, val json: Json,
         body: Req? = null,
         request: KSerializer<Req>? = null,
         response: KSerializer<Res>,
-        token: String? = null
+        token: String? = null,
+        query: Map<String, String> = emptyMap()
     ): Res {
-        val text = send(op, path, body?.let { json.encodeToString(requireNotNull(request), it) }, token)
+        val text = send(op, path, body?.let { json.encodeToString(requireNotNull(request), it) }, token, query)
         return json.decodeFromString(response, text)
     }
 
     /** Sends [op] and returns the raw response body (empty for 204). */
-    suspend fun send(op: ApiOperation, path: String = op.path, bodyJson: String? = null, token: String? = null): String {
-        val url = base.newBuilder().encodedPath(path).build()
+    suspend fun send(
+        op: ApiOperation,
+        path: String = op.path,
+        bodyJson: String? = null,
+        token: String? = null,
+        query: Map<String, String> = emptyMap()
+    ): String {
+        val url = base.newBuilder().encodedPath(path).apply { query.forEach { (k, v) -> addQueryParameter(k, v) } }.build()
         val builder =
             Request
                 .Builder()
@@ -63,7 +70,7 @@ class ApiClient(baseUrl: String, private val http: OkHttpClient, val json: Json,
                 .header("User-Agent", userAgent)
         if (token != null) builder.header("Authorization", "Bearer $token")
         val requestBody = bodyJson?.toRequestBody(JSON)
-        builder.method(op.method, requestBody ?: if (op.method == "POST") EMPTY else null)
+        builder.method(op.method, requestBody ?: if (op.method == "POST" || op.method == "PUT" || op.method == "PATCH") EMPTY else null)
         val res =
             try {
                 http.newCall(builder.build()).await()

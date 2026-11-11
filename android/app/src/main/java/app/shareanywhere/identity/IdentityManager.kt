@@ -145,6 +145,20 @@ class IdentityManager(
         return session.device
     }
 
+    /**
+     * Sign-in, sign-up and Add this device answer with an access token carrying `acct` (and `dl`) for this same device:
+     * the refresh secret does not change, and later refreshes keep the account session until it ends.
+     */
+    suspend fun adoptToken(accessToken: String, expiresIn: Int) = mutex.withLock {
+        token = accessToken
+        expiresAt = clock() + expiresIn * 1000L
+        _state.update { it.copy(claims = TokenClaims.decode(accessToken)) }
+        schedule(expiresIn * 1000L)
+    }
+
+    /** Sign-out answers with a brand-new anonymous device (docs/API.md §2.4); the old one is revoked. */
+    suspend fun replaceSession(session: DeviceSession) = mutex.withLock { accept(session) }
+
     private fun current(): String? = token?.takeIf { clock() < expiresAt - EXPIRY_SKEW_MS }
 
     private suspend fun obtainLocked() {

@@ -984,6 +984,7 @@
     <string name="product_link_expired_h">Liên kết đã hết hạn</string>
     <string name="product_link_invalid">Đây không phải liên kết Share Anywhere.</string>
     <string name="product_link_label">Liên kết chia sẻ</string>
+    <string name="product_live_receiving">Đang nhận {n} tệp</string>
     <string name="product_live_sending_to">Đang gửi tới {n} người nhận</string>
     <string name="product_log_all_chunks">Đã nhận đủ các phần · đang kiểm tra SHA-256</string>
     <string name="product_log_cloud_approved">Đã duyệt phân phối qua Cloud · tải lên một lần, người nhận tự tải xuống</string>

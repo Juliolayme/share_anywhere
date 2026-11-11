@@ -1385,6 +1385,7 @@
     "link_expired_h": "Liên kết đã hết hạn",
     "link_invalid": "Đây không phải liên kết Share Anywhere.",
     "link_label": "Liên kết chia sẻ",
+    "live_receiving": "Đang nhận {n} tệp",
     "live_sending_to": "Đang gửi tới {n} người nhận",
     "log_all_chunks": "Đã nhận đủ các phần · đang kiểm tra SHA-256",
     "log_cloud_approved": "Đã duyệt phân phối qua Cloud · tải lên một lần, người nhận tự tải xuống",

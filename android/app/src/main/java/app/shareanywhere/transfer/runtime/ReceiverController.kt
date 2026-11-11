@@ -59,6 +59,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -171,6 +173,7 @@ class ReceiverController(private val d: ReceiverDeps) {
     private var downSince: Long? = null
     private var everOpened = false
     private var loaded: Job? = null
+    private val fileWork = Mutex()
 
     init {
         // Out of PAUSED only through the resume action; stay paused when the user (or the sender) paused.
@@ -429,12 +432,14 @@ class ReceiverController(private val d: ReceiverDeps) {
                             if (s.phase != RxPhase.Paused) update { it.copy(phase = RxPhase.Verifying) }
                         }
 
+                        // Per-file completion and the final result run one after another, in order (the Web's
+                        // fileWork chain): the result must see every file marked done.
                         override fun onFileDone(file: Int, ok: Boolean) {
-                            scope.launch { fileDone(file, ok) }
+                            scope.launch { fileWork.withLock { fileDone(file, ok) } }
                         }
 
                         override fun onComplete() {
-                            scope.launch { allDone() }
+                            scope.launch { fileWork.withLock { allDone() } }
                         }
 
                         override fun onPaused(byPeer: Boolean) = update { it.copy(phase = RxPhase.Paused) }

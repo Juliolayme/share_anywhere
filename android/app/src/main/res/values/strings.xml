@@ -984,6 +984,7 @@
     <string name="product_link_expired_h">This link has expired</string>
     <string name="product_link_invalid">That doesn’t look like a Share Anywhere link.</string>
     <string name="product_link_label">Share link</string>
+    <string name="product_live_receiving">Receiving {n} files</string>
     <string name="product_live_sending_to">Sending to {n} receivers</string>
     <string name="product_log_all_chunks">All chunks received · verifying SHA-256</string>
     <string name="product_log_cloud_approved">Cloud distribution approved · uploading once, receivers download</string>

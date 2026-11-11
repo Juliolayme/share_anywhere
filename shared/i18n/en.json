@@ -1385,6 +1385,7 @@
     "link_expired_h": "This link has expired",
     "link_invalid": "That doesn’t look like a Share Anywhere link.",
     "link_label": "Share link",
+    "live_receiving": "Receiving {n} files",
     "live_sending_to": "Sending to {n} receivers",
     "log_all_chunks": "All chunks received · verifying SHA-256",
     "log_cloud_approved": "Cloud distribution approved · uploading once, receivers download",

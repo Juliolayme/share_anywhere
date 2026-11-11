@@ -1,6 +1,7 @@
 package app.shareanywhere.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,7 @@ fun HomeScreen(
     onOpenHistory: (entryId: String?) -> Unit,
     onSend: (() -> Unit)?,
     onReceive: (() -> Unit)?,
+    onOpenLive: (sessionId: String, receiving: Boolean) -> Unit = { _, _ -> },
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -78,6 +80,7 @@ fun HomeScreen(
             item { HeroTile(true, onSend) }
             item { HeroTile(false, onReceive) }
         }
+        ui.live?.let { a -> item { LiveCard(a) { a.sessionId?.let { onOpenLive(it, a.receiving) } } } }
         item {
             IdentityNotice(ui.identity, onRetry = viewModel::retryIdentity, onDismissReplaced = viewModel::dismissReplaced)
         }
@@ -166,5 +169,64 @@ private fun HeroTile(send: Boolean, onClick: () -> Unit) {
                 color = if (send) p.onSend else p.fg2
             )
         }
+    }
+}
+
+/** Design `hasLive`: the transfer in progress, with its progress and Open. */
+@Composable
+private fun LiveCard(a: app.shareanywhere.transfer.runtime.TransferActivity, onOpen: () -> Unit) {
+    val p = LocalSaPalette.current
+    val shape = RoundedCornerShape(SaTokens.Radius.Lg)
+    val (label, done, total) =
+        if (a.receivingFiles > 0) {
+            Triple(
+                app.shareanywhere.ui.i18n.str(R.string.product_live_receiving, "n" to a.receivingFiles),
+                a.receiveVerified,
+                a.receiveTotal
+            )
+        } else {
+            Triple(app.shareanywhere.ui.i18n.str(R.string.product_dashboard_h, "n" to a.sendingTo), a.sendVerified, a.sendTotal)
+        }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(p.sendSoft)
+            .border(SaTokens.Border.Thin, p.send, shape)
+            .clickable(role = Role.Button, onClick = onOpen)
+            .padding(SaTokens.Space.S4)
+            .testTag("home.live"),
+        verticalArrangement = Arrangement.spacedBy(SaTokens.Space.S2)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                painterResource(R.drawable.ic_swap_horiz),
+                contentDescription = null,
+                tint = p.sendInk,
+                modifier = Modifier.size(SaTokens.Space.S4)
+            )
+            Text(
+                " " + stringResource(R.string.android_yy_live),
+                style = MaterialTheme.typography.labelMedium,
+                color = p.sendInk,
+                modifier = Modifier.weight(1f)
+            )
+            Text(stringResource(R.string.android_yy_open) + " ›", style = MaterialTheme.typography.labelMedium, color = p.sendInk)
+        }
+        Row {
+            Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text(app.shareanywhere.ui.transfer.percent(done, total), style = MaterialTheme.typography.titleSmall)
+        }
+        app.shareanywhere.ui.transfer.ProgressLine(
+            if (total >
+                0
+            ) {
+                done.toFloat() / total
+            } else {
+                0f
+            },
+            label,
+            height = SaTokens.Space.S1 + SaTokens.Space.S1 / 2
+        )
     }
 }

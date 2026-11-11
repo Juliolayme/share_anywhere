@@ -116,7 +116,10 @@ fun AppNav(
                     HomeScreen(
                         onOpenHistory = { id -> navController.navigateTab(Routes.history(id)) },
                         onSend = if (flags.sharing) ({ navController.navigate(Routes.SEND) }) else null,
-                        onReceive = if (flags.sharing) ({ navController.navigate(Routes.RECEIVE) }) else null
+                        onReceive = if (flags.sharing) ({ navController.navigate(Routes.RECEIVE) }) else null,
+                        onOpenLive = { id, receiving ->
+                            navController.navigate(if (receiving) Routes.rxSession(id) else Routes.dashboard(id))
+                        }
                     )
                 }
                 if (flags.sharing) sharingGraph(navController, onTurnKeepScreenOn)

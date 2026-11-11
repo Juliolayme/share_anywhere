@@ -57,12 +57,14 @@ class TransferService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        running = true
         val a = runtime.activity.value
         try {
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
             ServiceCompat.startForeground(this, NOTIFICATION_ID, build(a), type)
         } catch (_: Exception) {
             // Not allowed now (started from the background on Android 12+): transfers continue while the app is open.
+            running = false
             stopSelf()
             return START_NOT_STICKY
         }
@@ -124,6 +126,7 @@ class TransferService : Service() {
             )
 
     private fun stop() {
+        running = false
         job?.cancel()
         job = null
         locks(false)
@@ -132,6 +135,7 @@ class TransferService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         job?.cancel()
         locks(false)
         super.onDestroy()
@@ -209,6 +213,10 @@ class TransferService : Service() {
     }
 
     companion object {
+        /** Whether the service is in the foreground now (the runtime starts it when transfer work appears). */
+        @Volatile var running = false
+            private set
+
         const val CHANNEL = "transfers"
         private const val NOTIFICATION_ID = 0x5A01
         private const val BUDGET_ID = 0x5A02

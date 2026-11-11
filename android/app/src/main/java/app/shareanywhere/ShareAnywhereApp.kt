@@ -9,9 +9,12 @@ import app.shareanywhere.history.HistoryRepository
 import app.shareanywhere.identity.IdentityManager
 import app.shareanywhere.notify.Notifier
 import app.shareanywhere.settings.SettingsRepository
+import app.shareanywhere.transfer.IncomingDao
+import app.shareanywhere.transfer.OutgoingFileDao
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -29,6 +32,10 @@ class ShareAnywhereApp : Application() {
 
     @Inject lateinit var notifier: Notifier
 
+    @Inject lateinit var incoming: IncomingDao
+
+    @Inject lateinit var outgoing: OutgoingFileDao
+
     @Inject @AppScope
     lateinit var scope: CoroutineScope
 
@@ -41,5 +48,19 @@ class ShareAnywhereApp : Application() {
             }
         )
         scope.launch { runCatching { history.sweep(settings.settings.first().retention) } }
+        // Receive progress and save folders untouched for a day, and picked files of sessions past their maximum
+        // lifetime, are forgotten (as the Web's storage sweep; docs/TRANSFER_PROTOCOL.md §4).
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val now = System.currentTimeMillis()
+                incoming.removeOlderThan(now - DAY_MS)
+                incoming.removeTargetsOlderThan(now - DAY_MS)
+                outgoing.deleteOlderThan(now - 2 * DAY_MS)
+            }
+        }
+    }
+
+    private companion object {
+        const val DAY_MS = 24L * 60 * 60 * 1000
     }
 }

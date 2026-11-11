@@ -7,6 +7,7 @@ import app.shareanywhere.data.ws.SessionSocket
 import app.shareanywhere.history.HistoryRepository
 import app.shareanywhere.transfer.IncomingDao
 import app.shareanywhere.transfer.OutgoingFileDao
+import app.shareanywhere.transfer.TransferService
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -86,6 +87,9 @@ class TransferRuntime(
         rewatch()
     }
 
+    private fun foreground() =
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+
     @Synchronized
     private fun rewatch() {
         watcher?.cancel()
@@ -98,7 +102,12 @@ class TransferRuntime(
         }
         watcher =
             scope.launch {
-                combine(flows) { parts -> parts.fold(TransferActivity()) { a, b -> a.merge(b) } }.collect { _activity.value = it }
+                combine(flows) { parts -> parts.fold(TransferActivity()) { a, b -> a.merge(b) } }.collect {
+                    _activity.value = it
+                    // Transfer work keeps a foreground service running (docs/ADR/0020-android-background-transfers.md);
+                    // it can only be started while the app is in front.
+                    if ((it.pending || it.moving) && !TransferService.running && foreground()) TransferService.start(context)
+                }
             }
     }
 

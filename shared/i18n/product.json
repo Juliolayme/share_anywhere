@@ -528,7 +528,8 @@
     "fgs_budget_p": "Open Share Anywhere to resume from where it stopped.",
     "dashboard_h": "Sending to {n}",
     "stop_all": "Stop all",
-    "view_dashboard": "Open dashboard"
+    "view_dashboard": "Open dashboard",
+    "live_receiving": "Receiving {n} files"
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -1058,6 +1059,7 @@
     "fgs_budget_p": "Mở Share Anywhere để tiếp tục từ chỗ đã dừng.",
     "dashboard_h": "Đang gửi đến {n}",
     "stop_all": "Dừng tất cả",
-    "view_dashboard": "Mở bảng điều khiển"
+    "view_dashboard": "Mở bảng điều khiển",
+    "live_receiving": "Đang nhận {n} tệp"
   }
 }

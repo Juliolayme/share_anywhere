@@ -10,6 +10,7 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 
 - [43025957764](https://github.com/Juliolayme/share_anywhere/actions/runs/43025957764) on 8d2cb0e (QA round 1 backend fixes): every job green.
 - [43029093517](https://github.com/Juliolayme/share_anywhere/actions/runs/43029093517) on 726c0a2 (QA round 1 Web fixes): every job green, e2e first attempt in all five projects (chromium 69, firefox 67, webkit 68, android-chrome 61, ios-safari 61).
+- [43040047354](https://github.com/Juliolayme/share_anywhere/actions/runs/43040047354) on 6ae4368 (QA round 2 fixes): backend, web, protocol, security, docs and compose green; `e2e-web (chromium-desktop)` and `(android-chrome)` failed while installing Playwright system packages (apt: "Some index files failed to download"), an infrastructure failure, not a test failure; the other e2e jobs were cancelled with them. Superseded by the round-3 fix push.
 
 ## Round 1 — commit fab4866 — FAIL
 
@@ -83,3 +84,34 @@ All 15 round-1 resolutions hold. Changing the history id formatting keeps every 
 | Docs: read limit in §2.6, a sentence break, WS `event_id` pattern | P2 | Fixed |
 | Report and QA log hashes and CI | P2 | Added |
 | No golden vector for `entryUuid` | P2 | Golden vector test added |
+
+## Round 3 — commit 6ae4368 — FAIL
+
+0 P0, 1 P1 and 6 P2 findings.
+
+Every command passed: Web, root, backend (including `-race`), lint and govulncheck. The clipboard and account e2e suites passed in all five projects.
+
+**What held up under review:**
+
+- The round-2 P1 is fixed. QA's corrected harness reruns the race scenarios with a working store, and they keep server rows live.
+- The other round-2 resolutions are verified: offline deletes, presence ordering, `Close`, the drop counter, timestamps, docs, and the golden vector.
+- No regressions from round 1.
+- The single-tab engine had no lost, duplicated, ghost or wrongly deleted path in any scenario QA tried.
+
+**Why it failed:**
+
+- **P1-1:** every tab keeps its own timeline in memory, but each pass started from the cursor shared in IndexedDB, which other tabs move. A tab that another tab had already pulled for (for example a suspended background tab) missed new events and kept showing deleted ones until a reload. The ack path could also write a ghost row into the shared cache after another tab had deleted or tombstoned it. QA reproduced this in its unit harness and live on the stack.
+
+### Resolution of round 3 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Per-tab timelines share one stored cursor; ghosts written by late acks | P1 | Each engine keeps its own applied cursor. The cache and the cursor are persisted together, and the stored cursor only moves forward. An ack for an event another tab has taken or tombstoned resyncs instead of writing the row. QA's T1–T4 are regression tests, plus a live multi-tab spec |
+| Clear misses captures queued in another tab | P2 | Clear reads the shared queue |
+| A capture made while Clear waits is dropped | P2 | The queue is snapshotted before the wait, so later captures are kept and sent |
+| Cross-tab ghost during a create in flight | P2 | Covered by the P1 fix and its test |
+| ARCHITECTURE presence sentence | P2 | Corrected: presence runs after WELCOME |
+| Misplaced test doc comment | P2 | Fixed |
+| Report i18n count | P2 | Fixed |
+
+Verification note (engineer, before the round 3 fix commit): the Web unit suite failed one test in the first of 24 local runs. The failing test was not captured, and the next 23 runs (6 of them under CPU load) all passed, so the cause is unknown. QA round 4 is asked to run the suite repeatedly to catch it.

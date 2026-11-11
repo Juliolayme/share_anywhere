@@ -5,10 +5,18 @@ import type { RemoteClipboardEvent } from './api';
  * - `events`: the account's live events exactly as the server sent them (ciphertext only, never plaintext), so the
  *   timeline opens offline; decrypted in memory when shown;
  * - `queue`: captures encrypted on this device and not yet acknowledged by the server (the offline queue);
- * - `meta`: the account's `seq` cursor (the highest seq applied), when it last caught up, the store generation, and
- *   the pending deletes: events deleted on this device whose `DELETE` has not been confirmed yet (§2.9).
+ * - `meta`: the account's `seq` cursor (the highest seq applied to `events`), when it last caught up, the store
+ *   generation, and the pending deletes: events deleted on this device whose `DELETE` is not confirmed yet (§2.9).
  * Records carry the account ID, and everything is erased with the key store when the device leaves the account.
  * Never in Web Storage.
+ *
+ * Every tab of the browser shares these records, and each tab keeps its own timeline in memory (§2.9). The cache and
+ * the cursor move together: `advance` writes a page pulled by cursor and moves the cursor in one transaction, and only
+ * when the stored cursor still equals the cursor the page was pulled from, so the cache always holds every change up to
+ * the stored cursor, and the cursor only ever moves forward. A tab whose pull lost that race reloads its timeline from
+ * the pair (`snapshot`, one read) and pulls on from there. A row enters the cache only through `advance`, `replace`
+ * (the initial load) or `ackCreate` (an acknowledged capture whose seq is beyond the cursor); removals may happen at any
+ * time, since the cursor brings the same tombstone later.
  *
  * The generation is a random token kept in `meta` and replaced by every wipe in the wipe's own transaction. Writers
  * pass the token they read when they started, and each write checks it inside its write transaction: after a wipe in
@@ -44,23 +52,63 @@ export interface PendingDelete {
   due: number;
 }
 
+/** The cache, queue, pending deletes and cursor of one account, read in one transaction. */
+export interface StoreSnapshot {
+  events: CachedEvent[];
+  queue: QueuedEvent[];
+  deletes: PendingDelete[];
+  cursor: number | null;
+  /** Epoch ms of the last successful pass from the server, or null. */
+  syncedAt: number | null;
+}
+
 /**
- * Write methods take the generation the caller read with `generation()`. They resolve `true` when they wrote, and
- * `false` without writing anything when a wipe (in any tab) replaced the generation since.
+ * What `ackCreate` found for an acknowledged capture: `live` (dequeued; the row is cached, or its seq is beyond the
+ * cursor and it was cached now), `gone` (dequeued; the cursor already passed its seq and the row is not cached: another
+ * tab pulled its tombstone), `taken` (no longer in the queue: another tab acknowledged, deleted or cleared it; nothing
+ * written), `deleted` (a pending delete exists for it; nothing written).
+ */
+export type AckState = 'live' | 'gone' | 'taken' | 'deleted';
+
+/**
+ * Write methods take the generation the caller read with `generation()`. They resolve `false` without writing anything
+ * when a wipe (in any tab) replaced the generation since, and otherwise `true` (or their result).
  */
 export interface ClipboardStore {
   events(userId: string): Promise<CachedEvent[]>;
-  /** One transaction: upserts `put`, deletes `remove`, and moves the cursor (never backwards) when given. */
-  apply(
+  /** One read of everything a tab needs to (re)build its timeline: the cache and the cursor always agree. */
+  snapshot(userId: string): Promise<StoreSnapshot>;
+  /** Removes cached events (deleted on this device, or cleared). Never adds a row. */
+  removeEvents(userId: string, ids: string[], gen: string): Promise<boolean>;
+  /**
+   * One transaction: when the stored cursor still equals `from`, deletes `remove`, upserts `put`, moves the cursor to
+   * `to` (never backwards) and records the catch-up time, and resolves `ok`; otherwise (another tab moved it, or there
+   * is none) writes nothing and resolves `moved`.
+   */
+  advance(
     userId: string,
-    change: { put?: RemoteClipboardEvent[]; remove?: string[]; cursor?: number },
+    change: { put?: RemoteClipboardEvent[]; remove?: string[]; from: number; to: number },
     gen: string,
+  ): Promise<'ok' | 'moved' | false>;
+  /**
+   * Replaces every cached event of the account and sets the cursor (initial load from `GET /v1/clipboard/history`),
+   * unless another tab already stored a newer cursor caught up after `staleBefore` (epoch ms; default: never stale).
+   */
+  replace(
+    userId: string,
+    events: RemoteClipboardEvent[],
+    cursor: number,
+    gen: string,
+    staleBefore?: number,
   ): Promise<boolean>;
-  /** Replaces every cached event of the account and sets the cursor (initial load from `GET /v1/clipboard/history`). */
-  replace(userId: string, events: RemoteClipboardEvent[], cursor: number, gen: string): Promise<boolean>;
+  /**
+   * One transaction for an acknowledged create (`201`): checks the queue, the pending deletes and the cursor, and
+   * dequeues and caches the row only as `AckState` describes.
+   */
+  ackCreate(userId: string, event: RemoteClipboardEvent, gen: string): Promise<AckState | false>;
   cursor(userId: string): Promise<number | null>;
-  /** Epoch ms of the last successful pass from the server (`apply` with a cursor, or `replace`), or null. */
-  syncedAt(userId: string): Promise<number | null>;
+  /** The stored cursor and when it last caught up (epoch ms), read together. */
+  syncState(userId: string): Promise<{ cursor: number | null; syncedAt: number | null }>;
   queue(userId: string): Promise<QueuedEvent[]>;
   enqueue(item: QueuedEvent, gen: string): Promise<boolean>;
   dequeue(userId: string, eventId: string, gen: string): Promise<boolean>;
@@ -138,14 +186,10 @@ export function openClipboardStore(factory: IDBFactory = indexedDB): ClipboardSt
   const deleteKey = (userId: string, eventId: string) => `delete:${userId}:${eventId}`;
   const deleteRange = (userId: string) => IDBKeyRange.bound(`delete:${userId}:`, `delete:${userId}:￿`);
 
-  /** Moves the cursor forward inside the caller's transaction (plain callbacks keep the transaction active). */
-  const writeCursor = (store: IDBObjectStore, userId: string, cursor: number) => {
-    const get = store.get(cursorKey(userId)) as IDBRequest<unknown>;
-    get.onsuccess = () => {
-      const prev = typeof get.result === 'number' ? get.result : -1;
-      if (cursor > prev) store.put(cursor, cursorKey(userId));
-    };
-  };
+  const asCursor = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+  const asTime = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const validDeletes = (userId: string, all: PendingDelete[]) =>
+    all.filter((d) => d && typeof d.event_id === 'string' && d.userId === userId);
 
   /**
    * Runs `write` inside a readwrite transaction over `stores` (plus `meta`) only when the stored generation still equals
@@ -164,40 +208,110 @@ export function openClipboardStore(factory: IDBFactory = indexedDB): ClipboardSt
     return wrote;
   };
 
+  /** `guarded` for a write that decides inside its transaction and reports what it did. */
+  const decide = async <T>(
+    stores: string[],
+    gen: string,
+    write: (tx: IDBTransaction, result: (v: T) => void) => void,
+  ): Promise<T | false> => {
+    let out: T | undefined;
+    const wrote = await guarded(stores, gen, (tx) => write(tx, (v) => (out = v)));
+    if (!wrote || out === undefined) return false;
+    return out;
+  };
+
   return {
     async events(userId) {
       const tx = (await db()).transaction(EVENTS, 'readonly');
       return req(tx.objectStore(EVENTS).getAll(range(userId)) as IDBRequest<CachedEvent[]>);
     },
-    apply(userId, change, gen) {
+    async snapshot(userId) {
+      const tx = (await db()).transaction([EVENTS, QUEUE, META], 'readonly');
+      const meta = tx.objectStore(META);
+      const [events, queue, deletes, cursor, synced] = await Promise.all([
+        req(tx.objectStore(EVENTS).getAll(range(userId)) as IDBRequest<CachedEvent[]>),
+        req(tx.objectStore(QUEUE).getAll(range(userId)) as IDBRequest<QueuedEvent[]>),
+        req(meta.getAll(deleteRange(userId)) as IDBRequest<PendingDelete[]>),
+        req(meta.get(cursorKey(userId)) as IDBRequest<unknown>),
+        req(meta.get(syncedKey(userId)) as IDBRequest<unknown>),
+      ]);
+      return {
+        events,
+        queue: queue.sort((a, b) => a.queuedAt - b.queuedAt),
+        deletes: validDeletes(userId, deletes),
+        cursor: asCursor(cursor),
+        syncedAt: asTime(synced),
+      };
+    },
+    removeEvents(userId, ids, gen) {
       return guarded([EVENTS], gen, (tx) => {
-        const events = tx.objectStore(EVENTS);
-        for (const id of change.remove ?? []) events.delete([userId, id]);
-        for (const e of change.put ?? []) events.put({ ...e, userId });
-        if (change.cursor !== undefined) {
-          writeCursor(tx.objectStore(META), userId, change.cursor);
-          tx.objectStore(META).put(Date.now(), syncedKey(userId));
-        }
+        for (const id of ids) tx.objectStore(EVENTS).delete([userId, id]);
       });
     },
-    replace(userId, list, cursor, gen) {
-      return guarded([EVENTS], gen, (tx) => {
-        const events = tx.objectStore(EVENTS);
-        events.delete(range(userId));
-        for (const e of list) events.put({ ...e, userId });
-        tx.objectStore(META).put(cursor, cursorKey(userId));
-        tx.objectStore(META).put(Date.now(), syncedKey(userId));
+    advance(userId, change, gen) {
+      return decide<'ok' | 'moved'>([EVENTS], gen, (tx, result) => {
+        const meta = tx.objectStore(META);
+        const get = meta.get(cursorKey(userId)) as IDBRequest<unknown>;
+        get.onsuccess = () => {
+          if (asCursor(get.result) !== change.from || change.to < change.from) return result('moved');
+          const events = tx.objectStore(EVENTS);
+          for (const id of change.remove ?? []) events.delete([userId, id]);
+          for (const e of change.put ?? []) events.put({ ...e, userId });
+          meta.put(change.to, cursorKey(userId));
+          meta.put(Date.now(), syncedKey(userId));
+          result('ok');
+        };
       });
     },
-    async syncedAt(userId) {
-      const tx = (await db()).transaction(META, 'readonly');
-      const v = await req(tx.objectStore(META).get(syncedKey(userId)) as IDBRequest<unknown>);
-      return typeof v === 'number' && Number.isFinite(v) ? v : null;
+    replace(userId, list, cursor, gen, staleBefore = -Infinity) {
+      return guarded([EVENTS], gen, (tx) => {
+        const meta = tx.objectStore(META);
+        const prev = meta.get(cursorKey(userId)) as IDBRequest<unknown>;
+        const synced = meta.get(syncedKey(userId)) as IDBRequest<unknown>;
+        synced.onsuccess = () => {
+          const at = asTime(synced.result);
+          const stored = asCursor(prev.result);
+          // Another tab stored a newer pair since this load started: keep it (this tab reloads from it).
+          if (stored !== null && stored > cursor && at !== null && at >= staleBefore) return;
+          const events = tx.objectStore(EVENTS);
+          events.delete(range(userId));
+          for (const e of list) events.put({ ...e, userId });
+          meta.put(cursor, cursorKey(userId));
+          meta.put(Date.now(), syncedKey(userId));
+        };
+      });
+    },
+    ackCreate(userId, event, gen) {
+      return decide<AckState>([QUEUE, EVENTS], gen, (tx, result) => {
+        const id = event.event_id;
+        const meta = tx.objectStore(META);
+        const queued = tx.objectStore(QUEUE).getKey([userId, id]);
+        const deleted = meta.getKey(deleteKey(userId, id));
+        const cursor = meta.get(cursorKey(userId)) as IDBRequest<unknown>;
+        const cached = tx.objectStore(EVENTS).getKey([userId, id]);
+        // Requests complete in order: every result is known in the last callback.
+        cached.onsuccess = () => {
+          if (deleted.result !== undefined) return result('deleted');
+          if (queued.result === undefined) return result('taken');
+          tx.objectStore(QUEUE).delete([userId, id]);
+          const stored = asCursor(cursor.result);
+          if (stored !== null && stored >= event.seq) return result(cached.result !== undefined ? 'live' : 'gone');
+          tx.objectStore(EVENTS).put({ ...event, userId });
+          result('live');
+        };
+      });
     },
     async cursor(userId) {
       const tx = (await db()).transaction(META, 'readonly');
-      const v = await req(tx.objectStore(META).get(cursorKey(userId)) as IDBRequest<unknown>);
-      return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+      return asCursor(await req(tx.objectStore(META).get(cursorKey(userId)) as IDBRequest<unknown>));
+    },
+    async syncState(userId) {
+      const tx = (await db()).transaction(META, 'readonly');
+      const [cursor, synced] = await Promise.all([
+        req(tx.objectStore(META).get(cursorKey(userId)) as IDBRequest<unknown>),
+        req(tx.objectStore(META).get(syncedKey(userId)) as IDBRequest<unknown>),
+      ]);
+      return { cursor: asCursor(cursor), syncedAt: asTime(synced) };
     },
     async queue(userId) {
       const tx = (await db()).transaction(QUEUE, 'readonly');
@@ -212,8 +326,10 @@ export function openClipboardStore(factory: IDBFactory = indexedDB): ClipboardSt
     },
     async deletes(userId) {
       const tx = (await db()).transaction(META, 'readonly');
-      const all = await req(tx.objectStore(META).getAll(deleteRange(userId)) as IDBRequest<PendingDelete[]>);
-      return all.filter((d) => d && typeof d.event_id === 'string' && d.userId === userId);
+      return validDeletes(
+        userId,
+        await req(tx.objectStore(META).getAll(deleteRange(userId)) as IDBRequest<PendingDelete[]>),
+      );
     },
     markDeleted(userId, items, gen) {
       return guarded([QUEUE, EVENTS], gen, (tx) => {

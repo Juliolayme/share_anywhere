@@ -37,9 +37,15 @@ describe('clipboard store (IndexedDB, docs/CLIPBOARD_PROTOCOL.md §2.9)', () => 
     expect(await s.generation()).toBe(g);
     expect(await s.cursor('u1')).toBeNull();
     await s.replace('u1', [ev('a', 1), ev('b', 2)], 2, g);
-    await s.apply('u2', { put: [ev('x', 9)], cursor: 9 }, g);
-    await s.apply('u1', { put: [ev('c', 3)], remove: ['a'], cursor: 3 }, g);
-    await s.apply('u1', { cursor: 1 }, g);
+    await s.replace('u2', [], 0, g);
+    expect(await s.advance('u2', { put: [ev('x', 9)], from: 0, to: 9 }, g)).toBe('ok');
+    expect(await s.advance('u1', { put: [ev('c', 3)], remove: ['a'], from: 2, to: 3 }, g)).toBe('ok');
+    // A page pulled from a cursor that is no longer the stored one, or one that would move it back, writes nothing.
+    expect(await s.advance('u1', { put: [ev('stale', 2)], from: 2, to: 4 }, g)).toBe('moved');
+    expect(await s.advance('u1', { from: 3, to: 1 }, g)).toBe('moved');
+    expect(await s.cursor('u1')).toBe(3);
+    // A history load older than a fresh stored cursor keeps the newer pair.
+    expect(await s.replace('u1', [ev('old', 1)], 1, g)).toBe(true);
     expect(await s.cursor('u1')).toBe(3);
     expect((await s.events('u1')).map((e) => e.event_id).sort()).toEqual(['b', 'c']);
     expect((await s.events('u2')).map((e) => e.event_id)).toEqual(['x']);
@@ -69,7 +75,9 @@ describe('clipboard store (IndexedDB, docs/CLIPBOARD_PROTOCOL.md §2.9)', () => 
     expect(await tabA.generation()).toBe(gB);
     // Tab A still runs with the old generation: every write is refused inside its transaction.
     expect(await tabA.enqueue(q('u1', 'stale', 2), gA)).toBe(false);
-    expect(await tabA.apply('u1', { put: [ev('a', 1)], cursor: 1 }, gA)).toBe(false);
+    expect(await tabA.advance('u1', { put: [ev('a', 1)], from: 0, to: 1 }, gA)).toBe(false);
+    expect(await tabA.ackCreate('u1', ev('a', 1), gA)).toBe(false);
+    expect(await tabA.removeEvents('u1', ['a'], gA)).toBe(false);
     expect(await tabA.replace('u1', [ev('b', 2)], 2, gA)).toBe(false);
     expect(await tabA.dequeue('u1', 'before', gA)).toBe(false);
     expect(await tabB.queue('u1')).toEqual([]);
@@ -86,7 +94,7 @@ describe('clipboard store (IndexedDB, docs/CLIPBOARD_PROTOCOL.md §2.9)', () => 
     const tabB = openClipboardStore(factory);
     const g = await tabA.generation();
     await tabA.enqueue(q('u1', 'queued', 1), g);
-    await tabA.apply('u1', { put: [ev('queued', 4), ev('kept', 5)] }, g);
+    await tabA.replace('u1', [ev('queued', 4), ev('kept', 5)], 5, g);
     expect(await tabB.pendingState('u1', 'queued')).toEqual({ queued: true, deleted: false });
     const del = { userId: 'u1', event_id: 'queued', at: 100, due: 100 };
     expect(await tabA.markDeleted('u1', [del], g)).toBe(true);
@@ -108,6 +116,30 @@ describe('clipboard store (IndexedDB, docs/CLIPBOARD_PROTOCOL.md §2.9)', () => 
     expect(await tabA.markDeleted('u1', [del], g)).toBe(false);
     expect(await tabA.forgetDelete('u1', 'queued', g)).toBe(false);
     expect(await tabB.deletes('u1')).toEqual([]);
+  });
+
+  it('ackCreate: one transaction decides from the shared queue, pending deletes and cursor whether the row is cached', async () => {
+    const factory = new IDBFactory();
+    const tabA = openClipboardStore(factory);
+    const tabB = openClipboardStore(factory);
+    const g = await tabA.generation();
+    await tabA.replace('u1', [ev('cached', 2)], 3, g);
+    for (const id of ['beyond', 'passed', 'cached', 'taken', 'deleted']) await tabA.enqueue(q('u1', id, 1), g);
+    // Its seq is beyond the shared cursor: dequeued and cached (a later tombstone has a higher seq, pulled later).
+    expect(await tabA.ackCreate('u1', ev('beyond', 4), g)).toBe('live');
+    // The shared cursor already passed its seq and it is not cached: another tab pulled its tombstone.
+    expect(await tabA.ackCreate('u1', ev('passed', 3), g)).toBe('gone');
+    expect(await tabA.ackCreate('u1', ev('cached', 2), g)).toBe('live');
+    // Another tab took it out of the queue, or deleted it: nothing written.
+    await tabB.dequeue('u1', 'taken', g);
+    expect(await tabA.ackCreate('u1', ev('taken', 5), g)).toBe('taken');
+    await tabB.markDeleted('u1', [{ userId: 'u1', event_id: 'deleted', at: 1, due: 1 }], g);
+    expect(await tabA.ackCreate('u1', ev('deleted', 6), g)).toBe('deleted');
+    const snap = await tabB.snapshot('u1');
+    expect(snap.events.map((e) => e.event_id).sort()).toEqual(['beyond', 'cached']);
+    expect(snap.queue).toEqual([]);
+    expect(snap.cursor).toBe(3);
+    expect(snap.deletes.map((d) => d.event_id)).toEqual(['deleted']);
   });
 
   it('leaving the account (wipeAccountData) erases the clipboard cache, queue and cursor too', async () => {

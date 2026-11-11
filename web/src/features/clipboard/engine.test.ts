@@ -1071,4 +1071,196 @@ describe('ClipboardEngine', () => {
     expect(texts(e)).toEqual(['during the clear']);
     expect([...server.rows.values()].filter((r) => !r.deleted)).toHaveLength(1);
   });
+
+  describe('QA r3: every tab keeps a correct timeline although they share one cursor (§2.9)', () => {
+    const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+    /** Another tab of the same browser: its own connection to the same IndexedDB. */
+    const tabOf = (d: Device): Device => ({ ...d, store: openClipboardStore(d.factory) });
+
+    it('T1: an event another tab pulled first (moving the shared cursor) is shown in this tab too', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      const c = await device('dev-c', [adk1]);
+      const { e: tabA } = engine(server, a);
+      const { e: tabB } = engine(server, tabOf(a));
+      const { e: devC } = engine(server, c);
+      await tabA.start();
+      await tabB.start();
+      await devC.start();
+      await devC.capture('from phone', 'manual');
+      await tabB.refresh();
+      expect(await a.store.cursor(USER)).toBe(1);
+      await tabA.refresh();
+      expect(texts(tabA)).toEqual(['from phone']);
+      expect(texts(tabB)).toEqual(['from phone']);
+      expect(tabA.snapshot().items[0]?.incoming).toBe(true);
+    });
+
+    it('T2: a deletion another tab pulled first also removes the row in this tab', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      const c = await device('dev-c', [adk1]);
+      const { e: tabA } = engine(server, a);
+      const { e: tabB } = engine(server, tabOf(a));
+      const { e: devC } = engine(server, c);
+      await tabA.start();
+      await tabB.start();
+      await devC.start();
+      const r = await devC.capture('secret-ish text', 'manual');
+      await tabA.refresh();
+      await tabB.refresh();
+      expect(texts(tabA)).toEqual(['secret-ish text']);
+      await devC.remove((r as { id: string }).id);
+      await tabB.refresh();
+      await tabA.refresh();
+      expect(texts(tabA)).toEqual([]);
+      expect(texts(tabB)).toEqual([]);
+      expect(await a.store.events(USER)).toEqual([]);
+    });
+
+    it('T3: a queued capture deleted in tab B while tab A has its create in flight leaves no ghost anywhere', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((r) => (release = r));
+      let hold = false;
+      const { e: tabA } = engine(server, a, {
+        api: {
+          ...server.api,
+          create: async (req) => {
+            server.as('dev-a');
+            const res = await server.api.create(req);
+            if (hold) await gate;
+            return res;
+          },
+        },
+      });
+      await tabA.start();
+      server.setOffline(true);
+      const id = ((await tabA.capture('typed offline', 'manual')) as { id: string }).id;
+      const { e: tabB } = engine(server, tabOf(a));
+      await tabB.start();
+      expect(tabB.snapshot().queued).toBe(1);
+      server.setOffline(false);
+      hold = true;
+      const sending = tabA.flush();
+      await tick();
+      expect(server.rows.get(id)?.deleted).toBe(false); // the create committed; its response is held
+      await tabB.remove(id); // DELETE 204, and tab B pulls the tombstone (the shared cursor passes it)
+      await tick();
+      release();
+      await sending;
+      await tick();
+      await tabA.refresh();
+      expect(server.rows.get(id)?.deleted).toBe(true);
+      expect(texts(tabA)).toEqual([]);
+      expect(texts(tabB)).toEqual([]);
+      expect(await a.store.events(USER)).toEqual([]);
+      const { e: fresh } = engine(server, tabOf(a));
+      await fresh.start();
+      expect(texts(fresh)).toEqual([]);
+    });
+
+    it('T4: lost response, deleted on another device, tombstone pulled by tab B, tab A retries: no ghost', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      const c = await device('dev-c', [adk1]);
+      let lose = true;
+      const { e: tabA } = engine(server, a, {
+        api: {
+          ...server.api,
+          create: async (req) => {
+            server.as('dev-a');
+            const res = await server.api.create(req);
+            if (lose) {
+              lose = false;
+              throw new NetworkError();
+            }
+            return res;
+          },
+        },
+      });
+      const { e: tabB } = engine(server, tabOf(a));
+      const { e: devC } = engine(server, c);
+      await tabA.start();
+      await tabB.start();
+      await devC.start();
+      const r = await tabA.capture('lost ack', 'manual');
+      expect(r.kind).toBe('queued');
+      const id = (r as { id: string }).id;
+      await devC.refresh();
+      await devC.remove(id);
+      await tabB.refresh(); // the creation and the tombstone: the shared cursor moves past both
+      await tabA.flush(); // the retry is answered with the tombstone's seq
+      await tick();
+      await tabA.refresh();
+      expect(texts(tabA)).toEqual([]);
+      expect(await a.store.events(USER)).toEqual([]);
+      expect(await a.store.queue(USER)).toEqual([]);
+      const { e: fresh } = engine(server, tabOf(a));
+      await fresh.start();
+      expect(texts(fresh)).toEqual([]);
+      expect(fresh.snapshot().queued).toBe(0);
+    });
+
+    it('T5: Clear history in tab A also drops a capture tab B queued after tab A started', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      const { e: tabA } = engine(server, a);
+      const { e: tabB } = engine(server, tabOf(a));
+      await tabA.start();
+      await tabB.start();
+      server.setOffline(true);
+      await tabB.capture('queued in B', 'manual');
+      server.setOffline(false);
+      // Tab B's retry has not run yet when tab A clears.
+      await tabA.clear();
+      await tabB.flush();
+      await tick();
+      expect(server.posts).toHaveLength(0);
+      expect([...server.rows.values()].filter((x) => !x.deleted)).toHaveLength(0);
+      expect(texts(tabB)).toEqual([]);
+      expect((await a.store.deletes(USER)).map((d) => d.event_id)).toHaveLength(1);
+    });
+
+    it('T6: a capture made while Clear waits for a send in flight is kept and sent after it', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((r) => (release = r));
+      let hold = false;
+      const { e } = engine(server, a, {
+        api: {
+          ...server.api,
+          create: async (req) => {
+            server.as('dev-a');
+            const res = await server.api.create(req);
+            if (hold) {
+              hold = false;
+              await gate;
+            }
+            return res;
+          },
+        },
+      });
+      await e.start();
+      hold = true;
+      const first = e.capture('first', 'manual');
+      await tick();
+      const clearing = e.clear();
+      await tick();
+      const second = e.capture('typed after pressing clear', 'manual');
+      await tick();
+      release();
+      expect(await second).toMatchObject({ kind: 'queued' });
+      await first;
+      await clearing;
+      await tick();
+      await e.flush();
+      await e.refresh();
+      const live = [...server.rows.values()].filter((x) => !x.deleted);
+      expect(live).toHaveLength(1);
+      expect(texts(e)).toEqual(['typed after pressing clear']);
+    });
+  });
 });

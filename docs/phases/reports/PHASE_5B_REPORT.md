@@ -81,7 +81,7 @@ Latest local run (CI runs are listed at the top of `docs/qa/PHASE_5B_QA.md`):
 
 - `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 55 files, 442 tests passed.
 - `pnpm -C web build`: main JS 117,266 bytes gzip (budget 122,880).
-- `pnpm protocol:check` (66 operations), `i18n:check` (2001 keys each), `tokens:check`, `lint:md`, `storage:check`, `test:scripts`: pass.
+- `pnpm protocol:check` (66 operations), `i18n:check` (2007 keys each), `tokens:check`, `lint:md`, `storage:check`, `test:scripts`: pass.
 - `go test ./...` with `TEST_DATABASE_URL` (PostgreSQL 16, go1.27.4): pass. `golangci-lint run ./...`: 0 issues. `govulncheck`: nothing reachable.
 - Playwright `e2e/clipboard` + `e2e/account` (`--retries=0`): chromium-desktop 24 passed, 1 skipped; firefox-desktop, webkit-desktop, android-chrome and ios-safari 23 passed, 2 skipped each.
   - The skips are documented: the granted path needs Chromium's clipboard permission grant; the denied path runs everywhere except chromium-desktop, which runs the granted path; the insecure-context test needs Chromium's host resolver rules.

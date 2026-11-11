@@ -237,8 +237,6 @@ func TestIdempotentEventsTombstonesAndValidation(t *testing.T) {
 	e.want(e.do("PATCH", "/v1/clipboard/history", tokA, nil), 405, "method_not_allowed")
 }
 
-// TestPayloadLimits: payload_size above 256 KB, ciphertext above 256 KB + tag, or a body too large to hold
-// either is 413 payload_too_large; exactly 256 KB is accepted.
 // TestTimestampsRoundedToMicroseconds: created_at and expires_at are rounded to microseconds before the insert,
 // so the 201, a repeated create, GET /events and GET /history all report the same instants (QA 5B round 2).
 func TestTimestampsRoundedToMicroseconds(t *testing.T) {
@@ -273,6 +271,8 @@ func TestTimestampsRoundedToMicroseconds(t *testing.T) {
 	}
 }
 
+// TestPayloadLimits: payload_size above 256 KB, ciphertext above 256 KB + tag, or a body too large to hold
+// either is 413 payload_too_large; exactly 256 KB is accepted.
 func TestPayloadLimits(t *testing.T) {
 	e := newEnv(t, 100)
 	_, tok := e.signup("dee@example.com")

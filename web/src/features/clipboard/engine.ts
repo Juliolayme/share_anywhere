@@ -19,7 +19,7 @@ import {
   type RemoteClipboardEvent,
 } from './api';
 import { sensitiveKind, type SensitiveKind } from './sensitive';
-import type { ClipboardStore, PendingDelete, QueuedEvent } from './store';
+import type { AckState, ClipboardStore, PendingDelete, QueuedEvent, StoreSnapshot } from './store';
 
 export type KeySource = Pick<KeyStore, 'currentVersion' | 'allVersions' | 'loadSubkeys'>;
 
@@ -162,6 +162,14 @@ export class ClipboardEngine {
   private stored = new Set<string>();
   /** Clear history is running: nothing queued is sent until it is done. */
   private clearing = false;
+  /**
+   * The cursor this tab's timeline is applied up to (§2.9). It starts with the shared cache (one read) and moves only
+   * with it: a page is written to the store only from the cursor stored there, and when another tab moved the stored
+   * cursor, this tab reloads its timeline from the shared cache before pulling on.
+   */
+  private cursor: number | null = null;
+  /** When the shared cursor this timeline follows last caught up (epoch ms). */
+  private syncedAt: number | null = null;
   private retryTimer: unknown = null;
   private retryAt = 0;
   /** A refresh refused with 429 (reads are rate limited too) runs again after Retry-After. */
@@ -276,28 +284,29 @@ export class ClipboardEngine {
     return wrote === true;
   }
 
+  /** `persist` for a write that reports what it did; null when nothing could be written (stopped, wiped, error). */
+  private async persistResult<T>(fn: (s: ClipboardStore, gen: string) => Promise<T | false>): Promise<T | null> {
+    let out: T | null = null;
+    await this.persist(async (s, g) => {
+      const r = await fn(s, g);
+      if (r === false) return false;
+      out = r;
+      return true;
+    });
+    return out;
+  }
+
   /** Reads the cache and the queue, then refreshes from the server, loads the settings and sends what is queued. */
   async start(): Promise<void> {
     try {
-      const [cached, queue, deletes] = await Promise.all([
-        this.d.store.events(this.d.userId),
-        this.d.store.queue(this.d.userId),
-        this.d.store.deletes(this.d.userId),
-      ]);
-      for (const d of deletes) {
-        this.pendingDeletes.set(d.event_id, d);
-        this.deletedHere.add(d.event_id);
-      }
-      for (const e of cached) {
-        if (!e.deleted && e.ciphertext && e.nonce && !this.deletedHere.has(e.event_id)) this.events.set(e.event_id, e);
-      }
-      for (const q of queue) {
-        if (this.deletedHere.has(q.event_id)) continue;
+      const snap = await this.d.store.snapshot(this.d.userId);
+      for (const q of snap.queue) {
+        if (snap.deletes.some((d) => d.event_id === q.event_id)) continue;
         this.queued.set(q.event_id, q);
         this.attempted.add(q.event_id);
         this.stored.add(q.event_id);
       }
-      await this.decryptMissing();
+      await this.adopt(snap);
     } catch {
       /* the cache is a convenience: the server refresh below fills the timeline */
     }
@@ -305,6 +314,52 @@ export class ClipboardEngine {
     this.emit();
     await Promise.all([this.refresh(), this.loadSettings()]);
     void this.flush();
+  }
+
+  /**
+   * Takes the shared cache and cursor (read together) as this tab's timeline, keeping what this tab knows: events
+   * deleted here stay hidden, the pending deletes of every tab are added, and a queued capture that left the shared
+   * queue meanwhile (acknowledged, deleted or cleared in another tab) leaves this tab's queue too.
+   */
+  private async adopt(snap: StoreSnapshot) {
+    for (const d of snap.deletes) {
+      if (!this.pendingDeletes.has(d.event_id)) this.pendingDeletes.set(d.event_id, d);
+      this.deletedHere.add(d.event_id);
+    }
+    const next = new Map<string, RemoteClipboardEvent>();
+    for (const e of snap.events) {
+      if (!e.deleted && e.ciphertext && e.nonce && !this.deletedHere.has(e.event_id)) next.set(e.event_id, e);
+    }
+    if (this.loaded) {
+      for (const [id, e] of next) {
+        if (!this.events.has(id) && !this.queued.has(id) && e.origin_device_id !== this.d.deviceId)
+          this.incoming.add(id);
+      }
+    }
+    for (const id of [...this.incoming]) if (!next.has(id)) this.incoming.delete(id);
+    this.events = next;
+    this.cursor = snap.cursor;
+    this.syncedAt = snap.syncedAt;
+    const inQueue = new Set(snap.queue.map((q) => q.event_id));
+    for (const id of [...this.queued.keys()]) {
+      if (this.deletedHere.has(id) || (this.stored.has(id) && !inQueue.has(id))) {
+        this.queued.delete(id);
+        this.attempted.delete(id);
+        this.stored.delete(id);
+      } else if (this.events.has(id)) {
+        await this.acked(id);
+      }
+    }
+    for (const id of [...this.texts.keys()]) if (!this.events.has(id) && !this.queued.has(id)) this.texts.delete(id);
+    await this.decryptMissing();
+  }
+
+  /** Reloads this tab's timeline from the shared cache (another tab moved the shared cursor). False when unreadable. */
+  private async reload(): Promise<boolean> {
+    const snap = await this.d.store.snapshot(this.d.userId).catch(() => null);
+    if (!snap || this.stopped) return false;
+    await this.adopt(snap);
+    return true;
   }
 
   stop() {
@@ -374,29 +429,38 @@ export class ClipboardEngine {
     return run;
   }
 
+  /**
+   * One pass by cursor. The shared cursor is read first: when another tab moved it past this tab's timeline, the
+   * timeline is reloaded from the shared cache, so no event or tombstone that tab pulled is missed here. Each page is
+   * applied in memory and written to the store from the cursor it was pulled from; when another tab wrote first, this
+   * tab takes the shared state and pulls on from it.
+   */
   private async pull() {
     const { api, store, userId, deviceId } = this.d;
     try {
-      let cursor = await store.cursor(userId).catch(() => null);
+      const shared = await store.syncState(userId).catch(() => null);
+      let cursor: number | null = shared ? shared.cursor : this.cursor;
+      const syncedAt = shared ? shared.syncedAt : this.syncedAt;
       // Tombstones are kept 7 days (docs/CLIPBOARD_PROTOCOL.md §2.5): a device that has not caught up for longer may
       // have missed deletions, so it reloads the live timeline instead of following its old cursor.
-      const syncedAt = cursor === null ? null : await store.syncedAt(userId).catch(() => null);
       if (cursor !== null && (syncedAt === null || this.d.now() - syncedAt > STALE_CURSOR_MS)) cursor = null;
+      if (cursor !== null && shared && shared.cursor !== this.cursor && !(await this.reload())) cursor = null;
       if (cursor === null) {
         const h = await api.history();
         const all = h.events.filter((e) => !e.deleted && e.ciphertext && e.nonce);
         const live = all.filter((e) => !this.deletedHere.has(e.event_id));
-        await this.persist((s, g) => s.replace(userId, live, h.cursor, g));
+        await this.persist((s, g) => s.replace(userId, live, h.cursor, g, this.d.now() - STALE_CURSOR_MS));
         this.events = new Map(live.map((e) => [e.event_id, e]));
+        this.cursor = h.cursor;
+        this.syncedAt = this.d.now();
         if (live.length < all.length) {
           await this.deleteAgain(all.filter((e) => this.deletedHere.has(e.event_id)).map((e) => e.event_id));
         }
         for (const id of this.queued.keys()) if (this.events.has(id)) await this.acked(id);
-        cursor = h.cursor;
       }
-      for (let page = 0; page < 50; page++) {
-        const { events, next_cursor } = await api.events(cursor);
-        if (!events.length) break;
+      for (let page = 0; page < 50 && this.cursor !== null && !this.stopped; page++) {
+        const from: number = this.cursor;
+        const { events, next_cursor } = await api.events(from);
         const put: RemoteClipboardEvent[] = [];
         const remove: string[] = [];
         const again: string[] = [];
@@ -427,11 +491,17 @@ export class ClipboardEngine {
           if (fresh && this.loaded && e.origin_device_id !== deviceId) this.incoming.add(e.event_id);
           if (this.queued.has(e.event_id)) await this.acked(e.event_id);
         }
-        const next = Math.max(cursor, next_cursor, ...events.map((e) => e.seq));
-        await this.persist((s, g) => s.apply(userId, { put, remove, cursor: next }, g));
+        const next = Math.max(from, next_cursor, ...events.map((e) => e.seq));
+        // An empty page still records the catch-up time (when the stored cursor is this one).
+        const wrote = await this.persistResult((s, g) => s.advance(userId, { put, remove, from, to: next }, g));
         if (again.length) await this.deleteAgain(again);
-        if (next <= cursor) break;
-        cursor = next;
+        if (wrote === 'moved') {
+          // Another tab wrote the shared cache first: take its state, and pull on from its cursor.
+          if (await this.reload()) continue;
+        }
+        this.cursor = next;
+        if (wrote === 'ok') this.syncedAt = this.d.now();
+        if (!events.length || next <= from) break;
       }
       await this.decryptMissing();
       this.loadError = null;
@@ -757,7 +827,7 @@ export class ClipboardEngine {
       }
       if (outcome === 'halt') return resync;
       if (outcome === 'rejected') rejected = true;
-      if (outcome === 'ok' && retry) resync = true;
+      if (outcome === 'resync' || (outcome === 'ok' && retry)) resync = true;
     }
     if (pending.length || del.tried) this.sendError = rejected ? 'rejected' : null;
     if (del.outcome === 'later') {
@@ -789,10 +859,11 @@ export class ClipboardEngine {
   }
 
   /**
-   * `ok`: sent; `rejected`: refused for good and dropped; `stop`: retry later; `halt`: wait for the user or the account
-   * (paused, key problem, session ended).
+   * `ok`: sent; `resync`: sent, but the row is not taken from the acknowledgement (another tab changed it meanwhile),
+   * so the cursor is followed; `rejected`: refused for good and dropped; `stop`: retry later; `halt`: wait for the user
+   * or the account (paused, key problem, session ended).
    */
-  private async sendOne(first: QueuedEvent): Promise<'ok' | 'rejected' | 'stop' | 'halt'> {
+  private async sendOne(first: QueuedEvent): Promise<'ok' | 'resync' | 'rejected' | 'stop' | 'halt'> {
     let item = first;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -828,27 +899,36 @@ export class ClipboardEngine {
           this.emit();
           return 'ok';
         }
-        const deletedHere =
-          this.deletedHere.has(id) ||
-          (await this.d.store.pendingState(this.d.userId, id).catch(() => null))?.deleted === true;
-        if (deletedHere) {
-          // Deleted on this device (this tab or another) while the create was in flight: the create may have landed
-          // after the DELETE, so the DELETE is sent once more (next pass).
-          await this.markDeleted([id], this.d.now());
-          this.flushAgain = true;
-          this.emit();
-          return 'ok';
-        }
+        if (this.deletedHere.has(id)) return this.ackDeleted(id);
         if (!this.queued.has(id)) {
           // A cursor pull already saw the event and acknowledged it (the server notifies before it answers the
-          // create): plain success.
+          // create), or a reload took it out of this tab's queue: plain success.
           this.attempted.delete(id);
           return 'ok';
         }
+        // The shared state decides, in one transaction (§2.9): another tab may have acknowledged, deleted or cleared
+        // it, or pulled its tombstone, while the create was in flight.
+        const state: AckState | null = await this.persistResult((s, g) => s.ackCreate(this.d.userId, e, g));
+        if (state === 'deleted') return this.ackDeleted(id);
+        if (state === 'taken' || state === 'gone') {
+          // Not a row from this acknowledgement: never cached or shown from here. The cursor (or the shared cache)
+          // says whether it is live.
+          if (state === 'gone') this.tombstoned.add(id);
+          this.queued.delete(id);
+          this.attempted.delete(id);
+          this.stored.delete(id);
+          if (state === 'gone') this.texts.delete(id);
+          this.emit();
+          return 'resync';
+        }
+        // `live` (cached by `ackCreate` when the shared cursor has not passed it), or the store could not be used
+        // (null): the row is shown.
+        const text = this.texts.get(id);
         this.events.set(id, e);
-        await this.persist((s, g) => s.apply(this.d.userId, { put: [e] }, g));
-        await this.acked(item.event_id);
-        this.attempted.delete(item.event_id);
+        this.queued.delete(id);
+        this.stored.delete(id);
+        this.attempted.delete(id);
+        if (text !== undefined) this.texts.set(id, text);
         this.emit();
         return 'ok';
       } catch (err) {
@@ -897,6 +977,17 @@ export class ClipboardEngine {
     }
   }
 
+  /**
+   * Deleted on this device (this tab or another) while the create was in flight: the create may have landed after the
+   * DELETE, so the DELETE is sent once more (next pass).
+   */
+  private async ackDeleted(id: string): Promise<'ok'> {
+    await this.markDeleted([id], this.d.now());
+    this.flushAgain = true;
+    this.emit();
+    return 'ok';
+  }
+
   /** Re-encrypts a queued event under the newest held key (same event_id), or null when there is nothing newer. */
   private async reencrypt(item: QueuedEvent): Promise<QueuedEvent | null> {
     const version = await this.d.keys.currentVersion();
@@ -938,24 +1029,34 @@ export class ClipboardEngine {
     this.events.delete(id);
     this.texts.delete(id);
     this.incoming.delete(id);
-    await this.persist((s, g) => s.apply(this.d.userId, { remove: [id] }, g));
+    await this.persist((s, g) => s.removeEvents(this.d.userId, [id], g));
     this.emit();
     void this.refresh();
   }
 
   /**
    * Clears the account's clipboard history on every device; tombstones arrive through the cursor. Queued captures are
-   * dropped too and never sent after it (§2.9): sends in flight finish before the clear request, the server clear
-   * tombstones those that reached it, and each dropped capture keeps a pending delete for the grace period, so a create
-   * still in flight in another tab is deleted again. A capture made while the clear runs is kept and sent after it.
+   * dropped too and never sent after it (§2.9): every capture queued when Clear was pressed, in this tab or in the
+   * browser's shared queue (another tab's), becomes a pending delete for the grace period, so a create still in flight
+   * in another tab is deleted again; sends in flight in this tab finish before the clear request, and the server clear
+   * tombstones those that reached it. A capture made after Clear was pressed is kept and sent after it.
    */
   async clear(): Promise<void> {
     this.clearing = true;
+    const startedAt = this.d.now();
+    const before = new Set(this.queued.keys());
     let dropped: string[];
     try {
+      const shared = await this.d.store.queue(this.d.userId).catch(() => [] as QueuedEvent[]);
+      for (const q of shared) {
+        // Another tab's capture made before Clear was pressed (this tab's later captures are in its own queue).
+        if (!this.queued.has(q.event_id) && !this.deletedHere.has(q.event_id) && q.queuedAt <= startedAt) {
+          before.add(q.event_id);
+        }
+      }
       while (this.flushing) await this.flushing.catch(() => undefined);
-      dropped = [...this.queued.keys()];
       await this.d.api.clear();
+      dropped = [...before];
     } catch (e) {
       this.clearing = false;
       void this.flush();
@@ -967,7 +1068,7 @@ export class ClipboardEngine {
     this.events.clear();
     this.incoming.clear();
     for (const id of ids) this.texts.delete(id);
-    await this.persist((s, g) => s.apply(this.d.userId, { remove: ids }, g));
+    await this.persist((s, g) => s.removeEvents(this.d.userId, ids, g));
     this.emit();
     void this.refresh();
     void this.flush();

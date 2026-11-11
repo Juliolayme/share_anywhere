@@ -28,6 +28,9 @@ abstract class HistoryDao {
     @Query("DELETE FROM history WHERE id = :id")
     abstract suspend fun delete(id: String)
 
+    @Query("SELECT * FROM history ORDER BY created_at DESC")
+    abstract suspend fun all(): List<HistoryEntry>
+
     @Query("SELECT id FROM history")
     abstract suspend fun ids(): List<String>
 

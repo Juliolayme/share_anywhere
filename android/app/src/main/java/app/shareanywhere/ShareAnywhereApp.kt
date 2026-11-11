@@ -36,6 +36,12 @@ class ShareAnywhereApp : Application() {
 
     @Inject lateinit var outgoing: OutgoingFileDao
 
+    @Inject lateinit var config: app.shareanywhere.config.AppConfig
+
+    @Inject lateinit var account: dagger.Lazy<app.shareanywhere.account.AccountManager>
+
+    @Inject lateinit var clipboard: dagger.Lazy<app.shareanywhere.clipboard.ClipboardRuntime>
+
     @Inject @AppScope
     lateinit var scope: CoroutineScope
 
@@ -47,6 +53,9 @@ class ShareAnywhereApp : Application() {
                 override fun onStart(owner: LifecycleOwner) = identity.start()
             }
         )
+        // Accounts and Clipboard Sync follow the identity's `acct` claim (nothing runs for a guest beyond reading it).
+        if (config.flags.accounts) account.get().start()
+        if (config.flags.clipboard) clipboard.get().start()
         scope.launch { runCatching { history.sweep(settings.settings.first().retention) } }
         // Receive progress and save folders untouched for a day, and picked files of sessions past their maximum
         // lifetime, are forgotten (as the Web's storage sweep; docs/TRANSFER_PROTOCOL.md §4).

@@ -7,7 +7,20 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
+import app.shareanywhere.account.AccountDataHooks
+import app.shareanywhere.account.AccountManager
+import app.shareanywhere.account.keys.AccountKeyStore
+import app.shareanywhere.account.keys.AccountKeys
+import app.shareanywhere.account.keys.SyncMeta
+import app.shareanywhere.account.sync.FileHistoryMetaStore
+import app.shareanywhere.account.sync.HistoryMetaStore
+import app.shareanywhere.clipboard.ClipboardApi
+import app.shareanywhere.clipboard.ClipboardDatabase
+import app.shareanywhere.clipboard.ClipboardEndpoints
+import app.shareanywhere.clipboard.ClipboardRuntime
+import app.shareanywhere.clipboard.ClipboardStore
 import app.shareanywhere.config.AppConfig
+import app.shareanywhere.data.api.AccountApi
 import app.shareanywhere.data.api.ApiClient
 import app.shareanywhere.data.api.DeviceApi
 import app.shareanywhere.data.api.SessionsApi
@@ -35,6 +48,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.util.concurrent.TimeUnit
+import javax.inject.Provider
 import javax.inject.Qualifier
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -157,6 +171,73 @@ object AppModule {
 
     @Provides @Singleton
     fun keepAwake(): KeepAwakeController = KeepAwakeController()
+
+    // --- Accounts (milestone 6.4) ---
+
+    @Provides @Singleton
+    fun accountApi(client: ApiClient, identity: IdentityManager): AccountApi = AccountApi(client, identity)
+
+    @Provides @Singleton
+    fun accountKeyStore(@ApplicationContext context: Context): AccountKeyStore = AccountKeyStore(context)
+
+    @Provides @Singleton
+    fun syncMeta(@ApplicationContext context: Context): SyncMeta = SyncMeta(context)
+
+    @Provides @Singleton
+    fun accountKeys(api: AccountApi, store: AccountKeyStore, meta: SyncMeta): AccountKeys = AccountKeys(api, store, meta)
+
+    @Provides @Singleton
+    fun historyMeta(@ApplicationContext context: Context): HistoryMetaStore = FileHistoryMetaStore(context.noBackupFilesDir)
+
+    @Provides @Singleton
+    fun accountManager(
+        identity: IdentityManager,
+        api: AccountApi,
+        keys: AccountKeys,
+        history: HistoryRepository,
+        historyMeta: HistoryMetaStore,
+        clipboard: Provider<ClipboardRuntime>,
+        @AppScope scope: CoroutineScope
+    ): AccountManager = AccountManager(
+        identity,
+        api,
+        keys,
+        history,
+        historyMeta,
+        scope,
+        onAccountData =
+        object : AccountDataHooks() {
+            override suspend fun wipe() = clipboard.get().wipe()
+
+            override suspend fun keysChanged() = clipboard.get().keysChanged()
+        },
+        foreground = {
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+        }
+    )
+
+    // --- Clipboard Sync (milestone 6.4) ---
+
+    @Provides @Singleton
+    fun clipboardDatabase(@ApplicationContext context: Context): ClipboardDatabase =
+        Room.databaseBuilder(context, ClipboardDatabase::class.java, ClipboardDatabase.NAME).build()
+
+    @Provides @Singleton
+    fun clipboardStore(db: ClipboardDatabase): ClipboardStore = ClipboardStore(db.clipboard())
+
+    @Provides @Singleton
+    fun clipboardApi(client: ApiClient, identity: IdentityManager): ClipboardEndpoints = ClipboardApi(client, identity)
+
+    @Provides @Singleton
+    fun clipboardRuntime(
+        @ApplicationContext context: Context,
+        account: AccountManager,
+        api: ClipboardEndpoints,
+        store: ClipboardStore,
+        socket: SessionSocket,
+        settings: SettingsRepository,
+        @AppScope scope: CoroutineScope
+    ): ClipboardRuntime = ClipboardRuntime(context, account, api, store, socket, settings, scope)
 
     /** "Android · Pixel 7": the server adds two random words to make the display name (PRD §5.1). */
     fun platformLabel(model: String = Build.MODEL.orEmpty()): String =

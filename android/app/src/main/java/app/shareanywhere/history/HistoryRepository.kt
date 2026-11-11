@@ -16,8 +16,20 @@ enum class Retention(val stored: String, val days: Int) {
     }
 }
 
+/** Told about deletions made by the user, so synced copies are tombstoned too (cloud history sync, signed in only). */
+interface HistorySyncHandler {
+    fun removed(ids: List<String>)
+
+    fun cleared()
+}
+
 /** Local History store for guests and signed-in users alike (PRD §2 History: Room on Android). */
 class HistoryRepository(private val dao: HistoryDao, private val clock: () -> Long = System::currentTimeMillis) {
+    /** Set while history sync is on for an added device; null for guests. */
+    @Volatile var syncHandler: HistorySyncHandler? = null
+
+    suspend fun list(): List<HistoryEntry> = dao.all()
+
     fun observeAll(): Flow<List<HistoryEntry>> = dao.observeAll()
 
     fun observe(id: String): Flow<HistoryEntry?> = dao.observe(id)
@@ -25,14 +37,23 @@ class HistoryRepository(private val dao: HistoryDao, private val clock: () -> Lo
     /** Writes [entry] unless the user deleted the same id in the last 7 days. */
     suspend fun add(entry: HistoryEntry): Boolean = dao.addUnlessRemoved(entry, clock() - REMOVED_TTL_MS)
 
+    /** The user deleted an entry: removed here, and its synced copy tombstoned when history sync is on. */
     suspend fun remove(id: String) {
+        removeLocal(id)
+        syncHandler?.removed(listOf(id))
+    }
+
+    /** Removes an entry on this device only (a tombstone pulled from the account). */
+    suspend fun removeLocal(id: String) {
         val now = clock()
         dao.removeAndRemember(listOf(id), now, now - REMOVED_TTL_MS, REMOVED_MAX)
     }
 
-    suspend fun clear() {
+    /** Clear all; [sync] also tombstones the synced copies when history sync is on (not on sign-out). */
+    suspend fun clear(sync: Boolean = true) {
         val now = clock()
         dao.clearAndRemember(now, now - REMOVED_TTL_MS, REMOVED_MAX)
+        if (sync) syncHandler?.cleared()
     }
 
     /** Deletes entries older than the retention period ("none" deletes all). Returns the count removed. */

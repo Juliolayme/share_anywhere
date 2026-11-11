@@ -25,7 +25,9 @@ data class AppSettings(
     val language: AppLanguage = AppLanguage.SYSTEM,
     /** Keep screen on during transfers, default on (PRD §5.10, docs/ARCHITECTURE.md §7.1). */
     val keepScreenOn: Boolean = true,
-    val retention: Retention = Retention.DEFAULT
+    val retention: Retention = Retention.DEFAULT,
+    /** Clipboard Sync: capture what is copied while the app is open (CB-4, this device only; default on). */
+    val clipboardAuto: Boolean = true
 )
 
 class SettingsRepository(private val store: DataStore<Preferences>) {
@@ -38,7 +40,8 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
                     theme = ThemeMode.entries.firstOrNull { it.stored == p[THEME] } ?: ThemeMode.SYSTEM,
                     language = AppLanguage.entries.firstOrNull { it.stored == p[LANGUAGE] } ?: AppLanguage.SYSTEM,
                     keepScreenOn = p[KEEP_SCREEN_ON] ?: true,
-                    retention = Retention.fromStored(p[RETENTION])
+                    retention = Retention.fromStored(p[RETENTION]),
+                    clipboardAuto = p[CLIPBOARD_AUTO] ?: true
                 )
             }
 
@@ -52,6 +55,8 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
 
     suspend fun setRetention(retention: Retention) = store.edit { it[RETENTION] = retention.stored }
 
+    suspend fun setClipboardAuto(on: Boolean) = store.edit { it[CLIPBOARD_AUTO] = on }
+
     companion object {
         const val FILE = "settings"
         private val WELCOMED = booleanPreferencesKey("welcomed")
@@ -59,5 +64,6 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         private val LANGUAGE = stringPreferencesKey("language")
         private val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         private val RETENTION = stringPreferencesKey("history_retention")
+        private val CLIPBOARD_AUTO = booleanPreferencesKey("clipboard_auto")
     }
 }

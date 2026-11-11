@@ -29,4 +29,10 @@ interface AppEntryPoint {
     fun outgoingFiles(): app.shareanywhere.transfer.OutgoingFileDao
 
     fun transferRuntime(): app.shareanywhere.transfer.runtime.TransferRuntime
+
+    fun identity(): app.shareanywhere.identity.IdentityManager
+
+    fun accountManager(): app.shareanywhere.account.AccountManager
+
+    fun clipboardRuntime(): app.shareanywhere.clipboard.ClipboardRuntime
 }

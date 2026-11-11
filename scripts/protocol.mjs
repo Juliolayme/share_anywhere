@@ -230,7 +230,7 @@ export function renderKotlinModels(doc) {
     '    /** The path with each {name} replaced, in order, by the given values (URL-encoded by the caller). */',
     '    fun path(vararg values: String): String {',
     '        var i = 0',
-    '        return Regex("\\\\{[^}]+}").replace(path) { m -> values.getOrElse(i++) { error("missing value for ${m.value}") } }',
+    '        return Regex("\\\\{[^}]+\\\\}").replace(path) { m -> values.getOrElse(i++) { error("missing value for ${m.value}") } }',
     '    }',
     '}',
     '',

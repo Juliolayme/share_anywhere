@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import app.shareanywhere.settings.AppLanguage
 import java.util.Locale
 
-private val PLACEHOLDER = Regex("\\{(\\w+)}")
+private val PLACEHOLDER = Regex("\\{(\\w+)\\}") // ICU (Android) requires the closing brace escaped too
 
 /**
  * Fills catalog placeholders the way the Web's `format()` does (docs/DESIGN_SYSTEM.md §1.2): named `{name}` from

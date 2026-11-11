@@ -1299,18 +1299,18 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
   /v1/history/entries/{entry_id}:
     parameters:
-      - {
-          name: entry_id,
-          in: path,
-          required: true,
-          schema: { type: string, format: uuid },
-        }
+      - name: entry_id
+        in: path
+        required: true
+        description: Lowercase canonical 8-4-4-4-12 form (400 invalid_request otherwise).
+        schema: { type: string, format: uuid, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
     delete:
       operationId: deleteHistoryEntry
       x-sa-access: account+device
       summary: Turn an entry into a tombstone with a new seq (deleting a tombstone again changes nothing).
       responses:
         "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1334,7 +1334,7 @@ paths:
         The call records the calling device's cursor (the cursor it sent, i.e. what it has applied) in
         clipboard_device_cursors; the recorded cursor never moves backwards and never passes the account's highest
         seq. Live events past expires_at are left out. Clients call this on every CLIPBOARD_* WebSocket message and
-        on reconnect.
+        on reconnect. Limited per device to 600 / min, shared with GET /v1/clipboard/history.
       parameters:
         - { name: cursor, in: query, required: false, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
@@ -1347,6 +1347,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     post:
       operationId: createClipboardEvent
       x-sa-access: account+device
@@ -1383,18 +1384,18 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
   /v1/clipboard/events/{event_id}:
     parameters:
-      - {
-          name: event_id,
-          in: path,
-          required: true,
-          schema: { type: string, format: uuid },
-        }
+      - name: event_id
+        in: path
+        required: true
+        description: Lowercase canonical 8-4-4-4-12 form (400 invalid_request otherwise).
+        schema: { type: string, format: uuid, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
     delete:
       operationId: deleteClipboardEvent
       x-sa-access: account+device
       summary: Turn an event into a tombstone with a new seq (deleting a tombstone again changes nothing).
       responses:
         "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1404,7 +1405,7 @@ paths:
       operationId: getClipboardHistory
       x-sa-access: account+device
       summary: Live events, newest first, with the account's current highest seq for the initial load.
-      description: Read from one snapshot. The client then follows GET /v1/clipboard/events?cursor=<cursor>.
+      description: Read from one snapshot. The client then follows GET /v1/clipboard/events?cursor=<cursor>. Limited per device to 600 / min, shared with GET /v1/clipboard/events.
       parameters:
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
       responses:
@@ -1416,6 +1417,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     delete:
       operationId: clearClipboardHistory
       x-sa-access: account+device
@@ -2231,7 +2233,11 @@ components:
       required: [entry_id, key_version, nonce, ciphertext]
       additionalProperties: false
       properties:
-        entry_id: { type: string, format: uuid }
+        entry_id:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          description: "Client-generated, lowercase canonical 8-4-4-4-12 form (part of the AAD; 400 invalid_request otherwise)."
         key_version: { type: integer, minimum: 1, description: "The account's current key version (409 key_version_conflict otherwise)." }
         nonce: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: 12 bytes. }
         ciphertext: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: "AES-256-GCM ciphertext and tag, at most 64 KB decoded." }
@@ -2239,7 +2245,7 @@ components:
       type: object
       required: [entry_id, seq, key_version, origin_device_id, created_at, deleted]
       properties:
-        entry_id: { type: string, format: uuid }
+        entry_id: { type: string, format: uuid, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
         seq: { type: integer, format: int64 }
         key_version: { type: integer }
         nonce: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: Absent on tombstones. }
@@ -2260,13 +2266,17 @@ components:
       required: [event_id, key_version, nonce, ciphertext, payload_size]
       additionalProperties: false
       properties:
-        event_id: { type: string, format: uuid, description: Client-generated; the idempotency key. }
+        event_id:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          description: "Client-generated; the idempotency key. Lowercase canonical 8-4-4-4-12 form (part of the AAD; 400 invalid_request otherwise)."
         key_version: { type: integer, minimum: 1, description: "The account's current key version (409 key_version_conflict otherwise)." }
         nonce: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: 12 bytes. }
         ciphertext:
           allOf: [{ $ref: "#/components/schemas/Base64Url" }]
-          description: "AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; 17 to 262160 bytes decoded (413 payload_too_large above)."
-        payload_size: { type: integer, minimum: 1, maximum: 262144, description: "UTF-8 byte length of the plaintext (413 payload_too_large above 262144)." }
+          description: "AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; exactly payload_size + 16 bytes decoded (400 invalid_request otherwise), so 17 to 262160 bytes (413 payload_too_large above)."
+        payload_size: { type: integer, minimum: 1, maximum: 262144, description: "UTF-8 byte length of the plaintext (413 payload_too_large above 262144); the decoded ciphertext must be exactly payload_size + 16 bytes." }
         event_type: { type: string, enum: [TEXT], default: TEXT }
         mime_type: { type: string, enum: [text/plain], default: text/plain }
     ClipboardEventCreated:
@@ -2280,7 +2290,7 @@ components:
       type: object
       required: [event_id, seq, origin_device_id, event_type, mime_type, key_version, nonce, ciphertext, payload_size, created_at, expires_at, deleted]
       properties:
-        event_id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
         seq: { type: integer, format: int64 }
         origin_device_id: { type: string, format: uuid }
         event_type: { type: string, enum: [TEXT] }

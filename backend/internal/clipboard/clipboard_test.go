@@ -6,7 +6,9 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -129,6 +131,10 @@ func TestIdempotentEventsTombstonesAndValidation(t *testing.T) {
 		{"event_id": id1, "key_version": 1, "nonce": blob(12, 1), "ciphertext": blob(48, 2), "payload_size": 32, "mime_type": "text/html"},
 		{"event_id": id1, "key_version": 1, "nonce": blob(12, 1), "ciphertext": blob(48, 2), "payload_size": 32, "extra": true},
 		{"event_id": id1, "key_version": 1, "nonce": blob(12, 1), "ciphertext": blob(48, 2)},
+		// v1: the ciphertext is exactly payload_size + the 16-byte tag.
+		{"event_id": id1, "key_version": 1, "nonce": blob(12, 1), "ciphertext": blob(48, 2), "payload_size": 31},
+		{"event_id": id1, "key_version": 1, "nonce": blob(12, 1), "ciphertext": blob(48, 2), "payload_size": 33},
+		{"event_id": id1, "key_version": 1, "nonce": blob(12, 1), "ciphertext": blob(32, 2), "payload_size": 32},
 	} {
 		e.want(e.do("POST", "/v1/clipboard/events", tokA, bad), 400, "invalid_request")
 	}
@@ -175,7 +181,7 @@ func TestIdempotentEventsTombstonesAndValidation(t *testing.T) {
 		t.Fatalf("other account history: %s", h.raw)
 	}
 	e.want(e.do("DELETE", "/v1/clipboard/events/"+id1, other, nil), 404, "not_found")
-	e.want(e.do("DELETE", "/v1/clipboard/events/not-a-uuid", tokA, nil), 404, "not_found")
+	e.want(e.do("DELETE", "/v1/clipboard/events/not-a-uuid", tokA, nil), 400, "invalid_request")
 
 	// History: live events newest first, with the current highest seq as the cursor.
 	h := e.do("GET", "/v1/clipboard/history", tokB, nil)
@@ -249,6 +255,123 @@ func TestPayloadLimits(t *testing.T) {
 		t.Fatalf("%d oversized events stored", c)
 	}
 	e.want(e.do("POST", "/v1/clipboard/events", tok, eventBody(newID(), 1, MaxPayload)), 201, "")
+}
+
+// TestPayloadSizeMatchesCiphertext (QA round 1): for v1 the ciphertext must be exactly payload_size plus the
+// 16-byte AES-GCM tag; any other length is 400 invalid_request and nothing is stored.
+func TestPayloadSizeMatchesCiphertext(t *testing.T) {
+	e := newEnv(t, 100)
+	_, tok := e.signup("fay@example.com")
+	for _, c := range []struct{ ct, size int }{{17, 2}, {17, 0}, {100, 100}, {100, 83}, {100, 85}, {MaxCiphertext, MaxPayload - 1}} {
+		b := eventBody(newID(), 1, 1)
+		b["ciphertext"], b["payload_size"] = blob(c.ct, 2), c.size
+		e.want(e.do("POST", "/v1/clipboard/events", tok, b), 400, "invalid_request")
+	}
+	if c := e.count(`SELECT count(*) FROM clipboard_events`); c != 0 {
+		t.Fatalf("%d mismatched events stored", c)
+	}
+	for _, n := range []int{1, 84, MaxPayload} {
+		e.want(e.do("POST", "/v1/clipboard/events", tok, eventBody(newID(), 1, n)), 201, "")
+	}
+}
+
+// TestCanonicalEventIDs (QA round 1): event_id is part of the AAD, so only the lowercase canonical
+// 8-4-4-4-12 form is accepted; uppercase, braces, no hyphens, and URN forms are 400 invalid_request on POST and
+// on DELETE by id, and the stored id comes back in the same lowercase form.
+func TestCanonicalEventIDs(t *testing.T) {
+	e := newEnv(t, 100)
+	_, tok := e.signup("gus@example.com")
+	id := newID()
+	bads := []string{
+		strings.ToUpper(id),
+		id[:35] + "A",
+		"{" + id + "}",
+		strings.ReplaceAll(id, "-", ""),
+		"urn:uuid:" + id,
+		id[:8] + "_" + id[9:],
+	}
+	for _, bad := range bads {
+		e.want(e.do("POST", "/v1/clipboard/events", tok, eventBody(bad, 1, 8)), 400, "invalid_request")
+	}
+	if c := e.count(`SELECT count(*) FROM clipboard_events`); c != 0 {
+		t.Fatalf("%d events stored from non-canonical ids", c)
+	}
+	e.want(e.do("POST", "/v1/clipboard/events", tok, eventBody(id, 1, 8)), 201, "")
+	for _, path := range []string{"/v1/clipboard/events", "/v1/clipboard/history"} {
+		r := e.do("GET", path, tok, nil)
+		if es := r.body["events"].([]any); len(es) != 1 || es[0].(map[string]any)["event_id"] != id {
+			t.Fatalf("%s: event_id not in canonical form: %s", path, r.raw)
+		}
+	}
+	for _, bad := range bads {
+		e.want(e.do("DELETE", "/v1/clipboard/events/"+url.PathEscape(bad), tok, nil), 400, "invalid_request")
+	}
+	if c := e.count(`SELECT count(*) FROM clipboard_events WHERE deleted_at IS NULL`); c != 1 {
+		t.Fatal("a non-canonical DELETE removed the event")
+	}
+	e.want(e.do("DELETE", "/v1/clipboard/events/"+id, tok, nil), 204, "")
+}
+
+// TestClearRacingSweep (QA round 1): Clear (and Delete) running at the same time as the retention sweep over
+// expired-but-unswept events never deadlocks or fails, and the account's sequence stays consistent: the sweep
+// skips rows a writer holds (FOR UPDATE SKIP LOCKED) and Clear renumbers exactly the rows it locked.
+func TestClearRacingSweep(t *testing.T) {
+	e := newEnv(t, 100)
+	_, tok := e.signup("hal@example.com")
+	id := e.ident(tok)
+	// Retention 1 day keeps the 40 iterations well inside the account session's lifetime; from the eighth
+	// iteration on, the sweep also removes earlier tombstones while Clear runs.
+	e.want(e.do("PUT", "/v1/clipboard/settings", tok, map[string]any{"paused": false, "retention_days": 1, "sensitive_skip": true}), 200, "")
+	var last int64
+	for i := 0; i < 40; i++ {
+		// Six events that will be expired, then three fresh ones.
+		var doomed string
+		for j := 0; j < 6; j++ {
+			evID := newID()
+			if _, err := e.svc.Create(ctx, id, input(evID, 1)); err != nil {
+				t.Fatalf("iteration %d: create: %v", i, err)
+			}
+			doomed = evID
+		}
+		e.clk.Advance(25 * time.Hour)
+		for j := 0; j < 3; j++ {
+			if _, err := e.svc.Create(ctx, id, input(newID(), 1)); err != nil {
+				t.Fatalf("iteration %d: create fresh: %v", i, err)
+			}
+		}
+		var wg sync.WaitGroup
+		var clearErr, sweepErr, delErr error
+		wg.Add(3)
+		go func() { defer wg.Done(); clearErr = e.svc.Clear(ctx, id) }()
+		go func() { defer wg.Done(); _, sweepErr = e.svc.Sweep(ctx) }()
+		go func() {
+			defer wg.Done()
+			if err := e.svc.Delete(ctx, id, doomed); err != nil && !errors.Is(err, ErrNotFound) {
+				delErr = err
+			}
+		}()
+		wg.Wait()
+		if clearErr != nil || sweepErr != nil || delErr != nil {
+			t.Fatalf("iteration %d: clear %v, sweep %v, delete %v", i, clearErr, sweepErr, delErr)
+		}
+		if c := e.count(`SELECT count(*) FROM clipboard_events WHERE deleted_at IS NULL`); c != 0 {
+			t.Fatalf("iteration %d: %d live events after Clear", i, c)
+		}
+		var maxSeq, lastSeq int64
+		if err := e.pool.QueryRow(ctx, `SELECT COALESCE(MAX(e.seq), 0), s.last_seq FROM clipboard_settings s
+			LEFT JOIN clipboard_events e ON e.user_id = s.user_id GROUP BY s.last_seq`).Scan(&maxSeq, &lastSeq); err != nil {
+			t.Fatal(err)
+		}
+		if maxSeq > lastSeq || lastSeq < last {
+			t.Fatalf("iteration %d: max seq %d, last_seq %d (was %d)", i, maxSeq, lastSeq, last)
+		}
+		// The next event continues the sequence without colliding with a renumbered row.
+		out, err := e.svc.Create(ctx, id, input(newID(), 1))
+		if err != nil || out.Seq != lastSeq+1 {
+			t.Fatalf("iteration %d: next create seq %d (want %d): %v", i, out.Seq, lastSeq+1, err)
+		}
+		last = out.Seq
+	}
 }
 
 // TestCapAndRetentionSweep: the 101st live event tombstones the oldest; the sweep hard-deletes expired events
@@ -572,6 +695,26 @@ func TestRateLimits(t *testing.T) {
 	e.clk.Advance(time.Minute)
 	e.want(e.do("POST", "/v1/clipboard/events", toks[4], eventBody(newID(), 1, 5)), 201, "")
 	e.want(e.do("POST", "/v1/clipboard/events", toks[0], eventBody(newID(), 1, 5)), 201, "")
+
+	// Reads: GET /v1/clipboard/events and /v1/clipboard/history share 600 / min per device.
+	for i := 0; i < 300; i++ {
+		if _, err := e.svc.Events(ctx, e.ident(toks[1]), 0, 1); err != nil {
+			t.Fatalf("read %d: %v", i, err)
+		}
+		if _, err := e.svc.History(ctx, e.ident(toks[1]), 1); err != nil {
+			t.Fatalf("history read %d: %v", i, err)
+		}
+	}
+	for _, path := range []string{"/v1/clipboard/events?cursor=0", "/v1/clipboard/history"} {
+		r := e.do("GET", path, toks[1], nil)
+		e.want(r, 429, "rate_limited")
+		if r.body["retry_after_s"] == nil {
+			t.Fatalf("429 without retry_after_s: %s", r.raw)
+		}
+	}
+	e.want(e.do("GET", "/v1/clipboard/events", toks[2], nil), 200, "") // per device
+	e.clk.Advance(time.Minute)
+	e.want(e.do("GET", "/v1/clipboard/history", toks[1], nil), 200, "")
 }
 
 // TestCursorWriteRacingDeparture (QA round 6 rule): a device reading events while it is revoked never leaves a

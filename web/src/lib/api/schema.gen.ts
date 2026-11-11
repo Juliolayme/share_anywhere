@@ -139,7 +139,7 @@ export interface paths {
          * @description The call records the calling device's cursor (the cursor it sent, i.e. what it has applied) in
          *     clipboard_device_cursors; the recorded cursor never moves backwards and never passes the account's highest
          *     seq. Live events past expires_at are left out. Clients call this on every CLIPBOARD_* WebSocket message and
-         *     on reconnect.
+         *     on reconnect. Limited per device to 600 / min, shared with GET /v1/clipboard/history.
          */
         get: operations["listClipboardEvents"];
         put?: never;
@@ -162,6 +162,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
+                /** @description Lowercase canonical 8-4-4-4-12 form (400 invalid_request otherwise). */
                 event_id: string;
             };
             cookie?: never;
@@ -185,7 +186,7 @@ export interface paths {
         };
         /**
          * Live events, newest first, with the account's current highest seq for the initial load.
-         * @description Read from one snapshot. The client then follows GET /v1/clipboard/events?cursor=<cursor>.
+         * @description Read from one snapshot. The client then follows GET /v1/clipboard/events?cursor=<cursor>. Limited per device to 600 / min, shared with GET /v1/clipboard/events.
          */
         get: operations["getClipboardHistory"];
         put?: never;
@@ -402,6 +403,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
+                /** @description Lowercase canonical 8-4-4-4-12 form (400 invalid_request otherwise). */
                 entry_id: string;
             };
             cookie?: never;
@@ -1152,11 +1154,11 @@ export interface components {
             next_cursor: number;
         };
         ClipboardEventRequest: {
-            /** @description AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; 17 to 262160 bytes decoded (413 payload_too_large above). */
+            /** @description AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; exactly payload_size + 16 bytes decoded (400 invalid_request otherwise), so 17 to 262160 bytes (413 payload_too_large above). */
             ciphertext: components["schemas"]["Base64Url"];
             /**
              * Format: uuid
-             * @description Client-generated; the idempotency key.
+             * @description Client-generated; the idempotency key. Lowercase canonical 8-4-4-4-12 form (part of the AAD; 400 invalid_request otherwise).
              */
             event_id: string;
             /**
@@ -1173,7 +1175,7 @@ export interface components {
             mime_type: "text/plain";
             /** @description 12 bytes. */
             nonce: components["schemas"]["Base64Url"];
-            /** @description UTF-8 byte length of the plaintext (413 payload_too_large above 262144). */
+            /** @description UTF-8 byte length of the plaintext (413 payload_too_large above 262144); the decoded ciphertext must be exactly payload_size + 16 bytes. */
             payload_size: number;
         };
         ClipboardHistory: {
@@ -1302,7 +1304,10 @@ export interface components {
         HistoryEntryRequest: {
             /** @description AES-256-GCM ciphertext and tag, at most 64 KB decoded. */
             ciphertext: components["schemas"]["Base64Url"];
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Client-generated, lowercase canonical 8-4-4-4-12 form (part of the AAD; 400 invalid_request otherwise).
+             */
             entry_id: string;
             /** @description The account's current key version (409 key_version_conflict otherwise). */
             key_version: number;
@@ -1966,6 +1971,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
         };
     };
     createClipboardEvent: {
@@ -2019,6 +2025,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Lowercase canonical 8-4-4-4-12 form (400 invalid_request otherwise). */
                 event_id: string;
             };
             cookie?: never;
@@ -2032,6 +2039,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -2061,6 +2069,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
         };
     };
     clearClipboardHistory: {
@@ -2507,6 +2516,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Lowercase canonical 8-4-4-4-12 form (400 invalid_request otherwise). */
                 entry_id: string;
             };
             cookie?: never;
@@ -2520,6 +2530,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

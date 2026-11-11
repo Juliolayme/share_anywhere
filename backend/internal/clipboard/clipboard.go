@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -42,6 +43,8 @@ const (
 	maxPageLimit = 200
 	maxHistLimit = 100
 	defaultLimit = 100
+	// notifyTimeout bounds the recipient and presence lookups behind a WebSocket notification.
+	notifyTimeout = 5 * time.Second
 )
 
 // lockClass namespaces the per-user advisory lock (pg_advisory_xact_lock(class, hashtext(user_id))); history
@@ -67,6 +70,7 @@ type Limits struct {
 	CreateDevice  *ratelimit.Limiter // event creation per device
 	CreateAccount *ratelimit.Limiter // event creation per account
 	Write         *ratelimit.Limiter // deletions, clear, settings changes per device
+	Read          *ratelimit.Limiter // GET /v1/clipboard/events and /v1/clipboard/history per device
 }
 
 // ScaledLimits returns the defaults multiplied by m (test stacks only; config allows m > 1 only with
@@ -78,7 +82,7 @@ func ScaledLimits(c clock.Clock, m int) Limits {
 	r := func(n int) *ratelimit.Limiter {
 		return ratelimit.New(ratelimit.Rule{Limit: n * m, Window: time.Minute}, c)
 	}
-	return Limits{CreateDevice: r(60), CreateAccount: r(240), Write: r(600)}
+	return Limits{CreateDevice: r(60), CreateAccount: r(240), Write: r(600), Read: r(600)}
 }
 
 // Config wires the service.
@@ -124,14 +128,6 @@ func allow(l *ratelimit.Limiter, key string) error {
 		return rateLimited(wait)
 	}
 	return nil
-}
-
-func isUUID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	_, err := uuid.Parse(s)
-	return err == nil
 }
 
 func b64(s string) ([]byte, bool) {
@@ -256,7 +252,8 @@ func setLastSeq(ctx context.Context, tx pgx.Tx, userID string, last int64) error
 // Create stores an encrypted event and returns its seq. Repeating an event_id returns the stored seq and
 // changes nothing (offline retries; a deleted event is not restored). A new event needs the account's current
 // key version (409 key_version_conflict) and an unpaused account (409 clipboard_paused); nothing is stored
-// otherwise. Inserting beyond MaxLive live events tombstones the oldest one in the same transaction.
+// otherwise. Inserting beyond MaxLive live events tombstones the oldest one in the same transaction. The
+// ciphertext must be exactly payload_size plus the 16-byte AES-GCM tag (v1 encrypts the text as is), else 400.
 func (s *Service) Create(ctx context.Context, id access.Identity, in EventInput) (Created, error) {
 	c, err := s.cfg.Accounts.RequireAdded(ctx, id)
 	if err != nil {
@@ -273,8 +270,8 @@ func (s *Service) Create(ctx context.Context, id access.Identity, in EventInput)
 	if in.MimeType == "" {
 		in.MimeType = mimeType
 	}
-	if !isUUID(in.EventID) || in.KeyVersion < 1 || !okN || len(nonce) != nonceLen || !okC || len(ct) < tagLen+1 ||
-		in.PayloadSize < 1 || in.EventType != eventType || in.MimeType != mimeType {
+	if !auth.IsCanonicalUUID(in.EventID) || in.KeyVersion < 1 || !okN || len(nonce) != nonceLen || !okC || len(ct) < tagLen+1 ||
+		in.PayloadSize < 1 || len(ct) != in.PayloadSize+tagLen || in.EventType != eventType || in.MimeType != mimeType {
 		return Created{}, ErrInvalid
 	}
 	if err := allow(s.cfg.Limits.CreateDevice, c.DeviceID); err != nil {
@@ -396,6 +393,9 @@ func (s *Service) Events(ctx context.Context, id access.Identity, cursor int64, 
 	if err != nil {
 		return EventPage{}, err
 	}
+	if err := allow(s.cfg.Limits.Read, c.DeviceID); err != nil {
+		return EventPage{}, err
+	}
 	page := EventPage{NextCursor: cursor}
 	err = pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		// The cursor write re-checks the session under the key-row lock, so it cannot land after the device's
@@ -439,6 +439,9 @@ func (s *Service) History(ctx context.Context, id access.Identity, limit int) (H
 	if err != nil {
 		return HistoryPage{}, err
 	}
+	if err := allow(s.cfg.Limits.Read, c.DeviceID); err != nil {
+		return HistoryPage{}, err
+	}
 	page := HistoryPage{}
 	err = pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `SELECT last_seq FROM clipboard_settings WHERE user_id = $1::uuid`, c.UserID).Scan(&page.Cursor)
@@ -467,8 +470,8 @@ func (s *Service) Delete(ctx context.Context, id access.Identity, eventID string
 	if err != nil {
 		return err
 	}
-	if !isUUID(eventID) {
-		return ErrNotFound
+	if !auth.IsCanonicalUUID(eventID) {
+		return ErrInvalid
 	}
 	if err := allow(s.cfg.Limits.Write, c.DeviceID); err != nil {
 		return err
@@ -482,8 +485,9 @@ func (s *Service) Delete(ctx context.Context, id access.Identity, eventID string
 		if _, err := s.cfg.Accounts.HoldKeys(ctx, tx, c); err != nil {
 			return err
 		}
+		// FOR UPDATE: a row the sweep is deleting right now is waited for and then reads as gone (404).
 		var deleted bool
-		err := tx.QueryRow(ctx, `SELECT deleted_at IS NOT NULL FROM clipboard_events WHERE user_id = $1::uuid AND event_id = $2::uuid`,
+		err := tx.QueryRow(ctx, `SELECT deleted_at IS NOT NULL FROM clipboard_events WHERE user_id = $1::uuid AND event_id = $2::uuid FOR UPDATE`,
 			c.UserID, eventID).Scan(&deleted)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
@@ -513,7 +517,9 @@ func (s *Service) Delete(ctx context.Context, id access.Identity, eventID string
 	return nil
 }
 
-// Clear tombstones every live event of the account, each with a new seq.
+// Clear tombstones every live event of the account, each with a new seq. Under the clipboard advisory lock it
+// first locks the live rows in seq order (FOR UPDATE), so the rows it renumbers are exactly the rows it holds:
+// a row the sweep deleted meanwhile is simply not returned, and the sweep (SKIP LOCKED) never waits on Clear.
 func (s *Service) Clear(ctx context.Context, id access.Identity) error {
 	c, err := s.cfg.Accounts.RequireAdded(ctx, id)
 	if err != nil {
@@ -535,16 +541,28 @@ func (s *Service) Clear(ctx context.Context, id access.Identity) error {
 		if err != nil {
 			return err
 		}
-		// New seqs start above every seq ever assigned, so the UNIQUE (user_id, seq) check never collides.
-		tag, err := tx.Exec(ctx,
-			`UPDATE clipboard_events e SET seq = $2 + o.rn, deleted_at = $3, nonce = NULL, ciphertext = NULL
-			   FROM (SELECT event_id, row_number() OVER (ORDER BY seq) AS rn FROM clipboard_events
-			          WHERE user_id = $1::uuid AND deleted_at IS NULL) o
-			  WHERE e.user_id = $1::uuid AND e.event_id = o.event_id`, c.UserID, last, s.cfg.Clock.Now())
-		if err != nil || tag.RowsAffected() == 0 {
+		rows, err := tx.Query(ctx,
+			`SELECT event_id::text FROM clipboard_events WHERE user_id = $1::uuid AND deleted_at IS NULL ORDER BY seq FOR UPDATE`, c.UserID)
+		if err != nil {
 			return err
 		}
-		top = last + tag.RowsAffected()
+		live, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil || len(live) == 0 {
+			return err
+		}
+		// New seqs start above every seq ever assigned, so the UNIQUE (user_id, seq) check never collides; the
+		// rows are held, so exactly len(live) seqs are used.
+		tag, err := tx.Exec(ctx,
+			`UPDATE clipboard_events e SET seq = $2 + o.rn, deleted_at = $3, nonce = NULL, ciphertext = NULL
+			   FROM unnest($4::uuid[]) WITH ORDINALITY AS o(event_id, rn)
+			  WHERE e.user_id = $1::uuid AND e.event_id = o.event_id`, c.UserID, last, s.cfg.Clock.Now(), live)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != int64(len(live)) {
+			return fmt.Errorf("clipboard clear: tombstoned %d of %d held rows", tag.RowsAffected(), len(live))
+		}
+		top = last + int64(len(live))
 		return setLastSeq(ctx, tx, c.UserID, top)
 	})
 	if err != nil {
@@ -608,23 +626,51 @@ type SweepResult struct {
 	Tombstones int64
 }
 
+// Sweep batching: each statement deletes at most sweepBatch rows; one pass runs at most sweepMaxBatches
+// statements per kind, and whatever is left (or was skipped) goes in the next pass.
+const (
+	sweepBatch      = 500
+	sweepMaxBatches = 200
+)
+
 // Sweep hard-deletes live events past expires_at and tombstones older than TombstoneTTL. It runs from the
 // account maintenance loop (auth.Service.OnSweep). seq values are never reused: they come from
 // clipboard_settings.last_seq, not from the remaining rows.
+//
+// The sweep never waits on a row lock, so it cannot deadlock with Clear, Delete, or Create (which lock rows
+// under the per-account advisory lock): each batch picks its rows in a fixed order (user_id, seq) with
+// FOR UPDATE SKIP LOCKED and deletes them in its own short statement. A row a writer holds is skipped and
+// picked up by a later pass if it still qualifies.
 func (s *Service) Sweep(ctx context.Context) (SweepResult, error) {
 	now := s.cfg.Clock.Now()
 	var res SweepResult
-	tag, err := s.cfg.Pool.Exec(ctx, `DELETE FROM clipboard_events WHERE deleted_at IS NULL AND expires_at <= $1`, now)
+	var err error
+	res.Expired, err = s.sweepKind(ctx, `deleted_at IS NULL AND expires_at <= $1`, now)
 	if err != nil {
 		return res, err
 	}
-	res.Expired = tag.RowsAffected()
-	tag, err = s.cfg.Pool.Exec(ctx, `DELETE FROM clipboard_events WHERE deleted_at IS NOT NULL AND deleted_at <= $1`, now.Add(-TombstoneTTL))
-	if err != nil {
-		return res, err
+	res.Tombstones, err = s.sweepKind(ctx, `deleted_at IS NOT NULL AND deleted_at <= $1`, now.Add(-TombstoneTTL))
+	return res, err
+}
+
+// sweepKind deletes the rows matching where (with $1 = before) in bounded SKIP LOCKED batches.
+func (s *Service) sweepKind(ctx context.Context, where string, before time.Time) (int64, error) {
+	var total int64
+	for i := 0; i < sweepMaxBatches; i++ {
+		tag, err := s.cfg.Pool.Exec(ctx,
+			`DELETE FROM clipboard_events e
+			  USING (SELECT user_id, event_id FROM clipboard_events WHERE `+where+`
+			          ORDER BY user_id, seq LIMIT $2 FOR UPDATE SKIP LOCKED) d
+			  WHERE e.user_id = d.user_id AND e.event_id = d.event_id`, before, sweepBatch)
+		if err != nil {
+			return total, err
+		}
+		total += tag.RowsAffected()
+		if tag.RowsAffected() < sweepBatch {
+			break
+		}
 	}
-	res.Tombstones = tag.RowsAffected()
-	return res, nil
+	return total, nil
 }
 
 // RunSweep is Sweep in the form auth.Service.OnSweep takes.
@@ -663,7 +709,10 @@ func (s *Service) fanOut(ctx context.Context, userID, skip string, msgs ...any) 
 	if s.cfg.Notify == nil || len(msgs) == 0 {
 		return
 	}
-	ids, err := s.recipients(context.WithoutCancel(ctx), userID, skip)
+	// The request's cancellation does not stop the notification, but the lookup is bounded.
+	nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), notifyTimeout)
+	defer cancel()
+	ids, err := s.recipients(nctx, userID, skip)
 	if err != nil {
 		s.cfg.Log.Error("clipboard notification failed", "error", err.Error())
 		return
@@ -677,9 +726,10 @@ func (s *Service) fanOut(ctx context.Context, userID, skip string, msgs ...any) 
 
 // Presence is registered with ws.Hub.OnPresence: when an added device of an account opens its first socket or
 // closes its last one, the account's other added devices get DEVICE_CONNECTED or DEVICE_DISCONNECTED.
-// Devices without a live added session (guests, not-added, departed) announce nothing.
+// Devices without a live added session (guests, not-added, departed) announce nothing. The hub runs it on a
+// presence worker after WELCOME (never on the handshake); each call is bounded by notifyTimeout.
 func (s *Service) Presence(deviceID string, connected bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
 	defer cancel()
 	var userID string
 	err := s.cfg.Pool.QueryRow(ctx,

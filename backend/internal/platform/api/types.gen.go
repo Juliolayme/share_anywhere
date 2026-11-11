@@ -628,10 +628,10 @@ type ClipboardEventPage struct {
 
 // ClipboardEventRequest defines model for ClipboardEventRequest.
 type ClipboardEventRequest struct {
-	// Ciphertext AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; 17 to 262160 bytes decoded (413 payload_too_large above).
+	// Ciphertext AES-256-GCM ciphertext and tag under the clipboard-v1 subkey, AAD <event_id>|<key_version>; exactly payload_size + 16 bytes decoded (400 invalid_request otherwise), so 17 to 262160 bytes (413 payload_too_large above).
 	Ciphertext Base64Url `json:"ciphertext"`
 
-	// EventId Client-generated; the idempotency key.
+	// EventId Client-generated; the idempotency key. Lowercase canonical 8-4-4-4-12 form (part of the AAD; 400 invalid_request otherwise).
 	EventId   openapi_types.UUID              `json:"event_id"`
 	EventType *ClipboardEventRequestEventType `json:"event_type,omitempty"`
 
@@ -642,7 +642,7 @@ type ClipboardEventRequest struct {
 	// Nonce 12 bytes.
 	Nonce Base64Url `json:"nonce"`
 
-	// PayloadSize UTF-8 byte length of the plaintext (413 payload_too_large above 262144).
+	// PayloadSize UTF-8 byte length of the plaintext (413 payload_too_large above 262144); the decoded ciphertext must be exactly payload_size + 16 bytes.
 	PayloadSize int `json:"payload_size"`
 }
 
@@ -789,8 +789,10 @@ type HistoryEntry struct {
 // HistoryEntryRequest defines model for HistoryEntryRequest.
 type HistoryEntryRequest struct {
 	// Ciphertext AES-256-GCM ciphertext and tag, at most 64 KB decoded.
-	Ciphertext Base64Url          `json:"ciphertext"`
-	EntryId    openapi_types.UUID `json:"entry_id"`
+	Ciphertext Base64Url `json:"ciphertext"`
+
+	// EntryId Client-generated, lowercase canonical 8-4-4-4-12 form (part of the AAD; 400 invalid_request otherwise).
+	EntryId openapi_types.UUID `json:"entry_id"`
 
 	// KeyVersion The account's current key version (409 key_version_conflict otherwise).
 	KeyVersion int `json:"key_version"`

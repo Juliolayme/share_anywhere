@@ -2,6 +2,8 @@ package auth
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -226,4 +228,49 @@ func (e *env) signin2(email string) (string, string) {
 	e.signup(email, true)
 	d, tok := e.signin(email, false)
 	return d.Device.ID, tok
+}
+
+// nonCanonical returns spellings of id that uuid parsers commonly accept but that are not the lowercase
+// canonical 8-4-4-4-12 form the AAD uses (Phase 5B QA round 1).
+func nonCanonical(id string) []string {
+	return []string{
+		strings.ToUpper(id),
+		id[:35] + "A",
+		"{" + id + "}",
+		strings.ReplaceAll(id, "-", ""),
+		"urn:uuid:" + id,
+		id[:8] + "_" + id[9:],
+	}
+}
+
+// TestHistoryCanonicalEntryIDs: entry_id is part of the AAD, so only the lowercase canonical form is accepted;
+// uppercase, braces, no hyphens, and URN forms are 400 invalid_request on POST and on DELETE by id.
+func TestHistoryCanonicalEntryIDs(t *testing.T) {
+	e := newEnv(t)
+	_, tok := e.signup("tia@example.com", true)
+	e.want(e.do("POST", "/v1/keys/setup", tok, setupBody()), 201, "")
+	id := newID()
+	if !IsCanonicalUUID(id) {
+		t.Fatalf("newID is not canonical: %s", id)
+	}
+	for _, bad := range nonCanonical(id) {
+		if IsCanonicalUUID(bad) {
+			t.Fatalf("%q accepted as canonical", bad)
+		}
+		e.want(e.do("POST", "/v1/history/entries", tok, entryBody(bad, 1)), 400, "invalid_request")
+	}
+	var n int
+	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM history_entries`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("%d entries stored from non-canonical ids", n)
+	}
+	e.want(e.do("POST", "/v1/history/entries", tok, entryBody(id, 1)), 201, "")
+	page := e.do("GET", "/v1/history/entries", tok, nil)
+	if es := page.body["entries"].([]any); len(es) != 1 || es[0].(map[string]any)["entry_id"] != id {
+		t.Fatalf("entry_id not returned in canonical form: %s", page.raw)
+	}
+	for _, bad := range nonCanonical(id) {
+		e.want(e.do("DELETE", "/v1/history/entries/"+url.PathEscape(bad), tok, nil), 400, "invalid_request")
+	}
+	e.want(e.do("DELETE", "/v1/history/entries/"+id, tok, nil), 204, "")
 }

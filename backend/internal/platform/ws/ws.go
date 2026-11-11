@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -34,6 +35,11 @@ const (
 	maxMessageBytes  = 64 << 10
 	writeTimeout     = 10 * time.Second
 	ticketsPerMinute = 30
+	// Presence hooks run off the handshake on presenceShards workers (a device always maps to the same one,
+	// so its connect and disconnect stay in order), each with a queue of presenceQueue events; an event that
+	// finds its queue full is dropped and logged rather than holding up a socket.
+	presenceShards = 4
+	presenceQueue  = 256
 )
 
 // Config configures the hub.
@@ -61,6 +67,12 @@ type Hub struct {
 	conns     map[string]map[*conn]struct{}
 	handlers  map[string]Handler
 	presence  []func(deviceID string, connected bool)
+	presenceQ []chan presenceEvent // started by the first OnPresence
+}
+
+type presenceEvent struct {
+	deviceID  string
+	connected bool
 }
 
 // Handler processes one client message of a registered type for the authenticated device. A returned
@@ -104,11 +116,32 @@ func (h *Hub) Handle(t string, fn Handler) {
 }
 
 // OnPresence registers fn to run when a device opens its first socket (connected true) or closes its last one
-// (connected false). It runs on the socket's goroutine, outside the hub lock; register before serving.
+// (connected false). It runs asynchronously on a hub worker, outside the hub lock and never on the handshake
+// (WELCOME does not wait for it); one device's events reach fn in order. fn must bound its own work (the
+// workers are shared). Register before serving.
 func (h *Hub) OnPresence(fn func(deviceID string, connected bool)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.presence = append(h.presence, fn)
+	if h.presenceQ == nil {
+		h.presenceQ = make([]chan presenceEvent, presenceShards)
+		for i := range h.presenceQ {
+			q := make(chan presenceEvent, presenceQueue)
+			h.presenceQ[i] = q
+			go h.presenceWorker(q)
+		}
+	}
+}
+
+func (h *Hub) presenceWorker(q <-chan presenceEvent) {
+	for ev := range q {
+		h.mu.Lock()
+		fns := append([]func(string, bool){}, h.presence...)
+		h.mu.Unlock()
+		for _, fn := range fns {
+			fn(ev.deviceID, ev.connected)
+		}
+	}
 }
 
 // add tracks a socket and reports whether it is the device's first open one.
@@ -134,12 +167,22 @@ func (h *Hub) remove(c *conn) bool {
 	return false
 }
 
+// notifyPresence queues a presence event for the hooks without blocking the caller.
 func (h *Hub) notifyPresence(deviceID string, connected bool) {
 	h.mu.Lock()
-	fns := append([]func(string, bool){}, h.presence...)
+	qs := h.presenceQ
 	h.mu.Unlock()
-	for _, fn := range fns {
-		fn(deviceID, connected)
+	if len(qs) == 0 {
+		return
+	}
+	f := fnv.New32a()
+	_, _ = f.Write([]byte(deviceID))
+	select {
+	case qs[f.Sum32()%presenceShards] <- presenceEvent{deviceID: deviceID, connected: connected}:
+	default:
+		if h.cfg.Log != nil {
+			h.cfg.Log.Warn("websocket presence queue full; event dropped", "connected", connected)
+		}
 	}
 }
 
@@ -324,12 +367,13 @@ func (h *Hub) upgrade(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	go h.writer(ctx, ws, c)
-	// Presence runs before WELCOME, so once a client sees WELCOME its arrival has been announced.
+	welcome, _ := json.Marshal(Welcome{Type: "WELCOME", DeviceID: deviceID, ServerTime: h.cfg.Clock.Now().UTC()})
+	c.enqueue(welcome)
+	// Presence (a database lookup in the clipboard hook) runs after WELCOME on a hub worker, so the handshake
+	// never waits for it; other devices hear of this arrival shortly after.
 	if first {
 		h.notifyPresence(deviceID, true)
 	}
-	welcome, _ := json.Marshal(Welcome{Type: "WELCOME", DeviceID: deviceID, ServerTime: h.cfg.Clock.Now().UTC()})
-	c.enqueue(welcome)
 	go h.heartbeat(ctx, ws, cancel)
 
 	limiter := ratelimit.New(ratelimit.Rule{Limit: MessagesPerSec, Window: time.Second}, h.cfg.Clock)

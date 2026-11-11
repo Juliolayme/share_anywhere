@@ -3,6 +3,7 @@ package clipboard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -93,19 +94,45 @@ func TestWebSocketFanOut(t *testing.T) {
 	r, _ := e.signin("kim@example.com", true)
 	o, tokO := e.signup("lou@example.com")
 
-	sa := e.connect(srv, a.Device.ID)
-	sb := e.connect(srv, b.Device.ID)
+	// Presence runs on a hub worker after WELCOME. A hook registered after svc.Presence runs after it on the
+	// same worker, so seeing it fire means the device's DEVICE_CONNECTED / DISCONNECTED was already queued to
+	// the other sockets; each connect waits for that, so a late announcement cannot reach a later socket.
+	settled := make(chan string, 64)
+	e.hub.OnPresence(func(deviceID string, connected bool) { settled <- fmt.Sprint(deviceID, connected) })
+	waitPresence := func(deviceID string, connected bool) {
+		t.Helper()
+		want := fmt.Sprint(deviceID, connected)
+		for {
+			select {
+			case got := <-settled:
+				if got == want {
+					return
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("presence for %s never ran", want)
+			}
+		}
+	}
+	connect := func(deviceID string) *socket {
+		t.Helper()
+		s := e.connect(srv, deviceID)
+		waitPresence(deviceID, true)
+		return s
+	}
+
+	sa := connect(a.Device.ID)
+	sb := connect(b.Device.ID)
 	if m := sa.next(t); m["type"] != "DEVICE_CONNECTED" || m["device_id"] != b.Device.ID {
 		t.Fatalf("A on B's connect: %v", m)
 	}
-	sn := e.connect(srv, n.Device.ID) // not added: announces nothing
-	sr := e.connect(srv, r.Device.ID)
+	sn := connect(n.Device.ID) // not added: announces nothing
+	sr := connect(r.Device.ID)
 	for _, s := range []*socket{sa, sb} {
 		if m := s.next(t); m["type"] != "DEVICE_CONNECTED" || m["device_id"] != r.Device.ID {
 			t.Fatalf("on R's connect: %v", m)
 		}
 	}
-	so := e.connect(srv, o.Device.ID)
+	so := connect(o.Device.ID)
 	sr.quiet(t, "R")
 	sn.quiet(t, "the not-added device")
 
@@ -161,5 +188,7 @@ func TestWebSocketFanOut(t *testing.T) {
 	}
 	_ = sr.c.Close(websocket.StatusNormalClosure, "")
 	_ = sn.c.Close(websocket.StatusNormalClosure, "")
+	waitPresence(r.Device.ID, false)
+	waitPresence(n.Device.ID, false)
 	sa.quiet(t, "A (departed and not-added devices disconnecting)")
 }

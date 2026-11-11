@@ -26,6 +26,29 @@ func isUUID(s string) bool {
 	return err == nil
 }
 
+// IsCanonicalUUID reports whether s is a UUID in the lowercase canonical 8-4-4-4-12 hex form. Client ids that
+// are part of the AES-GCM AAD (history entry_id, clipboard event_id) must be in exactly this form, because the
+// server stores the uuid and returns it in this form: any other spelling would make the AAD differ on read.
+func IsCanonicalUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // EntryInput is POST /v1/history/entries.
 type EntryInput struct {
 	EntryID    string `json:"entry_id"`
@@ -71,7 +94,7 @@ func (s *Service) AddEntry(ctx context.Context, id access.Identity, in EntryInpu
 	}
 	nonce, ok1 := b64(in.Nonce)
 	ct, ok2 := b64(in.Ciphertext)
-	if !isUUID(in.EntryID) || in.KeyVersion < 1 || !ok1 || len(nonce) != nonceLen || !ok2 || len(ct) < 16 || len(ct) > maxCiphertext {
+	if !IsCanonicalUUID(in.EntryID) || in.KeyVersion < 1 || !ok1 || len(nonce) != nonceLen || !ok2 || len(ct) < 16 || len(ct) > maxCiphertext {
 		return 0, ErrInvalid
 	}
 	if err := allow(s.cfg.Limits.HistoryWrite, se.DeviceID); err != nil {
@@ -155,14 +178,14 @@ func (s *Service) Entries(ctx context.Context, id access.Identity, after int64, 
 }
 
 // DeleteEntry turns an entry into a tombstone with a new seq so other devices learn of the deletion.
-// Deleting a tombstone again changes nothing.
+// Deleting a tombstone again changes nothing. An entry_id not in the lowercase canonical form is 400.
 func (s *Service) DeleteEntry(ctx context.Context, id access.Identity, entryID string) error {
 	se, err := s.require(ctx, id, true)
 	if err != nil {
 		return err
 	}
-	if !isUUID(entryID) {
-		return ErrNotFound
+	if !IsCanonicalUUID(entryID) {
+		return ErrInvalid
 	}
 	if err := allow(s.cfg.Limits.HistoryWrite, se.DeviceID); err != nil {
 		return err

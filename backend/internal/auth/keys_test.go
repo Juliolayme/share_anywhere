@@ -192,7 +192,7 @@ func TestKeysSetupRotateAndConflicts(t *testing.T) {
 // working at once, its refresh yields a guest token, and rotation no longer needs (or accepts) a blob for it.
 func TestRevokedDeviceCannotReadHistoryOrKeys(t *testing.T) {
 	e := newEnv(t)
-	_, tokA := e.signup("max@example.com", true)
+	a, tokA := e.signup("max@example.com", true)
 	b, tokB := e.signin("max@example.com", true)
 	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
 	e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(b.Device.ID, 1, pub32(2))), 204, "")
@@ -219,6 +219,7 @@ func TestRevokedDeviceCannotReadHistoryOrKeys(t *testing.T) {
 	if len(r.body["devices"].([]any)) != 1 {
 		t.Fatalf("devices after revoke: %s", r.raw)
 	}
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "") // a rotating device holds a key proven at the current version
 	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, map[string]string{b.Device.ID: blob(92, 5)}))
 	e.want(r, 409, "devices_changed")
 	if u := r.body["unexpected"].([]any); len(u) != 1 || u[0] != b.Device.ID {
@@ -361,8 +362,10 @@ func TestPasswordOnlyDeviceCannotRotate(t *testing.T) {
 
 	// A real holder of ADK(1) rotates (from any added device, here B), and the next rotation must be signed
 	// by version 2: a version-1 signature is now the wrong version.
+	e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(b.Device.ID, 1, pub32(2))), 204, "") // a rotating device holds a key proven at the current version
 	e.want(e.do("POST", "/v1/keys/rotate", tokB, rotateBody(2, adk(1), 4, blobs)), 200, "")
 	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(1), 5, nil)), 403, "rotation_unauthorized")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 2, pub32(1))), 204, "") // a rotating device holds a key proven at the current version
 	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, nil)), 200, "")
 	if v, versions, _ := stored(); v != 3 || versions != 3 {
 		t.Fatalf("after two real rotations: version %d, %d versions", v, versions)
@@ -508,6 +511,7 @@ func TestStaleProofCannotReenter(t *testing.T) {
 	e.want(e.do("PUT", "/v1/keys/device", tokX, deviceKeyBodySigned(x.Device.ID, 2, pub32(6), adk(1))), 403, "device_key_unproven")
 
 	// A's rotation to 3 succeeds without X; a blob for X is refused as unexpected.
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 2, pub32(1))), 204, "") // a rotating device holds a key proven at the current version
 	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, map[string]string{x.Device.ID: blob(92, 7)}))
 	e.want(r, 409, "devices_changed")
 	if m, u := r.body["missing"].([]any), r.body["unexpected"].([]any); len(m) != 0 || len(u) != 1 || u[0] != x.Device.ID {
@@ -521,6 +525,7 @@ func TestStaleProofCannotReenter(t *testing.T) {
 	// B proves version 3 (the current one): the rotation to 4 must include it, and B gets the blob.
 	b, tokB := e.signin("uma@example.com", true)
 	e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(b.Device.ID, 3, pub32(3))), 204, "")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 3, pub32(1))), 204, "") // a rotating device holds a key proven at the current version
 	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(4, adk(3), 6, nil))
 	e.want(r, 409, "devices_changed")
 	if m, u := r.body["missing"].([]any), r.body["unexpected"].([]any); len(m) != 1 || m[0] != b.Device.ID || len(u) != 0 {
@@ -530,6 +535,7 @@ func TestStaleProofCannotReenter(t *testing.T) {
 	if p := e.pendingVersions(tokB); len(p) != 1 || p[0] != 4 {
 		t.Fatalf("B pending: %v", p)
 	}
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 4, pub32(1))), 204, "") // a rotating device holds a key proven at the current version
 	// B has not re-proven at 4: its proof (3) is stale, so the rotation to 5 neither needs nor accepts a
 	// blob for it (it must pair again); after B proves 4 it is required again.
 	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(5, adk(4), 7, map[string]string{b.Device.ID: blob(92, 9)}))
@@ -672,7 +678,7 @@ func TestKeysStateShape(t *testing.T) {
 // legacy row (set up before migration 0009) reports null.
 func TestSetupRequiresRecoveryKeySignature(t *testing.T) {
 	e := newEnv(t)
-	_, tokA := e.signup("una@example.com", true)
+	a, tokA := e.signup("una@example.com", true)
 	for _, bad := range []any{nil, "", "not base64!", blob(63, 1), blob(65, 1)} {
 		b := setupBody()
 		if bad == nil {
@@ -717,6 +723,7 @@ func TestSetupRequiresRecoveryKeySignature(t *testing.T) {
 		t.Fatal("stored signature must verify with verify_key(1)")
 	}
 	// The signature is stored once and never changes: a rotation leaves it (and the recovery key) as they were.
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(9))), 204, "") // a rotating device holds a key proven at the current version
 	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
 	if again := e.do("GET", "/v1/keys", tokA, nil).body["recovery"].(map[string]any); again["signature"] != rec["signature"] ||
 		again["public_key"] != rec["public_key"] {

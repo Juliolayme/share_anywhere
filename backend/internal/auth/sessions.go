@@ -118,6 +118,23 @@ func (s *Service) require(ctx context.Context, id access.Identity, needAdded boo
 	return se, nil
 }
 
+// checkLiveSession re-checks, inside a key write's transaction and AFTER it holds the account's account_keys
+// row lock, that the caller's account session is still live (ErrTokenStale otherwise). Every departure
+// (detach) takes that same row lock FOR UPDATE for each affected account before it changes keys, so a key write
+// racing its own device's departure either commits first (the departure then runs after it, sets rotation_due
+// and deletes what it left) or sees the session ended and changes nothing (QA rounds 5 and 6). No session row
+// is locked: shared session locks let a hammering device starve its own eviction.
+func (s *Service) checkLiveSession(ctx context.Context, tx pgx.Tx, se session) error {
+	var live int
+	err := tx.QueryRow(ctx,
+		`SELECT 1 FROM auth_sessions WHERE id = $1::uuid AND revoked_at IS NULL AND expires_at > $2`,
+		se.ID, s.cfg.Clock.Now()).Scan(&live)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrTokenStale
+	}
+	return err
+}
+
 // detachFilter selects account sessions to end.
 type detachFilter struct {
 	Device      string // only this device
@@ -138,13 +155,20 @@ func (s *Service) detach(ctx context.Context, tx pgx.Tx, now time.Time, f detach
 		    AND ($3::uuid IS NULL OR user_id = $3::uuid)
 		    AND ($4::uuid IS NULL OR device_id <> $4::uuid)
 		    AND (NOT $5::boolean OR expires_at <= $1)
-		  RETURNING device_id::text`, now, nullable(f.Device), nullable(f.User), nullable(f.ExceptDev), f.ExpiredOnly)
+		  RETURNING device_id::text, user_id::text`, now, nullable(f.Device), nullable(f.User), nullable(f.ExceptDev), f.ExpiredOnly)
 	if err != nil {
 		return nil, err
 	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil || len(ids) == 0 {
-		return ids, err
+	type left struct{ Device, User string }
+	gone, err := pgx.CollectRows(rows, pgx.RowToStructByPos[left])
+	if err != nil || len(gone) == 0 {
+		return nil, err
+	}
+	ids := make([]string, 0, len(gone))
+	users := make([]string, 0, len(gone))
+	for _, g := range gone {
+		ids = append(ids, g.Device)
+		users = append(users, g.User)
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE devices SET kind = 'anonymous', user_id = NULL, expires_at = LEAST(expires_at, $2::timestamptz)
@@ -154,13 +178,12 @@ func (s *Service) detach(ctx context.Context, tx pgx.Tx, now time.Time, f detach
 	// A device with a registered (proven) wrapping key held the ADK: its account now owes a rotation
 	// (docs/ADR/0014-current-version-proofs.md). Every way of leaving an account runs through here, so the
 	// flag is set in the same transaction as the departure, before the key row that shows it is deleted.
-	// The account_keys rows are locked FOR UPDATE first (the lock Rotate takes), so a departure and a
-	// concurrent rotation serialize: either the rotation sees the device gone, or the departure runs after
-	// the rotation committed, sets rotation_due again and deletes the blob the rotation wrapped for it.
+	// The account_keys row of every affected account is locked FOR UPDATE first (the lock every key write
+	// holds), whether or not the leaving device had a key, so a departure and a concurrent key write serialize:
+	// either the write re-checks the session after the lock and finds it ended, or it committed first and the
+	// statements below (which see its rows) set rotation_due again and delete what it left for the device.
 	if _, err := tx.Exec(ctx,
-		`SELECT 1 FROM account_keys
-		  WHERE user_id IN (SELECT user_id FROM device_keys WHERE device_id = ANY($1::uuid[]))
-		  ORDER BY user_id FOR UPDATE`, ids); err != nil {
+		`SELECT 1 FROM account_keys WHERE user_id = ANY($1::uuid[]) ORDER BY user_id FOR UPDATE`, users); err != nil {
 		return nil, err
 	}
 	for _, q := range []string{

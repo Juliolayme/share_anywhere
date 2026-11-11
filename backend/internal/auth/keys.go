@@ -178,21 +178,11 @@ func (s *Service) RegisterDeviceKey(ctx context.Context, id access.Identity, in 
 		return ErrInvalid
 	}
 	return pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
-		// Lock the caller's live account session first (the order detach uses: sessions, then account_keys), so a
-		// registration racing this device's own departure serializes with it: either the key row exists before the
-		// departure (which then sets rotation_due and deletes it) or the session is gone and nothing is stored
-		// (QA round 5 P2-1).
-		var live int
-		if err := tx.QueryRow(ctx,
-			`SELECT 1 FROM auth_sessions WHERE id = $1::uuid AND revoked_at IS NULL AND expires_at > $2 FOR SHARE`,
-			se.ID, s.cfg.Clock.Now()).Scan(&live); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return ErrTokenStale
-			}
+		var current int
+		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR UPDATE`, se.UserID).Scan(&current); err != nil {
 			return err
 		}
-		var current int
-		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&current); err != nil {
+		if err := s.checkLiveSession(ctx, tx, se); err != nil {
 			return err
 		}
 		if current < 1 {
@@ -281,6 +271,9 @@ func (s *Service) SetupKeys(ctx context.Context, id access.Identity, in SetupInp
 	err = pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		v, err := lockKeys(ctx, tx, se.UserID)
 		if err != nil {
+			return err
+		}
+		if err := s.checkLiveSession(ctx, tx, se); err != nil {
 			return err
 		}
 		if v >= 1 {
@@ -452,6 +445,9 @@ func (s *Service) Rotate(ctx context.Context, id access.Identity, in RotateInput
 		if err != nil {
 			return err
 		}
+		if err := s.checkLiveSession(ctx, tx, se); err != nil {
+			return err
+		}
 		if v < 1 || in.KeyVersion != v+1 {
 			return ErrKeyVersion
 		}
@@ -464,6 +460,18 @@ func (s *Service) Rotate(ctx context.Context, id access.Identity, in RotateInput
 		}
 		if !verifySig(vk, RotationMessage(in.KeyVersion, newVK, chain), sig) {
 			return ErrRotationUnauthorized
+		}
+		// Only a device whose own wrapping key is registered and proven at the current version may rotate: a
+		// departure of such a device always sets rotation_due, so a rotation it made just before leaving is
+		// rotated away again (QA round 6).
+		var proven int
+		if err := tx.QueryRow(ctx,
+			`SELECT 1 FROM device_keys WHERE device_id = $1::uuid AND user_id = $2::uuid AND key_version = $3`,
+			se.DeviceID, se.UserID, v).Scan(&proven); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrDeviceKeyUnproven
+			}
+			return err
 		}
 		// The other live added devices of the account whose registered proof is by the current version v:
 		// exactly these must get a blob.
@@ -646,7 +654,10 @@ func (s *Service) WrapPairing(ctx context.Context, id access.Identity, code stri
 	now := s.cfg.Clock.Now()
 	return pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		var current int
-		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&current); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR UPDATE`, se.UserID).Scan(&current); err != nil {
+			return err
+		}
+		if err := s.checkLiveSession(ctx, tx, se); err != nil {
 			return err
 		}
 		var registered []byte

@@ -75,7 +75,9 @@ test('a guest finishes a transfer, then signs in from Settings during a second t
   const deviceAtJoin = JSON.parse(Buffer.from(tokenAtJoin.split('.')[1] ?? '', 'base64url').toString()).sub as string;
   await startInBrowser(rx);
   await expect(rx.locator('[data-screen="receive-progress"]')).toBeVisible();
-  await expect.poll(() => rxVerified(rx, second.id), { timeout: 30_000 }).toBeGreaterThan(0);
+  // 60 s like the multi-receiver specs: if a data channel fails to open, the receiver redials after its 20 s open
+  // timeout (diagnostics record "dc open timeout"), so the first block can arrive after 30 s (CI 42989102231).
+  await expect.poll(() => rxVerified(rx, second.id), { timeout: 60_000 }).toBeGreaterThan(0);
 
   // Sign in from Settings without leaving the app (no reload, so the transfer keeps running).
   await nav(rx, 'Settings');

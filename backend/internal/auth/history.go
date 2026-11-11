@@ -94,6 +94,9 @@ func (s *Service) AddEntry(ctx context.Context, id access.Identity, in EntryInpu
 		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&current); err != nil {
 			return err
 		}
+		if err := s.checkLiveSession(ctx, tx, se); err != nil {
+			return err
+		}
 		if in.KeyVersion != current {
 			return ErrKeyVersion
 		}

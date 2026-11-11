@@ -590,9 +590,14 @@ export class SenderController extends Observable<TxState> {
       this.d.socket.send({ type: 'ICE_CANDIDATE', session_id: this.d.sessionId, to: pid, payload: c });
     };
     pc.ondatachannel = (ev) => {
+      pushDiag(this.diag, `dc from ${pid.slice(0, 8)} ${ev.channel.readyState}`);
       if (ev.channel.label !== CHANNEL_LABEL || this.peers.get(pid) !== peer) return;
       const dc = ev.channel;
-      const go = () => this.serve(pid, peer, dc);
+      dc.onclose = () => pushDiag(this.diag, `dc close ${pid.slice(0, 8)}`);
+      const go = () => {
+        pushDiag(this.diag, `dc serve ${pid.slice(0, 8)} files ${this.state_.hasFiles ? 'here' : 'elsewhere'}`);
+        this.serve(pid, peer, dc);
+      };
       if (dc.readyState === 'open') go();
       else dc.onopen = go;
     };

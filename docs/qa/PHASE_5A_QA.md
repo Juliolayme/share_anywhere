@@ -176,3 +176,38 @@ All commands passed, and the account e2e suite passed 19 tests in each of the fi
 | Registration racing the device's own revoke left an orphan key row | P2 | `RegisterDeviceKey` locks the caller's live session row `FOR SHARE` inside its transaction, in `detach`'s lock order. `TestRegisterRacingOwnRevoke` fails on the old code and passes now |
 | `rejected` copy reused for a missing recovery key | P2 | Documented in CLIPBOARD_PROTOCOL §1.8 (an honest server always returns the signed recovery key) |
 | CI entry for HEAD | P2 | Added to the CI history |
+
+## Round 6 — commit dd0df12 — FAIL
+
+0 P0, 1 P1, 4 P2 findings.
+
+All commands passed. The account e2e suite passed 19 tests in each of the five projects. Every round-5 resolution was verified:
+
+- `completeRevokes` acts only on IDs this browser remembered revoking, with no loop.
+- The registration race test passes 30 of 30 now and fails on the pre-fix code.
+- No regressions in the round 1–4 protections, live or in probes.
+
+**Why it failed:**
+
+- **P1-1:** `Rotate` checked the caller's account session before its transaction. A device being evicted, by a password change, a reset or a revoke, had rotation requests queued behind the key-row lock. One landed after the eviction committed, created the next ADK version and cleared `rotation_due`, so the evicted device knew the current key. This reproduced 8 of 8 times live and 30 of 30 in Go probes.
+
+### Resolution of round 6 findings
+
+**P1 — Evicted device's rotation lands after the eviction.**
+
+Departures and key writes now serialize on the account's `account_keys` row:
+
+- `detach` locks the row `FOR UPDATE` for every affected account, not only those whose leaving device had a key.
+- Rotation, key registration and pairing wrap hold the row `FOR UPDATE`; history writes hold it `FOR SHARE`. Each re-checks the caller's session after taking the lock.
+- Only a device with its own key proven at the current version may rotate (`403 device_key_unproven`).
+- No session row is locked. A first attempt with `FOR SHARE` session locks let a hammering device delay its own eviction by minutes; that showed up in the test's run time and was replaced.
+- `TestEvictedDeviceRotationRace` and `TestRotateNeedsOwnCurrentProof` fail on the old code and pass 5 of 5 now. The earlier race tests still pass.
+
+**P2 findings:**
+
+| Finding | Resolution |
+|---|---|
+| Remembered exclusion could later revoke a device the user added back | Each exclusion stores the key version at revoke time. It is dropped once the account rotated past it and the device has no key, or once the device holds a key proven at a newer version (checked with this browser's own ADK). Vitest covers both drop rules and two keep cases (forged newer proof, proof from the revoke version) |
+| Wrong code comment in `completeRevokes` | Fixed |
+| Registration lock not in an owner doc | SECURITY_MODEL §4 describes the serialization for all key writes |
+| ios-safari CI flake in `signin-during-transfer` | Not reproduced locally (8 of 8 repeated runs passed). Both peers were connected, but no block arrived within 30 s. The likely cause is a data channel that failed to open, which the receiver recovers from by design: it redials after its 20 s open timeout. The diagnostics now record data-channel open, close, error and open timeout on both sides. The test waits 60 s for the second transfer's first block, like the multi-receiver specs; the wait is not what the test checks |

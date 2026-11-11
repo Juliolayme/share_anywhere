@@ -118,6 +118,9 @@ beforeEach(async () => {
   await wipeAccountData().catch(() => undefined);
 });
 
+/** Remembered exclusions as device IDs (stored as `<id>@<version>`). */
+const rememberedIds = async () => (await syncMeta().excluded(USER)).map((x) => x.split('@')[0]);
+
 describe('checkKeys', () => {
   it('does not register the device key while the device holds no ADK (right after Add this device)', async () => {
     const { api, calls } = fakeApi();
@@ -575,7 +578,7 @@ describe('QA round 3: authenticated recovery key, left-behind state, no double r
     expect(raced.state.key_version).toBe(2);
     expect(await store.unwrapAdkRaw(2)).toEqual(adk2.raw); // it picked up B's blob instead
     // This device's own excluding rotation never went through, so L stays remembered (I.4).
-    expect(await syncMeta().excluded(USER)).toEqual([L]);
+    expect(await rememberedIds()).toEqual([L]);
   });
 
   it('remembers revoked devices and keeps excluding them until an excluding rotation succeeds (I.4)', async () => {
@@ -591,13 +594,13 @@ describe('QA round 3: authenticated recovery key, left-behind state, no double r
       },
     });
     await expect(rotateKeys(flaky.api, USER, DEVICE, [OTHER.toUpperCase()])).rejects.toBeInstanceOf(NetworkError);
-    expect(await syncMeta().excluded(USER)).toEqual([OTHER]);
+    expect(await rememberedIds()).toEqual([OTHER]);
     fail = false;
     flaky.setState({ rotation_due: true });
     const res = await checkKeys(flaky.api, USER, DEVICE); // an owed rotation: the caller passes no exclusions
     expect(res.keyVersion).toBe(2);
     expect(flaky.calls.rotate.at(-1)?.device_blobs.map((b) => b.device_id)).toEqual([DEVICE]);
-    expect(await syncMeta().excluded(USER)).toEqual([]);
+    expect(await rememberedIds()).toEqual([]);
   });
 
   it('an owed rotation that finds this device without the newest key runs a key check instead (I.5)', async () => {
@@ -671,21 +674,21 @@ describe('QA rounds 4 and 5: stuck exclusions and a missing recovery key', () =>
 
   it('a remembered device still in the account is revoked again and stays excluded (never re-included)', async () => {
     const { srv, devices, revokeDevice } = await withOtherListed();
-    await syncMeta().setExcluded(USER, [OTHER]); // the earlier revoke request got no answer
+    await syncMeta().setExcluded(USER, [`${OTHER}@1`]); // revoked while the account was at version 1 // the earlier revoke request got no answer
     expect(await rotateKeys(srv.api, USER, DEVICE)).toBe('rotated');
     expect(devices).toHaveBeenCalledTimes(1);
     expect(revokeDevice).toHaveBeenCalledWith(OTHER);
     expect(srv.calls.rotate.at(-1)?.device_blobs.map((b) => b.device_id)).toEqual([DEVICE]);
-    expect(await syncMeta().excluded(USER)).toEqual([]); // cleared only by the successful excluding rotation
+    expect(await rememberedIds()).toEqual([]); // cleared only by the successful excluding rotation
   });
 
   it('a server that ignores the repeated revoke can only block the rotation: no blob for the device, still remembered', async () => {
     const { srv, revokeDevice } = await withOtherListed(false);
-    await syncMeta().setExcluded(USER, [OTHER]);
+    await syncMeta().setExcluded(USER, [`${OTHER}@1`]); // revoked while the account was at version 1
     await expect(rotateKeys(srv.api, USER, DEVICE)).rejects.toMatchObject({ code: 'devices_changed' });
     expect(revokeDevice).toHaveBeenCalledWith(OTHER);
     expect(srv.calls.rotate).toHaveLength(0); // nothing was ever wrapped to OTHER
-    expect(await syncMeta().excluded(USER)).toEqual([OTHER]);
+    expect(await rememberedIds()).toEqual([OTHER]);
   });
 
   it('a device the caller just revoked is left alone (no extra revoke, never re-included)', async () => {
@@ -694,7 +697,7 @@ describe('QA rounds 4 and 5: stuck exclusions and a missing recovery key', () =>
     expect(devices).not.toHaveBeenCalled();
     expect(revokeDevice).not.toHaveBeenCalled();
     expect(srv.calls.rotate).toHaveLength(0);
-    expect(await syncMeta().excluded(USER)).toEqual([OTHER]);
+    expect(await rememberedIds()).toEqual([OTHER]);
   });
 
   it('P2-2: an account with keys but no recovery key in GET /v1/keys is rejected, not silently skipped', async () => {
@@ -702,5 +705,78 @@ describe('QA rounds 4 and 5: stuck exclusions and a missing recovery key', () =>
     fake.setState({ recovery: null });
     await expect(rotateKeys(fake.api, USER, DEVICE, [OTHER])).rejects.toMatchObject({ code: 'rejected' });
     expect(fake.api.rotate).not.toHaveBeenCalled();
+  });
+});
+
+describe('QA round 6: remembered exclusions expire once provably obsolete', () => {
+  async function withOther(kv: number, adkForProof: Uint8Array) {
+    const other = await generateX25519();
+    const proof = await deviceKeyProof(adkForProof, kv, OTHER, other.publicKey);
+    return { device_id: OTHER, ...proof };
+  }
+
+  it('dropped when the account rotated past the revoke and the device has no registered key', async () => {
+    const { store, fake } = await readyAtV1();
+    const adk2 = generateAdk(2);
+    await store.saveAdk(2, adk2.raw);
+    await syncMeta().setExcluded(USER, [`${OTHER}@1`]);
+    fake.setState({ key_version: 2, devices: fake.state.devices.filter((d) => d.device_id !== OTHER) });
+    await rotateKeys(fake.api, USER, DEVICE).catch(() => undefined);
+    expect(await rememberedIds()).toEqual([]);
+  });
+
+  it('dropped when the device holds a key proven at a newer version (checked with this browser\u2019s own ADK)', async () => {
+    const { store, fake } = await readyAtV1();
+    const adk2 = generateAdk(2);
+    await store.saveAdk(2, adk2.raw);
+    await syncMeta().setExcluded(USER, [`${OTHER}@1`]);
+    fake.setState({ key_version: 2, devices: [...fake.state.devices, await withOther(2, adk2.raw)] });
+    await rotateKeys(fake.api, USER, DEVICE).catch(() => undefined);
+    expect(await rememberedIds()).toEqual([]);
+  });
+
+  it('kept when the newer proof does not verify with this browser\u2019s own ADK (a forged proof)', async () => {
+    const { store, fake } = await readyAtV1();
+    const adk2 = generateAdk(2);
+    await store.saveAdk(2, adk2.raw);
+    await syncMeta().setExcluded(USER, [`${OTHER}@1`]);
+    const forged = await withOther(2, generateAdk(2).raw);
+    fake.setState({ key_version: 2, devices: [...fake.state.devices, forged] });
+    (fake.api.rotate as unknown as { mockImplementation: (f: () => Promise<never>) => void }).mockImplementation(
+      async () => {
+        throw new NetworkError();
+      },
+    );
+    Object.assign(fake.api as object, {
+      devices: vi.fn(async () => ({ devices: [{ id: DEVICE }, { id: OTHER }] })),
+      revokeDevice: vi.fn(async () => undefined),
+    });
+    await rotateKeys(fake.api, USER, DEVICE).catch(() => undefined);
+    expect(await rememberedIds()).toEqual([OTHER]);
+    expect(fake.calls.rotate.flatMap((r) => r.device_blobs.map((b) => b.device_id))).not.toContain(OTHER);
+  });
+
+  it('kept while the device is still listed with a proof from the revoke version or older', async () => {
+    const { fake } = await readyAtV1();
+    await syncMeta().setExcluded(USER, [`${OTHER}@1`]);
+    fake.setState({ devices: [...fake.state.devices, await withOther(1, adk1.raw)] });
+    (fake.api.rotate as unknown as { mockImplementation: (f: () => Promise<never>) => void }).mockImplementation(
+      async () => {
+        throw new NetworkError();
+      },
+    );
+    Object.assign(fake.api as object, {
+      devices: vi.fn(async () => ({ devices: [{ id: DEVICE }, { id: OTHER }] })),
+      revokeDevice: vi.fn(async () => undefined),
+    });
+    await rotateKeys(fake.api, USER, DEVICE).catch(() => undefined);
+    expect(await rememberedIds()).toEqual([OTHER]);
+  });
+
+  it('a revoke remembers the ID with this browser\u2019s newest key version', async () => {
+    await readyAtV1();
+    const { rememberRevoked } = await import('./keyFlow');
+    await rememberRevoked(USER, [OTHER.toUpperCase()]);
+    expect(await syncMeta().excluded(USER)).toEqual([`${OTHER}@1`]);
   });
 });

@@ -168,6 +168,7 @@ func TestHistoryIdempotentAndTombstones(t *testing.T) {
 	// After a rotation new entries must use the current version (docs/ADR/0015-authenticated-recovery-key.md):
 	// an older one is 409 key_version_conflict and nothing is stored, the current one is accepted, and a retry of
 	// an entry already stored still returns its original seq.
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "") // a rotating device holds a key proven at the current version
 	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
 	idOld := newID()
 	e.want(e.do("POST", "/v1/history/entries", tokB, entryBody(idOld, 1)), 409, "key_version_conflict")

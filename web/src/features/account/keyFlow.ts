@@ -3,6 +3,7 @@
 import {
   CryptoError,
   acceptPairing,
+  checkDeviceKeyProof,
   acceptPendingBlobs,
   createPairingKeys,
   getOrCreateDeviceKey,
@@ -21,6 +22,8 @@ import {
   type PairingKeys,
   type PairingReady,
   type PreparedSetup,
+  verifyKeyOf,
+  zeroize,
 } from '../../lib/crypto';
 import { ApiError } from '../../lib/api/errors';
 import type { AccountApi, KeyChain, KeysState, PairingPeer } from './api';
@@ -94,32 +97,98 @@ async function importOlder(api: AccountApi, store: KeyStore, chain?: KeyChain): 
 
 const lower = (ids: readonly string[]) => [...new Set(ids.map((id) => id.toLowerCase()))];
 
+/**
+ * A remembered exclusion is stored as `<device id>@<key version>`: the newest ADK version this browser held when it
+ * revoked the device (older entries without a version count as version 0).
+ */
+interface Remembered {
+  id: string;
+  v: number;
+}
+
+function parseRemembered(raw: string): Remembered {
+  const at = raw.lastIndexOf('@');
+  const v = at > 0 ? Number(raw.slice(at + 1)) : 0;
+  return at > 0 && Number.isSafeInteger(v) && v >= 0
+    ? { id: raw.slice(0, at).toLowerCase(), v }
+    : { id: raw.toLowerCase(), v: 0 };
+}
+
+async function remembered(userId: string): Promise<Remembered[]> {
+  return (await syncMeta().excluded(userId)).map(parseRemembered);
+}
+
+async function saveRemembered(userId: string, list: readonly Remembered[]): Promise<void> {
+  const byId = new Map<string, number>();
+  for (const r of list) byId.set(r.id, Math.max(byId.get(r.id) ?? 0, r.v));
+  await syncMeta().setExcluded(
+    userId,
+    [...byId].map(([id, v]) => `${id}@${v}`),
+  );
+}
+
 /** Revoked device IDs still to exclude (contract I.4); an unreadable store gives none (the caller's list still applies). */
 async function pendingExclusions(userId: string): Promise<string[]> {
-  return syncMeta()
-    .excluded(userId)
+  return remembered(userId)
+    .then((list) => list.map((r) => r.id))
     .catch(() => []);
 }
 
 /**
  * Contract I.4: remembers devices this browser revoked (IndexedDB, next to the sync bookkeeping, never Web Storage), so
  * every rotation it makes keeps excluding them until one that excluded them has gone through, even if the tab closes
- * between the revoke and the rotation, or the rotation fails and is retried later as an owed one.
+ * between the revoke and the rotation, or the rotation fails and is retried later as an owed one. Each ID is stored
+ * with the newest ADK version this browser holds, so it can be dropped once it is provably obsolete
+ * (`pruneRemembered`).
  */
 export async function rememberRevoked(userId: string, ids: readonly string[]): Promise<void> {
   if (!ids.length) return;
-  const meta = syncMeta();
-  await meta.setExcluded(userId, lower([...(await meta.excluded(userId)), ...ids]));
+  const v = await (await keyStore()).currentVersion().catch(() => 0);
+  await saveRemembered(userId, [...(await remembered(userId)), ...lower(ids).map((id) => ({ id, v }))]);
 }
 
 /** Drops IDs from the remembered exclusions (a rotation that excluded them succeeded, or the revoke was refused). */
 export async function forgetRevoked(userId: string, ids: readonly string[]): Promise<void> {
-  const meta = syncMeta();
   const drop = new Set(lower(ids));
-  await meta.setExcluded(
+  await saveRemembered(
     userId,
-    (await meta.excluded(userId)).filter((id) => !drop.has(id)),
+    (await remembered(userId)).filter((r) => !drop.has(r.id)),
   );
+}
+
+/**
+ * QA round 6 P2-1: a remembered exclusion must not outlive its purpose (it would otherwise revoke the device again
+ * if the user later adds it back). An entry remembered at version v is dropped, on a key check of a ready device,
+ * when either holds:
+ * - the account has rotated past v and the device has no registered key now: it can only come back by proving a key
+ *   at the current version, which needs an ADK created after the revoke (a rotation excluded it), or
+ * - the device holds a key proven at a version newer than v, checked with this browser's own copy of that version.
+ * Both mean the device obtained a post-revoke key legitimately (pairing or recovery), or the key is already known to
+ * a colluding party, which an exclusion by ID cannot prevent anyway (§1.11).
+ */
+async function pruneRemembered(userId: string, store: KeyStore, state: KeysState): Promise<void> {
+  const list = await remembered(userId).catch(() => [] as Remembered[]);
+  if (!list.length) return;
+  const keep: Remembered[] = [];
+  for (const r of list) {
+    const d = state.devices.find((x) => x.device_id.toLowerCase() === r.id);
+    if (!d?.public_key) {
+      if (state.key_version > r.v) continue;
+      keep.push(r);
+      continue;
+    }
+    const kv = d.key_version;
+    if (typeof kv === 'number' && kv > r.v && d.proof && (await store.hasAdk(kv))) {
+      const raw = await store.unwrapAdkRaw(kv);
+      try {
+        if (checkDeviceKeyProof(await verifyKeyOf(raw), d.device_id, kv, d.public_key, d.proof)) continue;
+      } finally {
+        zeroize(raw);
+      }
+    }
+    keep.push(r);
+  }
+  if (keep.length !== list.length) await saveRemembered(userId, keep).catch(() => undefined);
 }
 
 const apiCode = (e: unknown, ...codes: string[]) => e instanceof ApiError && codes.includes(e.code);
@@ -415,7 +484,7 @@ async function completeRevokes(
     try {
       await api.revokeDevice(id);
     } catch (e) {
-      // Already gone (404) is fine; anything else surfaces through the next attempt's devices_changed.
+      // Already gone (404) is fine; any other error ends this rotation attempt (it is retried on a later key check).
       if (!(e instanceof ApiError && e.status === 404)) throw e;
     }
   }
@@ -430,6 +499,10 @@ async function rotateNow(
   owed: boolean,
 ): Promise<'rotated' | 'none'> {
   const store = await keyStore();
+  {
+    const first = await checkKeysNow(api, userId, deviceId);
+    if (first.status === 'ready') await pruneRemembered(userId, store, first.state).catch(() => undefined);
+  }
   const excluded = lower([...exclude, ...(await pendingExclusions(userId))]);
   /** The version a rotation refused with `key_version_conflict` started from (I.2). */
   let conflictedFrom: number | null = null;

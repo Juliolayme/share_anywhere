@@ -2458,7 +2458,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description rotation_unauthorized (signature does not verify with the stored verify_key of the current version; nothing stored), account_required, or device_not_added. */
+            /** @description rotation_unauthorized (signature does not verify with the stored verify_key of the current version; nothing stored), device_key_unproven (the caller's own wrapping key is not registered and proven at the current version; nothing stored), account_required, or device_not_added. */
             403: {
                 headers: {
                     [name: string]: unknown;

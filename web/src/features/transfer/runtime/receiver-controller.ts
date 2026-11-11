@@ -394,14 +394,21 @@ export class ReceiverController extends Observable<RxState> {
       // Some engines stay "disconnected" when the peer goes away; treat 4 s of it as lost.
       else if (pc.connectionState === 'disconnected') grace = setTimeout(() => this.pc === pc && this.lost(), 4000);
     };
+    dc.onclose = () => pushDiag(this.diag, `dc close ${connId.slice(0, 8)}`);
+    dc.onerror = () => pushDiag(this.diag, `dc error ${connId.slice(0, 8)}`);
     dc.onopen = () => {
+      pushDiag(this.diag, `dc open ${connId.slice(0, 8)}${this.pc === pc ? '' : ' (stale)'}`);
       if (this.pc !== pc) return;
       if (this.openTimer) clearTimeout(this.openTimer);
       this.downSince = null;
       this.everOpened = true;
       this.attach(dc, pc);
     };
-    this.openTimer = setTimeout(() => this.pc === pc && this.lost(), 20_000);
+    this.openTimer = setTimeout(() => {
+      if (this.pc !== pc) return;
+      pushDiag(this.diag, `dc open timeout ${connId.slice(0, 8)}`);
+      this.lost();
+    }, 20_000);
     await pc.setLocalDescription(await pc.createOffer());
     pushDiag(this.diag, `offer set, gathering ${pc.iceGatheringState}`);
     const payload: SdpPayload = { conn: connId, sdp: pc.localDescription?.toJSON() ?? { type: 'offer' } };

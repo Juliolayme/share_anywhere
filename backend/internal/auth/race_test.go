@@ -2,6 +2,7 @@ package auth
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -126,4 +127,64 @@ func TestRegisterRacingOwnRevoke(t *testing.T) {
 			t.Fatalf("iteration %d: register %d %v", i, reg.code, reg.body)
 		}
 	}
+}
+
+// TestEvictedDeviceRotationRace (QA round 6 P1): the owner changes the password to evict L while L keeps
+// posting a v2 rotation (refused while B is still in the account). Before the fix a request that had passed
+// the session check outside the transaction landed after the eviction committed, created v2 and cleared
+// rotation_due. Now every key write locks its live session first: either L's rotation commits before the
+// eviction (which then sets rotation_due again) or it is refused because the session is gone.
+func TestEvictedDeviceRotationRace(t *testing.T) {
+	e := newEnv(t)
+	for i := 0; i < 20; i++ {
+		email := "evict" + itoa(i) + "@example.com"
+		da, tokA := e.signup(email, true)
+		userID := e.ident(tokA).AccountID
+		e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+		e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(da.Device.ID, 1, pub32(1))), 204, "")
+		db, tokB := e.signin(email, true)
+		e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(db.Device.ID, 1, pub32(2))), 204, "")
+		dl, tokL := e.signin(email, true)
+		e.want(e.do("PUT", "/v1/keys/device", tokL, deviceKeyBody(dl.Device.ID, 1, pub32(3))), 204, "")
+		var stop atomic.Bool
+		var accepted atomic.Int32
+		var wg sync.WaitGroup
+		for g := 0; g < 4; g++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for !stop.Load() {
+					r := e.do("POST", "/v1/keys/rotate", tokL, rotateBody(2, adk(1), 4, map[string]string{da.Device.ID: blob(92, 5)}))
+					if r.code == 200 {
+						accepted.Add(1)
+					}
+					if r.code == 401 || (r.code == 409 && r.str("error") == "key_version_conflict") {
+						return
+					}
+				}
+			}()
+		}
+		e.want(e.do("POST", "/v1/me/password", tokA, map[string]any{"current_password": testPassword, "new_password": "a brand new secret"}), 204, "")
+		stop.Store(true)
+		wg.Wait()
+		if accepted.Load() > 0 && !e.rotationDue(userID) {
+			t.Fatalf("iteration %d: the evicted device created v2 and nothing is owed", i)
+		}
+	}
+}
+
+// TestRotateNeedsOwnCurrentProof (QA round 6): only a device whose own wrapping key is registered and proven
+// at the current version may rotate, even with a validly signed request; a departure of such a device always
+// sets rotation_due, so a rotation it made just before leaving is rotated away again.
+func TestRotateNeedsOwnCurrentProof(t *testing.T) {
+	e := newEnv(t)
+	a, tokA := e.signup("proofrot@example.com", true)
+	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 403, "device_key_unproven")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
+	// Its proof (1) is now stale: the next rotation needs a re-proof at 2 first.
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, nil)), 403, "device_key_unproven")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 2, pub32(1))), 204, "")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, nil)), 200, "")
 }

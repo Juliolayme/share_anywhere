@@ -11,7 +11,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import app.shareanywhere.data.api.FileInput
 import app.shareanywhere.transfer.TransferService
 import app.shareanywhere.transfer.runtime.RxPhase
@@ -22,6 +24,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -74,7 +77,8 @@ class FgsBudgetTest {
                             RxPhase.Transferring
                     }
 
-                    // The system ends the service after the shortened budget: paused, progress kept, service gone.
+                    // The budget only runs while the app is in the background (being in front resets it).
+                    device.pressHome()
                     val paused = runBlocking {
                         withTimeout(60_000) {
                             rx().state.first {
@@ -86,11 +90,17 @@ class FgsBudgetTest {
                     assertEquals("paused by the budget before the end", RxPhase.Paused, paused.phase)
                     compose.waitUntil(20_000) { !TransferService.running }
                     assertFalse(TransferService.running)
+                    device.openNotification()
+                    assertTrue(
+                        "the budget notification asks to reopen the app",
+                        device.wait(Until.hasObject(By.text(Backend.entryString(R.string.product_fgs_budget_h))), 15_000)
+                    )
+                    device.pressBack()
 
-                    // Resume (budget restored) finishes the file from where it stopped.
+                    // Back in the app with the budget restored, Resume finishes the file from where it stopped.
                     device.executeShellCommand("device_config delete activity_manager data_sync_fgs_timeout_duration")
-                    compose.waitForTag("rx.resume", 10_000)
-                    compose.onNodeWithTag("rx.resume").tap()
+                    ActivityScenario.launch(MainActivity::class.java)
+                    rx().resume()
                     val done = runBlocking {
                         withTimeout(300_000) {
                             rx().state.first {

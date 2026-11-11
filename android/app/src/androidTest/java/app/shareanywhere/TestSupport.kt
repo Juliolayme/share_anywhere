@@ -7,6 +7,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.printToLog
+import app.shareanywhere.transfer.runtime.final
+import kotlinx.coroutines.flow.first
 
 /** DataStore and the network are not Compose idling resources, so screens are awaited by their tags. */
 fun ComposeTestRule.waitForTag(tag: String, timeoutMs: Long = 10_000) =
@@ -37,4 +39,22 @@ inline fun <T> ComposeTestRule.dumpOnFailure(block: () -> T): T = try {
 } catch (e: Throwable) {
     runCatching { onRoot(useUnmergedTree = true).printToLog("SA-TREE") }
     throw e
+}
+
+/**
+ * Waits for a receive to end by watching the runtime's state, not the UI: polling the semantics tree every few
+ * milliseconds through a long transfer re-enters Espresso's main-thread loop during frames (seen as "performMeasureAndLayout
+ * called during measure layout" in CI). The final screen is checked once afterwards.
+ */
+fun waitForReceiveEnd(sessionId: String, timeoutMs: Long) = kotlinx.coroutines.runBlocking {
+    kotlinx.coroutines.withTimeout(timeoutMs) {
+        val rt = Backend.entry().transferRuntime()
+        while (rt.existingReceiver(sessionId) == null) kotlinx.coroutines.delay(200)
+        rt.existingReceiver(sessionId)!!.state.first { it.phase.final() }
+    }
+}
+
+/** The sender's counterpart of [waitForReceiveEnd]: the session result is known. */
+fun waitForSendEnd(sessionId: String, timeoutMs: Long) = kotlinx.coroutines.runBlocking {
+    kotlinx.coroutines.withTimeout(timeoutMs) { Backend.entry().transferRuntime().sender(sessionId).state.first { it.final != null } }
 }

@@ -94,7 +94,8 @@ class TransferTest {
 
                     compose.waitForTag("session.dashboard", 20_000)
                     compose.onNodeWithTag("session.dashboard").tap()
-                    compose.waitForTag(ScreenIds.DASHBOARD_DONE, 90_000)
+                    waitForSendEnd(view.id, 120_000)
+                    compose.waitForTag(ScreenIds.DASHBOARD_DONE, 30_000)
                     val done = runBlocking { withTimeout(30_000) { rx.state.first { it.phase == RxPhase.Completed } } }
                     assertEquals(sum, TestPeer.sha256(peer.context, done.files.single().documentUri!!.toUri()))
                     // Nothing is moving any more: the window no longer keeps the screen on.
@@ -131,7 +132,8 @@ class TransferTest {
                     // RX-5b: Download/Share Anywhere is preselected, so Start receiving is ready.
                     compose.waitForTag("rx.start", 30_000)
                     compose.onNodeWithTag("rx.start").tap()
-                    compose.waitForTag(ScreenIds.RX_DONE, 90_000)
+                    waitForReceiveEnd(view.id, 120_000)
+                    compose.waitForTag(ScreenIds.RX_DONE, 30_000)
                     compose.onNodeWithTag("rx.result").assertExists()
                     val rx = entry.transferRuntime().existingReceiver(view.id)!!
                     val state = rx.state.value

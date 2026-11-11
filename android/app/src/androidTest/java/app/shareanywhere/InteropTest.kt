@@ -64,7 +64,8 @@ class InteropTest {
                 compose.onNodeWithTag("preview.receive").tap()
                 compose.waitForTag("rx.start", 30_000)
                 compose.onNodeWithTag("rx.start").tap()
-                compose.waitForTag(ScreenIds.RX_DONE, 14 * 60_000)
+                waitForReceiveEnd(id, 14 * 60_000L)
+                compose.waitForTag(ScreenIds.RX_DONE, 30_000)
                 val state = Backend.entry().transferRuntime().existingReceiver(id)!!.state.value
                 // On failure, say why (the receiver's error and each file's state) for the nightly log.
                 assertEquals(
@@ -111,7 +112,8 @@ class InteropTest {
             compose.dumpOnFailure {
                 compose.waitForTag("session.dashboard", 5 * 60_000)
                 compose.onNodeWithTag("session.dashboard").tap()
-                compose.waitForTag(ScreenIds.DASHBOARD_DONE, 14 * 60_000)
+                waitForSendEnd(view.id, 14 * 60_000L)
+                compose.waitForTag(ScreenIds.DASHBOARD_DONE, 30_000)
             }
         }
     }

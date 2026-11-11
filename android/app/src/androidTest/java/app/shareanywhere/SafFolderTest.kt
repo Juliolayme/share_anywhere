@@ -95,7 +95,8 @@ class SafFolderTest {
 
                     compose.waitForTag("rx.start", 30_000)
                     compose.onNodeWithTag("rx.start").tap()
-                    compose.waitForTag(ScreenIds.RX_DONE, 120_000)
+                    waitForReceiveEnd(view.id, 120_000)
+                    compose.waitForTag(ScreenIds.RX_DONE, 30_000)
                     val state = entry.transferRuntime().existingReceiver(view.id)!!.state.value
                     assertEquals(RxPhase.Completed, state.phase)
                     val uri = state.files.single().documentUri!!

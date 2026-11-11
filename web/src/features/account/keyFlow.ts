@@ -141,10 +141,31 @@ async function pendingExclusions(userId: string): Promise<string[]> {
  * with the newest ADK version this browser holds, so it can be dropped once it is provably obsolete
  * (`pruneRemembered`).
  */
-export async function rememberRevoked(userId: string, ids: readonly string[]): Promise<void> {
+export async function rememberRevoked(userId: string, ids: readonly string[], api?: AccountApi): Promise<void> {
   if (!ids.length) return;
-  const v = await (await keyStore()).currentVersion().catch(() => 0);
+  // The version recorded is the newest the account is known to be at: this browser may lag the account (another
+  // device rotated and it has not picked the key up yet), and recording its own older version would make the entry
+  // look obsolete as soon as it catches up (QA round 7 P1).
+  const local = await (await keyStore()).currentVersion().catch(() => 0);
+  const server = api
+    ? await api
+        .keys()
+        .then((s) => s.key_version)
+        .catch(() => 0)
+    : 0;
+  const v = Math.max(local, server);
   await saveRemembered(userId, [...(await remembered(userId)), ...lower(ids).map((id) => ({ id, v }))]);
+}
+
+/** Raises the recorded version of these remembered IDs to at least `v` (never lowers it). */
+async function raiseRemembered(userId: string, ids: readonly string[], v: number): Promise<void> {
+  const raise = new Set(lower(ids));
+  const list = await remembered(userId);
+  if (!list.some((r) => raise.has(r.id) && r.v < v)) return;
+  await saveRemembered(
+    userId,
+    list.map((r) => (raise.has(r.id) ? { id: r.id, v: Math.max(r.v, v) } : r)),
+  );
 }
 
 /** Drops IDs from the remembered exclusions (a rotation that excluded them succeeded, or the revoke was refused). */
@@ -501,6 +522,8 @@ async function rotateNow(
   const store = await keyStore();
   {
     const first = await checkKeysNow(api, userId, deviceId);
+    // IDs revoked in this call were revoked at the account's current version at the latest.
+    if (exclude.length) await raiseRemembered(userId, exclude, first.state.key_version).catch(() => undefined);
     if (first.status === 'ready') await pruneRemembered(userId, store, first.state).catch(() => undefined);
   }
   const excluded = lower([...exclude, ...(await pendingExclusions(userId))]);

@@ -215,7 +215,7 @@ export const MiB = 1024 * 1024;
 /** On failure, attach every controller's ICE diagnostics from the open pages (test builds only). */
 export async function attachDiagnostics(pages: Page[]) {
   const info = test.info();
-  if (info.status === info.expectedStatus) return;
+  const passed = info.status === info.expectedStatus;
   for (const [i, p] of pages.entries()) {
     const d = await p
       .evaluate(() => {
@@ -238,6 +238,10 @@ export async function attachDiagnostics(pages: Page[]) {
         );
       })
       .catch((e: unknown) => `unavailable: ${String(e)}`);
+    // A passing test still keeps its diagnostics when a data channel failed to open and the receiver redialed, so the
+    // cause of a slow first block is recorded (QA round 7 P2-4).
+    if (passed && !d.includes('dc open timeout')) continue;
+    if (passed) info.annotations.push({ type: 'warning', description: 'data channel open timeout; receiver redialed' });
     const path = info.outputPath(`diagnostics-${i}.json`);
     writeFileSync(path, d);
     await info.attach(`diagnostics-${i}`, { path, contentType: 'application/json' });

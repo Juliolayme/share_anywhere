@@ -13,6 +13,7 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [42980800030](https://github.com/Juliolayme/share_anywhere/actions/runs/42980800030) on 79f6446 (QA round 3 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - [42984689531](https://github.com/Juliolayme/share_anywhere/actions/runs/42984689531) on 7fa9f27 (QA round 4 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - [42989102231](https://github.com/Juliolayme/share_anywhere/actions/runs/42989102231) on dd0df12 (QA round 5 fixes): every job green, but ios-safari passed one test on retry. On the first attempt, `account/signin-during-transfer.spec.ts` saw no verified block of the paced second transfer within 30 s, although both peers reported the connection as connected (before any sign-in). Under investigation (diagnostics for data-channel open and the first block to be added).
+- [42997152648](https://github.com/Juliolayme/share_anywhere/actions/runs/42997152648) on e41e6d3 (QA round 6 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - Nightly [42961754657](https://github.com/Juliolayme/share_anywhere/actions/runs/42961754657) on e3289ba: every job passed. It generated the new mobile snapshot baselines (header Sign in chip), committed in 9874e3f.
 
 ## Round 1 — commit e3289ba — FAIL
@@ -211,3 +212,31 @@ Departures and key writes now serialize on the account's `account_keys` row:
 | Wrong code comment in `completeRevokes` | Fixed |
 | Registration lock not in an owner doc | SECURITY_MODEL §4 describes the serialization for all key writes |
 | ios-safari CI flake in `signin-during-transfer` | Not reproduced locally (8 of 8 repeated runs passed). Both peers were connected, but no block arrived within 30 s. The likely cause is a data channel that failed to open, which the receiver recovers from by design: it redials after its 20 s open timeout. The diagnostics now record data-channel open, close, error and open timeout on both sides. The test waits 60 s for the second transfer's first block, like the multi-receiver specs; the wait is not what the test checks |
+
+## Round 7 — commit e41e6d3 — FAIL
+
+0 P0, 1 P1, 6 P2 findings. All commands passed, and the account e2e suite passed 19 tests in each of the five projects. CI 42997152648 was green with no retries.
+
+The round-6 server fix holds:
+
+- the live hammer script found 0 of 8;
+- the Go eviction probes found 0 of 30 each over 8 runs;
+- the new tests pass 15 of 15 with flat run times and fail on dd0df12;
+- no deadlocks under extended lock stress;
+- no regressions in rounds 1–5.
+
+**Why it failed:**
+
+- **P1-1:** a remembered exclusion recorded this browser's own key version. When the browser lagged the account at revoke time, its first key check picked up the newer key and pruned the entry, because the account had moved past the recorded version and the device had no key. If the rotation then failed and the revoked device signed in again and proved a key at the current version, the next rotation wrapped to it. QA reproduced this with an honest server.
+
+### Resolution of round 7 findings
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Exclusion dropped when the browser lagged at revoke time | P1 | The recorded version is the larger of the browser's and the server's `key_version`, read before `DELETE /v1/devices/{id}`. A rotation that excludes IDs raises them to the current version before pruning. Vitest covers both, including the QA lag scenario with a failed rotation |
+| History writes (`FOR SHARE`) can delay departures | P2 | Documented in SECURITY_MODEL §4, with the measured bound and the rate limit that ends it; a fair per-account lock queue is in the backlog |
+| Stale test comment | P2 | Fixed |
+| Docs said pruning runs on every key check | P2 | CLIPBOARD_PROTOCOL §1.8 says it runs at the start of each rotation |
+| 60 s wait hides the event the diagnostics capture | P2 | Diagnostics are attached to a passing test too when they contain a data-channel open timeout, with a warning annotation; CI uploads artifacts always |
+| Pairing created during its device's departure | P2 | CreatePairing serializes on the account key row and re-checks the session. Lookup and wrap require the new device to have a live, added session. `TestPairingNotOfferedForDepartedDevice` covers it |
+| CI history and report hash | P2 | Added |

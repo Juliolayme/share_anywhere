@@ -299,7 +299,7 @@ describe('AccountProvider', () => {
       r = await t.account().revokeDevice('d-gone');
     });
     expect(r).toBe('rotated');
-    expect(flow.rememberRevoked).toHaveBeenCalledWith('u1', ['d-gone']);
+    expect(flow.rememberRevoked).toHaveBeenCalledWith('u1', ['d-gone'], expect.anything()); // the API, to read the account's version
     expect(t.calls.filter((c) => !c.startsWith('GET') && !c.includes('token'))).toEqual([
       'remember',
       'DELETE /v1/devices/d-gone',

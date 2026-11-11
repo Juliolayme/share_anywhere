@@ -780,3 +780,28 @@ describe('QA round 6: remembered exclusions expire once provably obsolete', () =
     expect(await syncMeta().excluded(USER)).toEqual([`${OTHER}@1`]);
   });
 });
+
+describe('QA round 7: an exclusion records the account version, not a lagging browser version', () => {
+  it('rememberRevoked records the newer of this browser’s and the server’s key version', async () => {
+    const { fake } = await readyAtV1();
+    fake.setState({ key_version: 2 }); // another device rotated; this browser still holds only v1
+    const { rememberRevoked } = await import('./keyFlow');
+    await rememberRevoked(USER, [OTHER], fake.api);
+    expect(await syncMeta().excluded(USER)).toEqual([`${OTHER}@2`]);
+  });
+
+  it('a revoke rotation raises the entry to the current version before pruning, so a failed rotation keeps it', async () => {
+    const { store, fake } = await readyAtV1();
+    const adk2 = generateAdk(2);
+    await store.saveAdk(2, adk2.raw); // this browser has just caught up to v2 (the QA scenario after the pickup)
+    fake.setState({ key_version: 2 });
+    await syncMeta().setExcluded(USER, [`${OTHER}@1`]); // remembered while it still lagged at v1
+    (fake.api.rotate as unknown as { mockImplementation: (f: () => Promise<never>) => void }).mockImplementation(
+      async () => {
+        throw new NetworkError();
+      },
+    );
+    await expect(rotateKeys(fake.api, USER, DEVICE, [OTHER])).rejects.toBeInstanceOf(NetworkError);
+    expect(await syncMeta().excluded(USER)).toEqual([`${OTHER}@2`]);
+  });
+});

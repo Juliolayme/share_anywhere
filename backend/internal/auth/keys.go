@@ -571,6 +571,14 @@ func (s *Service) CreatePairing(ctx context.Context, id access.Identity, ipKey, 
 	now := s.cfg.Clock.Now()
 	p := Pairing{PairingID: newID(), Code: code, ExpiresAt: now.Add(PairingTTL).UTC()}
 	err = pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+		// Serialize with a departure of this device (detach holds this row FOR UPDATE), then re-check the session.
+		var kv int
+		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&kv); err != nil {
+			return err
+		}
+		if err := s.checkLiveSession(ctx, tx, se); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM device_pairings WHERE new_device_id = $1::uuid`, se.DeviceID); err != nil {
 			return err
 		}
@@ -596,8 +604,12 @@ type PairingPeer struct {
 	DeviceName         string `json:"device_name"`
 }
 
+// openPairing also requires the new device to still be an added device of the account (a live, added account
+// session): a pairing left over from a device that has since left is never offered or wrapped (QA round 7 P2-5).
 const openPairing = `p.code_hash = $1 AND p.user_id = $2::uuid AND p.new_device_id <> $3::uuid AND p.expires_at > $4
-	AND p.wrapped_at IS NULL AND p.consumed_at IS NULL`
+	AND p.wrapped_at IS NULL AND p.consumed_at IS NULL
+	AND EXISTS (SELECT 1 FROM auth_sessions sa WHERE sa.device_id = p.new_device_id AND sa.user_id = p.user_id
+	            AND sa.revoked_at IS NULL AND sa.expires_at > $4 AND sa.device_added)`
 
 // LookupPairing resolves a code for an existing device of the same account. Unknown, expired, used,
 // other-account, and own codes are all 404.

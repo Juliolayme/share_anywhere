@@ -273,7 +273,7 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
     async (id: string): Promise<'rotated' | 'none' | 'failed'> => {
       if (userId) {
         const flow = await keyFlow();
-        await flow.rememberRevoked(userId, [id]).catch(() => undefined);
+        await flow.rememberRevoked(userId, [id], api).catch(() => undefined);
         try {
           await api.revokeDevice(id);
         } catch (e) {

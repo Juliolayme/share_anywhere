@@ -132,7 +132,7 @@ func TestRegisterRacingOwnRevoke(t *testing.T) {
 // TestEvictedDeviceRotationRace (QA round 6 P1): the owner changes the password to evict L while L keeps
 // posting a v2 rotation (refused while B is still in the account). Before the fix a request that had passed
 // the session check outside the transaction landed after the eviction committed, created v2 and cleared
-// rotation_due. Now every key write locks its live session first: either L's rotation commits before the
+// rotation_due. Now every key write holds the account key row and re-checks its session after it: either L's rotation commits before the
 // eviction (which then sets rotation_due again) or it is refused because the session is gone.
 func TestEvictedDeviceRotationRace(t *testing.T) {
 	e := newEnv(t)
@@ -187,4 +187,22 @@ func TestRotateNeedsOwnCurrentProof(t *testing.T) {
 	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, nil)), 403, "device_key_unproven")
 	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 2, pub32(1))), 204, "")
 	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, nil)), 200, "")
+}
+
+// TestPairingNotOfferedForDepartedDevice (QA round 7 P2-5): a pairing whose new device is no longer an added
+// device of the account (a leftover row) is never offered to, or wrapped by, an existing device.
+func TestPairingNotOfferedForDepartedDevice(t *testing.T) {
+	e := newEnv(t)
+	_, tokA := e.signup("pairgone@example.com", true)
+	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+	n, tokN := e.signin("pairgone@example.com", true)
+	r := e.do("POST", "/v1/keys/pairings", tokN, map[string]any{"ephemeral_public_key": key32(7)})
+	e.want(r, 201, "")
+	code := r.str("code")
+	e.want(e.do("GET", "/v1/keys/pairings/by-code/"+code, tokA, nil), 200, "")
+	// Simulate a leftover: N's session ends but its pairing row stays.
+	if _, err := e.pool.Exec(ctx, `UPDATE auth_sessions SET revoked_at = now() WHERE device_id = $1::uuid`, n.Device.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.want(e.do("GET", "/v1/keys/pairings/by-code/"+code, tokA, nil), 404, "not_found")
 }

@@ -55,11 +55,18 @@ import app.shareanywhere.ui.theme.SaTokens
 import java.time.Instant
 
 /**
- * DV-1 Devices for guests: the "This device" card with Rename and Reset device identity. The account device
- * list and its sign-in intro arrive with accounts (milestone 6.4, CLAUDE.md §8b).
+ * DV-1 Devices: for guests the "This device" card with Rename and Reset device identity, and (accounts flag on) the
+ * sign-in intro; signed in, the account's device list ([AccountDevicesList]).
  */
 @Composable
-fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
+fun DevicesScreen(account: DeviceAccountActions? = null, viewModel: DevicesViewModel = hiltViewModel()) {
+    val signedIn =
+        if (account != null) {
+            val accountVm: app.shareanywhere.ui.account.AccountViewModel = hiltViewModel()
+            accountVm.state.collectAsStateWithLifecycle().value.signedIn
+        } else {
+            false
+        }
     val identity by viewModel.identityState.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val result by viewModel.result.collectAsStateWithLifecycle()
@@ -84,13 +91,18 @@ fun DevicesScreen(viewModel: DevicesViewModel = hiltViewModel()) {
     ) {
         item { ScreenHeader(stringResource(R.string.android_dev)) }
         item { IdentityNotice(identity, onRetry = viewModel::retryIdentity, onDismissReplaced = viewModel::dismissReplaced) }
-        item {
-            val device = identity.device
-            if (device == null) {
-                SkeletonList(1, stringResource(R.string.product_identity_loading))
-            } else {
-                ThisDeviceCard(device, busy, onRename = { renaming = true }, onReset = { confirmReset = true })
+        if (signedIn && account != null) {
+            item { AccountDevicesList(account) }
+        } else {
+            item {
+                val device = identity.device
+                if (device == null) {
+                    SkeletonList(1, stringResource(R.string.product_identity_loading))
+                } else {
+                    ThisDeviceCard(device, busy, onRename = { renaming = true }, onReset = { confirmReset = true })
+                }
             }
+            if (account != null) item { DevicesSignInIntro(account) }
         }
     }
 

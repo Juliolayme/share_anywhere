@@ -12,13 +12,16 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.shareanywhere.ui.nav.ScreenIds
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
  * Guest-first launch (docs/TESTING_AND_CI.md §5, PRD §5.1): a fresh install shows Welcome, Start sharing opens
- * Transfer home, no screen offers or requires signing in, Welcome is not on the back stack, and it is shown once.
+ * Transfer home, Welcome and Transfer home offer no sign-in and no tab requires it (the account tabs only show optional
+ * account CTAs), the Clipboard tab shows the guest intro with no clipboard listener registered, Welcome is not on the
+ * back stack, and it is shown once.
  * The orchestrator clears app data before each test (clearPackageData), so this is a fresh install.
  */
 @RunWith(AndroidJUnit4::class)
@@ -48,14 +51,19 @@ class GuestLaunchTest {
             compose.onNodeWithTag(ScreenIds.WELCOME).assertDoesNotExist()
             assertNoSignIn()
 
-            // Bottom navigation: Transfer, History, Devices, Settings; Clipboard hidden until accounts ship.
-            compose.onNodeWithTag("nav.${ScreenIds.CLIPBOARD}").assertDoesNotExist()
-            for (tab in listOf(ScreenIds.HISTORY, ScreenIds.DEVICES, ScreenIds.SETTINGS, ScreenIds.HOME)) {
+            // Bottom navigation: Transfer, Clipboard, History, Devices, Settings. Every tab opens without a sign-in step.
+            for (tab in listOf(ScreenIds.CLIPBOARD, ScreenIds.HISTORY, ScreenIds.DEVICES, ScreenIds.SETTINGS, ScreenIds.HOME)) {
                 compose.onNodeWithTag("nav.$tab").performClick()
                 compose.waitForTag(tab)
                 compose.onNodeWithTag(tab).assertIsDisplayed()
-                assertNoSignIn()
+                compose.onNodeWithTag(ScreenIds.SIGNIN).assertDoesNotExist()
+                if (tab == ScreenIds.CLIPBOARD) {
+                    // CB-1: the account-required intro; nothing touches ClipboardManager for a guest.
+                    compose.waitForTag("clipboard.intro")
+                    assertFalse("no clipboard listener for a guest", Backend.entry().clipboardRuntime().listening.value)
+                }
             }
+            assertNoSignIn()
 
             // Welcome is not on the back stack: Back from Transfer home leaves the app.
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }

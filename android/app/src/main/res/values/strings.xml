@@ -783,6 +783,7 @@
     <string name="product_cb_auto_off_p">Automatic capture is off on this browser. Click Sync Clipboard to send what you copied.</string>
     <string name="product_cb_back">Back to Clipboard</string>
     <string name="product_cb_bg_android">Android 10 and later block clipboard access in the background, so nothing is captured until you open the app.</string>
+    <string name="product_cb_chars">{n} characters</string>
     <string name="product_cb_clear_failed">Couldn’t clear clipboard history. Try again.</string>
     <string name="product_cb_copy_failed">Couldn’t copy automatically. The text is selected — press Ctrl+C (⌘C on Mac).</string>
     <string name="product_cb_copy_failed_android">Couldn’t copy. Try again.</string>
@@ -830,6 +831,7 @@
     <string name="product_cb_queued">Encrypted and queued on this device — it will be sent as soon as possible.</string>
     <string name="product_cb_queued_busy">Encrypted and queued — the server is busy right now. It will be sent again shortly.</string>
     <string name="product_cb_queued_key">Encrypted and queued — your account has a newer key that this device doesn’t hold. Pair this device again to send it.</string>
+    <string name="product_cb_queued_label">Queued</string>
     <string name="product_cb_queued_paused">Encrypted and queued — sync is paused. It will be sent when you resume.</string>
     <string name="product_cb_queued_rate_limited">Encrypted and queued — too many items at once. It will be sent again shortly.</string>
     <string name="product_cb_rate_limited">Too many items at once — sending again shortly.</string>
@@ -1036,6 +1038,7 @@
     <string name="product_not_accepting_rx">The sender is no longer accepting receivers.</string>
     <string name="product_not_accepting_s">Not accepting new receivers</string>
     <string name="product_not_added_p">This browser is signed in for up to 24 hours. Add it to see your devices and sync your history.</string>
+    <string name="product_not_added_p_device">This device is signed in for up to 24 hours. Add it to see your devices and sync your history.</string>
     <string name="product_not_found_h">Page not found</string>
     <string name="product_notif_channel_sessions">Share sessions</string>
     <string name="product_notif_channel_sessions_p">When someone joins or asks to join a session you started</string>

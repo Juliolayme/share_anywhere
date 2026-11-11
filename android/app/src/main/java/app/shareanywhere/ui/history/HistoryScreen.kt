@@ -52,7 +52,14 @@ import app.shareanywhere.ui.theme.SaTokens
 
 /** HI-1 History list with search and filters; HI-2 opens as a sheet (design `history` drawer). */
 @Composable
-fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
+fun HistoryScreen(sync: HistorySyncActions? = null, viewModel: HistoryViewModel = hiltViewModel()) {
+    val syncOn =
+        if (sync != null) {
+            val accountVm: app.shareanywhere.ui.account.AccountViewModel = hiltViewModel()
+            accountVm.state.collectAsStateWithLifecycle().value.let { it.added && it.historySync }
+        } else {
+            false
+        }
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val event by viewModel.events.collectAsStateWithLifecycle()
     var confirmClear by rememberSaveable { mutableStateOf(false) }
@@ -99,11 +106,15 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
         }
         item { Filters(ui.filter, ui.peers, viewModel::setFilter) }
         item {
-            InlineNotice(
-                kind = NoticeKind.Info,
-                icon = R.drawable.ic_smartphone,
-                title = stringResource(R.string.android_yy_local)
-            )
+            if (sync != null) {
+                HistorySyncBanner(sync)
+            } else {
+                InlineNotice(
+                    kind = NoticeKind.Info,
+                    icon = R.drawable.ic_smartphone,
+                    title = stringResource(R.string.android_yy_local)
+                )
+            }
         }
         when (val load = ui.load) {
             HistoryLoad.Loading -> item { SkeletonList(4, stringResource(R.string.android_hist)) }
@@ -160,7 +171,9 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
     if (confirmClear) {
         ConfirmDialog(
             title = stringResource(R.string.android_yy_hc_h),
-            body = stringResource(R.string.android_yy_hc_p),
+            body =
+            stringResource(R.string.android_yy_hc_p) +
+                if (syncOn) "\n\n" + stringResource(R.string.product_history_clear_synced) else "",
             confirm = stringResource(R.string.android_yy_cb_clear),
             onConfirm = {
                 confirmClear = false

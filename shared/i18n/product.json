@@ -557,7 +557,10 @@
     "pair_camera_ask": "Allow camera access to scan the code, or paste it instead.",
     "ck_go_clipboard": "Go to Clipboard",
     "account_h": "Account",
-    "devices_this_only": "Only this device is shown until you sign in."
+    "devices_this_only": "Only this device is shown until you sign in.",
+    "cb_queued_label": "Queued",
+    "cb_chars": "{n} characters",
+    "not_added_p_device": "This device is signed in for up to 24 hours. Add it to see your devices and sync your history."
   },
   "vi": {
     "add_device": "Thêm thiết bị này vào tài khoản",
@@ -1116,6 +1119,9 @@
     "pair_camera_ask": "Cho phép truy cập camera để quét mã, hoặc dán mã.",
     "ck_go_clipboard": "Đến Clipboard",
     "account_h": "Tài khoản",
-    "devices_this_only": "Chỉ hiển thị thiết bị này cho đến khi bạn đăng nhập."
+    "devices_this_only": "Chỉ hiển thị thiết bị này cho đến khi bạn đăng nhập.",
+    "cb_queued_label": "Đang chờ gửi",
+    "cb_chars": "{n} ký tự",
+    "not_added_p_device": "Thiết bị này được đăng nhập tối đa 24 giờ. Hãy thêm thiết bị để xem các thiết bị của bạn và đồng bộ lịch sử."
   }
 }

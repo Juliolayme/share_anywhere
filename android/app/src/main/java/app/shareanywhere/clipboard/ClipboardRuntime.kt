@@ -44,6 +44,8 @@ import kotlinx.serialization.json.jsonPrimitive
 data class ClipboardUi(
     /** The engine runs: signed in, device added, key held (docs/CLIPBOARD_PROTOCOL.md §2.10). */
     val active: Boolean = false,
+    /** This device's id (rows from it say "This device"). */
+    val thisDeviceId: String? = null,
     val snapshot: ClipboardSnapshot = ClipboardSnapshot(),
     val deviceNames: Map<String, String> = emptyMap(),
     val autoCapture: Boolean = true,
@@ -149,7 +151,7 @@ class ClipboardRuntime(
         )
         engine = e
         notified.clear()
-        _ui.value = _ui.value.copy(active = true, snapshot = e.state.value)
+        _ui.value = _ui.value.copy(active = true, thisDeviceId = ready.second, snapshot = e.state.value)
         engineJobs =
             listOf(
                 scope.launch { e.start() },

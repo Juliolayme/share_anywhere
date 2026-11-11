@@ -4,31 +4,33 @@ import app.shareanywhere.BuildConfig
 import app.shareanywhere.R
 import app.shareanywhere.di.AppModule
 import app.shareanywhere.ui.nav.Routes
+import app.shareanywhere.ui.nav.ScreenIds
 import app.shareanywhere.ui.nav.Tabs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Send and Receive are on from milestone 6.2; accounts and Clipboard stay off until 6.4 (CLAUDE.md §8b). */
+/** Send and Receive are on from milestone 6.2; accounts and Clipboard from 6.4 (CLAUDE.md §8b). */
 class FlagsTest {
     @Test
     fun flagsMatchTheMilestone() {
         assertTrue("Send and Receive work from 6.2", BuildConfig.FLAG_SHARING)
-        assertFalse("accounts arrive in 6.4", BuildConfig.FLAG_ACCOUNTS)
-        assertFalse("Clipboard arrives in 6.4", BuildConfig.FLAG_CLIPBOARD)
+        assertTrue("accounts work from 6.4", BuildConfig.FLAG_ACCOUNTS)
+        assertTrue("Clipboard works from 6.4", BuildConfig.FLAG_CLIPBOARD)
     }
 
     @Test
-    fun bottomNavigationHasTheGuestTabsAndHidesClipboard() {
+    fun bottomNavigationHasTheFiveTabsInTheDesignOrder() {
         val tabs = Tabs.visible(AppConfig.fromBuildConfig().flags)
-        assertEquals(listOf(Routes.HOME, Routes.HISTORY, Routes.DEVICES, Routes.SETTINGS), tabs.map { it.route })
+        assertEquals(listOf(Routes.HOME, ScreenIds.CLIPBOARD, Routes.HISTORY, Routes.DEVICES, Routes.SETTINGS), tabs.map { it.route })
         assertEquals(
-            listOf(R.string.android_home, R.string.android_hist, R.string.android_dev, R.string.android_set),
+            listOf(R.string.android_home, R.string.android_clip, R.string.android_hist, R.string.android_dev, R.string.android_set),
             tabs.map { it.label }
         )
-        val withClipboard = Tabs.visible(Flags(sharing = false, accounts = true, clipboard = true))
-        assertTrue(withClipboard.any { it.label == R.string.android_clip })
+        // Clipboard needs accounts: with the flag off the tab is hidden.
+        val withoutClipboard = Tabs.visible(Flags(sharing = true, accounts = true, clipboard = false))
+        assertFalse(withoutClipboard.any { it.label == R.string.android_clip })
     }
 
     @Test

@@ -783,6 +783,7 @@
     <string name="product_cb_auto_off_p">Tự động ghi nhận đang tắt trên trình duyệt này. Bấm Đồng bộ Clipboard để gửi nội dung đã sao chép.</string>
     <string name="product_cb_back">Quay lại Clipboard</string>
     <string name="product_cb_bg_android">Android 10 trở lên chặn truy cập clipboard khi chạy nền, nên không có gì được ghi lại cho đến khi bạn mở ứng dụng.</string>
+    <string name="product_cb_chars">{n} ký tự</string>
     <string name="product_cb_clear_failed">Không xoá được lịch sử clipboard. Hãy thử lại.</string>
     <string name="product_cb_copy_failed">Không tự sao chép được. Văn bản đã được chọn — nhấn Ctrl+C (⌘C trên Mac).</string>
     <string name="product_cb_copy_failed_android">Không sao chép được. Hãy thử lại.</string>
@@ -830,6 +831,7 @@
     <string name="product_cb_queued">Đã mã hóa và xếp hàng trên thiết bị này — sẽ được gửi sớm nhất có thể.</string>
     <string name="product_cb_queued_busy">Đã mã hóa và xếp hàng — máy chủ đang bận. Mục sẽ được gửi lại sau ít phút.</string>
     <string name="product_cb_queued_key">Đã mã hóa và xếp hàng — tài khoản có khoá mới hơn mà thiết bị này chưa có. Hãy ghép nối lại thiết bị để gửi.</string>
+    <string name="product_cb_queued_label">Đang chờ gửi</string>
     <string name="product_cb_queued_paused">Đã mã hóa và xếp hàng — đồng bộ đang tạm dừng. Mục sẽ được gửi khi bạn tiếp tục.</string>
     <string name="product_cb_queued_rate_limited">Đã mã hóa và xếp hàng — quá nhiều mục cùng lúc. Mục sẽ được gửi lại sau ít phút.</string>
     <string name="product_cb_rate_limited">Quá nhiều mục cùng lúc — sẽ gửi lại sau ít phút.</string>
@@ -1036,6 +1038,7 @@
     <string name="product_not_accepting_rx">Người gửi không nhận thêm người nhận nữa.</string>
     <string name="product_not_accepting_s">Không nhận thêm người nhận</string>
     <string name="product_not_added_p">Trình duyệt này đăng nhập tối đa 24 giờ. Hãy thêm nó để xem các thiết bị và đồng bộ lịch sử.</string>
+    <string name="product_not_added_p_device">Thiết bị này được đăng nhập tối đa 24 giờ. Hãy thêm thiết bị để xem các thiết bị của bạn và đồng bộ lịch sử.</string>
     <string name="product_not_found_h">Không tìm thấy trang</string>
     <string name="product_notif_channel_sessions">Phiên chia sẻ</string>
     <string name="product_notif_channel_sessions_p">Khi có người vào hoặc xin vào phiên bạn đã tạo</string>

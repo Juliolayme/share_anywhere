@@ -1,5 +1,6 @@
 package app.shareanywhere.account
 
+import app.shareanywhere.account.crypto.KeyFlows
 import app.shareanywhere.account.crypto.KeyStore
 import app.shareanywhere.account.keys.AccountKeys
 import app.shareanywhere.account.keys.KeyStatus
@@ -19,6 +20,7 @@ import app.shareanywhere.identity.IdentityManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -31,6 +33,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** The account on this device (docs/UX_SCREEN_MAP.md §7–§9, PRD §2 "Signing in"); guests have none. */
 data class AccountState(
@@ -320,21 +323,29 @@ class AccountManager(
 
     // --- Key steps (AC-5 setup on Web only; Android sets up, pairs or recovers) ---
 
-    /** First device of an account (key_version 0): creates ADK v1 and returns the phrase to show once. */
-    suspend fun setUpKeys(): String {
-        val s = _state.value
-        val acct = requireNotNull(s.accountId)
-        val prepared = keys.prepareSetup(acct)
+    /**
+     * AC-5 on the first device of an account (key_version 0): creates ADK v1 and the recovery phrase on the device only.
+     * Nothing reaches the server until [commitKeys] (after "I wrote down my recovery phrase").
+     */
+    suspend fun prepareKeys(): KeyFlows.PreparedSetup {
+        val acct = requireNotNull(_state.value.accountId)
+        // Argon2id for the recovery key: off the main thread.
+        return withContext(Dispatchers.Default) { keys.prepareSetup(acct) }
+    }
+
+    /** Sends the prepared setup (`POST /v1/keys/setup`) and only then stores the key. `409 keys_exist` points to AC-6. */
+    suspend fun commitKeys(prepared: KeyFlows.PreparedSetup) {
+        val acct = requireNotNull(_state.value.accountId)
         try {
             api.setupKeys(prepared.request)
         } catch (e: ApiException) {
-            prepared.discard()
+            // Another device created the key first: this one is never used. Other errors keep it for a retry.
+            if (e.code == "keys_exist") prepared.discard()
             throw e
         }
         prepared.commit(keys.store(acct))
         checkKeys()
         onAccountData.keysChanged()
-        return prepared.phrase
     }
 
     suspend fun startPairing() = keys.startPairing()

@@ -51,13 +51,13 @@ import app.shareanywhere.ui.theme.SaTokens
 private enum class Picker { Theme, Language, Retention }
 
 /**
- * ST-1 Settings for guests: Guest header (no Sign in until accounts ship, CLAUDE.md §8b), theme, language,
+ * ST-1 Settings: the account section ([AccountSection]; a plain Guest header while the accounts flag is off), theme, language,
  * Keep screen on during transfers (default on, this device), local history retention and Clear history,
  * privacy note, version. Transfer strategy, notifications, data and battery, Cloud and Clipboard rows arrive
  * with the features they control (DESIGN_DEVIATIONS F6).
  */
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(account: AccountActions? = null, viewModel: SettingsViewModel = hiltViewModel()) {
     val s by viewModel.state.collectAsStateWithLifecycle()
     val hasHistory by viewModel.hasHistory.collectAsStateWithLifecycle()
     val event by viewModel.events.collectAsStateWithLifecycle()
@@ -84,7 +84,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         if (current == null) {
             item { SkeletonList(4, stringResource(R.string.android_set)) }
         } else {
-            settingsItems(current, hasHistory, viewModel, onPick = { picker = it }, onClear = { confirmClear = true })
+            settingsItems(current, hasHistory, viewModel, account, onPick = { picker = it }, onClear = { confirmClear = true })
         }
     }
 
@@ -143,11 +143,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsItems(
     s: AppSettings,
     hasHistory: Boolean,
     viewModel: SettingsViewModel,
+    account: AccountActions?,
     onPick: (Picker) -> Unit,
     onClear: () -> Unit
 ) {
     item { SectionLabel(stringResource(R.string.android_yy_g_account)) }
-    item { GuestHeader() }
+    item { if (account != null) AccountSection(account) else GuestHeader() }
     item { SectionLabel(stringResource(R.string.android_yy_g_app)) }
     item {
         SaCard {

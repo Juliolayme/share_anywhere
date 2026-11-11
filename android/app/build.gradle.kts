@@ -32,9 +32,9 @@ val flags =
         // Send and Receive (milestone 6.2).
         "FLAG_SHARING" to true,
         // Sign in, account Devices list, history sync (milestone 6.4).
-        "FLAG_ACCOUNTS" to false,
+        "FLAG_ACCOUNTS" to true,
         // Clipboard Sync tab (milestone 6.4).
-        "FLAG_CLIPBOARD" to false
+        "FLAG_CLIPBOARD" to true
     )
 
 android {

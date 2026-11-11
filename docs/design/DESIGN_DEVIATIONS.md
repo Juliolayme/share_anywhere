@@ -198,3 +198,20 @@ The design shows the finished product with sample data. These elements are left 
 | J13 | `rx-progress` "Change" folder link during the transfer | The folder is shown without Change | Moving a half-written file between folders mid-transfer would break resume; the folder is chosen before the first byte |
 | J14 | `rx-progress` 168 dp ring | Material circular progress of the same size with the percentage and bytes in the middle | Token sizes only |
 | J15 | `rx-done` "Open" for all files | Per-file Open and Share buttons (ACTION_VIEW / ACTION_SEND with read grants) | Each file opens in its own app |
+
+## K. Android accounts and Clipboard: differences from the design (Phase 6, milestone 6.4)
+
+| # | Design (`Android App.dc.html`) | Built | Why |
+|---|---|---|---|
+| K1 | `signin` signs in and lands on Clipboard ("this phone is trusted") | Sign in without adding the device, then AC-4 `trust` (Add this device on, Copy history off), then the key step and AC-8 `checklist` | The Web's flow (UX_SCREEN_MAP §9): adding a device and its key are separate, deliberate steps |
+| K2 | `signup` has a Name field and the hint "At least 8 characters with a number" | Email and password only, `product.password_hint` (10 characters) and a strength meter | The API has no name field; the backend requires 10 to 128 characters (PRD/backend win) |
+| K3 | `verify` email-code step after sign-up | Not built | Same as the Web (A1): the backend has no email verification step |
+| K4 | No key screens in the Android design | `key-setup` (AC-5) and `key-pair` (AC-6, QR + `sa1.…` code, or recovery phrase) built from the Web's screens, with the Web's IDs | End-to-end encryption needs the account key on the device (CLIPBOARD_PROTOCOL §1); the phrase and pairing code screens set `FLAG_SECURE` |
+| K5 | `checklist` items include "Notifications allowed" and "Open Share Anywhere on your PC" | Share without an account, signed in as, device added, key on this device, history sync on/off, each with its action | The Web's checklist; a notification row would be a fake state before the app asks |
+| K6 | Settings account rows `s_2fa` (two-step verification) | Not shown | Not built on any platform (A3) |
+| K7 | `clipboard` "Demo: show sync notification" button | No demo button; a real notification ("New clipboard item from {device}", action Sync Clipboard) posts when an item arrives while the app is in the background, and its action opens the Activity to read | PRD §7.3: Android reads the clipboard only in the foreground; the notification never shows the item's text |
+| K8 | `clipboard` status card states `foreground`, `offline`, `paused`, `error` | Same four, plus the "Capture while the app is open" switch (this device), Pause/Resume, and the line "Android 10 and later block clipboard access in the background…" | PRD §7.3 asks the UI to state the background limit; the switch mirrors the Web's per-device automatic capture |
+| K9 | `clipboard` items say "This phone" / "Sent to 2 devices" | "This device" or the origin device's name; toasts "Clipboard synced · encrypted" or "Encrypted and queued" with the real cause | No per-recipient delivery exists in the protocol; the toast says only what is known |
+| K10 | Item detail drawer | Bottom sheet (CB-5) with origin, date and time, full selectable text, character count, Copy, Delete | Material bottom sheet on Android |
+| K11 | Clipboard settings are rows in ST-1 (`s_clipkeep`, `s_skip`) | A Clipboard settings link in ST-1 opens `clipboard-settings` (CB-6: automatic capture, skip sensitive with the disclaimer, pause, keep 7/3/1 days, clear) | The Web's CB-6; settings that apply to every device sit together with their explanation |
+| K12 | `devices` rows with Rename and Revoke for every device | Rename for an added device, Revoke for other devices once this one holds the key, "Not paired yet", Pair a new device (scan the new device's QR with CameraX, or paste its code) | The Web's DV-1 rules: revoking rotates the key, which needs it |

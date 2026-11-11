@@ -92,7 +92,15 @@ fun SecurityWords(words: List<String>?, label: String, modifier: Modifier = Modi
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun ParticipantCard(r: Participant, busy: Boolean, onApprove: () -> Unit, onReject: () -> Unit, onRemove: () -> Unit, onBlock: () -> Unit) {
+fun ParticipantCard(
+    r: Participant,
+    busy: Boolean,
+    onApprove: () -> Unit,
+    onReject: () -> Unit,
+    onRemove: () -> Unit,
+    onBlock: () -> Unit,
+    extra: @Composable () -> Unit = {}
+) {
     val p = LocalSaPalette.current
     val requested = r.status == "REQUESTED"
     val shape = RoundedCornerShape(SaTokens.Radius.Lg)
@@ -140,6 +148,7 @@ fun ParticipantCard(r: Participant, busy: Boolean, onApprove: () -> Unit, onReje
             }
         }
         SecurityWords(r.securityWords, stringResource(R.string.android_xx_secw_s))
+        extra()
         val approveLabel = str(R.string.product_approve_named, "name" to r.displayName)
         val rejectLabel = str(R.string.product_reject_named, "name" to r.displayName)
         val removeLabel = str(R.string.product_remove_confirm, "name" to r.displayName)

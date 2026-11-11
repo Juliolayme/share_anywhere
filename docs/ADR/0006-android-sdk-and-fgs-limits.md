@@ -10,7 +10,7 @@ Long transfers on Android need a foreground service, and recent Android versions
 
 - minSdk 26, targetSdk 35, Kotlin 2.x, Compose BOM, AGP 8.x, JDK 17 in CI.
 - Active transfers run in a `dataSync` foreground service holding a partial wake lock and a Wi-Fi lock only while bytes move; the engine checkpoints the bitmap, stops cleanly at the time budget, notifies the user, and resumes later.
-- Phase 6 evaluates `JobScheduler` user-initiated data transfer jobs (API 34+) and records the outcome in a new ADR.
+- Phase 6 evaluates `JobScheduler` user-initiated data transfer jobs (API 34+) and records the outcome in a new ADR: done in `docs/ADR/0020-android-background-transfers.md` (foreground service kept).
 - The transfer screen sets `FLAG_KEEP_SCREEN_ON` while visible and active (`docs/ARCHITECTURE.md` §7).
 - Clipboard capture only while an Activity is resumed; never from a service.
 

@@ -11,6 +11,7 @@ import app.shareanywhere.config.AppConfig
 import app.shareanywhere.data.api.ApiClient
 import app.shareanywhere.data.api.DeviceApi
 import app.shareanywhere.data.api.SessionsApi
+import app.shareanywhere.data.api.TransfersApi
 import app.shareanywhere.data.ws.SessionSocket
 import app.shareanywhere.history.HistoryDao
 import app.shareanywhere.history.HistoryDatabase
@@ -23,8 +24,10 @@ import app.shareanywhere.settings.SettingsRepository
 import app.shareanywhere.sharing.JoinFlow
 import app.shareanywhere.sharing.OutgoingStore
 import app.shareanywhere.sharing.PickedFiles
+import app.shareanywhere.transfer.IncomingDao
 import app.shareanywhere.transfer.OutgoingFileDao
 import app.shareanywhere.transfer.TransferDatabase
+import app.shareanywhere.transfer.runtime.TransferRuntime
 import app.shareanywhere.ui.keepawake.KeepAwakeController
 import dagger.Module
 import dagger.Provides
@@ -112,11 +115,33 @@ object AppModule {
         SessionSocket(config.backendUrl, http, json, scope, ticket = { api.wsTicket().ticket })
 
     @Provides @Singleton
-    fun transferDatabase(@ApplicationContext context: Context): TransferDatabase =
-        Room.databaseBuilder(context, TransferDatabase::class.java, TransferDatabase.NAME).build()
+    fun transferDatabase(@ApplicationContext context: Context): TransferDatabase = Room.databaseBuilder(
+        context,
+        TransferDatabase::class.java,
+        TransferDatabase.NAME
+    ).addMigrations(TransferDatabase.MIGRATION_1_2).build()
 
     @Provides
     fun outgoingFiles(db: TransferDatabase): OutgoingFileDao = db.outgoing()
+
+    @Provides
+    fun incoming(db: TransferDatabase): IncomingDao = db.incoming()
+
+    @Provides @Singleton
+    fun transfersApi(client: ApiClient, identity: IdentityManager): TransfersApi = TransfersApi(client, identity)
+
+    @Provides @Singleton
+    fun transferRuntime(
+        @ApplicationContext context: Context,
+        sessions: SessionsApi,
+        transfers: TransfersApi,
+        socket: SessionSocket,
+        outgoing: OutgoingFileDao,
+        incoming: IncomingDao,
+        history: HistoryRepository,
+        json: Json,
+        @AppScope scope: CoroutineScope
+    ): TransferRuntime = TransferRuntime(context, sessions, transfers, socket, outgoing, incoming, history, json, scope)
 
     @Provides @Singleton
     fun pickedFiles(@ApplicationContext context: Context): PickedFiles = PickedFiles(context.contentResolver)

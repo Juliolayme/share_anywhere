@@ -1,5 +1,9 @@
 package app.shareanywhere.ui.receive
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,8 +14,14 @@ import app.shareanywhere.data.api.SessionsApi
 import app.shareanywhere.data.ws.SessionSocket
 import app.shareanywhere.data.ws.SocketEvent
 import app.shareanywhere.identity.IdentityManager
+import app.shareanywhere.transfer.SaveTarget
+import app.shareanywhere.transfer.TransferService
+import app.shareanywhere.transfer.runtime.ReceiverController
+import app.shareanywhere.transfer.runtime.TransferRuntime
+import app.shareanywhere.transfer.storage.Folders
 import app.shareanywhere.ui.nav.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
@@ -60,7 +70,9 @@ class ReceiveSessionViewModel @Inject constructor(
     saved: SavedStateHandle,
     private val api: SessionsApi,
     private val socket: SessionSocket,
-    identity: IdentityManager
+    identity: IdentityManager,
+    private val runtime: TransferRuntime,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
     val sessionId: String = checkNotNull(saved[Routes.ID_ARG])
     private val _ui = MutableStateFlow(ReceiveSessionUi())
@@ -70,7 +82,18 @@ class ReceiveSessionViewModel @Inject constructor(
     val left = _left.receiveAsFlow()
     private val lock = Mutex()
 
+    /** The transfer once this device is JOINED (RX-5b…RX-7); created on first use and kept by the runtime. */
+    private val _rx = MutableStateFlow<ReceiverController?>(runtime.existingReceiver(sessionId))
+    val rx: StateFlow<ReceiverController?> = _rx.asStateFlow()
+
     init {
+        viewModelScope.launch {
+            ui.collect { u ->
+                if (u.joined && _rx.value == null) _rx.value = runtime.receiver(sessionId)
+                val o = u.outcome
+                if (o != null && o != Outcome.Rejected) _rx.value?.endedElsewhere()
+            }
+        }
         load()
         viewModelScope.launch {
             socket.subscribe().collect { e -> if (e.type == SocketEvent.OPEN || e.sessionId == sessionId) load() }
@@ -91,6 +114,51 @@ class ReceiveSessionViewModel @Inject constructor(
             }
         }
     }
+
+    /** RX-5b: Download/Share Anywhere (null) or a folder chosen with OpenDocumentTree (read and write access persisted). */
+    fun chooseFolder(tree: Uri?) {
+        val rx = _rx.value ?: return
+        val now = System.currentTimeMillis()
+        val target =
+            if (tree == null) {
+                SaveTarget(sessionId, Folders.DEFAULT_DOWNLOADS, Folders.DEFAULT_LABEL, now)
+            } else {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        tree,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                }
+                val id = runCatching { DocumentsContract.getTreeDocumentId(tree) }.getOrDefault("")
+                SaveTarget(
+                    sessionId,
+                    tree.toString(),
+                    id.substringAfter(':').ifEmpty {
+                        id.ifEmpty { tree.lastPathSegment.orEmpty() }
+                    },
+                    now
+                )
+            }
+        rx.start(target)
+        TransferService.start(context)
+    }
+
+    fun pause() = _rx.value?.pause()
+
+    fun resume() {
+        _rx.value?.resume()
+        TransferService.start(context)
+    }
+
+    fun retry() {
+        _rx.value?.retry()
+        TransferService.start(context)
+    }
+
+    fun cancel() = _rx.value?.cancel()
+
+    /** Done on RX-7: forget the finished transfer. */
+    fun done() = runtime.release(sessionId)
 
     fun leave() {
         val me = _ui.value.view?.me ?: return

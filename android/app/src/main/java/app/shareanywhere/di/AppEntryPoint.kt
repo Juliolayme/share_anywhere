@@ -25,4 +25,8 @@ interface AppEntryPoint {
     fun keepAwake(): KeepAwakeController
 
     fun config(): AppConfig
+
+    fun outgoingFiles(): app.shareanywhere.transfer.OutgoingFileDao
+
+    fun transferRuntime(): app.shareanywhere.transfer.runtime.TransferRuntime
 }

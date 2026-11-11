@@ -34,6 +34,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.shareanywhere.config.Flags
+import app.shareanywhere.ui.dashboard.DashboardScreen
 import app.shareanywhere.ui.devices.DevicesScreen
 import app.shareanywhere.ui.history.HistoryScreen
 import app.shareanywhere.ui.home.HomeScreen
@@ -192,12 +193,17 @@ private fun NavGraphBuilder.sharingGraph(nav: NavHostController, onTurnKeepScree
             onOpenSession = { id -> nav.navigate(Routes.session(id)) { popUpTo(Routes.HOME) { inclusive = false } } }
         )
     }
-    composable(Routes.SESSION_PATTERN, arguments = idArg) {
+    composable(Routes.SESSION_PATTERN, arguments = idArg) { entry ->
+        val id = entry.arguments?.getString(Routes.ID_ARG).orEmpty()
         SessionScreen(
             onExit = toHome,
             onNewSession = { nav.navigate(Routes.SEND) { popUpTo(Routes.HOME) { inclusive = false } } },
-            onTurnKeepScreenOn = onTurnKeepScreenOn
+            onTurnKeepScreenOn = onTurnKeepScreenOn,
+            onOpenDashboard = { nav.navigate(Routes.dashboard(id)) }
         )
+    }
+    composable(Routes.DASHBOARD_PATTERN, arguments = idArg) {
+        DashboardScreen(onBack = { nav.popBackStack() }, onDone = toHome, onTurnKeepScreenOn = onTurnKeepScreenOn)
     }
     composable(Routes.RECEIVE) { ReceiveScreen(onBack = { nav.popBackStack() }, onNav = receiveNav) }
     composable(Routes.JOIN_LINK_PATTERN, arguments = listOf(navArgument(Routes.TOKEN_ARG) { type = NavType.StringType })) { entry ->
@@ -226,7 +232,8 @@ private fun NavGraphBuilder.sharingGraph(nav: NavHostController, onTurnKeepScree
     composable(Routes.RX_SESSION_PATTERN, arguments = idArg) {
         ReceiveSessionScreen(
             onAnotherCode = { nav.navigate(Routes.RECEIVE) { popUpTo(Routes.HOME) { inclusive = false } } },
-            onTurnKeepScreenOn = onTurnKeepScreenOn
+            onTurnKeepScreenOn = onTurnKeepScreenOn,
+            onDone = toHome
         )
     }
 }

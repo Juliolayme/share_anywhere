@@ -1,6 +1,6 @@
 # ADR 0017: WebRTC library for Android
 
-Status: Accepted (Phase 6, milestone 6.1, 2026-11-11); used from milestone 6.3
+Status: Accepted (Phase 6, milestone 6.1, 2026-11-11); pinned and used from milestone 6.3
 
 ## Context
 
@@ -21,3 +21,9 @@ Use **`io.getstream:stream-webrtc-android`**, pinned to one release in `gradle/l
 - The native libraries add several megabytes per ABI (6.3 measures the APK). Release builds ship as an app bundle (per-ABI delivery); debug APKs include every ABI.
 - Upstream updates arrive through Stream's release cadence; milestone 6.3 records the pinned version and the libwebrtc milestone it is built from, and dependency review in CI covers it.
 - If the artifact stops being maintained, the `org.webrtc.*` API keeps a switch to another build of libwebrtc mechanical.
+
+## As built (milestone 6.3)
+
+- Pinned to **`io.getstream:stream-webrtc-android:1.3.10`** (Maven Central, September 2025), locked in `app/gradle.lockfile`.
+- Native `libjingle_peerconnection_so.so` per ABI: about 11.5 MB (arm64-v8a), 6.6 MB (armeabi-v7a), 12.3 MB (x86), 12.8 MB (x86_64); the debug APK with all four ABIs is about 60 MB. Release app bundles deliver one ABI per device.
+- The SCTP maximum message size is not exposed by the Java API, so the engine sends frames of at most 64 KiB (docs/TRANSFER_PROTOCOL.md §2), which every browser accepts.

@@ -29,6 +29,10 @@ object ScreenIds {
     const val RX_PREVIEW = "rx-preview"
     const val RX_WAIT = "rx-wait"
     const val RX_SAVE = "rx-save"
+    const val RX_PROGRESS = "rx-progress"
+    const val DASHBOARD = "dashboard"
+    const val DASHBOARD_DONE = "dashboard-done"
+    const val DASHBOARD_PARTIAL = "dashboard-partial"
     const val RX_DONE = "rx-done"
 }
 
@@ -53,7 +57,11 @@ object Routes {
     const val TOKEN_ARG = "token"
     const val JOIN_LINK_PATTERN = "join/{$TOKEN_ARG}"
 
+    const val DASHBOARD_PATTERN = "${ScreenIds.DASHBOARD}/{$ID_ARG}"
+
     fun session(id: String) = "${ScreenIds.SESSION}/$id"
+
+    fun dashboard(id: String) = "${ScreenIds.DASHBOARD}/$id"
 
     fun rxPreview(sessionId: String) = "${ScreenIds.RX_PREVIEW}/$sessionId"
 

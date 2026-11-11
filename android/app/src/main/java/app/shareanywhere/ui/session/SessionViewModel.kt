@@ -14,9 +14,13 @@ import app.shareanywhere.data.api.UpdateSessionRequest
 import app.shareanywhere.data.ws.SessionSocket
 import app.shareanywhere.data.ws.SocketEvent
 import app.shareanywhere.notify.Notifier
+import app.shareanywhere.sharing.LIVE_STATUSES
 import app.shareanywhere.sharing.OutgoingStore
 import app.shareanywhere.sharing.UiMessage
 import app.shareanywhere.sharing.serverOffset
+import app.shareanywhere.transfer.TransferService
+import app.shareanywhere.transfer.runtime.SenderController
+import app.shareanywhere.transfer.runtime.TransferRuntime
 import app.shareanywhere.ui.i18n.str
 import app.shareanywhere.ui.nav.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -58,6 +62,7 @@ class SessionViewModel @Inject constructor(
     private val socket: SessionSocket,
     private val notifier: Notifier,
     private val outgoing: OutgoingStore,
+    private val runtime: TransferRuntime,
     private val json: Json,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -69,7 +74,19 @@ class SessionViewModel @Inject constructor(
     private val loadLock = Mutex()
     private var socketJob: Job? = null
 
+    /** Serves receivers' offers while the session is live (docs/TRANSFER_PROTOCOL.md §1), kept by the runtime. */
+    private val _sender = MutableStateFlow<SenderController?>(null)
+    val sender: StateFlow<SenderController?> = _sender.asStateFlow()
+
     init {
+        viewModelScope.launch {
+            ui.collect { u ->
+                val v = u.view ?: return@collect
+                if (_sender.value == null && v.status in LIVE_STATUSES) _sender.value = runtime.sender(id)
+                // A joined receiver will offer soon: keep the process serving with the screen off.
+                if (v.status in LIVE_STATUSES && (v.capacity?.joined ?: 0) > 0) TransferService.start(context)
+            }
+        }
         load()
         socketJob = viewModelScope.launch { socket.subscribe().collect(::onEvent) }
     }

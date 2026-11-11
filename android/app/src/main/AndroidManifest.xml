@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Transfers keep running with the screen off (docs/ARCHITECTURE.md §7.2): a dataSync foreground service holding a
+         partial wake lock and a Wi-Fi lock only while bytes move. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Scanning is optional: code entry works on devices without a camera. -->
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
@@ -23,6 +28,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ShareAnywhere"
         tools:targetApi="35">
+        <service
+            android:name=".transfer.TransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

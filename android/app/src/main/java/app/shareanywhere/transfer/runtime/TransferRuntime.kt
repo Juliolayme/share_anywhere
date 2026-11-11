@@ -1,0 +1,152 @@
+package app.shareanywhere.transfer.runtime
+
+import android.content.Context
+import app.shareanywhere.data.api.SessionsApi
+import app.shareanywhere.data.api.TransfersApi
+import app.shareanywhere.data.ws.SessionSocket
+import app.shareanywhere.history.HistoryRepository
+import app.shareanywhere.transfer.IncomingDao
+import app.shareanywhere.transfer.OutgoingFileDao
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+
+/** What the foreground service and Transfer home show: work in progress across every session. */
+data class TransferActivity(
+    /** Receivers being served right now (connecting, transferring, reconnecting, verifying). */
+    val sendingTo: Int = 0,
+    val sendVerified: Long = 0,
+    val sendTotal: Long = 0,
+    /** Files being received right now. */
+    val receivingFiles: Int = 0,
+    val receiveVerified: Long = 0,
+    val receiveTotal: Long = 0,
+    /** Work that keeps the service alive: an unfinished receive, or joined receivers still being served. */
+    val pending: Boolean = false,
+    /** The session a notification tap opens (receiver: rx; sender: session). */
+    val sessionId: String? = null,
+    val receiving: Boolean = false
+) {
+    val moving: Boolean get() = sendingTo > 0 || receivingFiles > 0
+}
+
+/**
+ * Owns every transfer controller of the process (one sender or receiver per session), so transfers outlive screens
+ * and keep running behind the foreground service while the screen is off.
+ */
+class TransferRuntime(
+    private val context: Context,
+    private val sessions: SessionsApi,
+    private val transfers: TransfersApi,
+    private val socket: SessionSocket,
+    private val outgoing: OutgoingFileDao,
+    private val incoming: IncomingDao,
+    private val history: HistoryRepository,
+    private val json: Json,
+    private val scope: CoroutineScope
+) {
+    private val senders = ConcurrentHashMap<String, SenderController>()
+    private val receivers = ConcurrentHashMap<String, ReceiverController>()
+    private val _activity = MutableStateFlow(TransferActivity())
+    val activity: StateFlow<TransferActivity> = _activity.asStateFlow()
+    private var watcher: Job? = null
+
+    fun sender(sessionId: String): SenderController = senders.getOrPut(sessionId) {
+        SenderController(SenderDeps(context, sessionId, sessions, transfers, socket, outgoing, history, json)).also {
+            it.init()
+            rewatch()
+        }
+    }
+
+    fun receiver(sessionId: String): ReceiverController = receivers.getOrPut(sessionId) {
+        ReceiverController(ReceiverDeps(context, sessionId, sessions, transfers, socket, incoming, history, json)).also {
+            it.init()
+            rewatch()
+        }
+    }
+
+    fun existingReceiver(sessionId: String): ReceiverController? = receivers[sessionId]
+
+    /** The service's time budget ran out: pause every transfer (bitmaps are persisted; resume picks up). */
+    fun pauseAll() {
+        for (r in receivers.values) r.pause()
+        for (c in senders.values) c.pauseAll()
+    }
+
+    /** Forgets a finished session's controller (after its result was shown). */
+    fun release(sessionId: String) {
+        senders.remove(sessionId)?.dispose()
+        receivers.remove(sessionId)?.dispose()
+        rewatch()
+    }
+
+    @Synchronized
+    private fun rewatch() {
+        watcher?.cancel()
+        val tx = senders.entries.toList()
+        val rx = receivers.entries.toList()
+        val flows = tx.map { (id, c) -> c.state.toActivity(id) } + rx.map { (id, c) -> c.state.toActivity(id) }
+        if (flows.isEmpty()) {
+            _activity.value = TransferActivity()
+            return
+        }
+        watcher =
+            scope.launch {
+                combine(flows) { parts -> parts.fold(TransferActivity()) { a, b -> a.merge(b) } }.collect { _activity.value = it }
+            }
+    }
+
+    private fun StateFlow<TxState>.toActivity(id: String) = kotlinx.coroutines.flow.flow {
+        collect { s ->
+            val moving = s.receivers.filter { it.status.active() }
+            emit(
+                TransferActivity(
+                    sendingTo = moving.size,
+                    sendVerified = moving.sumOf { it.verified },
+                    sendTotal = moving.sumOf { it.total },
+                    pending = s.hasFiles &&
+                        !s.ended &&
+                        s.receivers.any {
+                            it.joined && !it.status.ended() && it.status != TxStatus.Offline
+                        },
+                    sessionId = id.takeIf { moving.isNotEmpty() }
+                )
+            )
+        }
+    }
+
+    @JvmName("rxActivity")
+    private fun StateFlow<RxState>.toActivity(id: String) = kotlinx.coroutines.flow.flow {
+        collect { s ->
+            val moving = s.phase.active()
+            emit(
+                TransferActivity(
+                    receivingFiles = if (moving) s.files.count { !it.done && !it.failed }.coerceAtLeast(1) else 0,
+                    receiveVerified = if (moving) s.verified else 0,
+                    receiveTotal = if (moving) s.total else 0,
+                    pending = !s.phase.final() && s.phase != RxPhase.Loading && s.phase != RxPhase.Choose && s.phase != RxPhase.Unreachable,
+                    sessionId = id.takeIf { moving },
+                    receiving = moving
+                )
+            )
+        }
+    }
+
+    private fun TransferActivity.merge(b: TransferActivity) = TransferActivity(
+        sendingTo + b.sendingTo,
+        sendVerified + b.sendVerified,
+        sendTotal + b.sendTotal,
+        receivingFiles + b.receivingFiles,
+        receiveVerified + b.receiveVerified,
+        receiveTotal + b.receiveTotal,
+        pending || b.pending,
+        sessionId ?: b.sessionId,
+        receiving || b.receiving
+    )
+}

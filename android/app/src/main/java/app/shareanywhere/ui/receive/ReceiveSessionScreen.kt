@@ -60,14 +60,28 @@ import app.shareanywhere.ui.theme.SaTokens
  * request on `rx-wait`.
  */
 @Composable
-fun ReceiveSessionScreen(onAnotherCode: () -> Unit, onTurnKeepScreenOn: () -> Unit, viewModel: ReceiveSessionViewModel = hiltViewModel()) {
+fun ReceiveSessionScreen(
+    onAnotherCode: () -> Unit,
+    onTurnKeepScreenOn: () -> Unit,
+    onDone: () -> Unit,
+    viewModel: ReceiveSessionViewModel = hiltViewModel()
+) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val controller by viewModel.rx.collectAsStateWithLifecycle()
+    val rx = controller?.state?.collectAsStateWithLifecycle()?.value
     val device by viewModel.deviceName.collectAsStateWithLifecycle(initialValue = null)
     LaunchedEffect(viewModel) { viewModel.left.collect { onAnotherCode() } }
     val pill = rememberKeepAwake(needs = ui.waiting)
     val outcome = ui.outcome
     val view = ui.view
+    val finishedFiles = rx != null && rx.files.any { it.done }
     when {
+        // The session ended after files arrived: show the result with its files, not just the ending.
+        outcome != null && finishedFiles && (outcome == Outcome.Closed || outcome == Outcome.Ended) ->
+            ReceiveTransfer(rx!!, viewModel::chooseFolder, {}, {}, {}, {}, {
+                viewModel.done()
+                onDone()
+            }, onTurnKeepScreenOn)
         outcome != null -> OutcomeView(outcome, onAnotherCode)
         view == null ->
             Column(
@@ -82,6 +96,20 @@ fun ReceiveSessionScreen(onAnotherCode: () -> Unit, onTurnKeepScreenOn: () -> Un
                 SkeletonList(3, stringResource(R.string.android_waiting))
             }
         ui.waiting -> Waiting(view, device, pill, onTurnKeepScreenOn, ui.leaving, ui.leaveFailed, viewModel::leave)
+        rx != null ->
+            ReceiveTransfer(
+                rx,
+                onChooseFolder = viewModel::chooseFolder,
+                onPause = { viewModel.pause() },
+                onResume = viewModel::resume,
+                onRetry = viewModel::retry,
+                onCancel = { viewModel.cancel() },
+                onDone = {
+                    viewModel.done()
+                    onDone()
+                },
+                onTurnKeepScreenOn = onTurnKeepScreenOn
+            )
         else -> Joined(view, ui.leaving, ui.leaveFailed, viewModel::leave)
     }
 }

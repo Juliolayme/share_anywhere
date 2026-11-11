@@ -31,7 +31,7 @@ object Backend {
         ignoreUnknownKeys = true
         explicitNulls = false
     }
-    private val http = OkHttpClient()
+    val http = OkHttpClient()
 
     fun entry(): AppEntryPoint =
         EntryPointAccessors.fromApplication(ApplicationProvider.getApplicationContext<Application>(), AppEntryPoint::class.java)
@@ -54,7 +54,7 @@ object Backend {
     }
 
     /** Another guest device talking to the same backend (the peer in sender and receiver tests). */
-    class Peer private constructor(val api: SessionsApi, val displayName: String) {
+    class Peer private constructor(val api: SessionsApi, val displayName: String, val client: ApiClient, val auth: Authorized) {
         companion object {
             fun create(platform: String = "Chrome on Linux"): Peer = runBlocking {
                 val client = ApiClient(checkNotNull(url), http, json, requireHttps = false, userAgent = "ShareAnywhere-AndroidTest")
@@ -72,7 +72,7 @@ object Backend {
                     object : Authorized {
                         override suspend fun <T> invoke(block: suspend (token: String) -> T): T = block(session.accessToken)
                     }
-                Peer(SessionsApi(client, auth), session.device.displayName)
+                Peer(SessionsApi(client, auth), session.device.displayName, client, auth)
             }
         }
     }

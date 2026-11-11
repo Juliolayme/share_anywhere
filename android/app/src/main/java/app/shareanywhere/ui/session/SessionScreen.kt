@@ -62,6 +62,7 @@ import app.shareanywhere.qr.QrCode
 import app.shareanywhere.sharing.LIVE_STATUSES
 import app.shareanywhere.sharing.mmss
 import app.shareanywhere.sharing.secondsUntil
+import app.shareanywhere.transfer.runtime.active
 import app.shareanywhere.ui.components.ConfirmDialog
 import app.shareanywhere.ui.components.FlowTopBar
 import app.shareanywhere.ui.components.InlineNotice
@@ -79,6 +80,7 @@ import app.shareanywhere.ui.nav.ScreenIds
 import app.shareanywhere.ui.sharing.ParticipantCard
 import app.shareanywhere.ui.theme.LocalSaPalette
 import app.shareanywhere.ui.theme.SaTokens
+import app.shareanywhere.ui.transfer.chip
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -106,9 +108,12 @@ fun SessionScreen(
     onExit: () -> Unit,
     onNewSession: () -> Unit,
     onTurnKeepScreenOn: () -> Unit,
+    onOpenDashboard: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel()
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val sender by viewModel.sender.collectAsStateWithLifecycle()
+    val tx = sender?.state?.collectAsStateWithLifecycle()?.value
     val snackbar = LocalSnackbar.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -140,7 +145,9 @@ fun SessionScreen(
             viewModel.load()
         }
     }
-    val pill = rememberKeepAwake(needs = windowOpen)
+    val transferring = tx?.receivers?.any { it.status.active() } == true
+    // The screen stays on while the join window is open or transfers run (docs/ARCHITECTURE.md §7.1).
+    val pill = rememberKeepAwake(needs = windowOpen || transferring)
 
     val screenId = if (windowOpen) ScreenIds.SESSION else ScreenIds.SESSION_EXPIRED
     Column(Modifier.fillMaxSize().testTag(screenId)) {
@@ -187,14 +194,28 @@ fun SessionScreen(
                     onNewSession,
                     onExit
                 )
-            else -> Live(view, windowOpen, left, ui.busy, pill, onTurnKeepScreenOn, viewModel, onCopy = { label, text ->
-                clipboard.setText(AnnotatedString(text))
-                scope.launch { snackbar.showSnackbar(context.getString(R.string.common_n_copied)) }
-            }, onShare = { url ->
-                context.startActivity(
-                    Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), null)
+            else ->
+                Live(
+                    view = view,
+                    showKeep = windowOpen || transferring,
+                    tx = tx,
+                    onOpenDashboard = onOpenDashboard,
+                    windowOpen = windowOpen,
+                    left = left,
+                    busy = ui.busy,
+                    pill = pill,
+                    onTurnKeepScreenOn = onTurnKeepScreenOn,
+                    vm = viewModel,
+                    onCopy = { _, text ->
+                        clipboard.setText(AnnotatedString(text))
+                        scope.launch { snackbar.showSnackbar(context.getString(R.string.common_n_copied)) }
+                    },
+                    onShare = { url ->
+                        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url)
+                        context.startActivity(Intent.createChooser(send, null))
+                    },
+                    onBlock = { blockTarget = it }
                 )
-            }, onBlock = { blockTarget = it })
         }
     }
 
@@ -259,6 +280,9 @@ private fun Ended(title: String, onNewSession: () -> Unit, onExit: () -> Unit) {
 @Composable
 private fun Live(
     view: SessionView,
+    showKeep: Boolean,
+    tx: app.shareanywhere.transfer.runtime.TxState?,
+    onOpenDashboard: () -> Unit,
     windowOpen: Boolean,
     left: Long,
     busy: String?,
@@ -280,7 +304,7 @@ private fun Live(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = SaTokens.Space.S4, vertical = SaTokens.Space.S2),
         verticalArrangement = Arrangement.spacedBy(SaTokens.Space.S3)
     ) {
-        if (windowOpen) KeepOpenBanner(pill, onTurnKeepScreenOn)
+        if (showKeep) KeepOpenBanner(pill, onTurnKeepScreenOn)
         if (view.protectedMode) {
             InlineNotice(
                 NoticeKind.Warning,
@@ -433,6 +457,15 @@ private fun Live(
                 onReject = { vm.reject(r) },
                 onRemove = { vm.remove(r) },
                 onBlock = { onBlock(r) }
+            ) {
+                tx?.receivers?.firstOrNull { it.participantId == r.id }?.let { TransferLine(it) }
+            }
+        }
+        if (joined.isNotEmpty()) {
+            PrimaryButton(
+                stringResource(R.string.product_view_dashboard),
+                onOpenDashboard,
+                Modifier.testTag("session.dashboard")
             )
         }
         if (receivers.isEmpty()) {
@@ -475,4 +508,36 @@ private fun ExpiryAnnouncer(left: Long) {
         maxLines = 1,
         overflow = TextOverflow.Clip
     )
+}
+
+/** A joined receiver's transfer at a glance (full detail on the dashboard). */
+@Composable
+private fun TransferLine(r: app.shareanywhere.transfer.runtime.TxReceiver) {
+    val p = LocalSaPalette.current
+    Column(verticalArrangement = Arrangement.spacedBy(SaTokens.Space.S1), modifier = Modifier.testTag("participant-transfer")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            app.shareanywhere.ui.transfer.StatusChip(r.status.chip(), Modifier.weight(1f, fill = false))
+            Spacer(Modifier.weight(1f))
+            Text(
+                when (r.status) {
+                    app.shareanywhere.transfer.runtime.TxStatus.Waiting -> stringResource(R.string.product_transfer_waiting)
+                    app.shareanywhere.transfer.runtime.TxStatus.Offline -> stringResource(R.string.product_transfer_offline)
+                    else -> app.shareanywhere.ui.transfer.percent(r.verified, r.total)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = p.fg2
+            )
+        }
+        app.shareanywhere.ui.transfer.ProgressLine(
+            if (r.total >
+                0
+            ) {
+                r.verified.toFloat() / r.total
+            } else {
+                0f
+            },
+            r.name,
+            height = SaTokens.Space.S1
+        )
+    }
 }

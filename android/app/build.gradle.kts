@@ -19,11 +19,18 @@ val releaseBackend: String = (findProperty("releaseBackend") as String?) ?: ""
 require(releaseBackend.isEmpty() || releaseBackend.startsWith("https://")) {
     "releaseBackend must be an https:// URL (cleartext is allowed only in debug builds)"
 }
+// Public origin of share links and QR codes (`SA_PUBLIC_URL`, `<origin>/j/<token>`). The app accepts links and
+// scanned codes only for this origin and opens it as an App Link. Debug defaults to the CI and Docker Compose value.
+val debugPublicUrl: String = (findProperty("publicUrl") as String?) ?: "http://localhost:8080"
+val releasePublicUrl: String = (findProperty("releasePublicUrl") as String?) ?: releaseBackend
+fun linkHost(url: String): String = url.substringAfter("://").substringBefore('/').substringBefore(':').ifEmpty { "invalid.localhost" }
+fun linkScheme(url: String): String = url.substringBefore("://", "https")
+
 // Build-time feature flags (CLAUDE.md §8b): each turns on only in the milestone that makes it work.
 val flags =
     mapOf(
         // Send and Receive (milestone 6.2).
-        "FLAG_SHARING" to false,
+        "FLAG_SHARING" to true,
         // Sign in, account Devices list, history sync (milestone 6.4).
         "FLAG_ACCOUNTS" to false,
         // Clipboard Sync tab (milestone 6.4).
@@ -51,6 +58,11 @@ android {
     buildTypes {
         debug {
             buildConfigField("String", "BACKEND_URL", "\"$debugBackend\"")
+            buildConfigField("String", "PUBLIC_URL", "\"$debugPublicUrl\"")
+            manifestPlaceholders["linkScheme"] = linkScheme(debugPublicUrl)
+            manifestPlaceholders["linkHost"] = linkHost(debugPublicUrl)
+            // Debug origins (localhost, 10.0.2.2) cannot be verified; the filter still opens links (adb, tests).
+            manifestPlaceholders["linkAutoVerify"] = "false"
         }
         release {
             // No signing config in the repository (CLAUDE.md §3.10): release APKs are signed outside it.
@@ -58,6 +70,10 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             buildConfigField("String", "BACKEND_URL", "\"$releaseBackend\"")
+            buildConfigField("String", "PUBLIC_URL", "\"$releasePublicUrl\"")
+            manifestPlaceholders["linkScheme"] = "https"
+            manifestPlaceholders["linkHost"] = linkHost(releasePublicUrl)
+            manifestPlaceholders["linkAutoVerify"] = "true"
             vcsInfo.include = false
         }
     }
@@ -183,6 +199,10 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    implementation(libs.zxing.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
     ksp(libs.hilt.compiler)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
@@ -200,6 +220,8 @@ dependencies {
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.uiautomator)
     androidTestUtil(libs.androidx.test.orchestrator)
     androidTestUtil(libs.androidx.test.services)
 

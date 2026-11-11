@@ -10,13 +10,22 @@ import androidx.room.Room
 import app.shareanywhere.config.AppConfig
 import app.shareanywhere.data.api.ApiClient
 import app.shareanywhere.data.api.DeviceApi
+import app.shareanywhere.data.api.SessionsApi
+import app.shareanywhere.data.ws.SessionSocket
 import app.shareanywhere.history.HistoryDao
 import app.shareanywhere.history.HistoryDatabase
 import app.shareanywhere.history.HistoryRepository
 import app.shareanywhere.identity.IdentityManager
 import app.shareanywhere.identity.KeystoreSecretStore
 import app.shareanywhere.identity.SecretStore
+import app.shareanywhere.notify.Notifier
 import app.shareanywhere.settings.SettingsRepository
+import app.shareanywhere.sharing.JoinFlow
+import app.shareanywhere.sharing.OutgoingStore
+import app.shareanywhere.sharing.PickedFiles
+import app.shareanywhere.transfer.OutgoingFileDao
+import app.shareanywhere.transfer.TransferDatabase
+import app.shareanywhere.ui.keepawake.KeepAwakeController
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -94,6 +103,35 @@ object AppModule {
 
     @Provides @Singleton
     fun settings(store: DataStore<Preferences>): SettingsRepository = SettingsRepository(store)
+
+    @Provides @Singleton
+    fun sessionsApi(client: ApiClient, identity: IdentityManager): SessionsApi = SessionsApi(client, identity)
+
+    @Provides @Singleton
+    fun sessionSocket(config: AppConfig, http: OkHttpClient, json: Json, api: SessionsApi, @AppScope scope: CoroutineScope): SessionSocket =
+        SessionSocket(config.backendUrl, http, json, scope, ticket = { api.wsTicket().ticket })
+
+    @Provides @Singleton
+    fun transferDatabase(@ApplicationContext context: Context): TransferDatabase =
+        Room.databaseBuilder(context, TransferDatabase::class.java, TransferDatabase.NAME).build()
+
+    @Provides
+    fun outgoingFiles(db: TransferDatabase): OutgoingFileDao = db.outgoing()
+
+    @Provides @Singleton
+    fun pickedFiles(@ApplicationContext context: Context): PickedFiles = PickedFiles(context.contentResolver)
+
+    @Provides @Singleton
+    fun outgoingStore(dao: OutgoingFileDao, picked: PickedFiles): OutgoingStore = OutgoingStore(dao, picked)
+
+    @Provides @Singleton
+    fun joinFlow(): JoinFlow = JoinFlow()
+
+    @Provides @Singleton
+    fun notifier(@ApplicationContext context: Context): Notifier = Notifier(context)
+
+    @Provides @Singleton
+    fun keepAwake(): KeepAwakeController = KeepAwakeController()
 
     /** "Android · Pixel 7": the server adds two random words to make the display name (PRD §5.1). */
     fun platformLabel(model: String = Build.MODEL.orEmpty()): String =

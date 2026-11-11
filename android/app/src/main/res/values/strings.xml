@@ -734,11 +734,13 @@
     <string name="product_add_device_failed">Couldn’t add this device. Try again.</string>
     <string name="product_add_device_off_p">Without it, this browser stays signed in for up to 24 hours and can’t sync.</string>
     <string name="product_add_device_p">Needed for history sync and to see your other devices. You can remove it in Devices at any time.</string>
+    <string name="product_add_more">Add more</string>
     <string name="product_anon_since">Anonymous since {date}</string>
     <string name="product_another_code">Enter another code</string>
     <string name="product_appr_off">Off — anyone with the code joins and starts receiving</string>
     <string name="product_appr_on">On — you approve each receiver before files are sent</string>
     <string name="product_approve_named">Approve {name}</string>
+    <string name="product_back">Back</string>
     <string name="product_back_home">Back to Transfer</string>
     <string name="product_back_to_session">Back to the session</string>
     <string name="product_badge_guest">Guest</string>
@@ -752,6 +754,12 @@
     <string name="product_blocked_rx">The sender blocked this device from the session.</string>
     <string name="product_bytes_of">{done} of {total}</string>
     <string name="product_bytes_of_eta">{done} of {total} · {eta}</string>
+    <string name="product_camera_allow">Allow camera</string>
+    <string name="product_camera_denied_h">Camera access is off</string>
+    <string name="product_camera_denied_p">Turn it on in Android settings, or enter the 6-digit code.</string>
+    <string name="product_camera_needed_h">Allow the camera to scan the QR code</string>
+    <string name="product_camera_needed_p">The camera is used only while this screen is open. You can enter the code instead.</string>
+    <string name="product_camera_unavailable">No camera is available on this device. Enter the code instead.</string>
     <string name="product_cap_background">Keeps going in a background tab</string>
     <string name="product_cap_browser">Browser</string>
     <string name="product_cap_folder">Save straight to a folder</string>
@@ -850,6 +858,8 @@
     <string name="product_cloud_later">Cloud transfer arrives in a later version.</string>
     <string name="product_cloud_signin">Sign in to use Cloud transfer</string>
     <string name="product_code_aria">Code {code}</string>
+    <string name="product_code_digits_aria">6-digit code</string>
+    <string name="product_code_enter_p">Enter the 6-digit code from the sender.</string>
     <string name="product_code_expires_in">Code expires in {time}</string>
     <string name="product_code_incomplete">Enter all 6 digits.</string>
     <string name="product_copy_code">Copy code</string>
@@ -879,6 +889,7 @@
     <string name="product_family_firefox">Firefox</string>
     <string name="product_family_other">This browser</string>
     <string name="product_family_safari">Safari</string>
+    <string name="product_file_unreadable">Couldn’t read {name}. Pick it again.</string>
     <string name="product_files_count">{n} files</string>
     <string name="product_files_count_one">1 file</string>
     <string name="product_files_pending">Transfers start in the next version; files are listed as pending.</string>
@@ -996,6 +1007,9 @@
     <string name="product_not_accepting_s">Not accepting new receivers</string>
     <string name="product_not_added_p">This browser is signed in for up to 24 hours. Add it to see your devices and sync your history.</string>
     <string name="product_not_found_h">Page not found</string>
+    <string name="product_notif_channel_sessions">Share sessions</string>
+    <string name="product_notif_channel_sessions_p">When someone joins or asks to join a session you started</string>
+    <string name="product_notif_open_session">Tap to open the session.</string>
     <string name="product_online_ready">Online · ready to share</string>
     <string name="product_open_link">Open link</string>
     <string name="product_open_session_close_named">Close {name}</string>
@@ -1010,6 +1024,7 @@
     <string name="product_open_sessions_h">Your open sessions</string>
     <string name="product_open_sessions_loading">Loading your open sessions…</string>
     <string name="product_open_sessions_p">This device can keep {max} sessions open at once. Close one you no longer need, then create the new one.</string>
+    <string name="product_open_settings">Open settings</string>
     <string name="product_opening_link">Opening link…</string>
     <string name="product_over_limit">Over the 20 GB session limit by {amount}. Remove a file to continue.</string>
     <string name="product_own_session">This is your own session. Open the code on another device.</string>
@@ -1073,6 +1088,7 @@
     <string name="product_pw_strong">Strong</string>
     <string name="product_pw_weak">Weak</string>
     <string name="product_qr_aria">QR code to join this session</string>
+    <string name="product_qr_not_share_link">This QR code isn’t a Share Anywhere link.</string>
     <string name="product_rate_limited">Too many attempts. Try again in {time}.</string>
     <string name="product_receive_cta">Receive</string>
     <string name="product_reconnecting">Reconnecting…</string>
@@ -1108,6 +1124,7 @@
     <string name="product_rx_download_named">Download {name}</string>
     <string name="product_rx_failed_h">Receiving failed</string>
     <string name="product_rx_from">From {name}</string>
+    <string name="product_rx_incoming">Incoming files</string>
     <string name="product_rx_keep">Keep receiving</string>
     <string name="product_rx_kept">Files are kept in this browser for 24 hours so you can download them again.</string>
     <string name="product_rx_partial_h">{done} of {count} files received</string>
@@ -1131,8 +1148,14 @@
     <string name="product_save_summary">{count} · {size} from {name} · starts as soon as you choose where to save</string>
     <string name="product_save_too_large">Too large to receive without browser storage (limit 256 MB)</string>
     <string name="product_save_unsupported">Not available in this browser</string>
+    <string name="product_scan_code_instead">Enter code instead</string>
     <string name="product_scan_hint">On a phone? Scan the sender’s QR with the Share Anywhere app or your camera.</string>
+    <string name="product_scan_point">Point at the QR on the sender’s screen.</string>
+    <string name="product_scan_viewfinder">Camera viewfinder for the sender’s QR code</string>
     <string name="product_see_all">See all</string>
+    <string name="product_send_empty_h">No files yet</string>
+    <string name="product_send_empty_p">Pick from your phone, Drive or SD card.</string>
+    <string name="product_sender_words_named">Security words with {name}</string>
     <string name="product_session_closed">Session closed</string>
     <string name="product_session_ended_rx">This session has ended. Ask the sender for a new code.</string>
     <string name="product_session_expired_s">This session has ended</string>
@@ -1163,6 +1186,8 @@
     <string name="product_stopall_p">Receivers keep the files that already finished.</string>
     <string name="product_this_browser_guest">This browser · Guest</string>
     <string name="product_too_many_open">Close one of your open sessions before starting another.</string>
+    <string name="product_torch_off">Turn off the flashlight</string>
+    <string name="product_torch_on">Turn on the flashlight</string>
     <string name="product_transfer_offline">Lost contact. They can reconnect while this page stays open</string>
     <string name="product_transfer_waiting">Waiting for the receiver to choose where to save</string>
     <string name="product_turn_on_history_sync">Turn on history sync</string>
@@ -1186,6 +1211,7 @@
     <string name="product_view_history">View in History</string>
     <string name="product_view_transfers">View transfers</string>
     <string name="product_waiting_body">{name} needs to approve {device} before files are sent. Keep this tab open.</string>
+    <string name="product_waiting_body_app">{name} needs to approve {device}. Keep Share Anywhere open — files start as soon as {name} approves.</string>
     <string name="product_waiting_sender">Waiting for the sender to let you in</string>
     <string name="product_wake_refused">Couldn’t keep the screen on — keep this tab visible</string>
     <string name="product_wants_to_join">{name} wants to join</string>

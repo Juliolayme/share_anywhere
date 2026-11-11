@@ -734,11 +734,13 @@
     <string name="product_add_device_failed">Không thêm được thiết bị này. Hãy thử lại.</string>
     <string name="product_add_device_off_p">Nếu không thêm, trình duyệt này chỉ đăng nhập tối đa 24 giờ và không thể đồng bộ.</string>
     <string name="product_add_device_p">Cần để đồng bộ lịch sử và xem các thiết bị khác của bạn. Bạn có thể gỡ thiết bị trong mục Thiết bị bất cứ lúc nào.</string>
+    <string name="product_add_more">Thêm tệp</string>
     <string name="product_anon_since">Ẩn danh từ {date}</string>
     <string name="product_another_code">Nhập mã khác</string>
     <string name="product_appr_off">Tắt — ai có mã đều vào và bắt đầu nhận</string>
     <string name="product_appr_on">Bật — bạn duyệt từng người nhận trước khi gửi tệp</string>
     <string name="product_approve_named">Duyệt {name}</string>
+    <string name="product_back">Quay lại</string>
     <string name="product_back_home">Về Truyền tệp</string>
     <string name="product_back_to_session">Quay lại phiên</string>
     <string name="product_badge_guest">Khách</string>
@@ -752,6 +754,12 @@
     <string name="product_blocked_rx">Người gửi đã chặn thiết bị này khỏi phiên.</string>
     <string name="product_bytes_of">{done} / {total}</string>
     <string name="product_bytes_of_eta">{done} / {total} · {eta}</string>
+    <string name="product_camera_allow">Cho phép camera</string>
+    <string name="product_camera_denied_h">Quyền dùng camera đang tắt</string>
+    <string name="product_camera_denied_p">Bật lại trong cài đặt Android, hoặc nhập mã 6 chữ số.</string>
+    <string name="product_camera_needed_h">Cho phép dùng camera để quét mã QR</string>
+    <string name="product_camera_needed_p">Camera chỉ được dùng khi màn hình này đang mở. Bạn cũng có thể nhập mã.</string>
+    <string name="product_camera_unavailable">Thiết bị này không có camera. Hãy nhập mã.</string>
     <string name="product_cap_background">Tiếp tục khi tab ở nền</string>
     <string name="product_cap_browser">Trình duyệt</string>
     <string name="product_cap_folder">Lưu thẳng vào thư mục</string>
@@ -850,6 +858,8 @@
     <string name="product_cloud_later">Truyền qua đám mây sẽ có ở phiên bản sau.</string>
     <string name="product_cloud_signin">Đăng nhập để dùng truyền qua Cloud</string>
     <string name="product_code_aria">Mã {code}</string>
+    <string name="product_code_digits_aria">Mã 6 chữ số</string>
+    <string name="product_code_enter_p">Nhập mã 6 chữ số từ người gửi.</string>
     <string name="product_code_expires_in">Mã hết hạn sau {time}</string>
     <string name="product_code_incomplete">Hãy nhập đủ 6 chữ số.</string>
     <string name="product_copy_code">Sao chép mã</string>
@@ -879,6 +889,7 @@
     <string name="product_family_firefox">Firefox</string>
     <string name="product_family_other">Trình duyệt này</string>
     <string name="product_family_safari">Safari</string>
+    <string name="product_file_unreadable">Không đọc được {name}. Hãy chọn lại.</string>
     <string name="product_files_count">{n} tệp</string>
     <string name="product_files_count_one">1 tệp</string>
     <string name="product_files_pending">Việc truyền tệp có ở phiên bản tiếp theo; các tệp đang ở trạng thái chờ.</string>
@@ -996,6 +1007,9 @@
     <string name="product_not_accepting_s">Không nhận thêm người nhận</string>
     <string name="product_not_added_p">Trình duyệt này đăng nhập tối đa 24 giờ. Hãy thêm nó để xem các thiết bị và đồng bộ lịch sử.</string>
     <string name="product_not_found_h">Không tìm thấy trang</string>
+    <string name="product_notif_channel_sessions">Phiên chia sẻ</string>
+    <string name="product_notif_channel_sessions_p">Khi có người vào hoặc xin vào phiên bạn đã tạo</string>
+    <string name="product_notif_open_session">Chạm để mở phiên.</string>
     <string name="product_online_ready">Trực tuyến · sẵn sàng chia sẻ</string>
     <string name="product_open_link">Mở liên kết</string>
     <string name="product_open_session_close_named">Đóng {name}</string>
@@ -1010,6 +1024,7 @@
     <string name="product_open_sessions_h">Các phiên đang mở của bạn</string>
     <string name="product_open_sessions_loading">Đang tải các phiên đang mở…</string>
     <string name="product_open_sessions_p">Thiết bị này chỉ mở được cùng lúc {max} phiên. Hãy đóng một phiên không còn cần, rồi tạo phiên mới.</string>
+    <string name="product_open_settings">Mở cài đặt</string>
     <string name="product_opening_link">Đang mở liên kết…</string>
     <string name="product_over_limit">Vượt giới hạn 20 GB của phiên {amount}. Hãy bỏ bớt tệp để tiếp tục.</string>
     <string name="product_own_session">Đây là phiên của bạn. Hãy mở mã trên thiết bị khác.</string>
@@ -1073,6 +1088,7 @@
     <string name="product_pw_strong">Mạnh</string>
     <string name="product_pw_weak">Yếu</string>
     <string name="product_qr_aria">Mã QR để vào phiên này</string>
+    <string name="product_qr_not_share_link">Mã QR này không phải liên kết Share Anywhere.</string>
     <string name="product_rate_limited">Thử quá nhiều lần. Hãy thử lại sau {time}.</string>
     <string name="product_receive_cta">Nhận</string>
     <string name="product_reconnecting">Đang kết nối lại…</string>
@@ -1108,6 +1124,7 @@
     <string name="product_rx_download_named">Tải xuống {name}</string>
     <string name="product_rx_failed_h">Nhận tệp thất bại</string>
     <string name="product_rx_from">Từ {name}</string>
+    <string name="product_rx_incoming">Tệp đang gửi đến</string>
     <string name="product_rx_keep">Tiếp tục nhận</string>
     <string name="product_rx_kept">Tệp được giữ trong trình duyệt này 24 giờ để bạn có thể tải lại.</string>
     <string name="product_rx_partial_h">Đã nhận {done} / {count} tệp</string>
@@ -1131,8 +1148,14 @@
     <string name="product_save_summary">{count} · {size} từ {name} · bắt đầu ngay khi bạn chọn nơi lưu</string>
     <string name="product_save_too_large">Quá lớn để nhận khi không có bộ nhớ trình duyệt (giới hạn 256 MB)</string>
     <string name="product_save_unsupported">Không có trên trình duyệt này</string>
+    <string name="product_scan_code_instead">Nhập mã thay thế</string>
     <string name="product_scan_hint">Đang dùng điện thoại? Quét mã QR của người gửi bằng ứng dụng Share Anywhere hoặc camera.</string>
+    <string name="product_scan_point">Hướng camera vào mã QR trên màn hình người gửi.</string>
+    <string name="product_scan_viewfinder">Khung camera để quét mã QR của người gửi</string>
     <string name="product_see_all">Xem tất cả</string>
+    <string name="product_send_empty_h">Chưa có tệp nào</string>
+    <string name="product_send_empty_p">Chọn từ điện thoại, Drive hoặc thẻ SD.</string>
+    <string name="product_sender_words_named">Từ bảo mật với {name}</string>
     <string name="product_session_closed">Đã đóng phiên</string>
     <string name="product_session_ended_rx">Phiên này đã kết thúc. Hãy xin người gửi mã mới.</string>
     <string name="product_session_expired_s">Phiên này đã kết thúc</string>
@@ -1163,6 +1186,8 @@
     <string name="product_stopall_p">Người nhận giữ lại các tệp đã xong.</string>
     <string name="product_this_browser_guest">Trình duyệt này · Khách</string>
     <string name="product_too_many_open">Hãy đóng một phiên đang mở trước khi tạo phiên mới.</string>
+    <string name="product_torch_off">Tắt đèn pin</string>
+    <string name="product_torch_on">Bật đèn pin</string>
     <string name="product_transfer_offline">Mất liên lạc. Người nhận có thể kết nối lại khi trang này vẫn mở</string>
     <string name="product_transfer_waiting">Đang chờ người nhận chọn nơi lưu</string>
     <string name="product_turn_on_history_sync">Bật đồng bộ lịch sử</string>
@@ -1186,6 +1211,7 @@
     <string name="product_view_history">Xem trong Lịch sử</string>
     <string name="product_view_transfers">Xem tiến độ truyền</string>
     <string name="product_waiting_body">{name} cần duyệt {device} trước khi gửi tệp. Hãy giữ thẻ này mở.</string>
+    <string name="product_waiting_body_app">{name} cần duyệt {device}. Hãy giữ Share Anywhere mở — tệp sẽ bắt đầu ngay khi {name} duyệt.</string>
     <string name="product_waiting_sender">Đang chờ người gửi cho bạn vào</string>
     <string name="product_wake_refused">Không giữ được màn hình sáng — hãy để tab này luôn hiển thị</string>
     <string name="product_wants_to_join">{name} muốn vào phiên</string>

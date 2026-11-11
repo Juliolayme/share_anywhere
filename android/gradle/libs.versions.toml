@@ -26,6 +26,11 @@ androidxTestExtJunit = "1.2.1"
 androidxTestOrchestrator = "1.5.1"
 androidxTestServices = "1.5.0"
 ktlintGradle = "13.1.0"
+# QR encode and decode, pure Java, no Play services (docs/ADR/0019-android-qr.md).
+zxing = "3.5.3"
+camerax = "1.4.2"
+androidxTestRules = "1.6.1"
+uiautomator = "2.3.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -61,6 +66,12 @@ androidx-test-runner = { module = "androidx.test:runner", version.ref = "android
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }
 androidx-test-orchestrator = { module = "androidx.test:orchestrator", version.ref = "androidxTestOrchestrator" }
 androidx-test-services = { module = "androidx.test.services:test-services", version.ref = "androidxTestServices" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
+androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidxTestRules" }
+androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

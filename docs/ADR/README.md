@@ -22,3 +22,4 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0016](0016-android-networking.md) | Android networking and API models | Accepted |
 | [0017](0017-android-webrtc.md) | WebRTC library for Android | Accepted |
 | [0018](0018-android-di-persistence-build.md) | Android dependency injection, persistence, secret storage, and build reproducibility | Accepted |
+| [0019](0019-android-qr.md) | QR codes on Android (generation and scanning) | Accepted |

@@ -13,10 +13,19 @@ data class Flags(
 )
 
 /** Values fixed at build time, read once from BuildConfig. */
-data class AppConfig(val backendUrl: String, val versionName: String, val versionCode: Int, val debug: Boolean, val flags: Flags) {
+data class AppConfig(
+    val backendUrl: String,
+    /** Origin of share links and QR payloads (`SA_PUBLIC_URL`). */
+    val publicUrl: String,
+    val versionName: String,
+    val versionCode: Int,
+    val debug: Boolean,
+    val flags: Flags
+) {
     companion object {
         fun fromBuildConfig() = AppConfig(
             backendUrl = BuildConfig.BACKEND_URL,
+            publicUrl = BuildConfig.PUBLIC_URL,
             versionName = BuildConfig.VERSION_NAME,
             versionCode = BuildConfig.VERSION_CODE,
             debug = BuildConfig.DEBUG,

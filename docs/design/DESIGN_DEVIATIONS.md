@@ -168,7 +168,7 @@ The design shows the finished product with sample data. These elements are left 
 | I1 | Welcome paragraph "Send 4–20 GB to a PC browser or another phone…" written inline in the prototype, with no catalog entry | `product.welcome_android_p` (EN as in the design, VI added) | No hard-coded strings (`CLAUDE.md` §3); every string comes from the catalogs |
 | I2 | Welcome "Start sharing" opens `perms` (two permissions) before Transfer home | Start sharing opens Transfer home directly; permissions are asked just in time by the flows that need them (6.2) | PRD §5.1 and `docs/UX_SCREEN_MAP.md` ON-3: permissions are never on the first-launch path |
 | I3 | Welcome "I want Clipboard Sync — sign in" (`android_vv.k131`), Transfer home header Sign in, Devices "Sync your device list" card, Settings guest "Sign in for Clipboard Sync" | Not shown; the Settings guest header says `product.no_account` | `accounts` and `clipboard` flags are off until milestone 6.4 (`CLAUDE.md` §8b): no Sign in button that does nothing |
-| I4 | Transfer home Send files / Receive files tiles | Not shown until Send and Receive work (milestone 6.2, `sharing` flag) | No dead buttons (`CLAUDE.md` §3) |
+| I4 | Transfer home Send files / Receive files tiles | Shown from milestone 6.2 (`sharing` flag on); hidden in 6.1 | No dead buttons (`CLAUDE.md` §3) |
 | I5 | Transfer home "Wi-Fi · good / Direct P2P likely" card, live transfer card | Not shown | No network probe or transfer exists yet; the values would be invented (as F3 on the Web) |
 | I6 | Transfer home "See all" written inline | `product.see_all` | No hard-coded strings |
 | I7 | History chips All · Sent · Received · Failed only | The design's chips plus status, date and device filter chips (`product.filter_*`, `product.history_any_status`, `history_range_*`, `history_all_devices`, copies of the Web's labels) | PRD §5.6: filter by date, peer device, status, file name |
@@ -178,3 +178,19 @@ The design shows the finished product with sample data. These elements are left 
 | I11 | Typography in Plus Jakarta Sans and JetBrains Mono | Plus Jakarta Sans is bundled (variable font, OFL licence in `assets/licenses`); monospace text uses the platform monospace | Keeps the APK small; mono is used only for byte counts in 6.1 |
 | I12 | Corner radii 16, 24 and 28 px on cards and buttons | Nearest Design System radius tokens (`lg` 14, `xl` 20, `full` for pill buttons) | Tokens only (`CLAUDE.md` §3); the prototype's values are not in `tokens.json` |
 | I13 | Identity bootstrap states have no Android specimen | ON-2 inline notices on Transfer home and Devices with the Web's strings (`product.identity_loading`, `identity_offline`, `identity_failed`, `rate_limited`, `retry_in`) and `product.identity_replaced` after refresh-secret reuse | PRD §5.1, `docs/SECURITY_MODEL.md` §4 |
+
+## J. Android Send and Receive: differences from the design (Phase 6, milestone 6.2)
+
+| # | Design (`Android App.dc.html`) | Built | Why |
+|---|---|---|---|
+| J1 | `send` has no Require approval switch; it appears on `session` only | The switch is on `send` too (default off) and stays on `session` | PRD §5.3 and the phase scope: approval can be chosen before the code is shown, so nobody joins in the first seconds unapproved |
+| J2 | `send` empty state and Add more written inline ("No files yet", "Pick from your phone, Drive or SD card.", "Add more") | `product.send_empty_h`, `send_empty_p`, `add_more` (EN as in the design, VI added) | No hard-coded strings |
+| J3 | Security words once in the share panel (as F10 on the Web) | Words on each participant card and on the receiver's screens | Words are per receiver device (`docs/SECURITY_MODEL.md` §3.1) |
+| J4 | `session` "Demo: expire now" and "Simulate request" buttons, "Start transfer" / "Open dashboard" | Not shown; the join window expires on the server clock; the dashboard arrives with the transfer engine (6.3) | Prototype controls; no dead buttons |
+| J5 | Open-session cap has no Android specimen | `send` lists the device's open sessions with Open and Close on `409 too_many_open_sessions` (Web E16 strings) | `docs/SECURITY_MODEL.md` §5 cap must be recoverable in the app |
+| J6 | `receive` "Demo: open a share link" and "tap to simulate scan" viewfinder | A CameraX viewfinder that decodes QR codes; App Links open RX-3; the camera is asked just in time with denied and unavailable states (`product.camera_*`, `scan_*`) | Real scanning (`docs/ADR/0019-android-qr.md`); permissions just in time (PRD §5.1) |
+| J7 | `rx-preview` sender "Minh's ThinkPad · code 482 913" and "Needs 11.6 GB free" lines | Sender name, Guest/Signed in badge and "{platform} · expires in m:ss" (`product.rx_sender_line`); the free-space check arrives with the save location (6.3) | Real data only; storage is checked when a folder is chosen |
+| J8 | `rx-wait` text "Minh needs to approve Galaxy A14. Keep Share Anywhere open…" inline | `product.waiting_body_app` with the sender and this device's names | No hard-coded strings |
+| J9 | After joining, `rx-save` (folder choice) then `rx-progress` | Until milestone 6.3, the joined screen (tagged `rx-save`) shows the sender, security words, files and total with `product.files_pending` and Leave session | The transfer engine and save location arrive in 6.3; no dead "Start receiving" button |
+| J10 | Keep-open banner has a "Preview the ongoing notification" button | Not shown | The ongoing notification belongs to the foreground service (6.3) |
+| J11 | Close session from the `session` top bar opens a sheet | TR-8 bottom sheet with `product.close_h` / `close_p`, Close session and Cancel | As designed; strings from the Web's close dialog |

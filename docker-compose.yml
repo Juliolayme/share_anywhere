@@ -76,6 +76,8 @@ services:
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
+    environment:
+      SA_ANDROID_CERT_SHA256: ${SA_ANDROID_CERT_SHA256:-}
     ports:
       - "127.0.0.1:8443:8443"
     depends_on:

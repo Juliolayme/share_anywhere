@@ -7,6 +7,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import app.shareanywhere.di.AppScope
 import app.shareanywhere.history.HistoryRepository
 import app.shareanywhere.identity.IdentityManager
+import app.shareanywhere.notify.Notifier
 import app.shareanywhere.settings.SettingsRepository
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -26,11 +27,14 @@ class ShareAnywhereApp : Application() {
 
     @Inject lateinit var settings: SettingsRepository
 
+    @Inject lateinit var notifier: Notifier
+
     @Inject @AppScope
     lateinit var scope: CoroutineScope
 
     override fun onCreate() {
         super.onCreate()
+        notifier.ensureChannels()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) = identity.start()

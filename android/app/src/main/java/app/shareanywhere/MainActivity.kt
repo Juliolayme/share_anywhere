@@ -1,5 +1,6 @@
 package app.shareanywhere
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,18 +10,27 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import app.shareanywhere.config.AppConfig
+import app.shareanywhere.notify.Notifier
 import app.shareanywhere.settings.SettingsRepository
 import app.shareanywhere.settings.ThemeMode
+import app.shareanywhere.sharing.linkTokenFrom
 import app.shareanywhere.ui.i18n.ProvideAppLanguage
+import app.shareanywhere.ui.keepawake.KeepAwakeController
+import app.shareanywhere.ui.keepawake.KeepScreenOnEffect
+import app.shareanywhere.ui.keepawake.LocalKeepAwake
 import app.shareanywhere.ui.nav.AppNav
+import app.shareanywhere.ui.nav.Routes
 import app.shareanywhere.ui.theme.ShareAnywhereTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -29,10 +39,18 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var config: AppConfig
 
+    @Inject lateinit var keepAwake: KeepAwakeController
+
+    /** A route opened from outside: an App Link (`<public origin>/j/<token>`) or a session notification. */
+    private val pendingRoute = MutableStateFlow<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) pendingRoute.value = routeFor(intent)
+        lifecycleScope.launch { settings.settings.collect { keepAwake.setSetting(it.keepScreenOn) } }
         setContent {
+            val pending by pendingRoute.collectAsStateWithLifecycle()
             val s by settings.settings.collectAsStateWithLifecycle(initialValue = null)
             val scope = rememberCoroutineScope()
             val current = s
@@ -48,15 +66,44 @@ class MainActivity : ComponentActivity() {
                     // flashes for a returning user.
                     if (current != null) {
                         ProvideAppLanguage(current.language) {
-                            AppNav(
-                                welcomed = current.welcomed,
-                                flags = config.flags,
-                                onWelcomed = { scope.launch { settings.markWelcomed() } }
-                            )
+                            CompositionLocalProvider(LocalKeepAwake provides keepAwake) {
+                                KeepScreenOnEffect(keepAwake)
+                                AppNav(
+                                    welcomed = current.welcomed,
+                                    flags = config.flags,
+                                    onWelcomed = { scope.launch { settings.markWelcomed() } },
+                                    onTurnKeepScreenOn = { scope.launch { settings.setKeepScreenOn(true) } },
+                                    pendingRoute = pending,
+                                    onPendingRouteHandled = { pendingRoute.value = null }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        routeFor(intent)?.let { pendingRoute.value = it }
+    }
+
+    /** Maps an App Link or a notification tap to a navigation route; anything else opens the app normally. */
+    private fun routeFor(intent: Intent?): String? {
+        if (intent == null || !config.flags.sharing) return null
+        if (intent.action == Notifier.ACTION_OPEN_SESSION) {
+            val id = intent.getStringExtra(Notifier.EXTRA_SESSION_ID) ?: return null
+            return if (UUID.matches(id)) Routes.session(id) else null
+        }
+        if (intent.action == Intent.ACTION_VIEW) {
+            val token = intent.dataString?.let { linkTokenFrom(it, config.publicUrl) } ?: return null
+            return Routes.joinLink(token)
+        }
+        return null
+    }
+
+    private companion object {
+        val UUID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
     }
 }

@@ -1,6 +1,7 @@
 package app.shareanywhere.identity
 
 import app.shareanywhere.data.api.ApiException
+import app.shareanywhere.data.api.Authorized
 import app.shareanywhere.data.api.CreateDeviceRequest
 import app.shareanywhere.data.api.Device
 import app.shareanywhere.data.api.DeviceApi
@@ -62,7 +63,7 @@ class IdentityManager(
     private val solver: suspend (token: String, difficulty: Int) -> String = { token, difficulty ->
         withContext(Dispatchers.Default) { ProofOfWork.solve(token, difficulty) }
     }
-) {
+) : Authorized {
     private val _state = MutableStateFlow(IdentityState())
     val state: StateFlow<IdentityState> = _state.asStateFlow()
 
@@ -128,6 +129,8 @@ class IdentityManager(
             block(accessToken())
         }
     }
+
+    override suspend fun <T> invoke(block: suspend (token: String) -> T): T = authorized(block)
 
     suspend fun rename(displayName: String): Device {
         val device = authorized { api.rename(it, displayName) }

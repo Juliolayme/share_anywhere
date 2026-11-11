@@ -10,11 +10,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Milestone 6.1 ships no account, sign-in, clipboard or sharing UI (CLAUDE.md §8b). */
+/** Send and Receive are on from milestone 6.2; accounts and Clipboard stay off until 6.4 (CLAUDE.md §8b). */
 class FlagsTest {
     @Test
-    fun unbuiltFeaturesAreOffInThisMilestone() {
-        assertFalse("Send and Receive arrive in 6.2", BuildConfig.FLAG_SHARING)
+    fun flagsMatchTheMilestone() {
+        assertTrue("Send and Receive work from 6.2", BuildConfig.FLAG_SHARING)
         assertFalse("accounts arrive in 6.4", BuildConfig.FLAG_ACCOUNTS)
         assertFalse("Clipboard arrives in 6.4", BuildConfig.FLAG_CLIPBOARD)
     }

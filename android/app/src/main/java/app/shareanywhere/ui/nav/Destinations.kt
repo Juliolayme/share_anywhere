@@ -19,6 +19,17 @@ object ScreenIds {
     const val DEVICES = "devices"
     const val SETTINGS = "settings"
     const val CLIPBOARD = "clipboard"
+
+    // Send (TR-2…TR-5) and Receive (RX-1…RX-7), milestone 6.2.
+    const val SEND = "send"
+    const val SESSION = "session"
+    const val SESSION_EXPIRED = "session-expired"
+    const val RECEIVE = "receive"
+    const val RECEIVE_CODE = "receive-code"
+    const val RX_PREVIEW = "rx-preview"
+    const val RX_WAIT = "rx-wait"
+    const val RX_SAVE = "rx-save"
+    const val RX_DONE = "rx-done"
 }
 
 /** Navigation routes. History takes an optional entry to open HI-2 from Transfer home. */
@@ -30,6 +41,25 @@ object Routes {
     const val HISTORY_PATTERN = "$HISTORY?$HISTORY_ARG={$HISTORY_ARG}"
     const val DEVICES = ScreenIds.DEVICES
     const val SETTINGS = ScreenIds.SETTINGS
+
+    const val SEND = ScreenIds.SEND
+    const val ID_ARG = "id"
+    const val SESSION_PATTERN = "${ScreenIds.SESSION}/{$ID_ARG}"
+    const val RECEIVE = ScreenIds.RECEIVE
+    const val RX_PREVIEW_PATTERN = "${ScreenIds.RX_PREVIEW}/{$ID_ARG}"
+    const val RX_SESSION_PATTERN = "${ScreenIds.RX_WAIT}/{$ID_ARG}"
+
+    /** App Link target: `<public origin>/j/<token>` opens RX-3 (resolve) then RX-4 (preview). */
+    const val TOKEN_ARG = "token"
+    const val JOIN_LINK_PATTERN = "join/{$TOKEN_ARG}"
+
+    fun session(id: String) = "${ScreenIds.SESSION}/$id"
+
+    fun rxPreview(sessionId: String) = "${ScreenIds.RX_PREVIEW}/$sessionId"
+
+    fun rxSession(sessionId: String) = "${ScreenIds.RX_WAIT}/$sessionId"
+
+    fun joinLink(token: String) = "join/$token"
 
     fun history(entryId: String? = null) = if (entryId == null) HISTORY else "$HISTORY?$HISTORY_ARG=$entryId"
 }

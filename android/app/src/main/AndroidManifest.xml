@@ -2,9 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- The only permission in milestone 6.1: talking to the backend. Notifications, camera and the foreground
-         service arrive with the flows that need them, requested just in time (PRD §5.1). -->
+    <!-- Talking to the backend. Camera (QR scan, RX-1) and notifications (a receiver joins while the app is in the
+         background, PRD §5.3) are requested just in time by the screens that need them (PRD §5.1); the foreground
+         service arrives with the transfer engine (6.3). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Scanning is optional: code entry works on devices without a camera. -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
         android:name=".ShareAnywhereApp"
@@ -21,10 +26,22 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- RX-3 App Links: share links <public origin>/j/<token> open the join preview. Verification needs
+                 /.well-known/assetlinks.json on that origin (infra/caddy, docs/runbooks/android-app-links.md);
+                 untested until a real device and a public HTTPS origin. MainActivity re-checks the full origin. -->
+            <intent-filter android:autoVerify="${linkAutoVerify}">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${linkScheme}" />
+                <data android:host="${linkHost}" />
+                <data android:pathPrefix="/j/" />
             </intent-filter>
         </activity>
     </application>

@@ -15,6 +15,17 @@ https://localhost:8443 {
 		-Server
 	}
 
+	# Android App Links (RX-3): the app's signing-certificate fingerprint from SA_ANDROID_CERT_SHA256
+	# (docs/runbooks/android-app-links.md). Unset, the file is not served and links open in the browser.
+	@assetlinks {
+		path /.well-known/assetlinks.json
+		expression {env.SA_ANDROID_CERT_SHA256} != ""
+	}
+	handle @assetlinks {
+		header Content-Type application/json
+		respond `[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"app.shareanywhere","sha256_cert_fingerprints":["{$SA_ANDROID_CERT_SHA256}"]}}]` 200
+	}
+
 	@api path /v1/* /healthz /readyz
 	handle @api {
 		reverse_proxy backend:8080

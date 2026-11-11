@@ -1,6 +1,6 @@
 # Phase 5B report: Clipboard Sync v1
 
-Status: implemented and tested on the Web; QA round 1 failed on two P1s (missing protocol tag, unspecified UUID text form in the AAD), both fixed; QA rounds 2 and 3 failed on one P1 each (a late create ack could delete a synced item; tabs shared one cursor), both fixed; QA round 4 passed with no P0 or P1 (`docs/qa/PHASE_5B_QA.md`). File sharing stays guest-first. Guests see the Clipboard intro and the app makes no clipboard API calls for them. Android and iOS build their clipboard UIs on this protocol in Phases 6 and 7.
+Status: implemented and tested on the Web; QA round 1 failed on two P1s (missing protocol tag, unspecified UUID text form in the AAD), both fixed; QA rounds 2 and 3 failed on one P1 each (a late create ack could delete a synced item; tabs shared one cursor), both fixed; QA round 4 passed with no P0 or P1, and CI 43062069105 on fbfe47f is green with no retries (`docs/qa/PHASE_5B_QA.md`). File sharing stays guest-first. Guests see the Clipboard intro and the app makes no clipboard API calls for them. Android and iOS build their clipboard UIs on this protocol in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -128,6 +128,7 @@ On `claude/practical-lovelace-avlb5g`:
 - 726c0a2: QA round 1 Web fixes (canonical ids, ghost after delete, honest capture states)
 - 6ae4368: QA round 2 fixes (explicit local deletes, durable pending deletes, presence workers)
 - 5e68063: QA round 3 fixes (per-tab timelines, Clear across tabs)
-- the QA round 4 P2 commit that follows them
+- 9aa7917: CI retries the Playwright dependency install when runner apt mirrors fail
+- fbfe47f: QA round 4 P2s (last multi-tab races, honest capture results); CI 43062069105 green with no retries
 
-The annotated tag `clipboard-protocol-v1` is created at the commit that passes QA (the exit gate in `docs/phases/PHASE_5_ACCOUNTS_CLIPBOARD.md`) and pushed with it.
+The annotated tag `clipboard-protocol-v1` is created on fbfe47f, the commit that passed QA with green CI (the exit gate in `docs/phases/PHASE_5_ACCOUNTS_CLIPBOARD.md`). This session's git proxy refuses tag pushes, so the repository owner pushes it (`git push origin clipboard-protocol-v1`) or creates the same tag on fbfe47f in GitHub.

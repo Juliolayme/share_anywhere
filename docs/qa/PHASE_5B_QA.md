@@ -12,6 +12,8 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [43029093517](https://github.com/Juliolayme/share_anywhere/actions/runs/43029093517) on 726c0a2 (QA round 1 Web fixes): every job green, e2e first attempt in all five projects (chromium 69, firefox 67, webkit 68, android-chrome 61, ios-safari 61).
 - [43040047354](https://github.com/Juliolayme/share_anywhere/actions/runs/43040047354) on 6ae4368 (QA round 2 fixes): backend, web, protocol, security, docs and compose green; `e2e-web (chromium-desktop)` and `(android-chrome)` failed while installing Playwright system packages (apt: "Some index files failed to download"), an infrastructure failure, not a test failure; the other e2e jobs were cancelled with them. Superseded by the round-3 fix push.
 - [43052733954](https://github.com/Juliolayme/share_anywhere/actions/runs/43052733954) on 5e68063 (QA round 3 fixes): backend, web, protocol, security, docs and compose green. The e2e jobs failed or hung while installing Playwright system packages (apt: "Temporary failure resolving 'security.ubuntu.com'"). This was an infrastructure failure: no test ran. Superseded by the round-4 P2 push.
+- [43058002672](https://github.com/Juliolayme/share_anywhere/actions/runs/43058002672) on 9aa7917 (Playwright dependency install retried in CI): non-e2e jobs green; e2e jobs cancelled by the next push while the runners' apt mirrors were still failing.
+- [43062069105](https://github.com/Juliolayme/share_anywhere/actions/runs/43062069105) on fbfe47f (QA round 4 P2s, final): every job green, e2e first attempt in all five projects (chromium 70, firefox 67, webkit 68, android-chrome 61, ios-safari 61), no test retried. This is the commit tagged `clipboard-protocol-v1`.
 
 ## Round 1 — commit fab4866 — FAIL
 
@@ -140,3 +142,9 @@ The round-3 harness passed 15 of 15. A new multi-tab fuzz (3 tabs plus a phone, 
 | A capture made during `adopt()` is dropped and reported as synced | P2 | The drop list is built without the race; `synced` only for server-acknowledged captures; test N4 |
 | CLIPBOARD_PROTOCOL §2.9 claims more than the code does | P2 | Wording matches the guarantees, including the 6-day history reload |
 | Report and QA log out of date | P2 | Counts, skips, hashes and CI entries updated |
+
+## Exit gate
+
+- QA round 4 passed (0 P0, 0 P1). Its P2s are fixed in fbfe47f.
+- CI 43062069105 on fbfe47f is green with no retries.
+- The annotated tag `clipboard-protocol-v1` was created on fbfe47f. The session's git proxy refused to push the tag (branch pushes work, tag pushes are cut off), so the owner pushes it with `git push origin clipboard-protocol-v1` from a clone that has it, or creates the same tag on fbfe47f in GitHub.

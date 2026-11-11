@@ -15,6 +15,7 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [42989102231](https://github.com/Juliolayme/share_anywhere/actions/runs/42989102231) on dd0df12 (QA round 5 fixes): every job green, but ios-safari passed one test on retry. On the first attempt, `account/signin-during-transfer.spec.ts` saw no verified block of the paced second transfer within 30 s, although both peers reported the connection as connected (before any sign-in). Under investigation (diagnostics for data-channel open and the first block to be added).
 - [42997152648](https://github.com/Juliolayme/share_anywhere/actions/runs/42997152648) on e41e6d3 (QA round 6 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - [43003792138](https://github.com/Juliolayme/share_anywhere/actions/runs/43003792138) on 9b76992 (QA round 7 fixes): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57); nightly 43003792203 green.
+- [43008017353](https://github.com/Juliolayme/share_anywhere/actions/runs/43008017353) on d3ee5ae (QA round 8 P2s, final): every job green, e2e first attempt in all five projects (chromium 64, firefox 63, webkit 64, android-chrome 57, ios-safari 57).
 - Nightly [42961754657](https://github.com/Juliolayme/share_anywhere/actions/runs/42961754657) on e3289ba: every job passed. It generated the new mobile snapshot baselines (header Sign in chip), committed in 9874e3f.
 
 ## Round 1 — commit e3289ba — FAIL

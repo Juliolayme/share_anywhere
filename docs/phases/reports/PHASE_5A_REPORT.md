@@ -156,4 +156,4 @@ On `claude/practical-lovelace-avlb5g`:
 - dd0df12: QA round 5 fixes (remembered exclusions revoke again; registration race)
 - e41e6d3: QA round 6 fixes (key writes serialize with departures on the account key row)
 - 9b76992: QA round 7 fixes (exclusions record the account version; pairing liveness)
-- the QA round 8 P2 commit that follows them (revoke fails closed; doc wording)
+- d3ee5ae: QA round 8 P2s (revoke fails closed; doc wording); final CI 43008017353 green with no retries

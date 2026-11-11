@@ -100,6 +100,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Key and token storage guard (no Web Storage in crypto or clipboard code, no secret-named storage keys)
+        run: pnpm storage:check
       - name: npm advisories (high and above)
         run: pnpm audit --audit-level high
       - name: Dependency review

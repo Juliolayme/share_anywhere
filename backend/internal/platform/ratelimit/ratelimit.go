@@ -56,6 +56,18 @@ func (l *Limiter) Allow(key string) (bool, time.Duration) {
 	return false, wait
 }
 
+// Check reports whether a token is available without spending it and, when not, how long until one is.
+// Callers that limit only failures check first and spend with Allow after a failure.
+func (l *Limiter) Check(key string) (bool, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b := l.refill(key, l.clock.Now())
+	if b.tokens >= 1 {
+		return true, 0
+	}
+	return false, time.Duration(math.Ceil((1-b.tokens)/l.ratePerSecond()*1000)) * time.Millisecond
+}
+
 // Peek reports whether a token is available without spending it.
 func (l *Limiter) Peek(key string) bool {
 	l.mu.Lock()

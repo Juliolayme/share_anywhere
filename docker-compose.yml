@@ -39,9 +39,20 @@ services:
       # Must match coturn's static-auth-secret below.
       SA_TURN_SECRET: ${TURN_SHARED_SECRET:-dev-turn-secret-change-me}
       SA_TURN_URIS: turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp
+      # Password-reset mail: console logs the link (development only). With `--profile mail`, set
+      # SA_MAIL_SINK=smtp in .env to deliver to mailpit instead (UI at http://localhost:8025).
+      SA_MAIL_SINK: ${SA_MAIL_SINK:-console}
+      SA_SMTP_ADDR: ${SA_SMTP_ADDR:-mailpit:1025}
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Development mail catcher (optional): docker compose --profile mail up
+  mailpit:
+    image: axllent/mailpit:v1.27
+    profiles: ["mail"]
+    ports:
+      - "127.0.0.1:8025:8025"
 
   web:
     build:

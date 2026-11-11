@@ -105,6 +105,27 @@ func (e OpenSessionStatus) Valid() bool {
 	}
 }
 
+// Defines values for PairingStatusStatus.
+const (
+	PairingStatusStatusExpired PairingStatusStatus = "expired"
+	PairingStatusStatusReady   PairingStatusStatus = "ready"
+	PairingStatusStatusWaiting PairingStatusStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the PairingStatusStatus enum.
+func (e PairingStatusStatus) Valid() bool {
+	switch e {
+	case PairingStatusStatusExpired:
+		return true
+	case PairingStatusStatusReady:
+		return true
+	case PairingStatusStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ParticipantJoinedVia.
 const (
 	ParticipantJoinedViaCode ParticipantJoinedVia = "code"
@@ -438,11 +459,71 @@ func (e RefreshDeviceTokenParamsXSARefresh) Valid() bool {
 	}
 }
 
+// AccountDevice defines model for AccountDevice.
+type AccountDevice struct {
+	Added     bool      `json:"added"`
+	CreatedAt time.Time `json:"created_at"`
+	Current   bool      `json:"current"`
+
+	// HasKey The device registered a wrapping public key.
+	HasKey     bool               `json:"has_key"`
+	Id         openapi_types.UUID `json:"id"`
+	LastSeenAt time.Time          `json:"last_seen_at"`
+	Name       string             `json:"name"`
+	Platform   string             `json:"platform"`
+}
+
+// AccountDeviceRef defines model for AccountDeviceRef.
+type AccountDeviceRef struct {
+	Added bool               `json:"added"`
+	Id    openapi_types.UUID `json:"id"`
+}
+
+// AccountRef defines model for AccountRef.
+type AccountRef struct {
+	Email string             `json:"email"`
+	Id    openapi_types.UUID `json:"id"`
+}
+
+// AccountToken defines model for AccountToken.
+type AccountToken struct {
+	AccessToken string           `json:"access_token"`
+	Device      AccountDeviceRef `json:"device"`
+	ExpiresIn   int              `json:"expires_in"`
+}
+
+// Argon2Spec defines model for Argon2Spec.
+type Argon2Spec struct {
+	// M Memory in KiB.
+	M int `json:"m"`
+	P int `json:"p"`
+	T int `json:"t"`
+}
+
+// AuthResult defines model for AuthResult.
+type AuthResult struct {
+	// AccessToken Carries acct and dl.
+	AccessToken string           `json:"access_token"`
+	Account     AccountRef       `json:"account"`
+	Device      AccountDeviceRef `json:"device"`
+	ExpiresIn   int              `json:"expires_in"`
+}
+
+// Base64Url Binary data as base64url without padding.
+type Base64Url = string
+
 // Capacity defines model for Capacity.
 type Capacity struct {
 	Joined    int `json:"joined"`
 	Max       int `json:"max"`
 	Requested int `json:"requested"`
+}
+
+// ChainLink defines model for ChainLink.
+type ChainLink struct {
+	// Blob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+	Blob       WrappedBlob `json:"blob"`
+	KeyVersion int         `json:"key_version"`
 }
 
 // CreateDeviceRequest defines model for CreateDeviceRequest.
@@ -466,6 +547,19 @@ type CreateSessionRequest struct {
 	RequireApproval *bool       `json:"require_approval,omitempty"`
 }
 
+// CredentialsRequest defines model for CredentialsRequest.
+type CredentialsRequest struct {
+	// AddDevice Add this device to the account (dl true; required for keys, history, and Clipboard Sync). A not-added device's account session ends 24 h after sign-in.
+	AddDevice *bool `json:"add_device,omitempty"`
+
+	// CopyHistory Only meaningful with add_device. The client imports its local history with POST /v1/history/entries.
+	CopyHistory *bool  `json:"copy_history,omitempty"`
+	Email       string `json:"email"`
+
+	// Password Sign-up requires 10 to 128 characters that are not a common password.
+	Password string `json:"password"`
+}
+
 // Device defines model for Device.
 type Device struct {
 	CreatedAt   time.Time          `json:"created_at"`
@@ -479,6 +573,19 @@ type Device struct {
 // DeviceKind defines model for Device.Kind.
 type DeviceKind string
 
+// DeviceBlob defines model for DeviceBlob.
+type DeviceBlob struct {
+	// Blob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+	Blob     WrappedBlob        `json:"blob"`
+	DeviceId openapi_types.UUID `json:"device_id"`
+}
+
+// DeviceKey defines model for DeviceKey.
+type DeviceKey struct {
+	DeviceId  openapi_types.UUID `json:"device_id"`
+	PublicKey *PublicKey         `json:"public_key"`
+}
+
 // DeviceSession defines model for DeviceSession.
 type DeviceSession struct {
 	AccessToken string `json:"access_token"`
@@ -490,6 +597,20 @@ type DeviceSession struct {
 	// RefreshSecret Present only with transport "body".
 	RefreshSecret *string   `json:"refresh_secret,omitempty"`
 	ServerTime    time.Time `json:"server_time"`
+}
+
+// DevicesChanged defines model for DevicesChanged.
+type DevicesChanged struct {
+	// Error Machine-readable code (docs/API.md §3).
+	Error   string `json:"error"`
+	Message string `json:"message"`
+
+	// Missing Other added devices with a registered key that got no blob (409 devices_changed).
+	Missing     *[]openapi_types.UUID `json:"missing,omitempty"`
+	RetryAfterS *int                  `json:"retry_after_s,omitempty"`
+
+	// Unexpected Blobs for devices that are not (or no longer) added devices of the account (400 invalid_request).
+	Unexpected *[]openapi_types.UUID `json:"unexpected,omitempty"`
 }
 
 // Error defines model for Error.
@@ -511,6 +632,38 @@ type FileInput struct {
 type Health struct {
 	Status  string `json:"status"`
 	Version string `json:"version"`
+}
+
+// HistoryEntry defines model for HistoryEntry.
+type HistoryEntry struct {
+	// Ciphertext Absent on tombstones.
+	Ciphertext *Base64Url         `json:"ciphertext,omitempty"`
+	CreatedAt  time.Time          `json:"created_at"`
+	Deleted    bool               `json:"deleted"`
+	EntryId    openapi_types.UUID `json:"entry_id"`
+	KeyVersion int                `json:"key_version"`
+
+	// Nonce Absent on tombstones.
+	Nonce          *Base64Url         `json:"nonce,omitempty"`
+	OriginDeviceId openapi_types.UUID `json:"origin_device_id"`
+	Seq            int64              `json:"seq"`
+}
+
+// HistoryEntryRequest defines model for HistoryEntryRequest.
+type HistoryEntryRequest struct {
+	// Ciphertext AES-256-GCM ciphertext and tag, at most 64 KB decoded.
+	Ciphertext Base64Url          `json:"ciphertext"`
+	EntryId    openapi_types.UUID `json:"entry_id"`
+	KeyVersion int                `json:"key_version"`
+
+	// Nonce 12 bytes.
+	Nonce Base64Url `json:"nonce"`
+}
+
+// HistoryPage defines model for HistoryPage.
+type HistoryPage struct {
+	Entries   []HistoryEntry `json:"entries"`
+	NextAfter int64          `json:"next_after"`
 }
 
 // JoinPreview defines model for JoinPreview.
@@ -554,6 +707,62 @@ type JoinWindow struct {
 // JoinWindowState defines model for JoinWindow.State.
 type JoinWindowState string
 
+// KeyVersion defines model for KeyVersion.
+type KeyVersion struct {
+	KeyVersion int `json:"key_version"`
+}
+
+// KeysRotateRequest defines model for KeysRotateRequest.
+type KeysRotateRequest struct {
+	// ChainBlob ADK(v-1) wrapped with ADK(v).
+	ChainBlob WrappedBlob `json:"chain_blob"`
+
+	// DeviceBlobs One blob for every other added device with a registered public key; a blob for the caller itself is accepted as a safety copy and delivered through its pending list.
+	DeviceBlobs []DeviceBlob `json:"device_blobs"`
+
+	// KeyVersion Must be the current version + 1.
+	KeyVersion int `json:"key_version"`
+
+	// RecoveryBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+	RecoveryBlob WrappedBlob `json:"recovery_blob"`
+}
+
+// KeysSetupRequest defines model for KeysSetupRequest.
+type KeysSetupRequest struct {
+	Params Argon2Spec `json:"params"`
+
+	// RecoveryBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+	RecoveryBlob WrappedBlob `json:"recovery_blob"`
+
+	// RecoveryPublicKey X25519 public key, exactly 32 bytes, base64url without padding.
+	RecoveryPublicKey PublicKey `json:"recovery_public_key"`
+
+	// Salt 16 to 64 bytes.
+	Salt Base64Url `json:"salt"`
+}
+
+// KeysState defines model for KeysState.
+type KeysState struct {
+	// Devices Every added device of the account.
+	Devices []DeviceKey `json:"devices"`
+
+	// KeyVersion 0 means no ADK yet.
+	KeyVersion int `json:"key_version"`
+
+	// Pending ADK versions wrapped for the caller by rotations, until acknowledged.
+	Pending  []PendingBlob `json:"pending"`
+	Recovery *RecoveryInfo `json:"recovery"`
+}
+
+// Me defines model for Me.
+type Me struct {
+	CreatedAt   time.Time          `json:"created_at"`
+	Device      AccountDeviceRef   `json:"device"`
+	Email       string             `json:"email"`
+	HistorySync bool               `json:"history_sync"`
+	Id          openapi_types.UUID `json:"id"`
+}
+
 // OpenSession defines model for OpenSession.
 type OpenSession struct {
 	Capacity      Capacity           `json:"capacity"`
@@ -576,6 +785,48 @@ type OpenSessionList struct {
 	MaxOpen    int           `json:"max_open"`
 	ServerTime time.Time     `json:"server_time"`
 	Sessions   []OpenSession `json:"sessions"`
+}
+
+// Pairing defines model for Pairing.
+type Pairing struct {
+	// Code 128 random bits as base64url (22 characters).
+	Code      string             `json:"code"`
+	ExpiresAt time.Time          `json:"expires_at"`
+	PairingId openapi_types.UUID `json:"pairing_id"`
+}
+
+// PairingPeer defines model for PairingPeer.
+type PairingPeer struct {
+	DeviceId   openapi_types.UUID `json:"device_id"`
+	DeviceName string             `json:"device_name"`
+
+	// EphemeralPublicKey X25519 public key, exactly 32 bytes, base64url without padding.
+	EphemeralPublicKey PublicKey          `json:"ephemeral_public_key"`
+	PairingId          openapi_types.UUID `json:"pairing_id"`
+}
+
+// PairingStatus defines model for PairingStatus.
+type PairingStatus struct {
+	// Blob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+	Blob       *WrappedBlob `json:"blob,omitempty"`
+	KeyVersion *int         `json:"key_version,omitempty"`
+
+	// SenderPublicKey X25519 public key, exactly 32 bytes, base64url without padding.
+	SenderPublicKey *PublicKey          `json:"sender_public_key,omitempty"`
+	Status          PairingStatusStatus `json:"status"`
+}
+
+// PairingStatusStatus defines model for PairingStatus.Status.
+type PairingStatusStatus string
+
+// PairingWrapRequest defines model for PairingWrapRequest.
+type PairingWrapRequest struct {
+	// Blob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+	Blob       WrappedBlob `json:"blob"`
+	KeyVersion int         `json:"key_version"`
+
+	// SenderPublicKey X25519 public key, exactly 32 bytes, base64url without padding.
+	SenderPublicKey PublicKey `json:"sender_public_key"`
 }
 
 // Participant defines model for Participant.
@@ -612,6 +863,14 @@ type PeerSummary struct {
 	SignedIn      bool               `json:"signed_in"`
 }
 
+// PendingBlob defines model for PendingBlob.
+type PendingBlob struct {
+	// Blob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+	Blob         WrappedBlob        `json:"blob"`
+	FromDeviceId openapi_types.UUID `json:"from_device_id"`
+	KeyVersion   int                `json:"key_version"`
+}
+
 // PowChallenge defines model for PowChallenge.
 type PowChallenge struct {
 	// Difficulty Leading zero bits required in SHA-256(token + ":" + solution).
@@ -636,6 +895,9 @@ type PowSolution struct {
 	Token    string `json:"token"`
 }
 
+// PublicKey X25519 public key, exactly 32 bytes, base64url without padding.
+type PublicKey = string
+
 // Ready defines model for Ready.
 type Ready struct {
 	Checks map[string]ReadyChecks `json:"checks"`
@@ -647,6 +909,29 @@ type ReadyChecks string
 
 // ReadyStatus defines model for Ready.Status.
 type ReadyStatus string
+
+// RecoveryBlob defines model for RecoveryBlob.
+type RecoveryBlob struct {
+	KeyVersion int        `json:"key_version"`
+	Params     Argon2Spec `json:"params"`
+
+	// RecoveryBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+	RecoveryBlob WrappedBlob `json:"recovery_blob"`
+
+	// Salt Binary data as base64url without padding.
+	Salt Base64Url `json:"salt"`
+}
+
+// RecoveryInfo defines model for RecoveryInfo.
+type RecoveryInfo struct {
+	Params Argon2Spec `json:"params"`
+
+	// PublicKey X25519 public key, exactly 32 bytes, base64url without padding.
+	PublicKey PublicKey `json:"public_key"`
+
+	// Salt Binary data as base64url without padding.
+	Salt Base64Url `json:"salt"`
+}
 
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
@@ -780,6 +1065,9 @@ type UpdateSessionRequest struct {
 // UpdateSessionRequestAcceptingReceivers false = Stop accepting. Reopening uses renew.
 type UpdateSessionRequestAcceptingReceivers bool
 
+// WrappedBlob Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+type WrappedBlob = string
+
 // WsTicket defines model for WsTicket.
 type WsTicket struct {
 	ExpiresIn int    `json:"expires_in"`
@@ -807,6 +1095,23 @@ type RateLimited = Error
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
+// ConfirmPasswordResetJSONBody defines parameters for ConfirmPasswordReset.
+type ConfirmPasswordResetJSONBody struct {
+	Password string `json:"password"`
+	Token    string `json:"token"`
+}
+
+// RequestPasswordResetJSONBody defines parameters for RequestPasswordReset.
+type RequestPasswordResetJSONBody struct {
+	Email string `json:"email"`
+}
+
+// AddCurrentDeviceJSONBody defines parameters for AddCurrentDevice.
+type AddCurrentDeviceJSONBody struct {
+	// CopyHistory The client imports its local history with POST /v1/history/entries; the server only accepts the flag.
+	CopyHistory *bool `json:"copy_history,omitempty"`
+}
+
 // RefreshDeviceTokenParams defines parameters for RefreshDeviceToken.
 type RefreshDeviceTokenParams struct {
 	XSARefresh *RefreshDeviceTokenParamsXSARefresh `json:"X-SA-Refresh,omitempty"`
@@ -814,6 +1119,40 @@ type RefreshDeviceTokenParams struct {
 
 // RefreshDeviceTokenParamsXSARefresh defines parameters for RefreshDeviceToken.
 type RefreshDeviceTokenParamsXSARefresh string
+
+// RenameAccountDeviceJSONBody defines parameters for RenameAccountDevice.
+type RenameAccountDeviceJSONBody struct {
+	Name string `json:"name"`
+}
+
+// ListHistoryEntriesParams defines parameters for ListHistoryEntries.
+type ListHistoryEntriesParams struct {
+	After *int64 `form:"after,omitempty" json:"after,omitempty"`
+	Limit *int   `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// RegisterDeviceKeyJSONBody defines parameters for RegisterDeviceKey.
+type RegisterDeviceKeyJSONBody struct {
+	// PublicKey X25519 public key, exactly 32 bytes, base64url without padding.
+	PublicKey PublicKey `json:"public_key"`
+}
+
+// CreatePairingJSONBody defines parameters for CreatePairing.
+type CreatePairingJSONBody struct {
+	// EphemeralPublicKey X25519 public key, exactly 32 bytes, base64url without padding.
+	EphemeralPublicKey PublicKey `json:"ephemeral_public_key"`
+}
+
+// UpdateMeJSONBody defines parameters for UpdateMe.
+type UpdateMeJSONBody struct {
+	HistorySync *bool `json:"history_sync,omitempty"`
+}
+
+// ChangePasswordJSONBody defines parameters for ChangePassword.
+type ChangePasswordJSONBody struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
 
 // ResolveCodeJSONBody defines parameters for ResolveCode.
 type ResolveCodeJSONBody struct {
@@ -840,14 +1179,56 @@ type ConnectWebSocketParams struct {
 	Ticket string `form:"ticket" json:"ticket"`
 }
 
+// ConfirmPasswordResetJSONRequestBody defines body for ConfirmPasswordReset for application/json ContentType.
+type ConfirmPasswordResetJSONRequestBody ConfirmPasswordResetJSONBody
+
+// RequestPasswordResetJSONRequestBody defines body for RequestPasswordReset for application/json ContentType.
+type RequestPasswordResetJSONRequestBody RequestPasswordResetJSONBody
+
+// SignInJSONRequestBody defines body for SignIn for application/json ContentType.
+type SignInJSONRequestBody = CredentialsRequest
+
+// SignUpJSONRequestBody defines body for SignUp for application/json ContentType.
+type SignUpJSONRequestBody = CredentialsRequest
+
 // CreateAnonymousDeviceJSONRequestBody defines body for CreateAnonymousDevice for application/json ContentType.
 type CreateAnonymousDeviceJSONRequestBody = CreateDeviceRequest
 
 // UpdateCurrentDeviceJSONRequestBody defines body for UpdateCurrentDevice for application/json ContentType.
 type UpdateCurrentDeviceJSONRequestBody = UpdateDeviceRequest
 
+// AddCurrentDeviceJSONRequestBody defines body for AddCurrentDevice for application/json ContentType.
+type AddCurrentDeviceJSONRequestBody AddCurrentDeviceJSONBody
+
 // RefreshDeviceTokenJSONRequestBody defines body for RefreshDeviceToken for application/json ContentType.
 type RefreshDeviceTokenJSONRequestBody = RefreshRequest
+
+// RenameAccountDeviceJSONRequestBody defines body for RenameAccountDevice for application/json ContentType.
+type RenameAccountDeviceJSONRequestBody RenameAccountDeviceJSONBody
+
+// CreateHistoryEntryJSONRequestBody defines body for CreateHistoryEntry for application/json ContentType.
+type CreateHistoryEntryJSONRequestBody = HistoryEntryRequest
+
+// RegisterDeviceKeyJSONRequestBody defines body for RegisterDeviceKey for application/json ContentType.
+type RegisterDeviceKeyJSONRequestBody RegisterDeviceKeyJSONBody
+
+// CreatePairingJSONRequestBody defines body for CreatePairing for application/json ContentType.
+type CreatePairingJSONRequestBody CreatePairingJSONBody
+
+// WrapPairingJSONRequestBody defines body for WrapPairing for application/json ContentType.
+type WrapPairingJSONRequestBody = PairingWrapRequest
+
+// RotateKeysJSONRequestBody defines body for RotateKeys for application/json ContentType.
+type RotateKeysJSONRequestBody = KeysRotateRequest
+
+// SetupKeysJSONRequestBody defines body for SetupKeys for application/json ContentType.
+type SetupKeysJSONRequestBody = KeysSetupRequest
+
+// UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
+type UpdateMeJSONRequestBody UpdateMeJSONBody
+
+// ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
+type ChangePasswordJSONRequestBody ChangePasswordJSONBody
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = CreateSessionRequest

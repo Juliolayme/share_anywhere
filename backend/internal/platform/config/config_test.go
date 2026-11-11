@@ -123,3 +123,27 @@ func TestSharingSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestMailSettings(t *testing.T) {
+	cfg, err := LoadFrom(lookupFrom(nil))
+	if err != nil || cfg.MailSink != "console" || cfg.MailFrom == "" {
+		t.Fatalf("defaults: %+v %v", cfg.MailSink, err)
+	}
+	cfg, err = LoadFrom(lookupFrom(map[string]string{"SA_MAIL_SINK": "smtp", "SA_SMTP_ADDR": "mailpit:1025"}))
+	if err != nil || cfg.SMTPAddr != "mailpit:1025" {
+		t.Fatalf("smtp: %+v %v", cfg.SMTPAddr, err)
+	}
+	if _, err := LoadFrom(lookupFrom(map[string]string{"SA_ENV": "test", "SA_MAIL_SINK": "memory"})); err != nil {
+		t.Fatalf("memory in test: %v", err)
+	}
+	for name, env := range map[string]map[string]string{
+		"smtp needs addr":     {"SA_MAIL_SINK": "smtp"},
+		"memory only in test": {"SA_MAIL_SINK": "memory"},
+		"unknown sink":        {"SA_MAIL_SINK": "pigeon"},
+		"multi-line from":     {"SA_MAIL_FROM": "a@b.c\r\nBcc: x@y.z"},
+	} {
+		if _, err := LoadFrom(lookupFrom(env)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

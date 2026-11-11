@@ -71,6 +71,22 @@ The client refreshes shortly before expiry with `POST /v1/devices/token`. The se
 
 `POST /v1/auth/signin` is called with the current device token and the user's choices (`add_device`, `copy_history`). The device ID does not change, so running transfers continue. The next access token carries `acct` and `dl`. Sign-out removes the device from the account, revokes the account session, wipes ADK material, and returns a new anonymous identity.
 
+```mermaid
+sequenceDiagram
+  participant App
+  participant API as Backend
+  App->>API: POST /v1/auth/signin (device token, email, password, add_device, copy_history)
+  API->>API: Argon2id verify; insert auth_sessions (device_added); devices.kind = account if added
+  API-->>App: access token with acct + dl, same device ID
+  App->>API: POST /v1/devices/token (refresh, later)
+  API-->>App: acct + dl re-derived from the live auth_sessions row
+  App->>API: POST /v1/auth/signout
+  API->>API: end session, device leaves account, revoke device
+  API-->>App: brand-new anonymous identity (new cookie or refresh_secret)
+```
+
+**As built (Phase 5A, backend):** `backend/internal/auth` owns accounts, account sessions, the account Devices list, account keys, pairing, and history (`docs/API.md` §2.4). It is layered on `backend/internal/devices` without an import cycle: `devices` declares an `Accounts` interface (`AccountState(device, touch)`), `auth` implements it, and `cmd/server` wires it (`SetAccounts`), plus `OnRevoke` so a revoked identity also loses its account session. `devices.Service.Token` issues a token with the current claims after sign-in, sign-up, and Add this device; `devices.Service.Replace` revokes and recreates the identity at sign-out; `Forget` drops the cached account state on every change. Access levels are enforced by `backend/internal/platform/access` (`403 account_required`, `403 device_not_added`) and every account handler re-reads the live session, so a token minted before a revocation stops working at once. Session model and lifetimes: `docs/ADR/0010-account-sessions.md`, `docs/SECURITY_MODEL.md` §4. Password-reset mail goes through a `Mailer` adapter (console, SMTP for mailpit, in-memory for test stacks; `.env.example`). Not built yet: WebSocket `HISTORY_ENTRY_*` and `DEVICE_*` events (clients poll the history cursor).
+
 ### 3.4 WebSocket
 
 `POST /v1/ws/ticket` → connect `/v1/ws?ticket=…` → server checks `Origin`, consumes the ticket, binds the socket to the device and account.
@@ -209,6 +225,14 @@ Core (guest and account):
 Account-only:
 
 - `users`, `auth_sessions(id, user_id, device_id, device_added, created_at, last_used_at, expires_at, revoked_at)`, `password_resets`, `account_keys` (wrapped ADK per device, recovery-wrapped copy, `key_version`), `device_pairings`, `history_entries(id, user_id, origin_device_id, ciphertext, nonce, key_version, seq, created_at, deleted_at)`, `clipboard_events`, `clipboard_device_cursors`, `clipboard_settings`, `cloud_settings`, `cloud_objects`.
+- **Built in Phase 5A** (`backend/migrations/0006_accounts.sql`):
+  - `users(id, email, password_hash, history_sync, email_verified_at, created_at, password_changed_at)`: email lowercased (checked) with a unique index (plain `text`, since `citext` needs a database-wide extension); `email_verified_at` stays NULL in v1. `devices.user_id` references `users`; `devices.kind = 'account'` with `user_id` set exactly while the device is added to an account.
+  - `auth_sessions` as above, with a partial unique index allowing one live (`revoked_at IS NULL`) session per device.
+  - `password_resets(token_hash, user_id, created_at, expires_at, used_at)`.
+  - `account_keys(user_id, key_version, recovery_public_key, recovery_salt, recovery_m, recovery_t, recovery_p, updated_at)`, created with the user (`key_version = 0` until setup) and locked `FOR UPDATE` by setup and rotation; `account_key_versions(user_id, key_version, recovery_blob, chain_blob, created_by_device_id, created_at)` (no chain blob for version 1). Per-device wrapped copies are not stored long-term: `device_keys(device_id, user_id, public_key)` holds each added device's X25519 wrapping key and `device_key_blobs(device_id, key_version, user_id, blob, from_device_id)` holds rotation blobs until the device acknowledges them.
+  - `device_pairings(id, user_id, new_device_id UNIQUE, ephemeral_public_key, code_hash UNIQUE, created_at, expires_at, key_version, sender_public_key, blob, wrapped_by_device_id, wrapped_at, consumed_at)`.
+  - `history_entries(user_id, entry_id, seq, origin_device_id, key_version, nonce, ciphertext, created_at, deleted_at)` with primary key `(user_id, entry_id)` (idempotent inserts), `UNIQUE (user_id, seq)`, and a check that tombstones carry no nonce or ciphertext. `origin_device_id` has no foreign key so history outlives purged device rows.
+  - Leaving an account (sign-out, revoke, reset, expiry) deletes the device's `device_keys`, `device_key_blobs`, and `device_pairings` rows in the same transaction.
 
 Constraints:
 
@@ -216,5 +240,5 @@ Constraints:
 - `REQUESTED` participants count toward the five receiver slots (so at most 5 can be waiting; the earlier "10 pending" figure could never apply).
 - Six-digit code stored as an HMAC with a server pepper, unique among open join windows; link and QR join tokens are `capability_tokens` with `purpose = join` and `expires_at = join_window_ends_at`, revoked by `renew`.
 - Capability tokens hashed at rest, single-purpose, expiring, revocable.
-- Per-user `seq` for clipboard and history assigned under `pg_advisory_xact_lock(hashtext(user_id))` so `seq` order equals commit order.
+- Per-user `seq` for clipboard and history assigned under `pg_advisory_xact_lock(hashtext(user_id))` so `seq` order equals commit order. **As built (Phase 5A):** history uses the two-key form `pg_advisory_xact_lock(1, hashtext(user_id))` and assigns `MAX(seq) + 1` under it; a deletion moves the row to a new `seq` as a tombstone; Phase 5B clipboard takes another class so the two sequences never wait on each other.
 - Idempotent state transitions; authorization on every resource; identities only from verified tokens.

@@ -17,8 +17,8 @@ const AccessTokenTTL = 15 * time.Minute
 
 const issuer = "share-anywhere"
 
-// claims is the JWT payload: sub = device ID, typ = "device", gen = refresh generation.
-// acct and dl are added by the account layer in Phase 5A.
+// claims is the JWT payload: sub = device ID, typ = "device", gen = refresh generation, and, while the
+// device has an active account session (Phase 5A), acct = user ID and dl = device added to that account.
 type claims struct {
 	Typ  string `json:"typ"`
 	Gen  int    `json:"gen"`
@@ -42,12 +42,19 @@ func NewTokens(keys map[string]ed25519.PrivateKey, active string, c clock.Clock)
 	return &Tokens{keys: keys, active: active, clock: c}, nil
 }
 
-// Issue signs an access token for a device.
+// Issue signs an access token for a device without account claims.
 func (t *Tokens) Issue(deviceID string, generation int) (string, error) {
+	return t.IssueWith(deviceID, generation, AccountState{})
+}
+
+// IssueWith signs an access token carrying the device's account state (acct, dl).
+func (t *Tokens) IssueWith(deviceID string, generation int, acct AccountState) (string, error) {
 	now := t.clock.Now()
 	tok := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims{
-		Typ: "device",
-		Gen: generation,
+		Typ:  "device",
+		Gen:  generation,
+		Acct: acct.AccountID,
+		DL:   acct.AccountID != "" && acct.Added,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   deviceID,

@@ -2,11 +2,12 @@ openapi: 3.0.3
 info:
   title: Share Anywhere API
   version: 0.1.0
-  x-sa-api-sections: ["2.1", "2.2", "2.3"]
+  x-sa-api-sections: ["2.1", "2.2", "2.3", "2.4"]
   description: |
     Machine-readable contract. Every operation declares `x-sa-access` (public, device, participant,
     account, account+device), which must match docs/API.md and is enforced by the backend
-    (docs/SECURITY_MODEL.md, CLAUDE.md §7). Phase 1 covers health and anonymous device identity.
+    (docs/SECURITY_MODEL.md, CLAUDE.md §7). Phase 1 covers health and anonymous device identity; Phase 5A
+    adds accounts, the account Devices list, account keys (opaque wrapped blobs), and encrypted history.
 servers:
   - url: /
 security:
@@ -700,6 +701,582 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /v1/auth/signup:
+    post:
+      operationId: signUp
+      x-sa-access: device
+      summary: Create an account and bind an account session to the calling device (device ID unchanged).
+      description: Fails with 409 already_signed_in when the device already has an account session. Rate limited per IP and per device (docs/SECURITY_MODEL.md §5).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CredentialsRequest" }
+      responses:
+        "201":
+          description: Account created. The access token carries acct and, when add_device is true, dl.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "400":
+          description: invalid_request, invalid_email, or weak_password.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: email_taken or already_signed_in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/auth/signin:
+    post:
+      operationId: signIn
+      x-sa-access: device
+      summary: Verify email and password and bind an account session to the calling device (device ID unchanged).
+      description: An unknown email gets the same 401 invalid_credentials as a wrong password, after the same Argon2id work. Rate limited per IP + email, per IP, per device, and failed attempts per email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CredentialsRequest" }
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: invalid_credentials, or an invalid device token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: already_signed_in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/auth/signout:
+    post:
+      operationId: signOut
+      x-sa-access: account
+      summary: End the account session, remove the device from the account, revoke this device identity, and return a brand-new anonymous identity.
+      description: No request body. Web devices get the new refresh secret as a new sa_device cookie; native devices get refresh_secret in the body (the old device's transport).
+      responses:
+        "200":
+          description: The new anonymous identity (new device ID).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/auth/password-reset/request:
+    post:
+      operationId: requestPasswordReset
+      x-sa-access: public
+      security: []
+      summary: Email a single-use reset link (30 minutes) if the address has an account. Always 202.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              additionalProperties: false
+              properties:
+                email: { type: string, maxLength: 254 }
+      responses:
+        "202": { description: Accepted; the response never says whether the account exists. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/auth/password-reset/confirm:
+    post:
+      operationId: confirmPasswordReset
+      x-sa-access: public
+      security: []
+      summary: Set a new password with a reset token; ends every account session of the account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              additionalProperties: false
+              properties:
+                token: { type: string, maxLength: 128 }
+                password: { type: string, minLength: 10, maxLength: 128 }
+      responses:
+        "204": { description: Password changed. }
+        "400":
+          description: reset_token_invalid (unknown, used, or expired), weak_password, or invalid_request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/me:
+    get:
+      operationId: getMe
+      x-sa-access: account
+      responses:
+        "200":
+          description: The signed-in account as seen from this device.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    patch:
+      operationId: updateMe
+      x-sa-access: account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                history_sync: { type: boolean }
+      responses:
+        "200":
+          description: Updated account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/me/password:
+    post:
+      operationId: changePassword
+      x-sa-access: account
+      summary: Change the password; ends the account sessions of every other device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              additionalProperties: false
+              properties:
+                current_password: { type: string, maxLength: 512 }
+                new_password: { type: string, minLength: 10, maxLength: 128 }
+      responses:
+        "204": { description: Password changed. }
+        "400":
+          description: weak_password or invalid_request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: invalid_credentials (wrong current password; 403 so clients do not treat it as an expired token) or account_required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/devices/current/add:
+    post:
+      operationId: addCurrentDevice
+      x-sa-access: account
+      summary: Add the calling device to its account (dl becomes true; the account session slides to 90 days). Idempotent.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                copy_history:
+                  {
+                    type: boolean,
+                    description: The client imports its local history with POST /v1/history/entries; the server only accepts the flag.,
+                  }
+      responses:
+        "200":
+          description: New access token with dl true.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountToken" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/devices:
+    get:
+      operationId: listAccountDevices
+      x-sa-access: account
+      summary: Devices with a live account session for this account, current device first.
+      responses:
+        "200":
+          description: Account devices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items: { $ref: "#/components/schemas/AccountDevice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/devices/{id}:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    patch:
+      operationId: renameAccountDevice
+      x-sa-access: account
+      summary: Rename one of this account's devices.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 1, maxLength: 40 }
+      responses:
+        "200":
+          description: The renamed device.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountDevice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: revokeAccountDevice
+      x-sa-access: account+device
+      summary: Revoke another device - end its account session and remove it from the account (it keeps its guest identity). The caller then rotates the ADK.
+      responses:
+        "204": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: use_signout (the current device signs out instead).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/keys:
+    get:
+      operationId: getKeys
+      x-sa-access: account+device
+      summary: Account key state - current ADK version, recovery metadata, every added device's wrapping key, and rotation blobs pending for the caller.
+      responses:
+        "200":
+          description: Key state (public keys and opaque blobs only).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeysState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/keys/device:
+    put:
+      operationId: registerDeviceKey
+      x-sa-access: account+device
+      summary: Register (or replace) the caller's X25519 wrapping public key. Replacing it drops pending blobs wrapped to the old key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [public_key]
+              additionalProperties: false
+              properties:
+                public_key: { $ref: "#/components/schemas/PublicKey" }
+      responses:
+        "204": { description: Registered. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/keys/setup:
+    post:
+      operationId: setupKeys
+      x-sa-access: account+device
+      summary: Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KeysSetupRequest" }
+      responses:
+        "201":
+          description: Key version 1 recorded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyVersion" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: keys_exist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/keys/recovery:
+    get:
+      operationId: getRecoveryBlob
+      x-sa-access: account+device
+      summary: The newest ADK wrapped to the recovery public key, with salt and parameters.
+      responses:
+        "200":
+          description: Recovery-wrapped ADK.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecoveryBlob" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/keys/rotate:
+    post:
+      operationId: rotateKeys
+      x-sa-access: account+device
+      summary: Record ADK version current+1 atomically, wrapped for every other added device with a registered key (the caller may add a safety copy for itself).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KeysRotateRequest" }
+      responses:
+        "200":
+          description: Rotated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyVersion" }
+        "400":
+          description: invalid_request; when device_blobs names devices that are not added devices of the account, the body lists them in unexpected.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DevicesChanged" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: key_version_conflict, or devices_changed with the missing device IDs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DevicesChanged" }
+  /v1/keys/chain:
+    get:
+      operationId: getKeyChain
+      x-sa-access: account+device
+      summary: Chain blobs (for version v, ADK(v-1) wrapped with ADK(v)), oldest first.
+      responses:
+        "200":
+          description: Chain.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chain]
+                properties:
+                  chain:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChainLink" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/keys/pending/{key_version}:
+    parameters:
+      - {
+          name: key_version,
+          in: path,
+          required: true,
+          schema: { type: integer, minimum: 1 },
+        }
+    delete:
+      operationId: ackPendingKey
+      x-sa-access: account+device
+      summary: Acknowledge (delete) a rotation blob the caller has stored. Idempotent.
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/keys/pairings:
+    post:
+      operationId: createPairing
+      x-sa-access: account+device
+      summary: New device starts a pairing (replacing any earlier one). The code is 128 random bits, valid 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ephemeral_public_key]
+              additionalProperties: false
+              properties:
+                ephemeral_public_key: { $ref: "#/components/schemas/PublicKey" }
+      responses:
+        "201":
+          description: Pairing created; show code as QR and pasteable text.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pairing" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/keys/pairings/{pairing_id}:
+    parameters:
+      - {
+          name: pairing_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    get:
+      operationId: getPairingResult
+      x-sa-access: account+device
+      summary: New device (owner only) polls the pairing. The wrapped blob is returned once; the pairing then reports expired.
+      responses:
+        "200":
+          description: Pairing status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairingStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/keys/pairings/by-code/{code}:
+    parameters:
+      - {
+          name: code,
+          in: path,
+          required: true,
+          schema: { type: string, maxLength: 64 },
+        }
+    get:
+      operationId: lookupPairing
+      x-sa-access: account+device
+      summary: Existing device resolves a pairing code of the same account. Expired, used, other-account, and own codes are 404.
+      responses:
+        "200":
+          description: The new device's ephemeral key and name.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairingPeer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/keys/pairings/by-code/{code}/wrap:
+    parameters:
+      - {
+          name: code,
+          in: path,
+          required: true,
+          schema: { type: string, maxLength: 64 },
+        }
+    post:
+      operationId: wrapPairing
+      x-sa-access: account+device
+      summary: Existing device uploads the newest ADK wrapped for the new device. Accepted once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PairingWrapRequest" }
+      responses:
+        "204": { description: Stored for one-time pickup. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: key_version_conflict (key_version is not the account's current version).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/history/entries:
+    get:
+      operationId: listHistoryEntries
+      x-sa-access: account+device
+      summary: Entries and tombstones with seq greater than after, in seq order.
+      parameters:
+        - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 200 } }
+      responses:
+        "200":
+          description: A page; resume with next_after.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HistoryPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createHistoryEntry
+      x-sa-access: account+device
+      summary: Store an encrypted entry. Idempotent on entry_id (the original seq is returned).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HistoryEntryRequest" }
+      responses:
+        "201":
+          description: Stored (or already stored).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [seq]
+                properties:
+                  seq: { type: integer, format: int64 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: key_version_conflict (key_version is newer than the account's).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/history/entries/{entry_id}:
+    parameters:
+      - {
+          name: entry_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    delete:
+      operationId: deleteHistoryEntry
+      x-sa-access: account+device
+      summary: Turn an entry into a tombstone with a new seq (deleting a tombstone again changes nothing).
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/history:
+    delete:
+      operationId: clearHistory
+      x-sa-access: account+device
+      summary: Tombstone every live entry of the account, each with a new seq.
+      responses:
+        "204": { description: Cleared. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 components:
   securitySchemes:
     deviceToken:
@@ -1173,3 +1750,255 @@ components:
       additionalProperties: false
       properties:
         capability: { type: string }
+    Base64Url:
+      type: string
+      pattern: "^[A-Za-z0-9_-]*$"
+      description: Binary data as base64url without padding.
+    PublicKey:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{43}$"
+      description: X25519 public key, exactly 32 bytes, base64url without padding.
+    WrappedBlob:
+      type: string
+      pattern: "^[A-Za-z0-9_-]+$"
+      maxLength: 5462
+      description: Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it.
+    CredentialsRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, maxLength: 254 }
+        password:
+          {
+            type: string,
+            maxLength: 512,
+            description: Sign-up requires 10 to 128 characters that are not a common password.,
+          }
+        add_device:
+          type: boolean
+          default: true
+          description: "Add this device to the account (dl true; required for keys, history, and Clipboard Sync). A not-added device's account session ends 24 h after sign-in."
+        copy_history:
+          {
+            type: boolean,
+            default: false,
+            description: Only meaningful with add_device. The client imports its local history with POST /v1/history/entries.,
+          }
+    AccountRef:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+    AccountDeviceRef:
+      type: object
+      required: [id, added]
+      properties:
+        id: { type: string, format: uuid }
+        added: { type: boolean }
+    AuthResult:
+      type: object
+      required: [access_token, expires_in, account, device]
+      properties:
+        access_token: { type: string, description: Carries acct and dl. }
+        expires_in: { type: integer }
+        account: { $ref: "#/components/schemas/AccountRef" }
+        device: { $ref: "#/components/schemas/AccountDeviceRef" }
+    AccountToken:
+      type: object
+      required: [access_token, expires_in, device]
+      properties:
+        access_token: { type: string }
+        expires_in: { type: integer }
+        device: { $ref: "#/components/schemas/AccountDeviceRef" }
+    Me:
+      type: object
+      required: [id, email, created_at, device, history_sync]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        created_at: { type: string, format: date-time }
+        device: { $ref: "#/components/schemas/AccountDeviceRef" }
+        history_sync: { type: boolean }
+    AccountDevice:
+      type: object
+      required: [id, name, platform, added, current, last_seen_at, created_at, has_key]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        platform: { type: string }
+        added: { type: boolean }
+        current: { type: boolean }
+        last_seen_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        has_key: { type: boolean, description: The device registered a wrapping public key. }
+    Argon2Spec:
+      type: object
+      required: [m, t, p]
+      additionalProperties: false
+      properties:
+        m: { type: integer, minimum: 8192, maximum: 1048576, description: Memory in KiB. }
+        t: { type: integer, minimum: 1, maximum: 10 }
+        p: { type: integer, minimum: 1, maximum: 4 }
+    RecoveryInfo:
+      type: object
+      required: [public_key, salt, params]
+      properties:
+        public_key: { $ref: "#/components/schemas/PublicKey" }
+        salt: { $ref: "#/components/schemas/Base64Url" }
+        params: { $ref: "#/components/schemas/Argon2Spec" }
+    DeviceKey:
+      type: object
+      required: [device_id, public_key]
+      properties:
+        device_id: { type: string, format: uuid }
+        public_key:
+          allOf:
+            - $ref: "#/components/schemas/PublicKey"
+          nullable: true
+    PendingBlob:
+      type: object
+      required: [key_version, blob, from_device_id]
+      properties:
+        key_version: { type: integer }
+        blob: { $ref: "#/components/schemas/WrappedBlob" }
+        from_device_id: { type: string, format: uuid }
+    KeysState:
+      type: object
+      required: [key_version, recovery, devices, pending]
+      properties:
+        key_version: { type: integer, minimum: 0, description: 0 means no ADK yet. }
+        recovery:
+          allOf:
+            - $ref: "#/components/schemas/RecoveryInfo"
+          nullable: true
+        devices:
+          type: array
+          description: Every added device of the account.
+          items: { $ref: "#/components/schemas/DeviceKey" }
+        pending:
+          type: array
+          description: ADK versions wrapped for the caller by rotations, until acknowledged.
+          items: { $ref: "#/components/schemas/PendingBlob" }
+    KeysSetupRequest:
+      type: object
+      required: [recovery_public_key, salt, params, recovery_blob]
+      additionalProperties: false
+      properties:
+        recovery_public_key: { $ref: "#/components/schemas/PublicKey" }
+        salt: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: 16 to 64 bytes. }
+        params: { $ref: "#/components/schemas/Argon2Spec" }
+        recovery_blob: { $ref: "#/components/schemas/WrappedBlob" }
+    KeyVersion:
+      type: object
+      required: [key_version]
+      properties:
+        key_version: { type: integer }
+    RecoveryBlob:
+      type: object
+      required: [key_version, recovery_blob, salt, params]
+      properties:
+        key_version: { type: integer }
+        recovery_blob: { $ref: "#/components/schemas/WrappedBlob" }
+        salt: { $ref: "#/components/schemas/Base64Url" }
+        params: { $ref: "#/components/schemas/Argon2Spec" }
+    DeviceBlob:
+      type: object
+      required: [device_id, blob]
+      additionalProperties: false
+      properties:
+        device_id: { type: string, format: uuid }
+        blob: { $ref: "#/components/schemas/WrappedBlob" }
+    KeysRotateRequest:
+      type: object
+      required: [key_version, recovery_blob, chain_blob, device_blobs]
+      additionalProperties: false
+      properties:
+        key_version: { type: integer, description: Must be the current version + 1. }
+        recovery_blob: { $ref: "#/components/schemas/WrappedBlob" }
+        chain_blob: { allOf: [{ $ref: "#/components/schemas/WrappedBlob" }], description: ADK(v-1) wrapped with ADK(v). }
+        device_blobs:
+          type: array
+          maxItems: 100
+          description: One blob for every other added device with a registered public key; a blob for the caller itself is accepted as a safety copy and delivered through its pending list.
+          items: { $ref: "#/components/schemas/DeviceBlob" }
+    DevicesChanged:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            missing:
+              type: array
+              description: Other added devices with a registered key that got no blob (409 devices_changed).
+              items: { type: string, format: uuid }
+            unexpected:
+              type: array
+              description: Blobs for devices that are not (or no longer) added devices of the account (400 invalid_request).
+              items: { type: string, format: uuid }
+    ChainLink:
+      type: object
+      required: [key_version, blob]
+      properties:
+        key_version: { type: integer }
+        blob: { $ref: "#/components/schemas/WrappedBlob" }
+    Pairing:
+      type: object
+      required: [pairing_id, code, expires_at]
+      properties:
+        pairing_id: { type: string, format: uuid }
+        code: { type: string, description: 128 random bits as base64url (22 characters). }
+        expires_at: { type: string, format: date-time }
+    PairingPeer:
+      type: object
+      required: [pairing_id, ephemeral_public_key, device_id, device_name]
+      properties:
+        pairing_id: { type: string, format: uuid }
+        ephemeral_public_key: { $ref: "#/components/schemas/PublicKey" }
+        device_id: { type: string, format: uuid }
+        device_name: { type: string }
+    PairingWrapRequest:
+      type: object
+      required: [key_version, sender_public_key, blob]
+      additionalProperties: false
+      properties:
+        key_version: { type: integer, minimum: 1 }
+        sender_public_key: { $ref: "#/components/schemas/PublicKey" }
+        blob: { $ref: "#/components/schemas/WrappedBlob" }
+    PairingStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [waiting, ready, expired] }
+        key_version: { type: integer }
+        sender_public_key: { $ref: "#/components/schemas/PublicKey" }
+        blob: { $ref: "#/components/schemas/WrappedBlob" }
+    HistoryEntryRequest:
+      type: object
+      required: [entry_id, key_version, nonce, ciphertext]
+      additionalProperties: false
+      properties:
+        entry_id: { type: string, format: uuid }
+        key_version: { type: integer, minimum: 1 }
+        nonce: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: 12 bytes. }
+        ciphertext: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: "AES-256-GCM ciphertext and tag, at most 64 KB decoded." }
+    HistoryEntry:
+      type: object
+      required: [entry_id, seq, key_version, origin_device_id, created_at, deleted]
+      properties:
+        entry_id: { type: string, format: uuid }
+        seq: { type: integer, format: int64 }
+        key_version: { type: integer }
+        nonce: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: Absent on tombstones. }
+        ciphertext: { allOf: [{ $ref: "#/components/schemas/Base64Url" }], description: Absent on tombstones. }
+        origin_device_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        deleted: { type: boolean }
+    HistoryPage:
+      type: object
+      required: [entries, next_after]
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/HistoryEntry" }
+        next_after: { type: integer, format: int64 }

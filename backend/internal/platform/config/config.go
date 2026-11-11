@@ -52,6 +52,13 @@ type Config struct {
 	CodeGuessAlarmPerMin int
 	// RateLimitMultiplier scales rate limits for test stacks (SA_ENV=test only; 1 elsewhere).
 	RateLimitMultiplier int
+	// Mail (password reset): MailSink is console (development: logs the link), smtp (mailpit or a relay),
+	// or memory (SA_ENV=test only; read back through the testhooks build).
+	MailSink     string
+	SMTPAddr     string
+	SMTPUsername string
+	SMTPPassword string
+	MailFrom     string
 	// MigrateOnStart applies pending migrations at startup.
 	MigrateOnStart bool
 	// Generated lists settings filled with ephemeral development values (never in production).
@@ -189,6 +196,28 @@ func LoadFrom(lookup Lookup) (Config, error) {
 	}
 	cfg.CodeGuessAlarmPerMin = alarm
 	cfg.MetricsAddr = get("SA_METRICS_ADDR", "")
+
+	cfg.MailSink = get("SA_MAIL_SINK", "console")
+	cfg.SMTPAddr = get("SA_SMTP_ADDR", "")
+	cfg.SMTPUsername = get("SA_SMTP_USERNAME", "")
+	cfg.SMTPPassword = get("SA_SMTP_PASSWORD", "")
+	cfg.MailFrom = get("SA_MAIL_FROM", "Share Anywhere <no-reply@localhost>")
+	switch cfg.MailSink {
+	case "console":
+	case "smtp":
+		if cfg.SMTPAddr == "" {
+			errs = append(errs, errors.New("SA_SMTP_ADDR (host:port) is required with SA_MAIL_SINK=smtp"))
+		}
+	case "memory":
+		if cfg.Env != EnvTest {
+			errs = append(errs, errors.New("SA_MAIL_SINK=memory is only allowed with SA_ENV=test"))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("SA_MAIL_SINK must be console, smtp, or memory; got %q", cfg.MailSink))
+	}
+	if strings.ContainsAny(cfg.MailFrom, "\r\n") {
+		errs = append(errs, errors.New("SA_MAIL_FROM must be a single line"))
+	}
 
 	if cfg.Env == EnvProduction {
 		if len(cfg.TokenKeys) == 0 || cfg.TokenActiveKID == "" {

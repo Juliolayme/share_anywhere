@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/juliolayme/share_anywhere/backend/internal/auth"
 	"github.com/juliolayme/share_anywhere/backend/internal/devices"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clientip"
@@ -126,6 +127,7 @@ func run() error {
 	}
 	go a.devices.RunPurger(ctx, time.Hour)
 	go a.sharing.Run(ctx, 5*time.Second)
+	go a.auth.Run(ctx, 5*time.Minute)
 	if cfg.MetricsAddr != "" {
 		// Internal listener only (not routed through Caddy); aggregates, never per person.
 		mmux := http.NewServeMux()
@@ -177,6 +179,8 @@ type app struct {
 	handler http.Handler
 	router  *access.Router
 	devices *devices.Service
+	tokens  *devices.Tokens
+	auth    *auth.Service
 	sharing *sharing.Service
 	hub     *ws.Hub
 	metrics *metrics.Registry
@@ -193,6 +197,16 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 	deviceSvc := devices.NewService(store, tokens, devices.NewPoW(cfg.ServerSecret, cfg.PoWDifficulty, clk), clk, devices.ScaledLimits(clk, cfg.RateLimitMultiplier), log)
 	hub := ws.NewHub(ws.Config{AllowedOrigins: cfg.AllowedOrigins, Clock: clk, IPs: ips, Log: log})
 	deviceSvc.OnRevoke(hub.DisconnectDevice)
+
+	mailer, memMail := newMailer(cfg, log)
+	authSvc := auth.New(auth.Config{
+		Pool: pool, Clock: clk, Devices: deviceSvc, Hasher: auth.NewHasher(auth.DefaultArgon2, 4), Mailer: mailer,
+		PublicURL: cfg.PublicURL, Limits: auth.ScaledLimits(clk, cfg.RateLimitMultiplier), Log: log,
+	})
+	// acct and dl in access tokens come from the account layer; a revoked device loses its account session.
+	deviceSvc.SetAccounts(authSvc)
+	deviceSvc.OnRevoke(authSvc.DeviceRevoked)
+	deviceHTTP := devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure)
 
 	limits := sharing.ScaledLimits(clk, cfg.RateLimitMultiplier)
 	protected := sharing.NewProtectedMode(clk, cfg.CodeGuessAlarmPerMin)
@@ -213,17 +227,35 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 	})
 	xfers := transfers.New(transfers.Config{Pool: pool, Clock: clk, Sessions: shareSvc, Notify: hub, Metrics: reg, ReportLimit: limits.TransferReport})
 	modules := []func(*access.Router){
-		devices.NewHTTP(deviceSvc, ips, clk, cfg.CookieSecure).Register,
+		deviceHTTP.Register,
+		auth.NewHTTP(authSvc, ips, deviceHTTP.WriteSession).Register,
 		hub.Register,
 		sharing.NewHTTP(shareSvc, ips, lookup).Register,
 		turn.Register,
 		transfers.NewHTTP(xfers, log).Register,
 	}
-	modules = append(modules, testHooks(cfg, clk, shareSvc, protected)...)
+	modules = append(modules, testHooks(cfg, clk, shareSvc, protected, memMail)...)
 	h, router := httpserver.New(httpserver.Options{
 		Logger: log, Version: version, Checks: checks, Verifier: deviceSvc,
 		ClientIP: ips.FromRequest, LogKey: cfg.ServerSecret,
 		Modules: modules,
 	})
-	return &app{handler: h, router: router, devices: deviceSvc, sharing: shareSvc, hub: hub, metrics: reg}, nil
+	return &app{handler: h, router: router, devices: deviceSvc, tokens: tokens, auth: authSvc, sharing: shareSvc, hub: hub, metrics: reg}, nil
+}
+
+// newMailer picks the password-reset mail sink (SA_MAIL_SINK). The console sink logs links only in
+// development; the memory sink exists only with SA_ENV=test and is read through the testhooks build.
+func newMailer(cfg config.Config, log *slog.Logger) (auth.Mailer, *auth.MemoryMailer) {
+	switch cfg.MailSink {
+	case "smtp":
+		return auth.SMTPMailer{Addr: cfg.SMTPAddr, From: cfg.MailFrom, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword}, nil
+	case "memory":
+		m := auth.NewMemoryMailer()
+		return m, m
+	default:
+		if cfg.Env == config.EnvProduction {
+			log.Warn("SA_MAIL_SINK is console: password reset mail is not delivered in production")
+		}
+		return auth.ConsoleMailer{Log: log, ShowLinks: cfg.Env == config.EnvDevelopment}, nil
+	}
 }

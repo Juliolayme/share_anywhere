@@ -33,6 +33,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set a new password with a reset token; ends every account session of the account. */
+        post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Email a single-use reset link (30 minutes) if the address has an account. Always 202. */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/signin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify email and password and bind an account session to the calling device (device ID unchanged).
+         * @description An unknown email gets the same 401 invalid_credentials as a wrong password, after the same Argon2id work. Rate limited per IP + email, per IP, per device, and failed attempts per email.
+         */
+        post: operations["signIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/signout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End the account session, remove the device from the account, revoke this device identity, and return a brand-new anonymous identity.
+         * @description No request body. Web devices get the new refresh secret as a new sa_device cookie; native devices get refresh_secret in the body (the old device's transport).
+         */
+        post: operations["signOut"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an account and bind an account session to the calling device (device ID unchanged).
+         * @description Fails with 409 already_signed_in when the device already has an account session. Rate limited per IP and per device (docs/SECURITY_MODEL.md §5).
+         */
+        post: operations["signUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Devices with a live account session for this account, current device first. */
+        get: operations["listAccountDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/devices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke another device - end its account session and remove it from the account (it keeps its guest identity). The caller then rotates the ADK. */
+        delete: operations["revokeAccountDevice"];
+        options?: never;
+        head?: never;
+        /** Rename one of this account's devices. */
+        patch: operations["renameAccountDevice"];
+        trace?: never;
+    };
     "/v1/devices/anonymous": {
         parameters: {
             query?: never;
@@ -83,6 +214,23 @@ export interface paths {
         patch: operations["updateCurrentDevice"];
         trace?: never;
     };
+    "/v1/devices/current/add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add the calling device to its account (dl becomes true; the account session slides to 90 days). Idempotent. */
+        post: operations["addCurrentDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/devices/current/reset": {
         parameters: {
             query?: never;
@@ -117,6 +265,288 @@ export interface paths {
          * @description Native clients send refresh_secret in the body. Web clients send the sa_device cookie and must send X-SA-Refresh 1.
          */
         post: operations["refreshDeviceToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Tombstone every live entry of the account, each with a new seq. */
+        delete: operations["clearHistory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/history/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Entries and tombstones with seq greater than after, in seq order. */
+        get: operations["listHistoryEntries"];
+        put?: never;
+        /** Store an encrypted entry. Idempotent on entry_id (the original seq is returned). */
+        post: operations["createHistoryEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/history/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Turn an entry into a tombstone with a new seq (deleting a tombstone again changes nothing). */
+        delete: operations["deleteHistoryEntry"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account key state - current ADK version, recovery metadata, every added device's wrapping key, and rotation blobs pending for the caller. */
+        get: operations["getKeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chain blobs (for version v, ADK(v-1) wrapped with ADK(v)), oldest first. */
+        get: operations["getKeyChain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Register (or replace) the caller's X25519 wrapping public key. Replacing it drops pending blobs wrapped to the old key. */
+        put: operations["registerDeviceKey"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/pairings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** New device starts a pairing (replacing any earlier one). The code is 128 random bits, valid 10 minutes. */
+        post: operations["createPairing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/pairings/{pairing_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pairing_id: string;
+            };
+            cookie?: never;
+        };
+        /** New device (owner only) polls the pairing. The wrapped blob is returned once; the pairing then reports expired. */
+        get: operations["getPairingResult"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/pairings/by-code/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        /** Existing device resolves a pairing code of the same account. Expired, used, other-account, and own codes are 404. */
+        get: operations["lookupPairing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/pairings/by-code/{code}/wrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Existing device uploads the newest ADK wrapped for the new device. Accepted once. */
+        post: operations["wrapPairing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/pending/{key_version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Acknowledge (delete) a rotation blob the caller has stored. Idempotent. */
+        delete: operations["ackPendingKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The newest ADK wrapped to the recovery public key, with salt and parameters. */
+        get: operations["getRecoveryBlob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record ADK version current+1 atomically, wrapped for every other added device with a registered key (the caller may add a safety copy for itself). */
+        post: operations["rotateKeys"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/keys/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record ADK version 1 wrapped to the recovery public key, with the recovery salt and Argon2id parameters. */
+        post: operations["setupKeys"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateMe"];
+        trace?: never;
+    };
+    "/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change the password; ends the account sessions of every other device. */
+        post: operations["changePassword"];
         delete?: never;
         options?: never;
         head?: never;
@@ -534,10 +964,58 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccountDevice: {
+            added: boolean;
+            /** Format: date-time */
+            created_at: string;
+            current: boolean;
+            /** @description The device registered a wrapping public key. */
+            has_key: boolean;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            last_seen_at: string;
+            name: string;
+            platform: string;
+        };
+        AccountDeviceRef: {
+            added: boolean;
+            /** Format: uuid */
+            id: string;
+        };
+        AccountRef: {
+            email: string;
+            /** Format: uuid */
+            id: string;
+        };
+        AccountToken: {
+            access_token: string;
+            device: components["schemas"]["AccountDeviceRef"];
+            expires_in: number;
+        };
+        Argon2Spec: {
+            /** @description Memory in KiB. */
+            m: number;
+            p: number;
+            t: number;
+        };
+        AuthResult: {
+            /** @description Carries acct and dl. */
+            access_token: string;
+            account: components["schemas"]["AccountRef"];
+            device: components["schemas"]["AccountDeviceRef"];
+            expires_in: number;
+        };
+        /** @description Binary data as base64url without padding. */
+        Base64Url: string;
         Capacity: {
             joined: number;
             max: number;
             requested: number;
+        };
+        ChainLink: {
+            blob: components["schemas"]["WrappedBlob"];
+            key_version: number;
         };
         CreateDeviceRequest: {
             display_name?: string;
@@ -555,6 +1033,21 @@ export interface components {
             /** @default false */
             require_approval: boolean;
         };
+        CredentialsRequest: {
+            /**
+             * @description Add this device to the account (dl true; required for keys, history, and Clipboard Sync). A not-added device's account session ends 24 h after sign-in.
+             * @default true
+             */
+            add_device: boolean;
+            /**
+             * @description Only meaningful with add_device. The client imports its local history with POST /v1/history/entries.
+             * @default false
+             */
+            copy_history: boolean;
+            email: string;
+            /** @description Sign-up requires 10 to 128 characters that are not a common password. */
+            password: string;
+        };
         Device: {
             /** Format: date-time */
             created_at: string;
@@ -566,6 +1059,22 @@ export interface components {
             /** Format: date-time */
             last_seen_at: string;
             platform: string;
+        };
+        DeviceBlob: {
+            blob: components["schemas"]["WrappedBlob"];
+            /** Format: uuid */
+            device_id: string;
+        };
+        DeviceKey: {
+            /** Format: uuid */
+            device_id: string;
+            public_key: components["schemas"]["PublicKey"] | null;
+        };
+        DevicesChanged: components["schemas"]["Error"] & {
+            /** @description Other added devices with a registered key that got no blob (409 devices_changed). */
+            missing?: string[];
+            /** @description Blobs for devices that are not (or no longer) added devices of the account (400 invalid_request). */
+            unexpected?: string[];
         };
         DeviceSession: {
             access_token: string;
@@ -592,6 +1101,36 @@ export interface components {
         Health: {
             status: string;
             version: string;
+        };
+        HistoryEntry: {
+            /** @description Absent on tombstones. */
+            ciphertext?: components["schemas"]["Base64Url"];
+            /** Format: date-time */
+            created_at: string;
+            deleted: boolean;
+            /** Format: uuid */
+            entry_id: string;
+            key_version: number;
+            /** @description Absent on tombstones. */
+            nonce?: components["schemas"]["Base64Url"];
+            /** Format: uuid */
+            origin_device_id: string;
+            /** Format: int64 */
+            seq: number;
+        };
+        HistoryEntryRequest: {
+            /** @description AES-256-GCM ciphertext and tag, at most 64 KB decoded. */
+            ciphertext: components["schemas"]["Base64Url"];
+            /** Format: uuid */
+            entry_id: string;
+            key_version: number;
+            /** @description 12 bytes. */
+            nonce: components["schemas"]["Base64Url"];
+        };
+        HistoryPage: {
+            entries: components["schemas"]["HistoryEntry"][];
+            /** Format: int64 */
+            next_after: number;
         };
         JoinPreview: {
             /** @description Set when the caller already has a participant in this session. */
@@ -632,6 +1171,43 @@ export interface components {
             /** @enum {string} */
             state: "OPEN" | "EXPIRED" | "ENDED_FULL" | "ENDED_BY_SENDER";
         };
+        KeysRotateRequest: {
+            /** @description ADK(v-1) wrapped with ADK(v). */
+            chain_blob: components["schemas"]["WrappedBlob"];
+            /** @description One blob for every other added device with a registered public key; a blob for the caller itself is accepted as a safety copy and delivered through its pending list. */
+            device_blobs: components["schemas"]["DeviceBlob"][];
+            /** @description Must be the current version + 1. */
+            key_version: number;
+            recovery_blob: components["schemas"]["WrappedBlob"];
+        };
+        KeysSetupRequest: {
+            params: components["schemas"]["Argon2Spec"];
+            recovery_blob: components["schemas"]["WrappedBlob"];
+            recovery_public_key: components["schemas"]["PublicKey"];
+            /** @description 16 to 64 bytes. */
+            salt: components["schemas"]["Base64Url"];
+        };
+        KeysState: {
+            /** @description Every added device of the account. */
+            devices: components["schemas"]["DeviceKey"][];
+            /** @description 0 means no ADK yet. */
+            key_version: number;
+            /** @description ADK versions wrapped for the caller by rotations, until acknowledged. */
+            pending: components["schemas"]["PendingBlob"][];
+            recovery: components["schemas"]["RecoveryInfo"] | null;
+        };
+        KeyVersion: {
+            key_version: number;
+        };
+        Me: {
+            /** Format: date-time */
+            created_at: string;
+            device: components["schemas"]["AccountDeviceRef"];
+            email: string;
+            history_sync: boolean;
+            /** Format: uuid */
+            id: string;
+        };
         OpenSession: {
             capacity: components["schemas"]["Capacity"];
             /** Format: date-time */
@@ -654,6 +1230,34 @@ export interface components {
             /** Format: date-time */
             server_time: string;
             sessions: components["schemas"]["OpenSession"][];
+        };
+        Pairing: {
+            /** @description 128 random bits as base64url (22 characters). */
+            code: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            pairing_id: string;
+        };
+        PairingPeer: {
+            /** Format: uuid */
+            device_id: string;
+            device_name: string;
+            ephemeral_public_key: components["schemas"]["PublicKey"];
+            /** Format: uuid */
+            pairing_id: string;
+        };
+        PairingStatus: {
+            blob?: components["schemas"]["WrappedBlob"];
+            key_version?: number;
+            sender_public_key?: components["schemas"]["PublicKey"];
+            /** @enum {string} */
+            status: "waiting" | "ready" | "expired";
+        };
+        PairingWrapRequest: {
+            blob: components["schemas"]["WrappedBlob"];
+            key_version: number;
+            sender_public_key: components["schemas"]["PublicKey"];
         };
         Participant: {
             display_name: string;
@@ -680,6 +1284,12 @@ export interface components {
             platform: string;
             signed_in: boolean;
         };
+        PendingBlob: {
+            blob: components["schemas"]["WrappedBlob"];
+            /** Format: uuid */
+            from_device_id: string;
+            key_version: number;
+        };
         PowChallenge: {
             /** @description Leading zero bits required in SHA-256(token + ":" + solution). */
             difficulty: number;
@@ -693,12 +1303,25 @@ export interface components {
             solution: string;
             token: string;
         };
+        /** @description X25519 public key, exactly 32 bytes, base64url without padding. */
+        PublicKey: string;
         Ready: {
             checks: {
                 [key: string]: "ok" | "unavailable";
             };
             /** @enum {string} */
             status: "ok" | "unavailable";
+        };
+        RecoveryBlob: {
+            key_version: number;
+            params: components["schemas"]["Argon2Spec"];
+            recovery_blob: components["schemas"]["WrappedBlob"];
+            salt: components["schemas"]["Base64Url"];
+        };
+        RecoveryInfo: {
+            params: components["schemas"]["Argon2Spec"];
+            public_key: components["schemas"]["PublicKey"];
+            salt: components["schemas"]["Base64Url"];
         };
         RefreshRequest: {
             /** @description Native apps only. The Web sends no body and uses the sa_device cookie. */
@@ -810,6 +1433,8 @@ export interface components {
             accepting_receivers?: false;
             require_approval?: boolean;
         };
+        /** @description Opaque wrapped key (at most 4 KB decoded), base64url without padding. The server cannot unwrap it. */
+        WrappedBlob: string;
         WsTicket: {
             expires_in: number;
             ticket: string;
@@ -937,6 +1562,264 @@ export interface operations {
             };
         };
     };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    password: string;
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Password changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description reset_token_invalid (unknown, used, or expired), weak_password, or invalid_request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    email: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted; the response never says whether the account exists. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    signIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialsRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description invalid_credentials, or an invalid device token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description already_signed_in. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    signOut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new anonymous identity (new device ID). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSession"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    signUp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialsRequest"];
+            };
+        };
+        responses: {
+            /** @description Account created. The access token carries acct and, when add_device is true, dl. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResult"];
+                };
+            };
+            /** @description invalid_request, invalid_email, or weak_password. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description email_taken or already_signed_in. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    listAccountDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account devices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        devices: components["schemas"]["AccountDevice"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    revokeAccountDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description use_signout (the current device signs out instead). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    renameAccountDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The renamed device. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDevice"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     createAnonymousDevice: {
         parameters: {
             query?: never;
@@ -1040,6 +1923,36 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    addCurrentDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The client imports its local history with POST /v1/history/entries; the server only accepts the flag. */
+                    copy_history?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description New access token with dl true. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountToken"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     resetCurrentDevice: {
         parameters: {
             query?: never;
@@ -1089,6 +2002,531 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             /** @description Cookie refresh without the X-SA-Refresh header. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    clearHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cleared. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    listHistoryEntries: {
+        parameters: {
+            query?: {
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page; resume with next_after. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createHistoryEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoryEntryRequest"];
+            };
+        };
+        responses: {
+            /** @description Stored (or already stored). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: int64 */
+                        seq: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description key_version_conflict (key_version is newer than the account's). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    deleteHistoryEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    getKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Key state (public keys and opaque blobs only). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeysState"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getKeyChain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chain. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        chain: components["schemas"]["ChainLink"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    registerDeviceKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    public_key: components["schemas"]["PublicKey"];
+                };
+            };
+        };
+        responses: {
+            /** @description Registered. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPairing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ephemeral_public_key: components["schemas"]["PublicKey"];
+                };
+            };
+        };
+        responses: {
+            /** @description Pairing created; show code as QR and pasteable text. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pairing"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    getPairingResult: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pairing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pairing status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairingStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    lookupPairing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new device's ephemeral key and name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairingPeer"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    wrapPairing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PairingWrapRequest"];
+            };
+        };
+        responses: {
+            /** @description Stored for one-time pickup. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description key_version_conflict (key_version is not the account's current version). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    ackPendingKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getRecoveryBlob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recovery-wrapped ADK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryBlob"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    rotateKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeysRotateRequest"];
+            };
+        };
+        responses: {
+            /** @description Rotated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyVersion"];
+                };
+            };
+            /** @description invalid_request; when device_blobs names devices that are not added devices of the account, the body lists them in unexpected. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicesChanged"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description key_version_conflict, or devices_changed with the missing device IDs. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicesChanged"];
+                };
+            };
+        };
+    };
+    setupKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeysSetupRequest"];
+            };
+        };
+        responses: {
+            /** @description Key version 1 recorded. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description keys_exist. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The signed-in account as seen from this device. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    history_sync?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated account. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    current_password: string;
+                    new_password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Password changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description weak_password or invalid_request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description invalid_credentials (wrong current password; 403 so clients do not treat it as an expired token) or account_required. */
             403: {
                 headers: {
                     [name: string]: unknown;

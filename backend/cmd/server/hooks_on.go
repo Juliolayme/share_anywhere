@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/juliolayme/share_anywhere/backend/internal/auth"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/clock"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/config"
@@ -24,7 +25,7 @@ func newClock(cfg config.Config) clock.Clock {
 	return clock.Real{}
 }
 
-func testHooks(cfg config.Config, clk clock.Clock, svc *sharing.Service, _ *sharing.ProtectedMode) []func(*access.Router) {
+func testHooks(cfg config.Config, clk clock.Clock, svc *sharing.Service, _ *sharing.ProtectedMode, mail *auth.MemoryMailer) []func(*access.Router) {
 	off, ok := clk.(*clock.Offset)
 	if cfg.Env != config.EnvTest || !ok {
 		return nil
@@ -57,6 +58,20 @@ func testHooks(cfg config.Config, clk clock.Clock, svc *sharing.Service, _ *shar
 			}
 			on, until := svc.SetProtected(in.Active)
 			httpx.JSON(w, http.StatusOK, map[string]any{"active": on, "until": until})
+		})
+		// The last mail sent to an address (SA_MAIL_SINK=memory), so specs can follow a password-reset link.
+		// Reset mail is sent in the background; specs poll until it appears (404 until then).
+		r.Handle(http.MethodGet, "/v1/_test/mail/last", access.Public, func(w http.ResponseWriter, req *http.Request) {
+			if mail == nil {
+				httpx.Error(w, http.StatusNotFound, "not_found", "SA_MAIL_SINK is not memory.")
+				return
+			}
+			m, ok := mail.Last(req.URL.Query().Get("to"))
+			if !ok {
+				httpx.Error(w, http.StatusNotFound, "not_found", "No mail for this address yet.")
+				return
+			}
+			httpx.JSON(w, http.StatusOK, map[string]any{"to": m.To, "subject": m.Subject, "body": m.Body, "link": m.Link})
 		})
 	}}
 }

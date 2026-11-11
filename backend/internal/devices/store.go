@@ -22,6 +22,14 @@ type Device struct {
 	RevokedAt  *time.Time
 }
 
+// LifetimeFor is how long a device of this kind lives without use (docs/SECURITY_MODEL.md §4).
+func LifetimeFor(kind string) time.Duration {
+	if kind == "account" {
+		return AccountLifetime
+	}
+	return AnonymousLifetime
+}
+
 // Active reports whether the device can still be used at now.
 func (d Device) Active(now time.Time) bool { return d.RevokedAt == nil && now.Before(d.ExpiresAt) }
 
@@ -38,8 +46,9 @@ type Store interface {
 	CreateDevice(ctx context.Context, d Device, secretHash []byte) error
 	// SecretDevice returns the device that owns a refresh-secret hash (used or not), without changing anything.
 	SecretDevice(ctx context.Context, secretHash []byte) (string, error)
-	// RotateSecret consumes oldHash and stores newHash. A consumed hash presented again revokes the device.
-	RotateSecret(ctx context.Context, oldHash, newHash []byte, now time.Time, lifetime time.Duration) (Device, error)
+	// RotateSecret consumes oldHash and stores newHash, extending the device's lifetime (LifetimeFor its kind).
+	// A consumed hash presented again revokes the device.
+	RotateSecret(ctx context.Context, oldHash, newHash []byte, now time.Time) (Device, error)
 	GetDevice(ctx context.Context, id string) (Device, error)
 	RenameDevice(ctx context.Context, id, name string, now time.Time) (Device, error)
 	RevokeDevice(ctx context.Context, id string, now time.Time) error
@@ -83,7 +92,7 @@ func (m *MemStore) SecretDevice(_ context.Context, secretHash []byte) (string, e
 	return "", ErrSecretUnknown
 }
 
-func (m *MemStore) RotateSecret(_ context.Context, oldHash, newHash []byte, now time.Time, lifetime time.Duration) (Device, error) {
+func (m *MemStore) RotateSecret(_ context.Context, oldHash, newHash []byte, now time.Time) (Device, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.secrets[string(oldHash)]
@@ -110,7 +119,7 @@ func (m *MemStore) RotateSecret(_ context.Context, oldHash, newHash []byte, now 
 	s.used = true
 	d.Generation++
 	d.LastSeenAt = now
-	d.ExpiresAt = now.Add(lifetime)
+	d.ExpiresAt = now.Add(LifetimeFor(d.Kind))
 	m.secrets[string(newHash)] = &memSecret{deviceID: d.ID, generation: d.Generation}
 	return *d, nil
 }

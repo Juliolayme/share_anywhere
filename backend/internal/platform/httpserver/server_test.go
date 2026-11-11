@@ -157,3 +157,15 @@ func TestRequestLogHasIPHashNotAddress(t *testing.T) {
 		t.Fatalf("log line must carry a 16-hex ip_hash and no address: %s", buf.String())
 	}
 }
+
+func TestRequestLogRedactsPairingCode(t *testing.T) {
+	var buf bytes.Buffer
+	h := NewHandler(Options{Logger: logging.New(&buf, "debug")})
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/keys/pairings/by-code/SECRETCODE123/wrap", nil))
+	if strings.Contains(buf.String(), "SECRETCODE123") || !strings.Contains(buf.String(), "/v1/keys/pairings/by-code/[redacted]/wrap") {
+		t.Fatalf("pairing code in logs: %s", buf.String())
+	}
+	if RedactPath("/v1/keys/pairings/by-code/abc") != "/v1/keys/pairings/by-code/[redacted]" || RedactPath("/v1/keys") != "/v1/keys" {
+		t.Fatal("RedactPath")
+	}
+}

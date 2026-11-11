@@ -55,9 +55,9 @@ func toAPIDevice(d Device) api.Device {
 	}
 }
 
-// writeSession answers with the refresh secret in the transport fixed for the device at creation, never the
+// WriteSession answers with the refresh secret in the transport fixed for the device at creation, never the
 // one a later request asks for: a Web device's secret only ever travels in the HttpOnly cookie.
-func (h *HTTP) writeSession(w http.ResponseWriter, status int, s Session) {
+func (h *HTTP) WriteSession(w http.ResponseWriter, status int, s Session) {
 	cookie := s.Device.Transport != TransportBody
 	body := api.DeviceSession{
 		Device: toAPIDevice(s.Device), AccessToken: s.AccessToken, ExpiresIn: s.ExpiresIn, ServerTime: h.clock.Now().UTC(),
@@ -66,7 +66,7 @@ func (h *HTTP) writeSession(w http.ResponseWriter, status int, s Session) {
 		// Secure is false only when SA_COOKIE_SECURE=false, which config rejects in production.
 		http.SetCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly and SameSite=Strict always; Secure from validated config
 			Name: CookieName, Value: s.Secret, Path: cookiePath, HttpOnly: true, Secure: h.cookieSecure,
-			SameSite: http.SameSiteStrictMode, MaxAge: int(AnonymousLifetime / time.Second),
+			SameSite: http.SameSiteStrictMode, MaxAge: int(LifetimeFor(s.Device.Kind) / time.Second),
 		})
 	} else {
 		secret := s.Secret
@@ -129,7 +129,7 @@ func (h *HTTP) create(w http.ResponseWriter, r *http.Request) {
 	if writeServiceError(w, err) {
 		return
 	}
-	h.writeSession(w, http.StatusCreated, s)
+	h.WriteSession(w, http.StatusCreated, s)
 }
 
 func (h *HTTP) refresh(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +173,7 @@ func (h *HTTP) refresh(w http.ResponseWriter, r *http.Request) {
 	if writeServiceError(w, err) {
 		return
 	}
-	h.writeSession(w, http.StatusOK, s)
+	h.WriteSession(w, http.StatusOK, s)
 }
 
 func (h *HTTP) current(w http.ResponseWriter, r *http.Request) {
@@ -211,5 +211,5 @@ func (h *HTTP) reset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The new identity inherits the old device's transport (cookie for the Web).
-	h.writeSession(w, http.StatusCreated, s)
+	h.WriteSession(w, http.StatusCreated, s)
 }

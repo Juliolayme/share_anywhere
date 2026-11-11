@@ -52,3 +52,19 @@ func TestSweepKeepsMemoryBounded(t *testing.T) {
 		t.Fatalf("buckets not swept: %d", len(l.buckets))
 	}
 }
+
+func TestCheckDoesNotSpendAndReportsWait(t *testing.T) {
+	l := New(Rule{Limit: 2, Window: time.Hour}, clock.NewFake(time.Unix(0, 0)))
+	if ok, wait := l.Check("k"); !ok || wait != 0 {
+		t.Fatalf("fresh bucket: %v %v", ok, wait)
+	}
+	l.Allow("k")
+	l.Allow("k")
+	ok, wait := l.Check("k")
+	if ok || wait < 29*time.Minute || wait > 31*time.Minute {
+		t.Fatalf("empty bucket should wait ~30 min: %v %v", ok, wait)
+	}
+	if ok2, _ := l.Check("k"); ok2 {
+		t.Fatal("check must not refill or spend")
+	}
+}

@@ -19,9 +19,11 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/ratelimit"
 )
 
-// Lifetimes (docs/SECURITY_MODEL.md §4).
+// Lifetimes (docs/SECURITY_MODEL.md §4). A device added to an account lives 90 days without use; every
+// other device (guest, or signed in but not added) 30 days.
 const (
 	AnonymousLifetime = 30 * 24 * time.Hour
+	AccountLifetime   = 90 * 24 * time.Hour
 	RevokedRetention  = 24 * time.Hour
 	activeCacheTTL    = 30 * time.Second
 )
@@ -78,6 +80,27 @@ type Session struct {
 	AccessToken string
 	ExpiresIn   int
 	Secret      string
+	Account     AccountState
+}
+
+// AccountState is a device's active account session as the account layer sees it (docs/SECURITY_MODEL.md
+// §4): the zero value means no account session (guest).
+type AccountState struct {
+	AccountID string
+	Added     bool
+}
+
+// Accounts is implemented by the account layer (internal/auth) and wired in cmd/server, so this package
+// never imports it. AccountState returns the device's active, unexpired, unrevoked account session; touch
+// marks it used (a refresh), which slides the lifetime of an added device's session.
+type Accounts interface {
+	AccountState(ctx context.Context, deviceID string, touch bool) (AccountState, error)
+}
+
+type noAccounts struct{}
+
+func (noAccounts) AccountState(context.Context, string, bool) (AccountState, error) {
+	return AccountState{}, nil
 }
 
 // Service implements the device identity operations.
@@ -89,17 +112,29 @@ type Service struct {
 	limits Limits
 	log    *slog.Logger
 
+	accounts Accounts
+
 	mu       sync.Mutex
 	active   map[string]activeEntry
+	acct     map[string]acctEntry
 	onRevoke []func(deviceID string)
 }
+
+type acctEntry struct {
+	state AccountState
+	until time.Time
+}
+
+// SetAccounts installs the account layer. Without it every device is a guest and tokens carrying acct are
+// refused.
+func (s *Service) SetAccounts(a Accounts) { s.accounts = a }
 
 // OnRevoke registers a callback run after a device is revoked (reset or refresh reuse), e.g. to close its
 // WebSockets.
 func (s *Service) OnRevoke(fn func(deviceID string)) { s.onRevoke = append(s.onRevoke, fn) }
 
 func (s *Service) revoked(id string) {
-	s.forget(id)
+	s.Forget(id)
 	for _, fn := range s.onRevoke {
 		fn(id)
 	}
@@ -112,7 +147,8 @@ type activeEntry struct {
 
 // NewService wires the device identity service.
 func NewService(store Store, tokens *Tokens, pow *PoW, c clock.Clock, limits Limits, log *slog.Logger) *Service {
-	return &Service{store: store, tokens: tokens, pow: pow, clock: c, limits: limits, log: log, active: map[string]activeEntry{}}
+	return &Service{store: store, tokens: tokens, pow: pow, clock: c, limits: limits, log: log, accounts: noAccounts{},
+		active: map[string]activeEntry{}, acct: map[string]acctEntry{}}
 }
 
 // CreateInput is a validated bootstrap request.
@@ -210,15 +246,45 @@ func (s *Service) createDevice(ctx context.Context, platform, name, transport st
 	if err := s.store.CreateDevice(ctx, d, hash); err != nil {
 		return Session{}, fmt.Errorf("create device: %w", err)
 	}
-	return s.session(d, secret)
+	return s.session(d, secret, AccountState{})
 }
 
-func (s *Service) session(d Device, secret string) (Session, error) {
-	tok, err := s.tokens.Issue(d.ID, d.Generation)
+func (s *Service) session(d Device, secret string, acct AccountState) (Session, error) {
+	tok, err := s.tokens.IssueWith(d.ID, d.Generation, acct)
 	if err != nil {
 		return Session{}, fmt.Errorf("issue token: %w", err)
 	}
-	return Session{Device: d, AccessToken: tok, ExpiresIn: int(AccessTokenTTL.Seconds()), Secret: secret}, nil
+	return Session{Device: d, AccessToken: tok, ExpiresIn: int(AccessTokenTTL.Seconds()), Secret: secret, Account: acct}, nil
+}
+
+// Token issues a fresh access token for an active device with its current account state (acct, dl), without
+// rotating the refresh secret. The account layer calls it after sign-in, sign-up, and Add this device.
+func (s *Service) Token(ctx context.Context, deviceID string) (Session, error) {
+	d, err := s.Get(ctx, deviceID)
+	if err != nil {
+		return Session{}, err
+	}
+	s.Forget(deviceID)
+	acct, err := s.accounts.AccountState(ctx, deviceID, false)
+	if err != nil {
+		return Session{}, err
+	}
+	return s.session(d, "", acct)
+}
+
+// Replace revokes a device and bootstraps a brand-new anonymous identity with the same platform and refresh
+// transport, so nothing links the two (sign-out, PRD §2). Unlike Reset it is not counted against the
+// per-address creation limit: the caller held an account session, and sign-ins are rate limited.
+func (s *Service) Replace(ctx context.Context, id string) (Session, error) {
+	old, err := s.Get(ctx, id)
+	if err != nil {
+		return Session{}, err
+	}
+	if err := s.store.RevokeDevice(ctx, id, s.clock.Now()); err != nil {
+		return Session{}, err
+	}
+	s.revoked(id)
+	return s.createDevice(ctx, old.Platform, GenerateName(old.Platform), old.Transport)
 }
 
 // Refresh rotates a refresh secret and issues a new access token.
@@ -235,7 +301,7 @@ func (s *Service) Refresh(ctx context.Context, secret string) (Session, error) {
 		return Session{}, &RateLimitedError{Wait: wait}
 	}
 	next, hash := newSecret()
-	d, err := s.store.RotateSecret(ctx, old, hash, s.clock.Now(), AnonymousLifetime)
+	d, err := s.store.RotateSecret(ctx, old, hash, s.clock.Now())
 	if errors.Is(err, ErrSecretReused) {
 		s.revoked(deviceID)
 		s.log.Warn("refresh secret reuse detected; device revoked", "device", deviceID)
@@ -243,7 +309,14 @@ func (s *Service) Refresh(ctx context.Context, secret string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	return s.session(d, next)
+	// acct and dl are re-derived from the device's active account session on every refresh, which also
+	// slides an added device's session lifetime.
+	s.Forget(d.ID)
+	acct, err := s.accounts.AccountState(ctx, d.ID, true)
+	if err != nil {
+		return Session{}, err
+	}
+	return s.session(d, next, acct)
 }
 
 // Get returns an active device.
@@ -308,12 +381,44 @@ func (s *Service) Verify(ctx context.Context, token string) (access.Identity, er
 	if !e.active {
 		return access.Identity{}, access.ErrTokenInvalid
 	}
+	if id.AccountID != "" {
+		// A token minted before sign-out, revocation, or a password reset must stop granting account access
+		// at once, not when it expires: compare its claims with the live account session.
+		st, err := s.accountState(ctx, id.DeviceID, now)
+		if err != nil {
+			return access.Identity{}, err
+		}
+		if st.AccountID != id.AccountID || (id.DeviceAdded && !st.Added) {
+			return access.Identity{}, access.ErrTokenInvalid
+		}
+	}
 	return id, nil
 }
 
-func (s *Service) forget(id string) {
+// accountState is AccountState cached for activeCacheTTL; Forget clears it when the session changes.
+func (s *Service) accountState(ctx context.Context, deviceID string, now time.Time) (AccountState, error) {
+	s.mu.Lock()
+	e, ok := s.acct[deviceID]
+	s.mu.Unlock()
+	if ok && !now.After(e.until) {
+		return e.state, nil
+	}
+	st, err := s.accounts.AccountState(ctx, deviceID, false)
+	if err != nil {
+		return AccountState{}, err
+	}
+	s.mu.Lock()
+	s.acct[deviceID] = acctEntry{state: st, until: now.Add(activeCacheTTL)}
+	s.mu.Unlock()
+	return st, nil
+}
+
+// Forget drops the cached activity and account state of a device; the account layer calls it whenever a
+// device's account session starts, changes, or ends.
+func (s *Service) Forget(id string) {
 	s.mu.Lock()
 	delete(s.active, id)
+	delete(s.acct, id)
 	s.mu.Unlock()
 }
 

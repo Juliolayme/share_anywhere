@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
@@ -137,6 +138,23 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
+// secretPathPrefixes are routes whose next path segment is a secret (a device pairing code).
+var secretPathPrefixes = []string{"/v1/keys/pairings/by-code/"}
+
+// RedactPath replaces secret path segments with "[redacted]" so request logs never hold them.
+func RedactPath(p string) string {
+	for _, prefix := range secretPathPrefixes {
+		if rest, ok := strings.CutPrefix(p, prefix); ok {
+			_, tail, hasTail := strings.Cut(rest, "/")
+			if hasTail {
+				return prefix + "[redacted]/" + tail
+			}
+			return prefix + "[redacted]"
+		}
+	}
+	return p
+}
+
 // requestLogger logs method, path (never the query string, which may carry tokens), status, and duration.
 func requestLogger(log *slog.Logger, clientIP func(*http.Request) netip.Addr, key []byte, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +165,7 @@ func requestLogger(log *slog.Logger, clientIP func(*http.Request) netip.Addr, ke
 		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 			level = slog.LevelDebug
 		}
-		attrs := []any{"method", r.Method, "path", r.URL.Path, "status_code", rec.status,
+		attrs := []any{"method", r.Method, "path", RedactPath(r.URL.Path), "status_code", rec.status,
 			"duration_ms", time.Since(start).Milliseconds()}
 		if clientIP != nil && len(key) > 0 {
 			attrs = append(attrs, "ip_hash", IPHash(clientIP(r), key))

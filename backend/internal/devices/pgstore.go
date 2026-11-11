@@ -55,7 +55,7 @@ func (s *PGStore) SecretDevice(ctx context.Context, secretHash []byte) (string, 
 	return id, err
 }
 
-func (s *PGStore) RotateSecret(ctx context.Context, oldHash, newHash []byte, now time.Time, lifetime time.Duration) (Device, error) {
+func (s *PGStore) RotateSecret(ctx context.Context, oldHash, newHash []byte, now time.Time) (Device, error) {
 	var out Device
 	reused := false
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -93,7 +93,7 @@ func (s *PGStore) RotateSecret(ctx context.Context, oldHash, newHash []byte, now
 		}
 		out, err = scanDevice(tx.QueryRow(ctx,
 			`UPDATE devices SET refresh_generation = refresh_generation + 1, last_seen_at = $2, expires_at = $3
-			 WHERE id = $1::uuid RETURNING `+deviceColumns, deviceID, now, now.Add(lifetime)))
+			 WHERE id = $1::uuid RETURNING `+deviceColumns, deviceID, now, now.Add(LifetimeFor(d.Kind))))
 		if err != nil {
 			return err
 		}

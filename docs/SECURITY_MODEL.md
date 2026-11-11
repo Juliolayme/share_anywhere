@@ -100,6 +100,13 @@ Implemented in Phase 1 (device identity) and Phase 5A (accounts). Flow diagrams 
 - **Account session:** layered on the device identity. Sign-in keeps the device ID, so active transfers continue. A signed-in device that is not added to the account gets an account session of at most 24 hours. Sign-out removes the device from the account, revokes the account session, wipes local ADK material, and issues a brand-new anonymous identity.
 - **WebSocket:** one-time ticket from `POST /v1/ws/ticket`, valid 30 seconds; `Origin` checked on upgrade.
 - **Passwords:** Argon2id with parameters recorded in an ADR; no email verification in v1.
+- **As built (Phase 5A, accounts):** `backend/internal/auth`; session model in `docs/ADR/0010-account-sessions.md`.
+  - *Account session.* One `auth_sessions` row per device at a time (partial unique index). Added device: sliding, 90 days from last use (each refresh slides it and the device's own lifetime, now 90 days for `kind = account`). Not-added device: ends 24 hours after sign-in, never extended; the device stays `kind = anonymous`. A background sweep (every 5 minutes) ends expired sessions. Sign-out, revoke, password reset, password change (other devices), identity reset, and refresh-secret reuse all end the session in the same way: the device leaves the account (`kind = anonymous`, `user_id` cleared, lifetime back to 30 days) and its wrapping key, pending key blobs, and pairing are deleted.
+  - *Claims stay honest.* Every refresh re-derives `acct` and `dl` from the live session. Verification also compares the claims of any token carrying `acct` with the live session (cached 30 seconds per instance and dropped at once on every change on that instance), and every account handler re-reads the session, so a revoked or signed-out device loses account access immediately, not when its token expires. A token claiming `dl = true` for a not-added session is refused.
+  - *Passwords.* Argon2id m = 19,456 KiB, t = 2, p = 1, 16-byte salt, 32-byte key, PHC string format (`docs/ADR/0009-argon2id-passwords.md`); at most 4 hashes run at once per instance; hashes with older parameters are upgraded on the next sign-in. Policy: 10–128 characters, not in a common-password list, not one repeated character, not containing the email's local part. Comparison is constant time. An unknown email verifies against a dummy hash and gets the same `401 invalid_credentials` body.
+  - *Password reset.* 256-bit token, SHA-256 at rest, 30 minutes, single use; a successful reset or password change invalidates every outstanding token and ends every account session (a password change keeps the current device). The request always answers `202`; lookup and mail run in the background so the response and its timing do not reveal whether the account exists. Mail goes through an adapter (`SA_MAIL_SINK`): `console` logs the link only with `SA_ENV=development` and never logs the address; `smtp` (mailpit in development; a relay in production, untested); `memory` only with `SA_ENV=test`, read by end-to-end specs through the `testhooks` build.
+  - *Sign-out* revokes the device identity and issues a brand-new one with the same platform and refresh transport (§7, guest-to-account linkability).
+  - *Account keys and history* are opaque to the server (§7): it stores X25519 public keys, the recovery salt and Argon2id parameters, wrapped ADK blobs, chain blobs, and AES-256-GCM ciphertext, checks only sizes and versions, and cannot decrypt any of them. Pairing codes are 128-bit, SHA-256 at rest, 10 minutes, one per device, picked up once, then the wrapped blob is deleted; request logs redact the code from the path.
 
 ## 5. Rate limits and lockouts
 
@@ -121,9 +128,12 @@ Token buckets keyed as listed. IPv6 is keyed by /64. The client IP comes from `X
 | TURN credentials | Guest device: 20 / hour; account device: 60 / hour; IP: 120 / hour. **Built in Phase 2** |
 | Transfer reports | Device: 300 / min (clients throttle progress reports to one every 2 s per transfer plus state changes). **Built in Phase 3** |
 | WebSocket | IP: 20 concurrent; device: 3 concurrent; 50 messages / s per socket; tickets: 30 / min per device. **Built in Phase 1** |
-| Sign-in | IP + email: 5 / 15 min; IP: 30 / hour |
-| Sign-up | IP: 5 / hour |
-| Password reset request | Email: 3 / hour; IP: 10 / hour |
+| Sign-in | IP + email: 5 / 15 min; IP: 30 / hour; device: 10 / 15 min (every attempt). Email from any address: 20 failed attempts / hour, checked before the password is verified. **Built in Phase 5A** (`backend/internal/auth/auth.go`) |
+| Sign-up | IP: 5 / hour; device: 3 / hour. **Built in Phase 5A** |
+| Password reset request | Email: 3 / hour; IP: 10 / hour. **Built in Phase 5A** |
+| Password change | Account: 5 failed current-password checks / 15 min. **Built in Phase 5A** |
+| Device pairing | Create: device 10 / hour; code lookup: device 30 / 10 min; IP (create and lookup): 60 / 10 min. **Built in Phase 5A** |
+| History writes | Device: 600 / min (entry creation, deletion, clear). **Built in Phase 5A** |
 | Clipboard event creation | Device: 120 / min |
 
 ## 6. Session and token lifetimes
@@ -140,6 +150,10 @@ Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests dr
 | Transfer capability | Bound to participant and device; valid until the session ends or the participant is removed |
 | TURN credential | Guest 30 min; account 60 min (`docs/ARCHITECTURE.md` §6) |
 | Server session records, including file names | Purged 7 days after the session ends |
+| Account session, added device | 90 days after last use (sliding); the device itself also lives 90 days without use. **Built in Phase 5A** |
+| Account session, signed in but not added | 24 h after sign-in, never extended. **Built in Phase 5A** |
+| Password-reset link | 30 min, single use. **Built in Phase 5A** |
+| Device pairing code and wrapped blob | 10 min; the blob is deleted at pickup. **Built in Phase 5A** |
 | Protected mode | 30 min after the alarm condition clears |
 
 ## 7. Threat model
@@ -158,14 +172,19 @@ Implemented in Phase 2 (`backend/internal/sharing/model.go`, `jobs.go`; tests dr
 | TURN as a free relay or proxy | Credentials only for joined participants of active sessions, short TTL, issue limits, coturn quotas, relay byte caps per session | Abuse within caps |
 | Hosting abuse via Cloud Distribution | Signed-in sender only, budget cap, TTL, deletion after completion | Abuse by registered accounts; suspension tooling is backlog |
 | Malware distribution | Server never sees content; receiver sees names and sizes before tapping Receive; no public session listing | Recipients may accept malicious files from someone they trust |
-| Stolen access token | 15-min TTL, device-bound | Short misuse window |
-| Stolen refresh secret | Rotation with reuse detection, platform secure storage, `HttpOnly` cookie | Use before the legitimate device refreshes |
+| Stolen access token | 15-min TTL, device-bound; account claims are checked against the live account session on every request, so sign-out or revoke ends account access at once | Short misuse window for guest-level actions |
+| Stolen refresh secret | Rotation with reuse detection, platform secure storage, `HttpOnly` cookie. With an account (Phase 5A): reuse detection also ends the account session; the owner can revoke the device from Devices on another added device, which ends its account session at once and triggers an ADK rotation, so the thief never receives later keys; Change password ends every other device's session | Use before the legitimate device refreshes; on an added device the thief can read history and keys until revoked |
+| Account takeover by password guessing or credential stuffing (Phase 5A) | Argon2id, password policy with a common-password list, sign-in limits per IP + email, IP, device, and failed attempts per email from any address; identical answer and work for unknown emails | Distributed stuffing below the per-email failure limit; an attacker can keep a victim's sign-in rate-limited (at most about one attempt every 3 minutes after 20 failures); no second factor in v1 |
+| Account takeover through password reset (Phase 5A) | 256-bit single-use link valid 30 minutes, hashed at rest, request limits per email and IP, no enumeration (always `202`, background processing); a reset ends every account session | Anyone who controls the mailbox controls the account (no email verification in v1). A reset does not reveal keys: history stays encrypted under the ADK, which only added devices and the recovery phrase can unwrap |
+| Account enumeration (Phase 5A) | Sign-in and reset never reveal whether an email exists | Sign-up answers `409 email_taken` (product need), limited to 5 per hour per IP and 3 per device |
+| A signed-in device that was never added (shared computer) | Account session ends after 24 h; no keys, history, or clipboard (`403 device_not_added`) | It sees the account's email and Devices list until then |
 | CSRF on the Web refresh cookie | `SameSite=Strict`, path scope, custom header, CORS allowlist | — |
 | Unauthorized resume or transfer takeover | Transfer capability (256-bit HMAC of participant, device and join time, `backend/internal/sharing/member.go`) shown only to that JOINED receiver; the sender gets only its SHA-256 and checks it in HELLO on every connect (`docs/TRANSFER_PROTOCOL.md`); Remove, Block, Leave and rejoin invalidate it; resuming over REST needs it | — |
-| Linking guest activity to an account | New anonymous identity on sign-out; server session records purged after 7 days | Before purge, the server can correlate pre-sign-in sessions from one device ID |
+| Linking guest activity to an account | New anonymous identity on sign-out (Phase 5A: the old device is revoked and the new one shares no ID, secret, or name with it); server session records purged after 7 days | Sign-in keeps the device ID (so running transfers continue), so the server can correlate the device's guest sessions before sign-in with the account until those records are purged; the IP address of the sign-out request also links the two identities in rate-limit memory |
 | Rate limits hurting CGNAT users | Combined IP + device keys, generous IP bursts, clear 429 messages | Very busy shared IPs may hit limits |
 | Signaling denial of service | WebSocket caps, message rate limits, ticket requirement | Volumetric attacks need upstream protection |
-| Clipboard or history plaintext exposure | E2E encryption with the ADK, no plaintext logs, guests never touch clipboard APIs | Compromised endpoint device |
+| Clipboard or history plaintext exposure | E2E encryption with the ADK, no plaintext logs, guests never touch clipboard APIs. History (Phase 5A): AES-256-GCM under the `history-v1` subkey with the entry ID and key version as AAD; the server stores ciphertext, nonce, key version, origin device, and timestamps; deletions become tombstones that drop nonce and ciphertext; a revoked device's session ends at once and the next ADK version is wrapped only for remaining devices | Compromised endpoint device; the server learns entry counts, sizes, timing, and which device wrote each entry; a revoked device keeps whatever it already decrypted and old ADK versions |
+| Malicious server substituting wrapping keys (Phase 5A) | Keys and blobs are bound to purposes and versions by AAD (`docs/CLIPBOARD_PROTOCOL.md`); pairing needs a code shown on the new device | The server lists device public keys, so a malicious server could add its own key to a rotation list; detecting that needs key fingerprints in the UI (backlog) |
 | Keep-screen-on abuse draining battery | Held only while a join window is open or transfers are active, released on window end, completion, pause, cancel, close, or expiry; user setting | Waiting is capped at 10 minutes per join window |
 
 ## 8. Privacy and logging

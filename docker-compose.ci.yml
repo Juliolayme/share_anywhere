@@ -37,6 +37,8 @@ services:
       SA_POW_DIFFICULTY: "8"
       SA_PUBLIC_URL: http://localhost:8080
       SA_TURN_SECRET: ci-turn-secret
+      # Reset mail stays in memory; specs read it with GET /v1/_test/mail/last (testhooks build).
+      SA_MAIL_SINK: memory
       SA_TURN_URIS: turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp
     depends_on:
       postgres:

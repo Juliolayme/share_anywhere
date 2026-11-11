@@ -110,9 +110,10 @@ class InteropTest {
                 .putExtra(Notifier.EXTRA_SESSION_ID, view.id)
         ActivityScenario.launch<MainActivity>(intent).use {
             compose.dumpOnFailure {
-                compose.waitForTag("session.dashboard", 5 * 60_000)
+                // The transfer is watched through the runtime (no UI polling while bytes move); the dashboard is checked after.
+                waitForSendEnd(view.id, 19 * 60_000L)
+                compose.waitForTag("session.dashboard", 30_000)
                 compose.onNodeWithTag("session.dashboard").tap()
-                waitForSendEnd(view.id, 14 * 60_000L)
                 compose.waitForTag(ScreenIds.DASHBOARD_DONE, 30_000)
             }
         }

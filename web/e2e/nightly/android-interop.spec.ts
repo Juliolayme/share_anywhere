@@ -21,7 +21,9 @@ test('web sends a 64 MB file to the Android app', async () => {
   mkdirSync(DIR, { recursive: true });
   // The script hands these to the Android test (instrumentation arguments) and waits for the result.
   writeFileSync(join(DIR, 'web-session.json'), JSON.stringify({ code: s.code, sha256: f.sha256, id: s.id }));
-  await sender.goto(`/send/session/${s.id}/transfers`);
+  // Stay in the app: a reload would drop the picked file (the Web keeps it in memory), so the sender would answer
+  // file_unreadable. View transfers appears once the Android receiver has joined.
+  await sender.getByRole('button', { name: 'View transfers' }).click({ timeout: 5 * 60_000 });
   await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 14 * 60_000 });
 });
 

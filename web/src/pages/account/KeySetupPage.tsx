@@ -60,7 +60,7 @@ export default function KeySetupPage() {
   if (account.phase !== 'signed_in') return <Navigate to={flow('/signin')} replace />;
   if (!account.added) return <Navigate to={flow('/signin/choices')} replace />;
   if (account.keys === 'ready' && !busy) return <Navigate to={flow('/account/checklist')} replace />;
-  if ((account.keys === 'pair' || account.keys === 'rejected') && !exists)
+  if ((account.keys === 'pair' || account.keys === 'rejected' || account.keys === 'refused') && !exists)
     return <Navigate to={flow('/account/key/pair')} replace />;
 
   const confirm = async () => {

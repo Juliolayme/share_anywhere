@@ -22,8 +22,9 @@ function StatusLine({ icon: Icon, children, testId }: { icon: typeof Cloud; chil
 
 /**
  * HI-1 account banner (docs/UX_SCREEN_MAP.md HI-1): Sign in to sync for guests, add this device, the key state
- * (checking, error with Retry, set up, pair, a key change that did not verify, legacy keys), Turn on history sync, or
- * the sync status with errors stated plainly. Offline at load with an account marker shows a neutral state, never
+ * (checking, error with Retry, set up, pair, a key change that did not verify, an update the server refused, legacy
+ * keys), the account failing to load (Retry refetches it), Turn on history sync, or the sync status with errors
+ * stated plainly ("Syncing…" only while a pass runs). Offline at load with an account marker shows a neutral state, never
  * the guest prompt.
  */
 export function SyncBanner() {
@@ -69,7 +70,7 @@ export function SyncBanner() {
     );
   }
   const k = account.keys;
-  if (k === 'rejected' || k === 'legacy') return <KeyProblemBanner status={k} returnTo="/history" />;
+  if (k === 'rejected' || k === 'refused' || k === 'legacy') return <KeyProblemBanner status={k} returnTo="/history" />;
   if (k === 'unavailable') return <Banner tone="danger" title={t('product.keys_unavailable')} />;
   if (k === 'error') {
     return (
@@ -98,7 +99,34 @@ export function SyncBanner() {
       </Banner>
     );
   }
-  if (!account.me) return null;
+  if (!account.me) {
+    if (!account.meError) return null;
+    return (
+      <Banner
+        tone="danger"
+        role="alert"
+        action={
+          <Button
+            size="sm"
+            icon={RefreshCw}
+            busy={retrying}
+            onClick={async () => {
+              setRetrying(true);
+              try {
+                await account.refreshMe();
+              } finally {
+                setRetrying(false);
+              }
+            }}
+          >
+            {t('common.retry')}
+          </Button>
+        }
+      >
+        <span data-testid="sync-me-error">{t('product.account_load_failed')}</span>
+      </Banner>
+    );
+  }
   if (!account.me.history_sync) {
     return (
       <Banner
@@ -178,9 +206,11 @@ export function SyncBanner() {
       </Banner>
     );
   }
+  // Before the first pass starts (or when this browser has no local history store to sync), nothing is claimed.
+  if (s.state === 'idle') return null;
   return (
     <StatusLine icon={Cloud} testId="sync-status">
-      {s.state === 'running' || s.state === 'idle'
+      {s.state === 'running'
         ? t('product.history_syncing')
         : t('product.history_synced_at', { when: formatWhen(s.at, locale) })}
       {s.state === 'ok' && s.unreadable > 0 && (

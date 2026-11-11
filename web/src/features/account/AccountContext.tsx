@@ -33,9 +33,16 @@ export interface AccountValue {
   userId: string | null;
   /** GET /v1/me, once loaded. */
   me: Me | null;
+  /** GET /v1/me failed (offline, server error); `refreshMe` tries again. */
+  meError: boolean;
   added: boolean;
   keys: KeyStatus;
   keyVersion: number;
+  /**
+   * A key rotation this device should have made did not go through (after a revoke, or one the server says is owed
+   * because a device holding the key left: `rotation_due`, contract E). Server-backed: the next key check retries it.
+   */
+  rotationFailed: boolean;
   sync: SyncStatus;
   api: AccountApi;
   signIn: (mode: 'signin' | 'signup', email: string, password: string) => Promise<AuthResult>;
@@ -46,6 +53,13 @@ export interface AccountValue {
   setHistorySync: (on: boolean) => Promise<void>;
   changePassword: (current: string, next: string) => Promise<void>;
   refreshKeys: () => Promise<KeyStatus>;
+  /** Refetches GET /v1/me (after `meError`). */
+  refreshMe: () => Promise<void>;
+  /**
+   * Rotates the Account Data Key now (DV-2 after a revoke, or Retry), never wrapping to the IDs in `exclude`. Failures
+   * are reflected in `keys` (a refusal) or `rotationFailed`, never thrown.
+   */
+  rotateKeys: (exclude: string[]) => Promise<'rotated' | 'none' | 'failed'>;
   syncNow: () => Promise<void>;
 }
 
@@ -73,6 +87,8 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
   const api = useMemo(() => accountApi(client), [client]);
   const [claims, setClaims] = useState<TokenClaims | null>(client.claims);
   const [me, setMe] = useState<Me | null>(null);
+  const [meError, setMeError] = useState(false);
+  const [rotationFailed, setRotationFailed] = useState(false);
   const [keys, setKeys] = useState<KeyStatus>('none');
   const [keyVersion, setKeyVersion] = useState(0);
   const [sync, setSync] = useState<SyncStatus>({ state: 'idle' });
@@ -128,19 +144,28 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
     }
   }, [claims, enabled, wipe]);
 
-  // GET /v1/me for the signed-in account.
+  // GET /v1/me for the signed-in account; a failure is shown with Retry (refreshMe), never as an endless wait.
+  const meRequest = useRef(0);
+  const loadMe = useCallback(async () => {
+    const id = ++meRequest.current;
+    setMeError(false);
+    if (!userId) {
+      setMe(null);
+      return;
+    }
+    try {
+      const m = await api.me();
+      if (id === meRequest.current) setMe(m);
+    } catch {
+      if (id === meRequest.current) setMeError(true);
+    }
+  }, [api, userId]);
+
+  // A newer request (another account, Retry) supersedes an older one still in flight.
   useEffect(() => {
     setMe(null);
-    if (!userId) return;
-    let cancelled = false;
-    api
-      .me()
-      .then((m) => !cancelled && setMe(m))
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [api, userId, added]);
+    void loadMe();
+  }, [loadMe, added]);
 
   const runKeyCheck = useCallback(
     async (acct: string, dev: string): Promise<KeyStatus> => {
@@ -151,6 +176,7 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
         writePref(KEYS_MARKER, '1');
         setKeyVersion(res.keyVersion);
         setKeys(res.status);
+        setRotationFailed(res.rotationOwed);
         if (res.newVersions.length) setKeyEpoch((n) => n + 1);
         return res.status;
       } catch (e) {
@@ -173,6 +199,25 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
   useEffect(() => {
     void refreshKeys();
   }, [refreshKeys]);
+
+  const rotateKeys = useCallback(
+    async (exclude: string[]): Promise<'rotated' | 'none' | 'failed'> => {
+      if (!userId || !added || !deviceId) return 'failed';
+      const flow = await keyFlow();
+      try {
+        const r = await flow.rotateKeys(api, userId, deviceId, exclude);
+        setRotationFailed(false);
+        await runKeyCheck(userId, deviceId);
+        return r;
+      } catch (e) {
+        const status = flow.rotationErrorStatus(e);
+        if (status) setKeys(status);
+        else setRotationFailed(true);
+        return 'failed';
+      }
+    },
+    [api, userId, added, deviceId, runKeyCheck],
+  );
 
   const syncNow = useCallback(async () => {
     if (!userId || !added || !deviceId || keys !== 'ready' || !history.store) return;
@@ -283,6 +328,7 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
       client.acceptSession(session);
       await history.refresh();
       setMe(null);
+      setRotationFailed(false);
       setSync({ state: 'idle' });
       announce();
     },
@@ -312,9 +358,11 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
       phase,
       userId,
       me,
+      meError,
       added,
       keys: added ? keys : 'none',
       keyVersion,
+      rotationFailed: added && rotationFailed,
       sync,
       api,
       signIn,
@@ -323,6 +371,8 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
       setHistorySync,
       changePassword,
       refreshKeys,
+      refreshMe: loadMe,
+      rotateKeys,
       syncNow,
     }),
     [
@@ -331,9 +381,11 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
       phase,
       userId,
       me,
+      meError,
       added,
       keys,
       keyVersion,
+      rotationFailed,
       sync,
       api,
       signIn,
@@ -342,6 +394,8 @@ export function AccountProvider({ children, enabled = flags.accounts }: { childr
       setHistorySync,
       changePassword,
       refreshKeys,
+      loadMe,
+      rotateKeys,
       syncNow,
     ],
   );
@@ -354,7 +408,13 @@ export function useAccount(): AccountValue {
   return v;
 }
 
-/** Key state for a failed key check: storage problems, key authenticity failures, legacy keys, anything else. */
+/** Codes of the server refusing this device's own rotation or key registration (contract F.3). */
+const REFUSED = ['refused', 'rotation_unauthorized', 'device_key_unproven', 'key_version_conflict'];
+
+/**
+ * Key state for a failed key check: storage problems, an incoming key change that did not verify (`rejected`), the
+ * server refusing this device's own update (`refused`), legacy keys, anything else.
+ */
 export function keyErrorStatus(e: unknown): KeyStatus {
   const code = (e as { code?: string } | null)?.code;
   if (
@@ -362,8 +422,9 @@ export function keyErrorStatus(e: unknown): KeyStatus {
     (e.name === 'KeyStoreUnavailableError' || code === 'unsupported' || code === 'storage_unavailable')
   )
     return 'unavailable';
-  if (code === 'keys_legacy') return 'legacy';
-  if (code === 'unverified' || code === 'rotation_unauthorized' || code === 'device_key_unproven') return 'rejected';
+  if (code === 'keys_legacy' || code === 'legacy') return 'legacy';
+  if (code === 'unverified' || code === 'rejected') return 'rejected';
+  if (code !== undefined && REFUSED.includes(code)) return 'refused';
   return 'error';
 }
 
@@ -382,8 +443,9 @@ function accountErrorKey(e: unknown): string {
   // Key authenticity outcomes (CryptoError or ApiError codes, docs/CLIPBOARD_PROTOCOL.md §1).
   if (code === 'keys_legacy') return 'product.keys_legacy';
   if (code === 'recovery_unverified') return 'product.phrase_unverified';
-  if (code === 'unverified' || code === 'rotation_unauthorized' || code === 'device_key_unproven')
-    return 'product.key_change_unverified';
+  if (code === 'unverified') return 'product.key_change_unverified';
+  if (code === 'refused' || code === 'rotation_unauthorized' || code === 'device_key_unproven')
+    return 'product.keys_refused';
   if (!(e instanceof ApiError)) return 'product.error_generic';
   switch (e.code) {
     case 'invalid_credentials':

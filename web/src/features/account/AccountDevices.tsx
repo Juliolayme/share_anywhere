@@ -7,11 +7,9 @@ import { useI18n } from '../../i18n/i18n';
 import { ApiError } from '../../lib/api/errors';
 import { formatWhen } from '../../lib/format';
 import { useIdentity } from '../../lib/identity/identity';
-import { accountErrorText, keyErrorStatus, useAccount } from './AccountContext';
+import { accountErrorText, useAccount } from './AccountContext';
 import type { AccountDevice } from './api';
 import { KeyProblemBanner } from './KeyProblem';
-import type { KeyStatus } from './state';
-import { rotateKeys } from './keyFlow';
 import { PairDeviceDialog } from './PairDeviceDialog';
 
 const MOBILE = /Android|iPhone|iPad|iOS|Mobile/i;
@@ -170,16 +168,14 @@ export default function AccountDevices() {
   const { t } = useI18n();
   const toast = useToast();
   const account = useAccount();
-  const { client, device } = useIdentity();
+  const { client } = useIdentity();
   const [list, setList] = useState<AccountDevice[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [revoking, setRevoking] = useState<AccountDevice | null>(null);
   const [busy, setBusy] = useState(false);
-  const [rotateFailed, setRotateFailed] = useState(false);
-  /** A rotation the server refused as unauthorized (403) or legacy (409): shown as the key problem, not a retry. */
-  const [rotateProblem, setRotateProblem] = useState<KeyStatus | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const [pairing, setPairing] = useState(false);
-  const { api, added, userId } = account;
+  const { api, added } = account;
   const keysOk = account.keys === 'ready' || (account.keys === 'setup' && account.keyVersion === 0);
 
   const load = useCallback(async () => {
@@ -202,19 +198,14 @@ export default function AccountDevices() {
     await load();
   };
 
-  const rotate = async (): Promise<'rotated' | 'none' | 'failed'> => {
-    if (!userId || !device) return 'failed';
+  // A rotation that did not go through is account state (contract E.3): the server keeps `rotation_due`, every key
+  // check retries it, and a refusal shows as the key problem banner instead of a retry.
+  const retryRotation = async () => {
+    setRetrying(true);
     try {
-      const r = await rotateKeys(api, userId, device.id);
-      setRotateFailed(false);
-      setRotateProblem(null);
-      await account.refreshKeys();
-      return r;
-    } catch (e) {
-      const status = keyErrorStatus(e);
-      if (status === 'rejected' || status === 'legacy') setRotateProblem(status);
-      else setRotateFailed(true);
-      return 'failed';
+      await account.rotateKeys([]);
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -223,7 +214,8 @@ export default function AccountDevices() {
     setBusy(true);
     try {
       await api.revokeDevice(revoking.id);
-      const r = await rotate();
+      // Never wrap the new key to the device just revoked, whatever the server lists (contract D.3).
+      const r = await account.rotateKeys([revoking.id]);
       if (r !== 'failed') {
         toast.show(t(r === 'rotated' ? 'product.revoke_done' : 'product.revoke_done_nokeys', { name: revoking.name }));
       }
@@ -251,19 +243,14 @@ export default function AccountDevices() {
           {t('product.not_added_p')}
         </Banner>
       )}
-      {(account.keys === 'rejected' || account.keys === 'legacy' || rotateProblem) && (
-        <KeyProblemBanner
-          status={account.keys === 'rejected' || account.keys === 'legacy' ? account.keys : (rotateProblem ?? 'none')}
-          returnTo="/devices"
-        />
-      )}
-      {rotateFailed && (
+      <KeyProblemBanner status={account.keys} returnTo="/devices" />
+      {account.rotationFailed && account.keys === 'ready' && (
         <Banner
           tone="danger"
           role="alert"
           title={t('product.rotate_failed')}
           action={
-            <Button size="sm" icon={RefreshCw} onClick={() => void rotate()}>
+            <Button size="sm" icon={RefreshCw} busy={retrying} onClick={() => void retryRotation()}>
               {t('product.rotate_retry')}
             </Button>
           }

@@ -335,7 +335,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Account key state - current ADK version, recovery metadata, every added device's wrapping key, and rotation blobs pending for the caller. */
+        /** Account key state - current ADK version, recovery metadata, every added device's wrapping key, rotation blobs pending for the caller, and whether a rotation is owed. */
         get: operations["getKeys"];
         put?: never;
         post?: never;
@@ -372,7 +372,7 @@ export interface paths {
         get?: never;
         /**
          * Register (or replace) the caller's X25519 wrapping public key with a proof that the device holds ADK(key_version). Replacing it drops pending blobs wrapped to the old key.
-         * @description proof is an Ed25519 signature by the signing key of ADK(key_version) over "sa-devkey-v1|" + caller device ID (lowercase UUID, from the token) + "|" + key_version + "|" + b64u(public_key) (docs/CLIPBOARD_PROTOCOL.md §1). A device can register only once it holds the ADK (setup, pairing, or recovery).
+         * @description proof is an Ed25519 signature by the signing key of ADK(key_version) over "sa-devkey-v1|" + caller device ID (lowercase UUID, from the token) + "|" + key_version + "|" + b64u(public_key) (docs/CLIPBOARD_PROTOCOL.md §1). A device can register only once it holds the ADK (setup, pairing, or recovery), and only with a proof by the account's current version (docs/ADR/0014-current-version-proofs.md): after a rotation each device registers again with a proof by the new version, and a device holding only older versions must pair again.
          */
         put: operations["registerDeviceKey"];
         post?: never;
@@ -501,7 +501,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record ADK version current+1 atomically, signed by the current version, wrapped for every other added device with a registered (proven) key (the caller may add a safety copy for itself). */
+        /** Record ADK version current+1 atomically, signed by the current version, wrapped for exactly the other added devices whose registered proof is by the current version (the caller may add a safety copy for itself). Clears rotation_due. */
         post: operations["rotateKeys"];
         delete?: never;
         options?: never;
@@ -1082,11 +1082,12 @@ export interface components {
             proof: components["schemas"]["Signature"] | null;
             public_key: components["schemas"]["PublicKey"] | null;
         };
+        /** @description 409 devices_changed body; both lists are always present (possibly empty), sorted. */
         DevicesChanged: components["schemas"]["Error"] & {
-            /** @description Other added devices with a registered key that got no blob (409 devices_changed). */
-            missing?: string[];
-            /** @description Blobs for devices that are not (or no longer) added devices of the account (400 invalid_request). */
-            unexpected?: string[];
+            /** @description Other added devices whose registered proof is by the current version and that got no blob. */
+            missing: string[];
+            /** @description Blobs for devices that must not get one - no registered key, a proof by an older version, or not (or no longer) an added device of the account. */
+            unexpected: string[];
         };
         DeviceSession: {
             access_token: string;
@@ -1186,7 +1187,7 @@ export interface components {
         KeysRotateRequest: {
             /** @description ADK(v-1) wrapped with ADK(v). */
             chain_blob: components["schemas"]["WrappedBlob"];
-            /** @description One blob for every other added device with a registered public key; a blob for the caller itself is accepted as a safety copy and delivered through its pending list. */
+            /** @description Exactly one blob for every other added device whose registered proof is by the current version v (devices with no key or an older proof get none and must pair again); a blob for the caller itself is accepted as a safety copy and delivered through its pending list. */
             device_blobs: components["schemas"]["DeviceBlob"][];
             /** @description Must be the current version + 1. */
             key_version: number;
@@ -1214,6 +1215,8 @@ export interface components {
             /** @description ADK versions wrapped for the caller by rotations, until acknowledged. */
             pending: components["schemas"]["PendingBlob"][];
             recovery: components["schemas"]["RecoveryInfo"] | null;
+            /** @description True once an added device with a registered wrapping key has left the account (revoke, sign-out, password reset or change, identity reset, refresh-secret reuse, expiry) since the last rotation; a ready client rotates. A successful rotation clears it (docs/ADR/0014-current-version-proofs.md). */
+            rotation_due: boolean;
         };
         KeyVersion: {
             key_version: number;
@@ -2216,7 +2219,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description An ADK version the device holds, at most the current one. */
+                    /** @description The account's current ADK version, which the device holds. */
                     key_version: number;
                     proof: components["schemas"]["Signature"];
                     public_key: components["schemas"]["PublicKey"];
@@ -2233,7 +2236,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description device_key_unproven (the proof does not verify with verify_key(key_version) for the caller's device ID, or key_version is not an existing version), account_required, or device_not_added. */
+            /** @description device_key_unproven (the account has no ADK yet, or the proof does not verify with verify_key(key_version) for the caller's device ID), account_required, or device_not_added. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2242,7 +2245,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description keys_legacy (the account's keys predate key verification). */
+            /** @description key_version_conflict (key_version is not the account's current version; nothing stored) or keys_legacy (the account's keys predate key verification). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2448,15 +2451,7 @@ export interface operations {
                     "application/json": components["schemas"]["KeyVersion"];
                 };
             };
-            /** @description invalid_request; when device_blobs names devices that are not added devices of the account, the body lists them in unexpected. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DevicesChanged"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             /** @description rotation_unauthorized (signature does not verify with the stored verify_key of the current version; nothing stored), account_required, or device_not_added. */
             403: {
@@ -2467,13 +2462,13 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description key_version_conflict, keys_legacy (the account's keys predate key verification), or devices_changed with the missing device IDs. */
+            /** @description key_version_conflict, keys_legacy (the account's keys predate key verification), or devices_changed (the blobs do not match the devices that must get one; nothing stored). A devices_changed body is a DevicesChanged (#/components/schemas/DevicesChanged) and always carries both missing and unexpected; the other codes carry an Error. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DevicesChanged"];
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

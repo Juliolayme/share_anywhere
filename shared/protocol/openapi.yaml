@@ -991,7 +991,7 @@ paths:
     get:
       operationId: getKeys
       x-sa-access: account+device
-      summary: Account key state - current ADK version, recovery metadata, every added device's wrapping key, and rotation blobs pending for the caller.
+      summary: Account key state - current ADK version, recovery metadata, every added device's wrapping key, rotation blobs pending for the caller, and whether a rotation is owed.
       responses:
         "200":
           description: Key state (public keys and opaque blobs only).
@@ -1008,7 +1008,9 @@ paths:
       description: >-
         proof is an Ed25519 signature by the signing key of ADK(key_version) over
         "sa-devkey-v1|" + caller device ID (lowercase UUID, from the token) + "|" + key_version + "|" + b64u(public_key)
-        (docs/CLIPBOARD_PROTOCOL.md §1). A device can register only once it holds the ADK (setup, pairing, or recovery).
+        (docs/CLIPBOARD_PROTOCOL.md §1). A device can register only once it holds the ADK (setup, pairing, or recovery), and
+        only with a proof by the account's current version (docs/ADR/0014-current-version-proofs.md): after a rotation each
+        device registers again with a proof by the new version, and a device holding only older versions must pair again.
       requestBody:
         required: true
         content:
@@ -1019,19 +1021,19 @@ paths:
               additionalProperties: false
               properties:
                 public_key: { $ref: "#/components/schemas/PublicKey" }
-                key_version: { type: integer, minimum: 1, description: "An ADK version the device holds, at most the current one." }
+                key_version: { type: integer, minimum: 1, description: "The account's current ADK version, which the device holds." }
                 proof: { $ref: "#/components/schemas/Signature" }
       responses:
         "204": { description: Registered. }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
-          description: device_key_unproven (the proof does not verify with verify_key(key_version) for the caller's device ID, or key_version is not an existing version), account_required, or device_not_added.
+          description: device_key_unproven (the account has no ADK yet, or the proof does not verify with verify_key(key_version) for the caller's device ID), account_required, or device_not_added.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "409":
-          description: keys_legacy (the account's keys predate key verification).
+          description: key_version_conflict (key_version is not the account's current version; nothing stored) or keys_legacy (the account's keys predate key verification).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1077,7 +1079,7 @@ paths:
     post:
       operationId: rotateKeys
       x-sa-access: account+device
-      summary: Record ADK version current+1 atomically, signed by the current version, wrapped for every other added device with a registered (proven) key (the caller may add a safety copy for itself).
+      summary: Record ADK version current+1 atomically, signed by the current version, wrapped for exactly the other added devices whose registered proof is by the current version (the caller may add a safety copy for itself). Clears rotation_due.
       requestBody:
         required: true
         content:
@@ -1089,11 +1091,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/KeyVersion" }
-        "400":
-          description: invalid_request; when device_blobs names devices that are not added devices of the account, the body lists them in unexpected.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/DevicesChanged" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
           description: rotation_unauthorized (signature does not verify with the stored verify_key of the current version; nothing stored), account_required, or device_not_added.
@@ -1101,10 +1099,13 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "409":
-          description: key_version_conflict, keys_legacy (the account's keys predate key verification), or devices_changed with the missing device IDs.
+          description: >-
+            key_version_conflict, keys_legacy (the account's keys predate key verification), or devices_changed (the blobs do not
+            match the devices that must get one; nothing stored). A devices_changed body is a DevicesChanged
+            (#/components/schemas/DevicesChanged) and always carries both missing and unexpected; the other codes carry an Error.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/DevicesChanged" }
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/keys/chain:
     get:
       operationId: getKeyChain
@@ -1923,7 +1924,7 @@ components:
         from_device_id: { type: string, format: uuid }
     KeysState:
       type: object
-      required: [key_version, recovery, devices, pending]
+      required: [key_version, recovery, devices, pending, rotation_due]
       properties:
         key_version: { type: integer, minimum: 0, description: 0 means no ADK yet. }
         recovery:
@@ -1938,6 +1939,12 @@ components:
           type: array
           description: ADK versions wrapped for the caller by rotations, until acknowledged.
           items: { $ref: "#/components/schemas/PendingBlob" }
+        rotation_due:
+          type: boolean
+          description: >-
+            True once an added device with a registered wrapping key has left the account (revoke, sign-out, password reset or
+            change, identity reset, refresh-secret reuse, expiry) since the last rotation; a ready client rotates. A successful
+            rotation clears it (docs/ADR/0014-current-version-proofs.md).
     KeysSetupRequest:
       type: object
       required: [recovery_public_key, salt, params, recovery_blob, verify_key, recovery_anchor]
@@ -1992,7 +1999,10 @@ components:
         device_blobs:
           type: array
           maxItems: 100
-          description: One blob for every other added device with a registered public key; a blob for the caller itself is accepted as a safety copy and delivered through its pending list.
+          description: >-
+            Exactly one blob for every other added device whose registered proof is by the current version v (devices with no key
+            or an older proof get none and must pair again); a blob for the caller itself is accepted as a safety copy and
+            delivered through its pending list.
           items: { $ref: "#/components/schemas/DeviceBlob" }
         verify_key: { allOf: [{ $ref: "#/components/schemas/VerifyKey" }], description: verify_key(v+1). }
         signature:
@@ -2001,17 +2011,19 @@ components:
             By the signing key of the current version v over
             "sa-rotate-v1|" + (v+1) + "|" + b64u(verify_key(v+1)) + "|" + b64u(SHA-256(chain_blob bytes)).
     DevicesChanged:
+      description: 409 devices_changed body; both lists are always present (possibly empty), sorted.
       allOf:
         - $ref: "#/components/schemas/Error"
         - type: object
+          required: [missing, unexpected]
           properties:
             missing:
               type: array
-              description: Other added devices with a registered key that got no blob (409 devices_changed).
+              description: Other added devices whose registered proof is by the current version and that got no blob.
               items: { type: string, format: uuid }
             unexpected:
               type: array
-              description: Blobs for devices that are not (or no longer) added devices of the account (400 invalid_request).
+              description: Blobs for devices that must not get one - no registered key, a proof by an older version, or not (or no longer) an added device of the account.
               items: { type: string, format: uuid }
     ChainLink:
       type: object

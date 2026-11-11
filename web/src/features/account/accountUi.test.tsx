@@ -59,9 +59,11 @@ function makeAccount(over: Partial<AccountValue> = {}): AccountValue {
       device: { id: 'd-1', added: true },
       history_sync: true,
     },
+    meError: false,
     added: true,
     keys: 'ready',
     keyVersion: 1,
+    rotationFailed: false,
     sync: { state: 'idle' },
     api: { devices: vi.fn(async () => ({ devices })) } as unknown as AccountValue['api'],
     signIn: vi.fn(),
@@ -70,6 +72,8 @@ function makeAccount(over: Partial<AccountValue> = {}): AccountValue {
     setHistorySync: vi.fn(async () => undefined),
     changePassword: vi.fn(),
     refreshKeys: vi.fn(async () => 'ready' as const),
+    refreshMe: vi.fn(async () => undefined),
+    rotateKeys: vi.fn(async () => 'rotated' as const),
     syncNow: vi.fn(async () => undefined),
     ...over,
   };
@@ -153,6 +157,42 @@ describe('History SyncBanner', () => {
     expect(screen.getByTestId('keys-legacy')).toHaveTextContent('must be set up again');
   });
 
+  it('a failed /v1/me shows an error with Retry that refetches it (G.1)', async () => {
+    account = makeAccount({ me: null, meError: true });
+    show(<SyncBanner />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Couldn’t load your account.');
+    expect(screen.queryByText('Syncing…')).toBeNull();
+    await userEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(account.refreshMe).toHaveBeenCalledTimes(1);
+    expect(account.refreshKeys).not.toHaveBeenCalled();
+  });
+
+  it('no sync pass started (no local history store) never shows "Syncing…" (G.1)', () => {
+    account = makeAccount({ sync: { state: 'idle' } });
+    show(<SyncBanner />);
+    expect(screen.queryByText('Syncing…')).toBeNull();
+    expect(screen.queryByTestId('sync-status')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('a running pass says Syncing…', () => {
+    account = makeAccount({ sync: { state: 'running' } });
+    show(<SyncBanner />);
+    expect(screen.getByTestId('sync-status')).toHaveTextContent('Syncing…');
+  });
+
+  it('this device’s own refused update has its own message, not the rejected-change text (F.3)', () => {
+    account = makeAccount({ keys: 'refused' });
+    show(<SyncBanner />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('This device couldn’t update your account keys');
+    expect(alert).not.toHaveTextContent('could not be verified');
+    expect(screen.queryByTestId('key-change-unverified')).toBeNull();
+    expect(href('Pair again')).toBe('/account/key/pair?returnTo=%2Fhistory');
+    expect(href('Use recovery phrase')).toBe('/account/key/pair?mode=phrase&returnTo=%2Fhistory');
+  });
+
   it('a ready device with sync on shows the sync status', () => {
     account = makeAccount({ sync: { state: 'ok', at: Date.now(), unreadable: 0 } });
     show(<SyncBanner />);
@@ -205,5 +245,36 @@ describe('key change that could not be verified (Devices, Settings)', () => {
       'A key change on your account could not be verified',
     );
     expect(href('Pair again')).toBe('/account/key/pair?returnTo=%2Fsettings');
+  });
+});
+
+describe('key rotation state on Devices (D.3, E.3)', () => {
+  it('a rotation that did not go through is shown from account state with Retry (no exclusions)', async () => {
+    account = makeAccount({ rotationFailed: true });
+    show(<AccountDevices />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('new keys couldn’t be sent to your other devices');
+    await userEvent.click(within(alert).getByRole('button', { name: 'Rotate keys' }));
+    expect(account.rotateKeys).toHaveBeenCalledWith([]);
+  });
+
+  it('revoking a device rotates with that device excluded', async () => {
+    const revokeDevice = vi.fn(async () => undefined);
+    account = makeAccount({
+      api: { devices: vi.fn(async () => ({ devices })), revokeDevice } as unknown as AccountValue['api'],
+    });
+    show(<AccountDevices />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Revoke Phone' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Revoke/ }));
+    await waitFor(() => expect(account.rotateKeys).toHaveBeenCalledWith(['d-2']));
+    expect(revokeDevice).toHaveBeenCalledWith('d-2');
+  });
+
+  it('Devices and Settings show the refused state with Pair again / Use recovery phrase', () => {
+    account = makeAccount({ keys: 'refused' });
+    show(<AccountDevices />);
+    expect(screen.getByTestId('keys-refused')).toBeInTheDocument();
+    expect(href('Pair again')).toBe('/account/key/pair?returnTo=%2Fdevices');
   });
 });

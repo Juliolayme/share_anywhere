@@ -91,7 +91,7 @@ function KeyRow() {
   const { t } = useI18n();
   const account = useAccount();
   const k = account.keys;
-  if (k === 'rejected' || k === 'legacy') {
+  if (k === 'rejected' || k === 'refused' || k === 'legacy') {
     return (
       <div className="border-t border-border py-3" data-testid="key-status">
         <KeyProblemBanner status={k} returnTo="/settings" />

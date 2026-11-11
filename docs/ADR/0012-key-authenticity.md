@@ -1,6 +1,6 @@
 # ADR 0012: Key authenticity for account key versions and device wrapping keys
 
-Status: Accepted (Phase 5A QA round 1, 2026-11-11)
+Status: Accepted (Phase 5A QA round 1, 2026-11-11), amended by 0014
 
 ## Context
 

@@ -14,6 +14,7 @@ import {
   type Bytes,
 } from './encoding';
 import { hkdfBase, hkdfBytes, subtle } from './primitives';
+import type { KeyStore } from './store';
 import { unwrapChain } from './wrap';
 
 /**
@@ -173,11 +174,23 @@ function chainBlob(state: ChainState, keyVersion: number): Bytes {
  * Checks that every rotation 2..upTo was signed by the version before it: `versions[k].signature` over
  * {@link rotationMessage}(k, verify_key(k), chain[k]) with verify_key(k-1). Throws `unverified` (or `keys_legacy`).
  * Version 1 is trusted by the caller's own means (the recovery anchor, or the ADK it already holds).
+ *
+ * With `from` (contract F.1), the walk starts at version `from.keyVersion` with `from.verifyKey`, a verify key the
+ * caller derived from an ADK it holds, and checks only `from.keyVersion + 1 .. upTo`: rows below it are never read,
+ * so a server cannot replace history the device already knows.
  */
-export function verifySignatureChain(state: ChainState, upTo: number): void {
+export function verifySignatureChain(
+  state: ChainState,
+  upTo: number,
+  from?: { keyVersion: number; verifyKey: Uint8Array },
+): void {
   assertVersion(upTo);
-  let previous = versionVerifyKey(state.versions, 1);
-  for (let k = 2; k <= upTo; k++) {
+  const start = from?.keyVersion ?? 1;
+  assertVersion(start);
+  if (start > upTo) throw unverified(`version ${upTo} is older than the held version ${start}`);
+  let previous = from ? copyBytes(from.verifyKey) : versionVerifyKey(state.versions, 1);
+  if (previous.length !== VERIFY_KEY_BYTES) throw invalid('verify key must be 32 bytes');
+  for (let k = start + 1; k <= upTo; k++) {
     const current = versionVerifyKey(state.versions, k);
     const row = state.versions.find((r) => r.key_version === k);
     if (!row?.signature) throw row?.signature === null ? legacy() : unverified(`version ${k} is unsigned`);
@@ -191,6 +204,67 @@ export function verifySignatureChain(state: ChainState, upTo: number): void {
     if (!verifySignature(signature, message, previous))
       throw unverified(`version ${k} is not signed by version ${k - 1}`);
     previous = current;
+  }
+}
+
+/**
+ * Anchors a server-supplied account on the keys this device already holds (contract F.1), before a received ADK(v)
+ * is stored as the newest version (pairing receive, recovery). With no ADK held it does nothing: the caller's own
+ * rule applies (for pairing, unanchored: docs/CLIPBOARD_PROTOCOL.md §1.13). Otherwise, with k the highest held
+ * version, every check below must pass or it throws `unverified` and nothing may be stored:
+ * - v >= k (the server cannot roll the device back);
+ * - every held ADK(h) derives `versions[h].verify_key` (constant-time compare);
+ * - the rotations k+1..v are signed starting from the held verify_key(k) (versions below k are never trusted);
+ * - opening the chain from the received ADK(v) down to k yields exactly the held ADK(k) (byte equality; for v = k
+ *   the received key itself must equal it).
+ */
+export async function assertAnchoredOnHeld(
+  store: KeyStore,
+  state: ChainState,
+  keyVersion: number,
+  received: Uint8Array,
+): Promise<void> {
+  assertVersion(keyVersion);
+  const held = await store.allVersions();
+  if (held.length === 0) return;
+  const k = Math.max(...held);
+  if (keyVersion < k) throw unverified(`version ${keyVersion} is older than the held version ${k}`);
+  let heldTop: Bytes | null = null;
+  let walked: Bytes | null = null;
+  try {
+    let topVerifyKey: Bytes | null = null;
+    for (const h of held) {
+      const raw = await store.unwrapAdkRaw(h);
+      try {
+        const own = await verifyKeyOf(raw);
+        if (!equalBytes(own, versionVerifyKey(state.versions, h))) {
+          throw unverified(`held ADK version ${h} does not match the account's verify key`);
+        }
+        if (h === k) {
+          topVerifyKey = own;
+          heldTop = copyBytes(raw);
+        }
+      } finally {
+        zeroize(raw);
+      }
+    }
+    if (!topVerifyKey || !heldTop) throw unverified(`held ADK version ${k} is missing`);
+    verifySignatureChain(state, keyVersion, { keyVersion: k, verifyKey: topVerifyKey });
+    walked = copyBytes(received);
+    for (let j = keyVersion; j > k; j--) {
+      let next: Bytes;
+      try {
+        next = await unwrapChain(chainBlob(state, j), walked, j);
+      } catch (cause) {
+        if (cause instanceof CryptoError && cause.code === 'unverified') throw cause;
+        throw new CryptoError('unverified', `chain link ${j} does not open toward the held key`, { cause });
+      }
+      zeroize(walked);
+      walked = next;
+    }
+    if (!equalBytes(walked, heldTop)) throw unverified(`the received key does not lead to held version ${k}`);
+  } finally {
+    zeroize(heldTop, walked);
   }
 }
 

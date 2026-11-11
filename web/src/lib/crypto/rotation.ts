@@ -15,9 +15,10 @@ import type { X25519KeyPair } from './x25519';
 
 /**
  * Key rotation (PRD §7.5 "Revoking a device bumps key_version", contract §Keys `POST /v1/keys/rotate`, key
- * authenticity in docs/CLIPBOARD_PROTOCOL.md §1). The revoking device generates ADK(v+1), chains ADK(v) under it,
- * wraps it to the recovery public key and to every remaining added device whose key registration it can verify,
- * signs the rotation with version v, and stores ADK(v+1) only after the server accepts.
+ * authenticity in docs/CLIPBOARD_PROTOCOL.md §1). The rotating device generates ADK(v+1), chains ADK(v) under it,
+ * wraps it to the recovery public key and to every remaining added device whose key registration is proven by the
+ * current version v (checked with this device's own ADK(v)), signs the rotation with version v, and stores ADK(v+1)
+ * only after the server accepts.
  */
 export interface DeviceKeyInfo {
   device_id: string;
@@ -39,14 +40,19 @@ export interface RotateRequest {
   signature: string;
 }
 
-export type SkipReason = 'no_key' | 'unproven';
+/**
+ * Why a device got no blob (contract D.3):
+ * - `no_key`: it registered no wrapping key;
+ * - `unproven`: its proof does not verify with this device's own ADK(v), or it is malformed or claims a newer version;
+ * - `stale`: its proof is by an older version than v (a device that held only an old key, such as a revoked laptop
+ *   whose ADK(v-1) leaked, must not get the new one; it re-proves with the current key or pairs again);
+ * - `excluded`: the caller excluded it (the device just revoked).
+ */
+export type SkipReason = 'no_key' | 'unproven' | 'stale' | 'excluded';
 
 export interface PreparedRotation {
   request: RotateRequest;
-  /**
-   * Devices left without a blob: no registered key (`no_key`), or a registration whose proof does not verify with
-   * this device's own copy of the proving version (`unproven`). They must pair again.
-   */
+  /** Devices left without a blob, with the reason. They must pair again (or re-prove, for `stale`). */
   skipped: { device_id: string; reason: SkipReason }[];
   /** Store ADK(v+1) once the server answered 200. */
   commit(): Promise<void>;
@@ -60,34 +66,27 @@ export interface RotationInput {
   /** `recovery.public_key` from `GET /v1/keys`. */
   recoveryPublicKey: string;
   /**
-   * `devices` from `GET /v1/keys` (after the revoke). Every device with a proven key gets a blob, this one
-   * included: if storing locally fails after the server accepted, the device can still pick up its own
-   * pending blob.
+   * `devices` from `GET /v1/keys`. Every device whose key is proven by the current version gets a blob, this one
+   * included: if storing locally fails after the server accepted, the device can still pick up its own pending blob.
    */
   devices: readonly DeviceKeyInfo[];
+  /** Device IDs that never get a blob, whatever the server lists (the device just revoked). */
+  exclude?: readonly string[];
 }
 
-/** verify_key(k) from this device's own ADK(k), or null when it does not hold that version. */
-async function ownVerifyKey(store: KeyStore, keyVersion: number, cache: Map<number, Bytes | null>) {
-  if (cache.has(keyVersion)) return cache.get(keyVersion) ?? null;
-  let key: Bytes | null = null;
-  if (Number.isSafeInteger(keyVersion) && keyVersion >= 1 && (await store.hasAdk(keyVersion))) {
-    const raw = await store.unwrapAdkRaw(keyVersion);
-    try {
-      key = await verifyKeyOf(raw);
-    } finally {
-      zeroize(raw);
-    }
-  }
-  cache.set(keyVersion, key);
-  return key;
-}
-
-/** True when the device's registration is proven by an ADK version this device holds (A.6 "Rotating"). */
-async function proven(store: KeyStore, d: DeviceKeyInfo, cache: Map<number, Bytes | null>): Promise<boolean> {
-  if (!d.public_key || !d.proof || typeof d.key_version !== 'number') return false;
-  const verifyKey = await ownVerifyKey(store, d.key_version, cache);
-  return verifyKey !== null && checkDeviceKeyProof(verifyKey, d.device_id, d.key_version, d.public_key, d.proof);
+/** Why `d` gets no blob, or null when its key is proven by the current version `v` (contract D.3). */
+function skipReason(
+  d: DeviceKeyInfo,
+  v: number,
+  verifyKey: Uint8Array,
+  exclude: ReadonlySet<string>,
+): SkipReason | null {
+  if (exclude.has(d.device_id.toLowerCase())) return 'excluded';
+  if (!d.public_key) return 'no_key';
+  if (!d.proof || typeof d.key_version !== 'number' || !Number.isSafeInteger(d.key_version)) return 'unproven';
+  if (d.key_version < v) return 'stale';
+  if (d.key_version !== v) return 'unproven';
+  return checkDeviceKeyProof(verifyKey, d.device_id, v, d.public_key, d.proof) ? null : 'unproven';
 }
 
 export async function prepareRotation(store: KeyStore, input: RotationInput): Promise<PreparedRotation> {
@@ -99,25 +98,24 @@ export async function prepareRotation(store: KeyStore, input: RotationInput): Pr
       `local ADK version ${local} differs from the server's ${input.serverKeyVersion}; accept pending keys first`,
     );
   }
+  const exclude = new Set((input.exclude ?? []).map((id) => id.toLowerCase()));
   const next = generateAdk(local + 1);
   const previous = await store.unwrapAdkRaw(local);
   let request: RotateRequest;
   const skipped: PreparedRotation['skipped'] = [];
-  const cache = new Map<number, Bytes | null>();
   try {
+    // verify_key(v) from this device's own ADK(v): a proof the server vouches for is not enough (A.6 "Rotating").
+    const currentVerifyKey = await verifyKeyOf(previous);
     const chain = await wrapChain(next.raw, previous, next.version);
     const recovery = await wrapAdk(next.raw, b64uDecode(input.recoveryPublicKey), 'recovery', next.version);
     const deviceBlobs: RotateRequest['device_blobs'] = [];
     for (const d of input.devices) {
-      if (!d.public_key) {
-        skipped.push({ device_id: d.device_id, reason: 'no_key' });
+      const reason = skipReason(d, local, currentVerifyKey, exclude);
+      if (reason) {
+        skipped.push({ device_id: d.device_id, reason });
         continue;
       }
-      if (!(await proven(store, d, cache))) {
-        skipped.push({ device_id: d.device_id, reason: 'unproven' });
-        continue;
-      }
-      const blob = await wrapAdk(next.raw, b64uDecode(d.public_key), 'rotate', next.version);
+      const blob = await wrapAdk(next.raw, b64uDecode(d.public_key as string), 'rotate', next.version);
       deviceBlobs.push({ device_id: d.device_id, blob: b64uEncode(blob) });
     }
     const verifyKey = await verifyKeyOf(next.raw);

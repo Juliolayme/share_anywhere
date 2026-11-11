@@ -127,7 +127,8 @@ type detachFilter struct {
 }
 
 // detach ends the selected account sessions and removes their devices from the account: the device becomes
-// anonymous again (30-day lifetime), and its wrapping key, pending key blobs, and pairing are deleted.
+// anonymous again (30-day lifetime), and its wrapping key, pending key blobs, and pairing are deleted. When a
+// leaving device had a registered wrapping key, its account's rotation_due is set.
 // It returns the affected device IDs; call forget after the transaction commits.
 func (s *Service) detach(ctx context.Context, tx pgx.Tx, now time.Time, f detachFilter) ([]string, error) {
 	rows, err := tx.Query(ctx,
@@ -150,7 +151,12 @@ func (s *Service) detach(ctx context.Context, tx pgx.Tx, now time.Time, f detach
 		  WHERE id = ANY($1::uuid[]) AND kind = 'account'`, ids, now.Add(devices.AnonymousLifetime)); err != nil {
 		return nil, err
 	}
+	// A device with a registered (proven) wrapping key held the ADK: its account now owes a rotation
+	// (docs/ADR/0014-current-version-proofs.md). Every way of leaving an account runs through here, so the
+	// flag is set in the same transaction as the departure, before the key row that shows it is deleted.
 	for _, q := range []string{
+		`UPDATE account_keys SET rotation_due = true
+		  WHERE user_id IN (SELECT user_id FROM device_keys WHERE device_id = ANY($1::uuid[])) AND NOT rotation_due`,
 		`DELETE FROM device_keys WHERE device_id = ANY($1::uuid[])`,
 		`DELETE FROM device_key_blobs WHERE device_id = ANY($1::uuid[])`,
 		`DELETE FROM device_pairings WHERE new_device_id = ANY($1::uuid[])`,

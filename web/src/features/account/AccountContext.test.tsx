@@ -38,8 +38,9 @@ const sessionFor = (id: string, claims: object) => ({
   server_time: new Date().toISOString(),
 });
 
-function setup(initial: object, { offline = false } = {}) {
+function setup(initial: object, { offline = false, meFailures = 0 } = {}) {
   const calls: string[] = [];
+  let meLeft = meFailures;
   let claims = initial;
   const client = new DeviceClient({
     withLock: (fn) => fn(),
@@ -49,6 +50,10 @@ function setup(initial: object, { offline = false } = {}) {
       calls.push(`${init.method ?? 'GET'} ${url}`);
       if (offline) throw new TypeError('Failed to fetch');
       if (url === '/v1/devices/token') return json(200, sessionFor('d1', claims));
+      if (url === '/v1/me' && meLeft > 0) {
+        meLeft--;
+        return json(500, { error: 'internal' });
+      }
       if (url === '/v1/me')
         return json(200, {
           id: 'u1',
@@ -117,10 +122,19 @@ describe('AccountProvider', () => {
     expect(t.account().accountHint).toBe(false);
   });
 
+  it('a failed GET /v1/me is reported (meError) and refreshMe loads it again (G.1)', async () => {
+    const t = setup({ acct: 'u1' }, { meFailures: 1 });
+    await waitFor(() => expect(t.account().meError).toBe(true));
+    expect(t.account().me).toBeNull();
+    await act(() => t.account().refreshMe());
+    await waitFor(() => expect(t.account().me?.email).toBe('minh@example.com'));
+    expect(t.account().meError).toBe(false);
+  });
+
   it('maps key check failures to honest states', () => {
     expect(keyErrorStatus(new ApiError(409, 'keys_legacy', ''))).toBe('legacy');
-    expect(keyErrorStatus(new ApiError(403, 'rotation_unauthorized', ''))).toBe('rejected');
-    expect(keyErrorStatus(new ApiError(403, 'device_key_unproven', ''))).toBe('rejected');
+    expect(keyErrorStatus(new ApiError(403, 'rotation_unauthorized', ''))).toBe('refused');
+    expect(keyErrorStatus(new ApiError(403, 'device_key_unproven', ''))).toBe('refused');
     expect(keyErrorStatus(Object.assign(new Error('x'), { code: 'unverified' }))).toBe('rejected');
     expect(keyErrorStatus(Object.assign(new Error('x'), { code: 'storage_unavailable' }))).toBe('unavailable');
     expect(keyErrorStatus(new ApiError(500, 'internal', ''))).toBe('error');

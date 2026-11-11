@@ -55,7 +55,10 @@ export default function ChecklistPage() {
             label={keyReady ? t('product.key_ready') : t('product.ck_no_key')}
             action={
               !keyReady &&
-              (account.keys === 'pair' || account.keys === 'rejected' || account.keys === 'setup') && (
+              (account.keys === 'pair' ||
+                account.keys === 'rejected' ||
+                account.keys === 'refused' ||
+                account.keys === 'setup') && (
                 <Link
                   to={flow(account.keys === 'setup' ? '/account/key/setup' : '/account/key/pair')}
                   className="text-caption font-semibold"

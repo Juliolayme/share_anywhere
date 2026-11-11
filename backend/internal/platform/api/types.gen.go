@@ -605,20 +605,6 @@ type DeviceSession struct {
 	ServerTime    time.Time `json:"server_time"`
 }
 
-// DevicesChanged defines model for DevicesChanged.
-type DevicesChanged struct {
-	// Error Machine-readable code (docs/API.md §3).
-	Error   string `json:"error"`
-	Message string `json:"message"`
-
-	// Missing Other added devices with a registered key that got no blob (409 devices_changed).
-	Missing     *[]openapi_types.UUID `json:"missing,omitempty"`
-	RetryAfterS *int                  `json:"retry_after_s,omitempty"`
-
-	// Unexpected Blobs for devices that are not (or no longer) added devices of the account (400 invalid_request).
-	Unexpected *[]openapi_types.UUID `json:"unexpected,omitempty"`
-}
-
 // Error defines model for Error.
 type Error struct {
 	// Error Machine-readable code (docs/API.md §3).
@@ -734,7 +720,7 @@ type KeysRotateRequest struct {
 	// ChainBlob ADK(v-1) wrapped with ADK(v).
 	ChainBlob WrappedBlob `json:"chain_blob"`
 
-	// DeviceBlobs One blob for every other added device with a registered public key; a blob for the caller itself is accepted as a safety copy and delivered through its pending list.
+	// DeviceBlobs Exactly one blob for every other added device whose registered proof is by the current version v (devices with no key or an older proof get none and must pair again); a blob for the caller itself is accepted as a safety copy and delivered through its pending list.
 	DeviceBlobs []DeviceBlob `json:"device_blobs"`
 
 	// KeyVersion Must be the current version + 1.
@@ -779,6 +765,9 @@ type KeysState struct {
 	// Pending ADK versions wrapped for the caller by rotations, until acknowledged.
 	Pending  []PendingBlob `json:"pending"`
 	Recovery *RecoveryInfo `json:"recovery"`
+
+	// RotationDue True once an added device with a registered wrapping key has left the account (revoke, sign-out, password reset or change, identity reset, refresh-secret reuse, expiry) since the last rotation; a ready client rotates. A successful rotation clears it (docs/ADR/0014-current-version-proofs.md).
+	RotationDue bool `json:"rotation_due"`
 }
 
 // Me defines model for Me.
@@ -1172,7 +1161,7 @@ type ListHistoryEntriesParams struct {
 
 // RegisterDeviceKeyJSONBody defines parameters for RegisterDeviceKey.
 type RegisterDeviceKeyJSONBody struct {
-	// KeyVersion An ADK version the device holds, at most the current one.
+	// KeyVersion The account's current ADK version, which the device holds.
 	KeyVersion int `json:"key_version"`
 
 	// Proof Ed25519 signature (64 bytes, base64url without padding).

@@ -1,5 +1,5 @@
 import { sha256 } from '@noble/hashes/sha2.js';
-import { assertAdkMatchesVersion, verifySignatureChain, type ChainState } from './authenticity';
+import { assertAdkMatchesVersion, assertAnchoredOnHeld, verifySignatureChain, type ChainState } from './authenticity';
 import { CryptoError, invalid } from './errors';
 import { assertVersion, b64uDecode, b64uEncode, equalBytes, zeroize } from './encoding';
 import type { KeyStore } from './store';
@@ -107,10 +107,15 @@ export interface AcceptPairingOptions {
 
 /**
  * New device: unwraps the blob with the ephemeral key, checks the sender, verifies the key, and stores the ADK.
- * Verification (contract A.6 "Pairing receive"): the received ADK(v) must derive `versions[v].verify_key` and every
- * rotation 2..v must be signed by the version before it (`chain` = `GET /v1/keys/chain`). This is not anchored to
- * anything the new device already knows, so a dishonest server could still present a whole fabricated account to a
- * brand-new device (docs/CLIPBOARD_PROTOCOL.md §1 limitation); it does stop a key that is not the account's.
+ * Verification (`chain` = `GET /v1/keys/chain`):
+ * - always: the received ADK(v) derives `versions[v].verify_key` (contract A.6 "Pairing receive");
+ * - when this device already holds an ADK (Pair again, a device left behind by a rotation): the account is anchored
+ *   on the held keys ({@link assertAnchoredOnHeld}, contract F.1): no roll-back, held verify keys match, signatures
+ *   from the held version up, and the chain from the received key leads back to the held one;
+ * - when it holds none: every rotation 2..v must be signed by the version before it. Nothing the device knows
+ *   anchors that, so a dishonest server could still present a whole fabricated account to a device holding no ADK
+ *   (docs/CLIPBOARD_PROTOCOL.md §1.13 limitation); it does stop a key that is not the account's.
+ * Any failure is `unverified` and nothing is stored.
  */
 export async function acceptPairing(
   store: KeyStore,
@@ -130,7 +135,8 @@ export async function acceptPairing(
   });
   try {
     await assertAdkMatchesVersion(raw, chain.versions, ready.key_version);
-    verifySignatureChain(chain, ready.key_version);
+    if ((await store.currentVersion()) > 0) await assertAnchoredOnHeld(store, chain, ready.key_version, raw);
+    else verifySignatureChain(chain, ready.key_version);
     await store.saveAdk(ready.key_version, raw);
   } finally {
     zeroize(raw);

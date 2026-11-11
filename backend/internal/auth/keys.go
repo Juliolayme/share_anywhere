@@ -56,6 +56,9 @@ type KeysState struct {
 	Recovery   *RecoveryInfo `json:"recovery"`
 	Devices    []DeviceKey   `json:"devices"`
 	Pending    []PendingBlob `json:"pending"`
+	// RotationDue is true once an added device with a registered wrapping key has left the account since the
+	// last rotation; a ready client then rotates (docs/ADR/0014-current-version-proofs.md).
+	RotationDue bool `json:"rotation_due"`
 }
 
 func validKey(s string) ([]byte, bool) {
@@ -79,8 +82,8 @@ func (s *Service) Keys(ctx context.Context, id access.Identity) (KeysState, erro
 	var pub, salt []byte
 	var m, t, p *int
 	if err := s.cfg.Pool.QueryRow(ctx,
-		`SELECT key_version, recovery_public_key, recovery_salt, recovery_m, recovery_t, recovery_p FROM account_keys WHERE user_id = $1::uuid`,
-		se.UserID).Scan(&out.KeyVersion, &pub, &salt, &m, &t, &p); err != nil {
+		`SELECT key_version, rotation_due, recovery_public_key, recovery_salt, recovery_m, recovery_t, recovery_p FROM account_keys WHERE user_id = $1::uuid`,
+		se.UserID).Scan(&out.KeyVersion, &out.RotationDue, &pub, &salt, &m, &t, &p); err != nil {
 		return KeysState{}, err
 	}
 	if pub != nil && m != nil && t != nil && p != nil {
@@ -149,8 +152,11 @@ func verifyKeyAt(ctx context.Context, tx pgx.Tx, userID string, v int) ([]byte, 
 // RegisterDeviceKey stores (or replaces) the calling device's X25519 wrapping public key. The proof must be
 // a signature by the signing key of ADK(key_version) over the caller's device ID (from the token, never the
 // body), so only a device that already holds the ADK (setup, pairing, or recovery done) can register, and
-// rotations only ever wrap new keys to such devices (docs/ADR/0012-key-authenticity.md). Replacing the key
-// drops blobs wrapped to the old key, which the device can no longer open.
+// rotations only ever wrap new keys to such devices (docs/ADR/0012-key-authenticity.md). key_version must be
+// the account's current version (409 key_version_conflict otherwise, nothing stored): a device that left
+// the account holding only older versions cannot come back by proving an old one and wait for the next
+// rotation to hand it the current key (docs/ADR/0014-current-version-proofs.md). Replacing the key drops
+// blobs wrapped to the old key, which the device can no longer open.
 func (s *Service) RegisterDeviceKey(ctx context.Context, id access.Identity, in RegisterKeyInput) error {
 	se, err := s.require(ctx, id, true)
 	if err != nil {
@@ -166,8 +172,11 @@ func (s *Service) RegisterDeviceKey(ctx context.Context, id access.Identity, in 
 		if err := tx.QueryRow(ctx, `SELECT key_version FROM account_keys WHERE user_id = $1::uuid FOR SHARE`, se.UserID).Scan(&current); err != nil {
 			return err
 		}
-		if in.KeyVersion > current {
-			return ErrDeviceKeyUnproven
+		if current < 1 {
+			return ErrDeviceKeyUnproven // no ADK yet: nothing can be proven
+		}
+		if in.KeyVersion != current {
+			return ErrKeyVersion
 		}
 		vk, err := verifyKeyAt(ctx, tx, se.UserID, in.KeyVersion)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -374,11 +383,14 @@ type RotateInput struct {
 // Rotate records ADK version current+1 atomically under the account's key-row lock. The rotation must be
 // signed by the signing key of the current version (only a holder of ADK(v) can authorize v+1), checked
 // against the stored verify_key(v): a device that only knows the password cannot plant a key of its own
-// choosing (403 rotation_unauthorized, nothing stored; docs/ADR/0012-key-authenticity.md). Every other added
-// device with a registered wrapping key must get a blob (409 devices_changed lists the missing ones), so no
-// remaining device is locked out; a blob for a device that is not an added device of the account is refused
-// (400 with unexpected), so no removed device gets the key. The caller may include a safety copy for itself,
-// delivered through its own pending list like the others.
+// choosing (403 rotation_unauthorized, nothing stored; docs/ADR/0012-key-authenticity.md). The blobs must go
+// exactly to the other added devices whose registered proof is by version v (docs/ADR/0014-current-version-
+// proofs.md): each of them must get one, so no device that holds the current key is locked out, and none
+// may go to a device outside that set (no registered key, a proof by an older version, or not an added
+// device of the account), so a device that never proved the current key never receives the next one.
+// Either mismatch is 409 devices_changed with both lists (missing, unexpected) and nothing is stored. The
+// caller may include a safety copy for itself, delivered through its own pending list like the others. A
+// successful rotation clears rotation_due.
 func (s *Service) Rotate(ctx context.Context, id access.Identity, in RotateInput) (int, error) {
 	se, err := s.require(ctx, id, true)
 	if err != nil {
@@ -418,51 +430,24 @@ func (s *Service) Rotate(ctx context.Context, id access.Identity, in RotateInput
 		if !verifySig(vk, RotationMessage(in.KeyVersion, newVK, chain), sig) {
 			return ErrRotationUnauthorized
 		}
-		// Every live added device of the account (the caller included) and whether it registered a key.
+		// The other live added devices of the account whose registered proof is by the current version v:
+		// exactly these must get a blob.
 		rows, err := tx.Query(ctx,
-			`SELECT a.device_id::text, k.device_id IS NOT NULL FROM auth_sessions a
+			`SELECT a.device_id::text FROM auth_sessions a
 			   JOIN devices d ON d.id = a.device_id AND d.revoked_at IS NULL AND d.expires_at > $2
-			   LEFT JOIN device_keys k ON k.device_id = a.device_id AND k.user_id = a.user_id
-			  WHERE a.user_id = $1::uuid AND a.revoked_at IS NULL AND a.expires_at > $2 AND a.device_added`, se.UserID, now)
+			   JOIN device_keys k ON k.device_id = a.device_id AND k.user_id = a.user_id AND k.key_version = $3
+			  WHERE a.user_id = $1::uuid AND a.revoked_at IS NULL AND a.expires_at > $2 AND a.device_added
+			    AND a.device_id <> $4::uuid`, se.UserID, now, v, se.DeviceID)
 		if err != nil {
 			return err
 		}
-		added := map[string]bool{} // device ID → has a registered key
-		for rows.Next() {
-			var d string
-			var hasKey bool
-			if err := rows.Scan(&d, &hasKey); err != nil {
-				rows.Close()
-				return err
-			}
-			added[d] = hasKey
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+		required, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
 			return err
 		}
-		// Blobs may go only to added devices of the account; the caller may include a safety copy for itself.
-		unexpected := []string{}
-		for d := range blobs {
-			if _, ok := added[d]; !ok {
-				unexpected = append(unexpected, d)
-			}
-		}
-		if len(unexpected) > 0 {
-			sort.Strings(unexpected)
-			return &Error{Status: http.StatusBadRequest, Code: "invalid_request", Msg: "device_blobs names devices that are not added to this account.",
-				Extra: map[string]any{"unexpected": unexpected}}
-		}
-		missing := []string{}
-		for d, hasKey := range added {
-			if _, ok := blobs[d]; !ok && hasKey && d != se.DeviceID {
-				missing = append(missing, d)
-			}
-		}
-		if len(missing) > 0 {
-			sort.Strings(missing)
+		if missing, unexpected := blobMismatch(required, blobs, se.DeviceID); len(missing)+len(unexpected) > 0 {
 			return &Error{Status: http.StatusConflict, Code: "devices_changed", Msg: errDevicesChangedMsg,
-				Extra: map[string]any{"missing": missing}}
+				Extra: map[string]any{"missing": missing, "unexpected": unexpected}}
 		}
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO account_key_versions (user_id, key_version, recovery_blob, chain_blob, verify_key, signature, created_by_device_id, created_at)
@@ -476,13 +461,36 @@ func (s *Service) Rotate(ctx context.Context, id access.Identity, in RotateInput
 				return err
 			}
 		}
-		_, err = tx.Exec(ctx, `UPDATE account_keys SET key_version = $2, updated_at = $3 WHERE user_id = $1::uuid`, se.UserID, in.KeyVersion, now)
+		_, err = tx.Exec(ctx, `UPDATE account_keys SET key_version = $2, rotation_due = false, updated_at = $3 WHERE user_id = $1::uuid`,
+			se.UserID, in.KeyVersion, now)
 		return err
 	})
 	if err != nil {
 		return 0, err
 	}
 	return in.KeyVersion, nil
+}
+
+// blobMismatch compares a rotation's blobs with the devices that must get one: missing lists required
+// devices without a blob, unexpected lists blobs for anyone else except self (the caller's safety copy).
+// Both are sorted and never nil, so the 409 body always carries both arrays.
+func blobMismatch(required []string, blobs map[string][]byte, self string) (missing, unexpected []string) {
+	missing, unexpected = []string{}, []string{}
+	want := make(map[string]bool, len(required))
+	for _, d := range required {
+		want[d] = true
+		if _, ok := blobs[d]; !ok {
+			missing = append(missing, d)
+		}
+	}
+	for d := range blobs {
+		if !want[d] && d != self {
+			unexpected = append(unexpected, d)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(unexpected)
+	return missing, unexpected
 }
 
 // AckPending deletes a rotation blob the caller has stored (idempotent).

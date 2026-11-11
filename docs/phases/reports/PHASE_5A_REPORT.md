@@ -1,6 +1,6 @@
 # Phase 5A report: accounts, device linking, Devices list, cloud history
 
-Status: implemented and tested on the Web; QA round 1 failed (two P0s) and its findings are fixed, QA round 2 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
+Status: implemented and tested on the Web; QA round 1 failed (two P0s) and round 2 failed (two P1s); both rounds' findings are fixed, QA round 3 pending (`docs/qa/PHASE_5A_QA.md`). File sharing stays guest-first: no Transfer, Receive, onboarding or local History flow signs in. Android and iOS build on these contracts in Phases 6 and 7.
 
 ## 1. What was implemented
 
@@ -24,7 +24,8 @@ Status: implemented and tested on the Web; QA round 1 failed (two P0s) and its f
   - A rotation must be signed by the previous version, so a device that knows only the password gets `403 rotation_unauthorized`.
   - A device wrapping key needs a proof signed with the ADK (`403 device_key_unproven` otherwise), so keys are only wrapped to devices that already hold the ADK.
   - Clients verify the chain link and verify key before taking a rotated key, wrap only to proven keys, and check recovery against an anchor derived from the phrase.
-  - Go, Vitest and e2e tests cover the QA attack and each rule; shared vectors are in `key_authenticity`.
+  - Proofs must be by the current version and devices re-prove after every new version; rotations wrap exactly the devices proven at the current version and never the device just revoked; a rotation is owed (`rotation_due`) whenever a device with a key leaves the account, and the next ready device performs it; pairing on a device that already holds keys is anchored on those keys (ADR 0014, QA round 2).
+  - Go, Vitest and e2e tests cover the QA attacks and each rule; shared vectors are in `key_authenticity`.
 - **Account session hardening** (ADR 0013).
   - A not-added Web session is bound to the `sa_acct` browser-session cookie (PRD §2) and ends when the browser session does.
   - Retired refresh secrets never re-enter the grace window.
@@ -74,7 +75,7 @@ Guest: everything from Phases 1–4 unchanged, plus Sign in and Create account e
 
 ## 3. End-to-end workflows executed
 
-Playwright `web/e2e/account/` (18 tests) in chromium-desktop, firefox-desktop, webkit-desktop, android-chrome and ios-safari, locally and in CI:
+Playwright `web/e2e/account/` (19 tests) in chromium-desktop, firefox-desktop, webkit-desktop, android-chrome and ios-safari, locally and in CI:
 
 - guest transfer, then sign-in from Settings during a second, paced transfer that completes;
 - choices both ways;
@@ -88,19 +89,20 @@ Playwright `web/e2e/account/` (18 tests) in chromium-desktop, firefox-desktop, w
 - password reset through the test mail hook;
 - Welcome → Transfer home without a sign-in screen;
 - a password-only attacker cannot rotate keys or register an unproven device key;
+- a former device with an old key version cannot re-register, and the owed rotation after a sign-out leaves it out;
 - a not-added session ends without its browser-session cookie.
 
 Guest suites (`pairing`, `transfer`, `history`, `keep-awake`, `guest`) still pass; no Transfer test signs in.
 
 ## 4. Commands and results
 
-See the final section of `docs/qa/PHASE_5A_QA.md` for the latest run. Summary at the time of writing:
+Latest local run (CI runs and the phase's CI history are listed at the top of `docs/qa/PHASE_5A_QA.md`):
 
-- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 46 files, 307 tests passed.
-- `pnpm -C web build`: main JS 114,071 bytes gzip (budget 122,880).
+- `pnpm -C web format:check`, `lint`, `exec tsc -b`: clean. `pnpm -C web test --run`: 47 files, 334 tests passed.
+- `pnpm -C web build`: main JS 114,198 bytes gzip (budget 122,880).
 - `pnpm protocol:check`, `i18n:check`, `tokens:check`, `lint:md`: pass.
 - `go test ./...` with `TEST_DATABASE_URL` (PostgreSQL 16, go1.27.4): pass. `golangci-lint run ./...`: 0 issues. `govulncheck`: nothing reachable.
-- Playwright account suite: 18 passed in each of the five projects (`--retries=0`). Guest suites on chromium-desktop: 45 passed, 1 skipped (WebKit-only private-window test).
+- Playwright account suite: 19 passed in each of the five projects (`--retries=0`). Guest suites on chromium-desktop: 45 passed, 1 skipped (WebKit-only private-window test).
 - CI: run links and the phase's CI history (including the gitleaks failures on a598989 and 96575ba and the Go advisory on e3289ba) are in `docs/qa/PHASE_5A_QA.md`.
 
 ## 5. Environment variables and external services
@@ -111,7 +113,9 @@ New: `SA_MAIL_SINK` (`console`, `smtp`, `memory`), `SA_SMTP_ADDR`, `SA_SMTP_USER
 
 - Everything in "Implemented but untested" above.
 - The account revocation check and rate limits are per backend instance (multi-instance needs shared state, `docs/SECURITY_MODEL.md` §5).
-- Pairing receive is not anchored: a dishonest server could hand a brand-new device a fabricated account key (`docs/CLIPBOARD_PROTOCOL.md` §1.13). Rotation pickup and recovery are verified.
+- Pairing is not anchored on a device that holds no account key yet: a dishonest server could hand such a device a fabricated account key (`docs/CLIPBOARD_PROTOCOL.md` §1.13). Devices that hold keys, rotation pickup and recovery are verified.
+- In-origin script (XSS) can read raw account key bytes while it runs; non-extractable storage protects only the KEK, subkeys and the device private key.
+- A device whose proof is older than the current version when a rotation happens is left out and must pair again.
 - Accounts whose keys were set up before migration 0007 are "legacy" (pre-release data only) and must be recreated.
 - The refresh grace window lets a thief who uses a copied secret within 30 seconds of the legitimate refresh hold a session until the legitimate device's next refresh revokes it (ADR 0011).
 - Losing every added device and the recovery phrase makes synced history unrecoverable, by design.
@@ -144,4 +148,5 @@ On `claude/practical-lovelace-avlb5g`:
 - 9874e3f: mobile snapshot baselines
 - 5fdffe0: go1.27.4
 - 3987ac8: e2e first-block wait
-- the QA round 1 fix commit that follows them
+- 4446bee: QA round 1 fixes (key authenticity, session hardening)
+- the QA round 2 fix commit that follows them (current-version proofs, owed rotation, anchored pairing)

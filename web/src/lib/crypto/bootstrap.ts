@@ -1,6 +1,7 @@
 import { FIRST_KEY_VERSION, generateAdk } from './adk';
 import {
   assertAdkMatchesVersion,
+  assertAnchoredOnHeld,
   recoveryAnchor,
   verifyKeyOf,
   verifySignatureChain,
@@ -101,7 +102,9 @@ function recoveryUnverified(message: string, cause?: unknown): CryptoError {
  * `decrypt_failed`; a malformed one with `invalid_phrase`. Before anything is stored (contract A.6 "Recovery"):
  * - the recovery anchor, which only the phrase can compute, must authenticate `versions[1].verify_key`;
  * - every rotation 2..v must be signed by the version before it (`chain` = `GET /v1/keys/chain`);
- * - the recovered ADK(v) must derive `versions[v].verify_key`.
+ * - the recovered ADK(v) must derive `versions[v].verify_key`;
+ * - when this device already holds an ADK, the account must also be consistent with it (contract F.1,
+ *   {@link assertAnchoredOnHeld}): a server cannot roll the device back or swap the history it knows.
  * Any failure is `recovery_unverified`; a legacy account (no anchor) is `keys_legacy`. Follow with `importChain`.
  */
 export async function recoverWithPhrase(
@@ -131,6 +134,7 @@ export async function recoverWithPhrase(
       }
       verifySignatureChain(chain, v);
       await assertAdkMatchesVersion(raw, chain.versions, v);
+      await assertAnchoredOnHeld(store, chain, v, raw);
     } catch (err) {
       if (err instanceof CryptoError && (err.code === 'keys_legacy' || err.code === 'recovery_unverified')) throw err;
       throw recoveryUnverified('the recovered key does not verify against the account', err);

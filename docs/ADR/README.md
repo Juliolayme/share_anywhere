@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Each ADR records one decision: context, decision, consequences. ADRs are never edited after acceptance except to mark them superseded; a change of mind is a new ADR.
+Each ADR records one decision: context, decision, consequences. ADRs are never edited after acceptance except to mark them superseded or amended by a later ADR; a change of mind is a new ADR.
 
 | ADR | Title | Status |
 |---|---|---|
@@ -15,5 +15,6 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0009](0009-argon2id-passwords.md) | Argon2id parameters for account passwords | Accepted |
 | [0010](0010-account-sessions.md) | Account sessions layered on device identity | Accepted, partly superseded by 0013 |
 | [0011](0011-refresh-reuse-grace.md) | Grace window for the previous refresh secret | Accepted, partly superseded by 0013 |
-| [0012](0012-key-authenticity.md) | Key authenticity for account key versions and device wrapping keys | Accepted |
+| [0012](0012-key-authenticity.md) | Key authenticity for account key versions and device wrapping keys | Accepted, amended by 0014 |
 | [0013](0013-session-hardening.md) | Account session hardening (browser-session binding, retired refresh secrets) | Accepted |
+| [0014](0014-current-version-proofs.md) | Current-version key proofs, rotation owed after departures, and pairing anchored on held keys | Accepted |

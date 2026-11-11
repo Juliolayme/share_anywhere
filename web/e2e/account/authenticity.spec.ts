@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
-import { BASE, closeContexts, guestPage, open } from '../pairing/helpers';
-import { signIn, signUp, uniqueEmail } from './helpers';
+import { BASE, closeContexts, guestPage, open, renameDevice } from '../pairing/helpers';
+import { finishChecklist, signIn, signUp, typeInto, uniqueEmail } from './helpers';
+import { adkFromPhrase, proofBy } from './keys-node';
 
 // QA round 1 P0-1 (docs/CLIPBOARD_PROTOCOL.md §1.13): someone who knows only the password signs in, adds a browser,
 // and tries to push an ADK of its own. The server refuses the unsigned rotation and the unproven device key; the
@@ -22,7 +23,23 @@ function bearer(page: Page): () => string {
 
 interface KeysState {
   key_version: number;
+  rotation_due?: boolean;
   devices: { device_id: string; public_key: string | null; key_version: number | null; proof: string | null }[];
+  pending?: { key_version: number }[];
+}
+
+/** AC-6 with the recovery phrase on `page` (signed in, added, on the pairing screen). */
+async function recoverWithPhrase(page: Page, phrase: string) {
+  await page.getByRole('button', { name: 'Use recovery phrase' }).click();
+  await typeInto(page.getByRole('textbox', { name: 'Recovery phrase' }), phrase);
+  await page.getByRole('button', { name: 'Unlock' }).click();
+  await finishChecklist(page);
+}
+
+async function keysOf(page: Page, authorization: string): Promise<KeysState> {
+  const res = await page.request.get(`${BASE}/v1/keys`, { headers: { Authorization: authorization } });
+  expect(res.status()).toBe(200);
+  return (await res.json()) as KeysState;
 }
 
 test('a password-only attacker cannot rotate the account key or register an unproven device key', async ({
@@ -114,4 +131,80 @@ test('a not-added session ends with the browser session (sa_acct cookie gone); a
   await open(owner, '/settings');
   await expect(owner.getByTestId('identity-label')).toHaveText(email);
   await expect(owner.getByTestId('key-status')).toContainText('Encryption key on this device');
+});
+
+// QA round 2 P1-A / P2-1 (docs/CLIPBOARD_PROTOCOL.md §1.11): a revoked laptop kept ADK v1 and its owner's password.
+// After the owner rotated to v2, a device key proven with v1 is refused (409 key_version_conflict), so no later
+// rotation wraps the new key to it; a device holding the key that signs out leaves a rotation owed, which the owner's
+// browser makes on its next key check without the refused device.
+test('an old-version device key proof is refused and the owner’s next (owed) rotation goes ahead without it', async ({
+  browser,
+}) => {
+  test.setTimeout(240_000);
+  const email = uniqueEmail('stale');
+  const a = await guestPage(browser);
+  const aToken = bearer(a);
+  const phrase = (await signUp(a, email)) ?? '';
+  await expect.poll(aToken).toMatch(/^Bearer /);
+  // What the laptop keeps: ADK v1 (the spec opens it with the phrase while v1 is current).
+  const v1 = await adkFromPhrase(a.request, aToken(), phrase);
+  expect(v1.keyVersion).toBe(1);
+
+  // The laptop gets the key (recovery phrase), then the owner revokes it: the key rotates to v2 without it.
+  const laptop = await guestPage(browser);
+  await renameDevice(laptop, 'Old Laptop');
+  await signIn(laptop, email);
+  await recoverWithPhrase(laptop, phrase);
+  await open(a, '/devices');
+  await a.getByRole('button', { name: 'Revoke Old Laptop' }).click();
+  await a.getByRole('dialog', { name: 'Revoke Old Laptop?' }).getByRole('button', { name: 'Revoke device' }).click();
+  await expect(a.getByRole('status').filter({ hasText: 'Old Laptop revoked · keys rotated' })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect.poll(async () => (await keysOf(a, aToken())).key_version).toBe(2);
+
+  // The thief signs in with the password on another browser and proves a device key with the kept v1.
+  const thief = await guestPage(browser);
+  const thiefToken = bearer(thief);
+  await signIn(thief, email);
+  await expect(thief.locator('[data-screen="key-pair"]')).toBeVisible();
+  await expect.poll(thiefToken).toMatch(/^Bearer /);
+  const me = (await (
+    await thief.request.get(`${BASE}/v1/me`, { headers: { Authorization: thiefToken() } })
+  ).json()) as { device: { id: string } };
+  const stale = await thief.request.put(`${BASE}/v1/keys/device`, {
+    headers: { Authorization: thiefToken() },
+    data: await proofBy(v1.adk, 1, me.device.id),
+  });
+  expect(stale.status()).toBe(409);
+  expect(((await stale.json()) as { error: string }).error).toBe('key_version_conflict');
+  const afterStale = await keysOf(a, aToken());
+  expect(afterStale.devices.find((d) => d.device_id === me.device.id)?.public_key ?? null).toBeNull();
+
+  // A device holding v2 (a spare browser, recovered with the phrase) signs out: a rotation is now owed.
+  const spare = await guestPage(browser);
+  await signIn(spare, email);
+  await recoverWithPhrase(spare, phrase);
+  await open(spare, '/settings');
+  await expect(spare.getByTestId('key-status')).toContainText('Encryption key on this device');
+  await spare.getByRole('button', { name: 'Sign out' }).click();
+  const dialog = spare.getByRole('dialog', { name: 'Sign out of this browser?' });
+  await dialog.getByRole('button', { name: 'Sign out' }).click();
+  await expect(spare.getByTestId('identity-label')).toHaveText('Guest');
+
+  // The owner's next key check rotates to v3; the server asks no blob for the refused device and it gets none.
+  await open(a, '/settings');
+  await expect
+    .poll(
+      async () => {
+        const k = await keysOf(a, aToken());
+        return `${k.key_version}:${k.rotation_due}`;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe('3:false');
+  await expect(a.getByTestId('key-status')).toContainText('Encryption key on this device');
+  const thiefKeys = await keysOf(thief, thiefToken());
+  expect(thiefKeys.pending ?? []).toEqual([]);
+  expect(thiefKeys.devices.find((d) => d.device_id === me.device.id)?.public_key ?? null).toBeNull();
 });

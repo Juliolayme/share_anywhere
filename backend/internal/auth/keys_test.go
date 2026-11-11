@@ -3,8 +3,11 @@ package auth
 import (
 	"bytes"
 	"crypto/ed25519"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/juliolayme/share_anywhere/backend/internal/devices"
 )
 
 // Test ADK versions: a real holder of adk(v) can sign as version v (docs/ADR/0012-key-authenticity.md).
@@ -115,16 +118,22 @@ func TestKeysSetupRotateAndConflicts(t *testing.T) {
 	// B has a registered key and no blob (C has no key, so it is not required).
 	r = rotate(tokA, 2, map[string]string{})
 	e.want(r, 409, "devices_changed")
-	if m := r.body["missing"].([]any); len(m) != 1 || m[0] != b.Device.ID {
+	if m, u := r.body["missing"].([]any), r.body["unexpected"].([]any); len(m) != 1 || m[0] != b.Device.ID || len(u) != 0 {
 		t.Fatalf("missing: %s", r.raw)
 	}
-	// A blob for a device outside the account is refused (400) and nothing is stored.
+	// A blob for a device outside the account, or for an added device without a registered key (C), is
+	// refused with both lists and nothing is stored.
 	_, outsider := e.signup("lee@example.com", true)
 	outsiderID := e.ident(outsider).DeviceID
 	r = rotate(tokA, 2, map[string]string{b.Device.ID: blob(92, 5), outsiderID: blob(92, 6)})
-	e.want(r, 400, "invalid_request")
-	if u := r.body["unexpected"].([]any); len(u) != 1 || u[0] != outsiderID {
+	e.want(r, 409, "devices_changed")
+	if m, u := r.body["missing"].([]any), r.body["unexpected"].([]any); len(m) != 0 || len(u) != 1 || u[0] != outsiderID {
 		t.Fatalf("unexpected: %s", r.raw)
+	}
+	r = rotate(tokA, 2, map[string]string{c.Device.ID: blob(92, 6)})
+	e.want(r, 409, "devices_changed")
+	if m, u := r.body["missing"].([]any), r.body["unexpected"].([]any); len(m) != 1 || m[0] != b.Device.ID || len(u) != 1 || u[0] != c.Device.ID {
+		t.Fatalf("missing and unexpected: %s", r.raw)
 	}
 	// The caller may include a safety copy for itself; it lands in its own pending list.
 	r = rotate(tokA, 2, map[string]string{b.Device.ID: blob(92, 5), a.Device.ID: blob(92, 9)})
@@ -204,7 +213,10 @@ func TestRevokedDeviceCannotReadHistoryOrKeys(t *testing.T) {
 		t.Fatalf("devices after revoke: %s", r.raw)
 	}
 	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, map[string]string{b.Device.ID: blob(92, 5)}))
-	e.want(r, 400, "invalid_request")
+	e.want(r, 409, "devices_changed")
+	if u := r.body["unexpected"].([]any); len(u) != 1 || u[0] != b.Device.ID {
+		t.Fatalf("unexpected after revoke: %s", r.raw)
+	}
 	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
 }
 
@@ -363,7 +375,6 @@ func TestDeviceKeyProof(t *testing.T) {
 
 	for name, body := range map[string]map[string]any{
 		"another device's ID in the message": deviceKeyBody(b.Device.ID, 1, pub32(1)),
-		"version above current":              deviceKeyBody(a.Device.ID, 2, pub32(1)),
 		"signed by another version's key":    deviceKeyBodySigned(a.Device.ID, 1, pub32(1), adk(2)),
 		"proof for another public key": func() map[string]any {
 			m := deviceKeyBody(a.Device.ID, 1, pub32(2))
@@ -405,9 +416,18 @@ func TestDeviceKeyProof(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("refused registrations stored %d keys", n)
 	}
+	// A version other than the current one is a version conflict, even with a valid proof.
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 2, pub32(1))), 409, "key_version_conflict")
 	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "")
-	// After a rotation, a proof by either held version is accepted.
+	// After a rotation only a proof by the new current version is accepted (docs/ADR/0014); the stored
+	// registration is unchanged by the refused one.
 	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(9))), 409, "key_version_conflict")
+	var stale []byte
+	_ = e.pool.QueryRow(ctx, `SELECT public_key FROM device_keys WHERE device_id = $1::uuid`, a.Device.ID).Scan(&stale)
+	if !bytes.Equal(stale, pub32(1)) {
+		t.Fatal("a refused registration must store nothing")
+	}
 	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 2, pub32(1))), 204, "")
 	var kv int
 	_ = e.pool.QueryRow(ctx, `SELECT key_version FROM device_keys WHERE device_id = $1::uuid`, a.Device.ID).Scan(&kv)
@@ -438,5 +458,202 @@ func TestLegacyKeysRefused(t *testing.T) {
 	vs := r.body["versions"].([]any)
 	if len(vs) != 1 || vs[0].(map[string]any)["verify_key"] != nil || len(r.body["chain"].([]any)) != 0 {
 		t.Fatalf("legacy chain: %s", r.raw)
+	}
+}
+
+// pendingVersions lists the key versions in the pending list of the device with token tok.
+func (e *env) pendingVersions(tok string) []float64 {
+	e.t.Helper()
+	r := e.do("GET", "/v1/keys", tok, nil)
+	e.want(r, 200, "")
+	out := []float64{}
+	for _, p := range r.body["pending"].([]any) {
+		out = append(out, p.(map[string]any)["key_version"].(float64))
+	}
+	return out
+}
+
+// TestStaleProofCannotReenter is the QA round 2 P1-A attack (docs/ADR/0014-current-version-proofs.md): a
+// laptop L that held ADK(1) is revoked and A rotates to 2. A thief with L's ADK(1) and the password signs in
+// on a new device X and adds it. X's proof by version 1 is refused (409 key_version_conflict, nothing
+// stored), so A's next rotation neither needs nor accepts a blob for X, and X never receives ADK(3). A device
+// proven at the current version does get the next blob; one whose proof is older gets nothing.
+func TestStaleProofCannotReenter(t *testing.T) {
+	e := newEnv(t)
+	a, tokA := e.signup("uma@example.com", true)
+	e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+	e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "")
+	l, tokL := e.signin("uma@example.com", true)
+	e.want(e.do("PUT", "/v1/keys/device", tokL, deviceKeyBody(l.Device.ID, 1, pub32(2))), 204, "")
+
+	e.want(e.do("DELETE", "/v1/devices/"+l.Device.ID, tokA, nil), 204, "")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, map[string]string{a.Device.ID: blob(92, 5)})), 200, "")
+
+	x, tokX := e.signin("uma@example.com", true)
+	r := e.do("PUT", "/v1/keys/device", tokX, deviceKeyBody(x.Device.ID, 1, pub32(6)))
+	e.want(r, 409, "key_version_conflict")
+	var n int
+	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM device_keys WHERE device_id = $1::uuid`, x.Device.ID).Scan(&n)
+	if n != 0 {
+		t.Fatal("an old-version proof must store nothing")
+	}
+	// A version-2 claim signed with the ADK(1) it holds does not verify.
+	e.want(e.do("PUT", "/v1/keys/device", tokX, deviceKeyBodySigned(x.Device.ID, 2, pub32(6), adk(1))), 403, "device_key_unproven")
+
+	// A's rotation to 3 succeeds without X; a blob for X is refused as unexpected.
+	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, map[string]string{x.Device.ID: blob(92, 7)}))
+	e.want(r, 409, "devices_changed")
+	if m, u := r.body["missing"].([]any), r.body["unexpected"].([]any); len(m) != 0 || len(u) != 1 || u[0] != x.Device.ID {
+		t.Fatalf("blob for X: %s", r.raw)
+	}
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(3, adk(2), 5, nil)), 200, "")
+	if p := e.pendingVersions(tokX); len(p) != 0 {
+		t.Fatalf("X must receive nothing: %v", p)
+	}
+
+	// B proves version 3 (the current one): the rotation to 4 must include it, and B gets the blob.
+	b, tokB := e.signin("uma@example.com", true)
+	e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(b.Device.ID, 3, pub32(3))), 204, "")
+	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(4, adk(3), 6, nil))
+	e.want(r, 409, "devices_changed")
+	if m, u := r.body["missing"].([]any), r.body["unexpected"].([]any); len(m) != 1 || m[0] != b.Device.ID || len(u) != 0 {
+		t.Fatalf("B missing: %s", r.raw)
+	}
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(4, adk(3), 6, map[string]string{b.Device.ID: blob(92, 8)})), 200, "")
+	if p := e.pendingVersions(tokB); len(p) != 1 || p[0] != 4 {
+		t.Fatalf("B pending: %v", p)
+	}
+	// B has not re-proven at 4: its proof (3) is stale, so the rotation to 5 neither needs nor accepts a
+	// blob for it (it must pair again); after B proves 4 it is required again.
+	r = e.do("POST", "/v1/keys/rotate", tokA, rotateBody(5, adk(4), 7, map[string]string{b.Device.ID: blob(92, 9)}))
+	e.want(r, 409, "devices_changed")
+	if u := r.body["unexpected"].([]any); len(u) != 1 || u[0] != b.Device.ID {
+		t.Fatalf("stale proof blob: %s", r.raw)
+	}
+	e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(b.Device.ID, 4, pub32(3))), 204, "")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(5, adk(4), 7, nil)), 409, "devices_changed")
+	e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(5, adk(4), 7, map[string]string{b.Device.ID: blob(92, 9)})), 200, "")
+}
+
+func (e *env) rotationDue(userID string) bool {
+	e.t.Helper()
+	var due bool
+	if err := e.pool.QueryRow(ctx, `SELECT rotation_due FROM account_keys WHERE user_id = $1::uuid`, userID).Scan(&due); err != nil {
+		e.t.Fatal(err)
+	}
+	return due
+}
+
+// TestRotationDueAfterAnyDeparture (QA round 2 P2-1): whenever an added device with a registered wrapping
+// key leaves the account, by any path, rotation_due is set in the same transaction; GET /v1/keys reports it,
+// a successful rotation clears it, and a device that never registered a key does not set it.
+func TestRotationDueAfterAnyDeparture(t *testing.T) {
+	e := newEnv(t)
+	cases := []struct {
+		name string
+		// leave makes B leave the account; A stays unless allGone.
+		leave   func(email, tokA, tokB string, b devices.Session)
+		allGone bool
+	}{
+		{name: "revoke from Devices", leave: func(_, tokA, _ string, b devices.Session) {
+			e.want(e.do("DELETE", "/v1/devices/"+b.Device.ID, tokA, nil), 204, "")
+		}},
+		{name: "sign-out", leave: func(_, _, tokB string, _ devices.Session) {
+			e.want(e.do("POST", "/v1/auth/signout", tokB, nil), 200, "")
+		}},
+		{name: "password change on another device", leave: func(_, tokA, _ string, _ devices.Session) {
+			e.want(e.do("POST", "/v1/me/password", tokA, map[string]any{"current_password": testPassword, "new_password": "a brand new secret"}), 204, "")
+		}},
+		{name: "identity reset", leave: func(_, _, tokB string, _ devices.Session) {
+			e.want(e.do("POST", "/v1/devices/current/reset", tokB, nil), 201, "")
+		}},
+		{name: "refresh-secret reuse", leave: func(_, _, _ string, b devices.Session) {
+			if _, err := e.dev.Refresh(ctx, b.Secret); err != nil {
+				t.Fatal(err)
+			}
+			e.clk.Advance(time.Minute) // past the reuse grace
+			if _, err := e.dev.Refresh(ctx, b.Secret); err == nil {
+				t.Fatal("reuse must be refused")
+			}
+		}},
+		{name: "expiry sweep", leave: func(_, _, _ string, b devices.Session) {
+			if _, err := e.pool.Exec(ctx, `UPDATE auth_sessions SET expires_at = $2 WHERE device_id = $1::uuid`, b.Device.ID, e.clk.Now().Add(-time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.svc.Sweep(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "password reset", allGone: true, leave: func(email, _, _ string, _ devices.Session) {
+			e.want(e.doFrom(e.ip(), "POST", "/v1/auth/password-reset/request", "", map[string]any{"email": email}), 202, "")
+			msg, ok := e.mail.Last(email)
+			if !ok {
+				t.Fatal("no reset mail")
+			}
+			token := strings.TrimPrefix(msg.Link, "https://app.example/reset?token=")
+			e.want(e.do("POST", "/v1/auth/password-reset/confirm", "", map[string]any{"token": token, "password": "a brand new secret"}), 204, "")
+		}},
+	}
+	for i, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			email := "due" + itoa(i) + "@example.com"
+			a, tokA := e.signup(email, true)
+			userID := e.ident(tokA).AccountID
+			e.want(e.do("POST", "/v1/keys/setup", tokA, setupBody()), 201, "")
+			e.want(e.do("PUT", "/v1/keys/device", tokA, deviceKeyBody(a.Device.ID, 1, pub32(1))), 204, "")
+			// A device without a registered key leaving does not make a rotation due.
+			c0, _ := e.signin(email, true)
+			e.want(e.do("DELETE", "/v1/devices/"+c0.Device.ID, tokA, nil), 204, "")
+			if r := e.do("GET", "/v1/keys", tokA, nil); r.body["rotation_due"] != false {
+				t.Fatalf("no key, no rotation due: %s", r.raw)
+			}
+			b, tokB := e.signin(email, true)
+			e.want(e.do("PUT", "/v1/keys/device", tokB, deviceKeyBody(b.Device.ID, 1, pub32(2))), 204, "")
+
+			c.leave(email, tokA, tokB, b)
+
+			if !e.rotationDue(userID) {
+				t.Fatal("rotation_due must be set")
+			}
+			if c.allGone {
+				return
+			}
+			r := e.do("GET", "/v1/keys", tokA, nil)
+			if r.body["rotation_due"] != true || len(r.body["devices"].([]any)) != 1 {
+				t.Fatalf("keys after departure: %s", r.raw)
+			}
+			// A refused rotation leaves it set; a successful one clears it.
+			e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, map[string]string{b.Device.ID: blob(92, 5)})), 409, "devices_changed")
+			if !e.rotationDue(userID) {
+				t.Fatal("a refused rotation must not clear rotation_due")
+			}
+			e.want(e.do("POST", "/v1/keys/rotate", tokA, rotateBody(2, adk(1), 4, nil)), 200, "")
+			if r := e.do("GET", "/v1/keys", tokA, nil); r.body["rotation_due"] != false {
+				t.Fatalf("rotation must clear rotation_due: %s", r.raw)
+			}
+		})
+	}
+}
+
+// TestKeysStateShape pins the GET /v1/keys body: every documented field is present, including
+// rotation_due (false for a new account) and the nullable per-device proof fields.
+func TestKeysStateShape(t *testing.T) {
+	e := newEnv(t)
+	_, tok := e.signup("vic@example.com", true)
+	r := e.do("GET", "/v1/keys", tok, nil)
+	e.want(r, 200, "")
+	for _, k := range []string{"key_version", "recovery", "devices", "pending", "rotation_due"} {
+		if _, ok := r.body[k]; !ok {
+			t.Fatalf("GET /v1/keys lacks %s: %s", k, r.raw)
+		}
+	}
+	if len(r.body) != 5 || r.body["rotation_due"] != false || r.body["key_version"].(float64) != 0 {
+		t.Fatalf("GET /v1/keys: %s", r.raw)
+	}
+	d := r.body["devices"].([]any)[0].(map[string]any)
+	for _, k := range []string{"device_id", "public_key", "key_version", "proof"} {
+		if _, ok := d[k]; !ok || len(d) != 4 {
+			t.Fatalf("device key item: %v", d)
+		}
 	}
 }

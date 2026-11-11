@@ -8,7 +8,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -63,65 +62,67 @@ class SenderSessionTest {
         val firstCode = checkNotNull(view.code)
 
         ActivityScenario.launch<MainActivity>(sessionIntent(view.id)).use { scenario ->
-            compose.waitForTag(ScreenIds.SESSION, 30_000)
-            assertEquals(firstCode, code())
-            compose.onNodeWithTag("countdown").assertExists()
-            compose.onNodeWithTag("keep-open-banner").assertExists()
-            compose.waitUntil(5_000) { entry.keepAwake().screenOn.value }
-            scenario.onActivity { assertTrue("window keeps the screen on while the join window is open", it.keepsScreenOn()) }
+            compose.dumpOnFailure {
+                compose.waitForTag(ScreenIds.SESSION, 30_000)
+                assertEquals(firstCode, code())
+                compose.onNodeWithTag("countdown").assertExists()
+                compose.onNodeWithTag("keep-open-banner").assertExists()
+                compose.waitUntil(5_000) { entry.keepAwake().screenOn.value }
+                scenario.onActivity { assertTrue("window keeps the screen on while the join window is open", it.keepsScreenOn()) }
 
-            // A guest receiver joins with the code: open join admits it at once.
-            val alice = Backend.Peer.create()
-            val joined = runBlocking { alice.api.resolveCode(firstCode).let { alice.api.join(it.sessionId, it.joinTicket) } }
-            assertEquals("JOINED", joined.participant.status)
-            compose.waitForTag("participant-card", 20_000)
-            val words = runBlocking { alice.api.get(view.id).me?.securityWords.orEmpty() }
-            assertEquals(3, words.size)
-            compose.waitForText(words.joinToString(" · "))
+                // A guest receiver joins with the code: open join admits it at once.
+                val alice = Backend.Peer.create()
+                val joined = runBlocking { alice.api.resolveCode(firstCode).let { alice.api.join(it.sessionId, it.joinTicket) } }
+                assertEquals("JOINED", joined.participant.status)
+                compose.waitForTag("participant-card", 20_000)
+                val words = runBlocking { alice.api.get(view.id).me?.securityWords.orEmpty() }
+                assertEquals(3, words.size)
+                compose.waitForText(words.joinToString(" · "))
 
-            // The join window ends (test clock): expired state, screen released, the joined receiver keeps its place.
-            Backend.advanceClock(601)
-            compose.waitForTag(ScreenIds.SESSION_EXPIRED, 30_000)
-            compose.onNodeWithTag("code-expired").assertExists()
-            compose.waitUntil(5_000) { !entry.keepAwake().screenOn.value }
-            scenario.onActivity { assertFalse(it.keepsScreenOn()) }
-            assertEquals("JOINED", runBlocking { alice.api.get(view.id).me?.status })
+                // The join window ends (test clock): expired state, screen released, the joined receiver keeps its place.
+                Backend.advanceClock(601)
+                compose.waitForTag(ScreenIds.SESSION_EXPIRED, 30_000)
+                compose.onNodeWithTag("code-expired").assertExists()
+                compose.waitUntil(5_000) { !entry.keepAwake().screenOn.value }
+                scenario.onActivity { assertFalse(it.keepsScreenOn()) }
+                assertEquals("JOINED", runBlocking { alice.api.get(view.id).me?.status })
 
-            // Create new code: a fresh window and a different code.
-            compose.onNodeWithTag("session.renew").performScrollTo().performClick()
-            compose.waitForTag(ScreenIds.SESSION, 20_000)
-            assertNotEquals(firstCode, code())
-            val secondCode = code()
+                // Create new code: a fresh window and a different code.
+                compose.onNodeWithTag("session.renew").tap()
+                compose.waitForTag(ScreenIds.SESSION, 20_000)
+                assertNotEquals(firstCode, code())
+                val secondCode = code()
 
-            // Remove revokes the receiver at once.
-            compose.onNodeWithTag("participant.remove").performScrollTo().performClick()
-            compose.waitUntil(20_000) { compose.onAllNodesWithTag("participant-card").fetchSemanticsNodes().isEmpty() }
-            assertEquals("REMOVED", runBlocking { alice.api.get(view.id).me?.status })
+                // Remove revokes the receiver at once.
+                compose.onNodeWithTag("participant.remove").tap()
+                compose.waitUntil(20_000) { compose.onAllNodesWithTag("participant-card").fetchSemanticsNodes().isEmpty() }
+                assertEquals("REMOVED", runBlocking { alice.api.get(view.id).me?.status })
 
-            // Require approval: the next receiver waits for Approve.
-            compose.onNodeWithTag("session.approval").performScrollTo().performClick()
-            compose.waitUntil(20_000) { runBlocking { entry.sessionsApi().get(view.id).requireApproval } }
-            val bob = Backend.Peer.create("Safari on iPhone")
-            val requested = runBlocking { bob.api.resolveCode(secondCode).let { bob.api.join(it.sessionId, it.joinTicket) } }
-            assertEquals("REQUESTED", requested.participant.status)
-            compose.waitForTag("request-card", 20_000)
-            compose.onNodeWithTag("participant.approve").performScrollTo().performClick()
-            compose.waitForTag("participant-card", 20_000)
-            assertEquals("JOINED", runBlocking { bob.api.get(view.id).me?.status })
+                // Require approval: the next receiver waits for Approve.
+                compose.onNodeWithTag("session.approval").tap()
+                compose.waitUntil(20_000) { runBlocking { entry.sessionsApi().get(view.id).requireApproval } }
+                val bob = Backend.Peer.create("Safari on iPhone")
+                val requested = runBlocking { bob.api.resolveCode(secondCode).let { bob.api.join(it.sessionId, it.joinTicket) } }
+                assertEquals("REQUESTED", requested.participant.status)
+                compose.waitForTag("request-card", 20_000)
+                compose.onNodeWithTag("participant.approve").tap()
+                compose.waitForTag("participant-card", 20_000)
+                assertEquals("JOINED", runBlocking { bob.api.get(view.id).me?.status })
 
-            // Block, after the confirmation dialog.
-            compose.onNodeWithTag("participant.block").performScrollTo().performClick()
-            compose.onNodeWithText(Backend.entryString(R.string.product_block_confirm_h)).assertExists()
-            compose.onNodeWithTag("dialog.confirm").performClick()
-            compose.waitUntil(20_000) { compose.onAllNodesWithTag("participant-card").fetchSemanticsNodes().isEmpty() }
-            assertEquals("BLOCKED", runBlocking { bob.api.get(view.id).me?.status })
+                // Block, after the confirmation dialog.
+                compose.onNodeWithTag("participant.block").tap()
+                compose.onNodeWithText(Backend.entryString(R.string.product_block_confirm_h)).assertExists()
+                compose.onNodeWithTag("dialog.confirm").tap()
+                compose.waitUntil(20_000) { compose.onAllNodesWithTag("participant-card").fetchSemanticsNodes().isEmpty() }
+                assertEquals("BLOCKED", runBlocking { bob.api.get(view.id).me?.status })
 
-            // Close from the TR-8 sheet ends the session.
-            compose.onNodeWithContentDescription(Backend.entryString(R.string.android_close)).performClick()
-            compose.waitForTag("session.close-confirm")
-            compose.onNodeWithTag("session.close-confirm").performClick()
-            compose.waitForTag("session.ended", 20_000)
-            assertEquals("CLOSED", runBlocking { entry.sessionsApi().get(view.id).status })
+                // Close from the TR-8 sheet ends the session.
+                compose.onNodeWithContentDescription(Backend.entryString(R.string.android_close)).performClick()
+                compose.waitForTag("session.close-confirm")
+                compose.onNodeWithTag("session.close-confirm").tap()
+                compose.waitForTag("session.ended", 20_000)
+                assertEquals("CLOSED", runBlocking { entry.sessionsApi().get(view.id).status })
+            }
         }
     }
 }

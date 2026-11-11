@@ -13,7 +13,8 @@ import type { RemoteClipboardEvent } from './api';
  * Every tab of the browser shares these records, and each tab keeps its own timeline in memory (§2.9). The cache and
  * the cursor move together: `advance` writes a page pulled by cursor and moves the cursor in one transaction, and only
  * when the stored cursor still equals the cursor the page was pulled from, so the cache always holds every change up to
- * the stored cursor, and the cursor only ever moves forward. A tab whose pull lost that race reloads its timeline from
+ * the stored cursor, and a page only ever moves it forward (`replace`, a history load, may set an older cursor over a
+ * stale one, §2.9). A tab whose pull lost that race reloads its timeline from
  * the pair (`snapshot`, one read) and pulls on from there. A row enters the cache only through `advance`, `replace`
  * (the initial load) or `ackCreate` (an acknowledged capture whose seq is beyond the cursor); removals may happen at any
  * time, since the cursor brings the same tombstone later.

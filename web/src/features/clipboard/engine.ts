@@ -100,11 +100,20 @@ export type CaptureSource = 'manual' | 'auto' | 'copy';
  */
 export type QueueReason = 'offline' | 'busy' | 'rate_limited' | 'key' | 'paused' | 'pending';
 
+/**
+ * `synced`: the server acknowledged the capture (its `201`, or a pull or another tab of this browser saw it there).
+ * `queued`: still in the offline queue. `removed`: deleted or cleared on this device before the server acknowledged it
+ * (never sent afterwards). `too_large` also covers a capture the server refused for good (`413`, `400`).
+ */
 export type CaptureResult =
   | { kind: 'synced'; id: string }
   | { kind: 'queued'; id: string; reason: QueueReason }
+  | { kind: 'removed'; id: string }
   | { kind: 'sensitive'; sensitive: SensitiveKind }
   | { kind: 'duplicate' | 'empty' | 'too_large' | 'paused' | 'not_ready' };
+
+/** How a capture left the queue: acknowledged by the server, deleted or cleared here, or refused for good. */
+type CaptureOutcome = 'synced' | 'removed' | 'rejected';
 
 const utf8Length = (s: string) => new TextEncoder().encode(s).length;
 const parseTime = (iso: string | null | undefined) => {
@@ -160,6 +169,11 @@ export class ClipboardEngine {
   private pendingDeletes = new Map<string, PendingDelete>();
   /** Queued events known to be in the store's queue: another tab may take them out (acknowledged, deleted, cleared). */
   private stored = new Set<string>();
+  /**
+   * Captures of this page whose `capture()` call is still waiting for its result, with how each left the queue (null:
+   * still queued). The first outcome recorded wins, so a capture deleted here is never reported as synced.
+   */
+  private outcomes = new Map<string, CaptureOutcome | null>();
   /** Clear history is running: nothing queued is sent until it is done. */
   private clearing = false;
   /**
@@ -296,6 +310,11 @@ export class ClipboardEngine {
     return out;
   }
 
+  /** Records how a capture awaiting its `capture()` result left the queue (the first outcome wins). */
+  private settle(id: string, outcome: CaptureOutcome) {
+    if (this.outcomes.get(id) === null) this.outcomes.set(id, outcome);
+  }
+
   /** Reads the cache and the queue, then refreshes from the server, loads the settings and sends what is queued. */
   async start(): Promise<void> {
     try {
@@ -306,7 +325,7 @@ export class ClipboardEngine {
         this.attempted.add(q.event_id);
         this.stored.add(q.event_id);
       }
-      await this.adopt(snap);
+      await this.adopt(snap, new Set());
     } catch {
       /* the cache is a convenience: the server refresh below fills the timeline */
     }
@@ -319,9 +338,11 @@ export class ClipboardEngine {
   /**
    * Takes the shared cache and cursor (read together) as this tab's timeline, keeping what this tab knows: events
    * deleted here stay hidden, the pending deletes of every tab are added, and a queued capture that left the shared
-   * queue meanwhile (acknowledged, deleted or cleared in another tab) leaves this tab's queue too.
+   * queue meanwhile (acknowledged, deleted or cleared in another tab) leaves this tab's queue too. Only the captures in
+   * `judged` (known to be stored before the snapshot was read) are judged by their absence from it: a capture enqueued
+   * while the snapshot was read is kept.
    */
-  private async adopt(snap: StoreSnapshot) {
+  private async adopt(snap: StoreSnapshot, judged: ReadonlySet<string>) {
     for (const d of snap.deletes) {
       if (!this.pendingDeletes.has(d.event_id)) this.pendingDeletes.set(d.event_id, d);
       this.deletedHere.add(d.event_id);
@@ -341,24 +362,32 @@ export class ClipboardEngine {
     this.cursor = snap.cursor;
     this.syncedAt = snap.syncedAt;
     const inQueue = new Set(snap.queue.map((q) => q.event_id));
-    for (const id of [...this.queued.keys()]) {
-      if (this.deletedHere.has(id) || (this.stored.has(id) && !inQueue.has(id))) {
-        this.queued.delete(id);
-        this.attempted.delete(id);
-        this.stored.delete(id);
-      } else if (this.events.has(id)) {
-        await this.acked(id);
-      }
+    // The drop list is built here, before any await: a capture made while this runs is never in it.
+    const drop: string[] = [];
+    const ack: string[] = [];
+    for (const id of this.queued.keys()) {
+      if (this.deletedHere.has(id) || (judged.has(id) && this.stored.has(id) && !inQueue.has(id))) drop.push(id);
+      else if (this.events.has(id)) ack.push(id);
     }
+    for (const id of drop) {
+      // Deleted or cleared (a pending delete), or acknowledged in another tab (out of the shared queue without one).
+      this.settle(id, this.deletedHere.has(id) ? 'removed' : 'synced');
+      this.queued.delete(id);
+      this.attempted.delete(id);
+      this.stored.delete(id);
+    }
+    for (const id of ack) if (this.queued.has(id) && this.events.has(id)) await this.acked(id);
     for (const id of [...this.texts.keys()]) if (!this.events.has(id) && !this.queued.has(id)) this.texts.delete(id);
     await this.decryptMissing();
   }
 
   /** Reloads this tab's timeline from the shared cache (another tab moved the shared cursor). False when unreadable. */
   private async reload(): Promise<boolean> {
+    // Captures stored before the read starts are in the snapshot unless another tab took them out since.
+    const judged = new Set(this.stored);
     const snap = await this.d.store.snapshot(this.d.userId).catch(() => null);
     if (!snap || this.stopped) return false;
-    await this.adopt(snap);
+    await this.adopt(snap, judged);
     return true;
   }
 
@@ -472,7 +501,7 @@ export class ClipboardEngine {
             this.tombstoned.add(e.event_id);
             // Deleted on another device while still queued here (its create reached the server but the response was
             // lost): drop it, so the retry cannot bring it back.
-            if (this.queued.has(e.event_id)) await this.dropQueued(e.event_id);
+            if (this.queued.has(e.event_id)) await this.dropQueued(e.event_id, 'synced');
             // A tombstone confirms a pending delete (a repeated create never restores a deleted event).
             if (this.pendingDeletes.has(e.event_id)) await this.forgetDelete(e.event_id);
             this.texts.delete(e.event_id);
@@ -529,6 +558,7 @@ export class ClipboardEngine {
   }
 
   private async acked(id: string) {
+    this.settle(id, 'synced');
     const text = this.texts.get(id);
     this.queued.delete(id);
     this.stored.delete(id);
@@ -536,8 +566,9 @@ export class ClipboardEngine {
     await this.persist((s, g) => s.dequeue(this.d.userId, id, g));
   }
 
-  /** Drops a queued event locally (never sent again). */
-  private async dropQueued(id: string) {
+  /** Drops a queued event locally (never sent again): it reached the server (a tombstone) or was refused for good. */
+  private async dropQueued(id: string, outcome: CaptureOutcome) {
+    this.settle(id, outcome);
     this.queued.delete(id);
     this.attempted.delete(id);
     this.stored.delete(id);
@@ -559,6 +590,7 @@ export class ClipboardEngine {
     }));
     for (const d of items) {
       const id = d.event_id;
+      this.settle(id, 'removed');
       this.pendingDeletes.set(id, d);
       this.deletedHere.add(id);
       this.queued.delete(id);
@@ -660,10 +692,26 @@ export class ClipboardEngine {
     this.lastText = text;
     this.texts.set(id, text);
     this.queued.set(id, item);
-    if (await this.persist((s, g) => s.enqueue(item, g))) this.stored.add(id);
-    this.emit();
-    await this.flush();
-    return this.queued.has(id) ? { kind: 'queued', id, reason: this.queueReason() } : { kind: 'synced', id };
+    this.outcomes.set(id, null);
+    try {
+      if (await this.persist((s, g) => s.enqueue(item, g))) this.stored.add(id);
+      this.emit();
+      await this.flush();
+      if (this.queued.has(id)) return { kind: 'queued', id, reason: this.queueReason() };
+      // Reported as synced only when the server acknowledged it.
+      switch (this.outcomes.get(id)) {
+        case 'synced':
+          return { kind: 'synced', id };
+        case 'removed':
+          return { kind: 'removed', id };
+        case 'rejected':
+          return { kind: 'too_large' };
+        default:
+          return { kind: 'not_ready' };
+      }
+    } finally {
+      this.outcomes.delete(id);
+    }
   }
 
   /** The real reason the queue is waiting (offline versus server busy, rate limited, key, paused). */
@@ -847,6 +895,8 @@ export class ClipboardEngine {
     if (!this.stored.has(id)) return false;
     const state = await this.d.store.pendingState(this.d.userId, id).catch(() => null);
     if (!state || (state.queued && !state.deleted)) return false;
+    // Out of the shared queue without a pending delete: another tab had it acknowledged.
+    this.settle(id, state.deleted ? 'removed' : 'synced');
     this.queued.delete(id);
     this.attempted.delete(id);
     this.stored.delete(id);
@@ -894,7 +944,7 @@ export class ClipboardEngine {
         const id = e.event_id;
         if (this.tombstoned.has(id)) {
           // Deleted on another device meanwhile (its tombstone arrived): acknowledged, but not a row again.
-          await this.dropQueued(id);
+          await this.dropQueued(id, 'synced');
           this.texts.delete(id);
           this.emit();
           return 'ok';
@@ -903,6 +953,7 @@ export class ClipboardEngine {
         if (!this.queued.has(id)) {
           // A cursor pull already saw the event and acknowledged it (the server notifies before it answers the
           // create), or a reload took it out of this tab's queue: plain success.
+          this.settle(id, 'synced');
           this.attempted.delete(id);
           return 'ok';
         }
@@ -910,6 +961,19 @@ export class ClipboardEngine {
         // it, or pulled its tombstone, while the create was in flight.
         const state: AckState | null = await this.persistResult((s, g) => s.ackCreate(this.d.userId, e, g));
         if (state === 'deleted') return this.ackDeleted(id);
+        // While `ackCreate` ran, this tab may have pulled the event's tombstone or deleted it: checked again before
+        // anything is written to memory.
+        if (this.deletedHere.has(id)) return this.ackDeleted(id);
+        if (this.tombstoned.has(id)) {
+          // Deleted on another device: acknowledged, but not a row. The pull that saw the tombstone also removes it
+          // from the shared cache (a removal may be written at any time; the cursor carries the tombstone anyway).
+          await this.dropQueued(id, 'synced');
+          this.texts.delete(id);
+          await this.persist((s, g) => s.removeEvents(this.d.userId, [id], g));
+          this.emit();
+          return 'ok';
+        }
+        this.settle(id, 'synced');
         if (state === 'taken' || state === 'gone') {
           // Not a row from this acknowledgement: never cached or shown from here. The cursor (or the shared cache)
           // says whether it is live.
@@ -930,7 +994,10 @@ export class ClipboardEngine {
         this.attempted.delete(id);
         if (text !== undefined) this.texts.set(id, text);
         this.emit();
-        return 'ok';
+        // A seq beyond the cursor this tab applied may be a tombstone's (a repeated create answers with it, §2.4), or a
+        // tombstone may follow it that this tab has not pulled: the cursor is followed now, so a row deleted elsewhere
+        // does not wait for a WebSocket message or a focus event to go away.
+        return this.cursor === null || e.seq > this.cursor ? 'resync' : 'ok';
       } catch (err) {
         if (err instanceof NetworkError) {
           this.sendError = 'offline';
@@ -965,7 +1032,7 @@ export class ClipboardEngine {
         }
         if (err.status === 413 || err.status === 400) {
           // The server will never take this one (too large, malformed): drop it instead of retrying forever.
-          await this.dropQueued(item.event_id);
+          await this.dropQueued(item.event_id, 'rejected');
           this.texts.delete(item.event_id);
           this.emit();
           return 'rejected';
@@ -1039,12 +1106,16 @@ export class ClipboardEngine {
    * dropped too and never sent after it (§2.9): every capture queued when Clear was pressed, in this tab or in the
    * browser's shared queue (another tab's), becomes a pending delete for the grace period, so a create still in flight
    * in another tab is deleted again; sends in flight in this tab finish before the clear request, and the server clear
-   * tombstones those that reached it. A capture made after Clear was pressed is kept and sent after it.
+   * tombstones those that reached it. A capture made after Clear was pressed is kept and sent after it. Only the rows
+   * this tab knew when the clear request was sent leave the timeline and the cache: an event pulled while the request
+   * runs may have been created after the server cleared (it stays; an older one's tombstone follows by cursor).
    */
   async clear(): Promise<void> {
     this.clearing = true;
     const startedAt = this.d.now();
     const before = new Set(this.queued.keys());
+    // Noted before any await: the rows Clear removes from this tab's timeline and from the cache.
+    const shown = new Set(this.events.keys());
     let dropped: string[];
     try {
       const shared = await this.d.store.queue(this.d.userId).catch(() => [] as QueuedEvent[]);
@@ -1055,6 +1126,8 @@ export class ClipboardEngine {
         }
       }
       while (this.flushing) await this.flushing.catch(() => undefined);
+      // A send that finished meanwhile acknowledged its row before the request below: the server clear covers it.
+      for (const id of this.events.keys()) shown.add(id);
       await this.d.api.clear();
       dropped = [...before];
     } catch (e) {
@@ -1064,10 +1137,12 @@ export class ClipboardEngine {
     }
     await this.markDeleted(dropped, this.d.now() + DELETE_GRACE_MS);
     this.clearing = false;
-    const ids = [...this.events.keys()];
-    this.events.clear();
-    this.incoming.clear();
-    for (const id of ids) this.texts.delete(id);
+    const ids = [...shown];
+    for (const id of ids) {
+      this.events.delete(id);
+      this.incoming.delete(id);
+      this.texts.delete(id);
+    }
     await this.persist((s, g) => s.removeEvents(this.d.userId, ids, g));
     this.emit();
     void this.refresh();

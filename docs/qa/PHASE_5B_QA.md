@@ -11,6 +11,7 @@ Independent review by the `qa-reviewer` agent (`.claude/agents/qa-reviewer.md`).
 - [43025957764](https://github.com/Juliolayme/share_anywhere/actions/runs/43025957764) on 8d2cb0e (QA round 1 backend fixes): every job green.
 - [43029093517](https://github.com/Juliolayme/share_anywhere/actions/runs/43029093517) on 726c0a2 (QA round 1 Web fixes): every job green, e2e first attempt in all five projects (chromium 69, firefox 67, webkit 68, android-chrome 61, ios-safari 61).
 - [43040047354](https://github.com/Juliolayme/share_anywhere/actions/runs/43040047354) on 6ae4368 (QA round 2 fixes): backend, web, protocol, security, docs and compose green; `e2e-web (chromium-desktop)` and `(android-chrome)` failed while installing Playwright system packages (apt: "Some index files failed to download"), an infrastructure failure, not a test failure; the other e2e jobs were cancelled with them. Superseded by the round-3 fix push.
+- [43052733954](https://github.com/Juliolayme/share_anywhere/actions/runs/43052733954) on 5e68063 (QA round 3 fixes): backend, web, protocol, security, docs and compose green. The e2e jobs failed or hung while installing Playwright system packages (apt: "Temporary failure resolving 'security.ubuntu.com'"). This was an infrastructure failure: no test ran. Superseded by the round-4 P2 push.
 
 ## Round 1 — commit fab4866 — FAIL
 
@@ -115,3 +116,27 @@ Every command passed: Web, root, backend (including `-race`), lint and govulnche
 | Report i18n count | P2 | Fixed |
 
 Verification note (engineer, before the round 3 fix commit): the Web unit suite failed one test in the first of 24 local runs. The failing test was not captured, and the next 23 runs (6 of them under CPU load) all passed, so the cause is unknown. QA round 4 is asked to run the suite repeatedly to catch it.
+
+## Round 4 — commit 5e68063 — PASS
+
+0 P0, 0 P1 and 6 P2 findings. The pass was conditional on CI, whose e2e jobs had not run because of the apt failure above.
+
+Every command passed:
+
+- the Web unit suite in 20 of 20 runs, 8 of them under concurrent load (the earlier one-in-24 failure did not reproduce);
+- backend, lint and govulncheck;
+- the clipboard and account e2e suites in all five projects;
+- `tabs.spec.ts` 6 of 6.
+
+The round-3 harness passed 15 of 15. A new multi-tab fuzz (3 tabs plus a phone, random latency) found no duplicates, no wrongful deletes and no lost captures in 500 seeds without Clear. Its only failures were the P2-1 and P2-4 races below. Earlier rounds did not regress.
+
+### Resolution of round 4 findings (after the PASS)
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| Clear can drop an event pulled while the clear request runs | P2 | The ids to remove are snapshotted when Clear is pressed; regression test N1 |
+| A tombstone pulled while `ackCreate` runs leaves a ghost in that tab | P2 | `tombstoned` and `deletedHere` are re-checked after the await, and a resync runs when the acked seq is beyond the cursor; test N2 |
+| A first send answered with a tombstone seq beyond the cursor shows the row until the next pull | P2 | A refresh is scheduled after such an ack; documented; test N3 |
+| A capture made during `adopt()` is dropped and reported as synced | P2 | The drop list is built without the race; `synced` only for server-acknowledged captures; test N4 |
+| CLIPBOARD_PROTOCOL §2.9 claims more than the code does | P2 | Wording matches the guarantees, including the 6-day history reload |
+| Report and QA log out of date | P2 | Counts, skips, hashes and CI entries updated |

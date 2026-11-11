@@ -1263,4 +1263,234 @@ describe('ClipboardEngine', () => {
       expect(texts(e)).toEqual(['typed after pressing clear']);
     });
   });
+
+  describe('QA r4: Clear, acknowledgements and reloads racing with pulls and captures (§2.9)', () => {
+    const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+    const tabOf = (d: Device): Device => ({ ...d, store: openClipboardStore(d.factory) });
+    const shownIds = (e: ClipboardEngine) =>
+      e
+        .snapshot()
+        .items.filter((i) => !i.pending)
+        .map((i) => i.id)
+        .sort();
+    const liveIds = (s: ReturnType<typeof fakeServer>) =>
+      [...s.rows.values()]
+        .filter((r) => !r.deleted)
+        .map((r) => r.event_id)
+        .sort();
+
+    it('N1: an event created on another device right after the server cleared, pulled before the 204, is kept', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      const c = await device('dev-c', [adk1]);
+      const { e: devC } = engine(server, c);
+      let tab: ClipboardEngine | null = null;
+      let newId = '';
+      const { e } = engine(server, a, {
+        api: {
+          ...server.api,
+          clear: async () => {
+            await server.api.clear();
+            // The phone captures right after the server clear; its notification makes this tab pull before the 204.
+            const r = await devC.capture('captured on phone right after the clear', 'manual');
+            newId = (r as { id: string }).id;
+            await tab?.refresh();
+          },
+        },
+      });
+      tab = e;
+      await devC.start();
+      await e.start();
+      await devC.capture('old one', 'manual');
+      await e.refresh();
+      expect(texts(e)).toEqual(['old one']);
+      await e.clear();
+      await tick();
+      await e.refresh();
+      expect(liveIds(server)).toEqual([newId]);
+      expect(shownIds(e)).toEqual([newId]);
+      expect((await a.store.events(USER)).map((x) => x.event_id)).toEqual([newId]);
+      const { e: fresh } = engine(server, tabOf(a));
+      await fresh.start();
+      expect(shownIds(fresh)).toEqual([newId]);
+    });
+
+    for (const mode of ['micro1', 'micro5', 'setImmediate'] as const) {
+      it(`N2 (${mode}): a tombstone pulled while the acknowledgement is applied in the store leaves no ghost`, async () => {
+        const server = fakeServer();
+        const a = await device('dev-a', [adk1]);
+        let tab: ClipboardEngine | null = null;
+        let releaseEvents: () => void = () => undefined;
+        let gateOn = false;
+        let pulling: Promise<void> | null = null;
+        const later = (fn: () => void) => {
+          if (mode === 'micro1') queueMicrotask(fn);
+          else if (mode === 'micro5') {
+            let p = Promise.resolve();
+            for (let i = 0; i < 5; i++) p = p.then(() => undefined);
+            void p.then(fn);
+          } else setImmediate(fn);
+        };
+        const { e } = engine(server, a, {
+          api: {
+            ...server.api,
+            events: async (cursor, limit) => {
+              if (gateOn) await new Promise<void>((r) => (releaseEvents = r));
+              return server.api.events(cursor, limit);
+            },
+            create: async (req) => {
+              server.as('dev-a');
+              const res = await server.api.create(req);
+              await server.api.remove(req.event_id); // another device deletes it at once
+              gateOn = true;
+              pulling = tab?.refresh() ?? null; // the notifications start a pull; its page is held
+              await tick(5);
+              gateOn = false;
+              later(() => releaseEvents()); // the page arrives while the acknowledgement is being applied
+              return res;
+            },
+          },
+        });
+        tab = e;
+        await e.start();
+        expect((await e.capture('deleted elsewhere at once', 'manual')).kind).toBe('synced');
+        await pulling;
+        await tick(30);
+        expect(texts(e)).toEqual([]);
+        expect(await a.store.events(USER)).toEqual([]);
+        await e.refresh();
+        expect(texts(e)).toEqual([]);
+        const { e: fresh } = engine(server, tabOf(a));
+        await fresh.start();
+        expect(texts(fresh)).toEqual([]);
+      });
+    }
+
+    it('N3: a first send answered with a tombstone seq beyond the cursor clears without a notification', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      let releaseA: () => void = () => undefined;
+      const gateA = new Promise<void>((r) => (releaseA = r));
+      let holdA = true;
+      const { e: tabA } = engine(server, a, {
+        api: {
+          ...server.api,
+          create: async (req) => {
+            if (holdA) {
+              holdA = false;
+              await gateA;
+            }
+            server.as('dev-a');
+            return server.api.create(req);
+          },
+        },
+      });
+      await tabA.start();
+      const capturing = tabA.capture('sent by two tabs', 'manual');
+      await tick();
+      // Tab B opens now, reads the shared queue and sends it first (its response is held); the phone deletes it.
+      let releaseB: () => void = () => undefined;
+      const gateB = new Promise<void>((r) => (releaseB = r));
+      const { e: tabB } = engine(server, tabOf(a), {
+        api: {
+          ...server.api,
+          create: async (req) => {
+            server.as('dev-a');
+            const res = await server.api.create(req);
+            await gateB;
+            return res;
+          },
+        },
+      });
+      const bStarting = tabB.start();
+      await tick();
+      const id = [...server.rows.keys()][0] ?? '';
+      await server.api.remove(id);
+      const cursorsBefore = server.cursorsSent.length;
+      releaseA(); // tab A's first create is answered with the tombstone's seq (2), beyond its cursor (0)
+      expect((await capturing).kind).toBe('synced');
+      await tick();
+      // No notification, focus or explicit refresh: the acknowledgement itself made tab A follow the cursor.
+      expect(server.cursorsSent.length).toBeGreaterThan(cursorsBefore);
+      expect(texts(tabA)).toEqual([]);
+      releaseB();
+      await bStarting;
+      await tick();
+      expect(texts(tabA)).toEqual([]);
+      expect(texts(tabB)).toEqual([]);
+      expect(await a.store.events(USER)).toEqual([]);
+    });
+
+    for (const delay of [-1, 0, 1, 2, 4]) {
+      it(`N4 (delay ${delay}): a capture made while the tab reloads from the shared cache is kept and sent`, async () => {
+        const server = fakeServer();
+        const a = await device('dev-a', [adk1]);
+        let mode: 'ok' | 'lose' | 'down' = 'ok';
+        const { e: tabA } = engine(server, a, {
+          api: {
+            ...server.api,
+            create: async (req) => {
+              if (mode === 'down') throw new NetworkError();
+              server.as('dev-a');
+              const res = await server.api.create(req);
+              if (mode === 'lose') throw new NetworkError();
+              return res;
+            },
+          },
+        });
+        const { e: tabB } = engine(server, tabOf(a));
+        await tabA.start();
+        await tabB.start();
+        mode = 'lose';
+        expect((await tabA.capture('q1 response lost', 'manual')).kind).toBe('queued');
+        mode = 'down';
+        await tabB.refresh(); // tab B pulls q1 and moves the shared cursor
+        const reloading = tabA.refresh(); // tab A sees the moved cursor and reloads from the shared cache
+        if (delay >= 0) await tick(delay);
+        const q2 = await tabA.capture('q2 typed during the reload', 'manual');
+        // Never reported as synced: the server has not acknowledged it.
+        expect(q2).toMatchObject({ kind: 'queued', reason: 'offline' });
+        await reloading;
+        await tick();
+        const id = (q2 as { id: string }).id;
+        expect(tabA.snapshot().items.some((i) => i.id === id && i.pending)).toBe(true);
+        expect((await a.store.queue(USER)).map((x) => x.event_id)).toContain(id);
+        mode = 'ok';
+        await tabA.flush();
+        await tick();
+        expect(server.rows.get(id)?.deleted).toBe(false);
+        expect(tabA.snapshot().queued).toBe(0);
+      });
+    }
+
+    it('a capture deleted here before the server acknowledged it is reported as removed, never as synced', async () => {
+      const server = fakeServer();
+      const a = await device('dev-a', [adk1]);
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((r) => (release = r));
+      const { e } = engine(server, a, {
+        api: {
+          ...server.api,
+          create: async (req) => {
+            await gate;
+            server.as('dev-a');
+            return server.api.create(req);
+          },
+        },
+      });
+      await e.start();
+      const capturing = e.capture('deleted while sending', 'manual');
+      await tick();
+      const id = e.snapshot().items[0]?.id ?? '';
+      const removing = e.remove(id);
+      await tick();
+      release();
+      expect(await capturing).toEqual({ kind: 'removed', id });
+      await removing;
+      await tick();
+      await e.flush();
+      expect(server.rows.get(id)?.deleted).toBe(true);
+      expect(texts(e)).toEqual([]);
+    });
+  });
 });

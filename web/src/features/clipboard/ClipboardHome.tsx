@@ -133,6 +133,9 @@ export default function ClipboardHome({ runtime }: { runtime: ClipboardRuntime }
         case 'sensitive':
           setSensitive(text);
           return true;
+        case 'removed':
+          // Deleted or cleared here before the server acknowledged it: the user's own action, nothing to report.
+          return true;
         default:
           setNotice(r.kind);
           return false;

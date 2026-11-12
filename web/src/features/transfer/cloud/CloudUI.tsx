@@ -18,8 +18,10 @@ export function useCloudSettings(): {
   reload: () => Promise<void>;
   api: ReturnType<typeof cloudApi>;
 } {
-  const { client } = useIdentity();
+  const { client, status } = useIdentity();
   const api = useMemo(() => cloudApi(client), [client]);
+  // Read once the device identity is ready: before that a first visit has no token yet (and would never retry).
+  const ready = status.kind === 'ready';
   const [settings, setSettings] = useState<CloudSettings | null>(null);
   const [failed, setFailed] = useState(false);
   const reload = useCallback(async () => {
@@ -31,8 +33,8 @@ export function useCloudSettings(): {
     }
   }, [api]);
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    if (ready) void reload();
+  }, [reload, ready]);
   return { settings, failed, reload, api };
 }
 

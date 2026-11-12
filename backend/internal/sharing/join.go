@@ -112,6 +112,11 @@ func (s *Service) ResolveCode(ctx context.Context, c Caller, code string) (Previ
 	if !ValidCode(code) {
 		return Preview{}, ErrInvalid
 	}
+	// A caller already locked out is refused at once, without queueing behind the gate; the check is repeated
+	// inside it, where it is exact.
+	if wait, locked := s.lockedFor(c); locked {
+		return Preview{}, rateLimited("locked_out", wait)
+	}
 	defer s.lookupGate(c)()
 	if wait, locked := s.lockedFor(c); locked {
 		return Preview{}, rateLimited("locked_out", wait)

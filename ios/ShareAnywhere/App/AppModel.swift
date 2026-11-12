@@ -171,15 +171,18 @@ final class AppModel: ObservableObject {
         let previousDevice = identityState.device?.id
         identityState = s
         if claimsChanged { account.identityChanged(s.claims) }
-        if let before = previousDevice, let now = s.device?.id, before != now {
-            // A new identity: the old device's unfinished receives cannot resume.
-            Task { await hub.forgetPending() }
-        }
-        if s.status == .ready, !resumedUnfinished {
-            // A receive the process ended in the middle of (iOS terminated the suspended app) resumes once the
-            // identity is ready: at launch, or after Retry when the first bootstrap failed.
-            resumedUnfinished = true
-            Task { await hub.resumeUnfinished() }
+        // A new identity: the old device's unfinished receives cannot resume, so they are forgotten first.
+        let forget = previousDevice != nil && s.device?.id != nil && previousDevice != s.device?.id
+        // A receive the process ended in the middle of (iOS terminated the suspended app) resumes once the identity is
+        // ready: at launch, or after Retry when the first bootstrap failed.
+        let resume = s.status == .ready && !resumedUnfinished
+        if resume { resumedUnfinished = true }
+        if forget || resume {
+            let hub = hub
+            Task {
+                if forget { await hub.forgetPending() }
+                if resume { await hub.resumeUnfinished() }
+            }
         }
     }
 

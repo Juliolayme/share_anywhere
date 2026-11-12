@@ -29,8 +29,9 @@ import {
   startInBrowser,
 } from '../transfer/helpers';
 
-// Accessibility pass (docs/phases/PHASE_9_HARDENING_RELEASE.md): axe-core on every route, in every Playwright
-// project, in light and dark. The run fails on serious or critical violations (WCAG 2.1 A/AA and best-practice
+// Accessibility pass (docs/phases/PHASE_9_HARDENING_RELEASE.md): axe-core on every route and state, in every
+// Playwright project; the guest routes in light and dark, the flows (transfer, receiver states, dialogs, account) in
+// light. The run fails on serious or critical violations (WCAG 2.1 A/AA and best-practice
 // rules); moderate and minor ones are attached to the report for triage.
 test.afterAll(closeSenderBrowser);
 test.afterEach(async () => {

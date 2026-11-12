@@ -67,14 +67,20 @@ final class MemDataChannel: DataChannelLink, @unchecked Sendable {
     }
 
     func open() {
+        for a in markOpen() {
+            a()
+        }
+    }
+
+    /// Marks this end open and returns its pending open actions without running them, so a pair can be opened
+    /// together: a message sent from one end's open action must not find the other end still closed (a real data
+    /// channel pair delivers it), which dropped an early HELLO once on a busy runner.
+    func markOpen() -> [@Sendable () -> Void] {
         startDelivery()
-        let actions = lock.locked { () -> [@Sendable () -> Void] in
+        return lock.locked { () -> [@Sendable () -> Void] in
             state = "open"
             defer { openActions.removeAll() }
             return openActions
-        }
-        for a in actions {
-            a()
         }
     }
 
@@ -246,11 +252,13 @@ final class MemPeer: PeerLink, @unchecked Sendable {
             let late = factory?.announceDelayMs ?? 0
             if late == 0 {
                 other.callbacks.onDataChannel(b)
-                a.open()
-                b.open()
+                for action in a.markOpen() + b.markOpen() {
+                    action()
+                }
             } else {
-                a.open()
-                b.open()
+                for action in a.markOpen() + b.markOpen() {
+                    action()
+                }
                 let callbacks = other.callbacks
                 Task {
                     try? await Task.sleep(nanoseconds: late * 1_000_000)

@@ -21,6 +21,7 @@ const routes: Array<[string, string]> = [
 // Text that differs per run: the generated device name, server-dependent times, the identity chip.
 const MASK = [
   '[data-testid="device-name"]',
+  '[data-testid="home-device-name"]',
   '[data-testid="identity-badge"]',
   '[data-testid="settings-device-name"]',
   'time',
@@ -28,7 +29,11 @@ const MASK = [
 ];
 
 // Per-run names replaced by a fixed text before each capture (masked as well).
-const STABLE_TEXT = ['[data-testid="device-name"]', '[data-testid="settings-device-name"]'];
+const STABLE_TEXT = [
+  '[data-testid="device-name"]',
+  '[data-testid="settings-device-name"]',
+  '[data-testid="home-device-name"]',
+];
 
 async function page(
   browser: import('@playwright/test').Browser,
@@ -38,14 +43,20 @@ async function page(
   const ctx = trackContext(
     await browser.newContext({ baseURL: BASE, locale: lang === 'vi' ? 'vi-VN' : 'en-US', colorScheme: scheme }),
   );
-  await ctx.addInitScript((l: string) => {
-    try {
-      window.localStorage.setItem('sa.pref.welcomed', '1');
-      window.localStorage.setItem('sa.pref.lang', l);
-    } catch {
-      /* ignore */
-    }
-  }, lang);
+  // The scheme is set through the app's own theme preference as well as the context: an engine that ignores the
+  // context's colour scheme (Firefox rendered light for `dark`) would otherwise capture the wrong theme.
+  await ctx.addInitScript(
+    ([l, s]: [string, string]) => {
+      try {
+        window.localStorage.setItem('sa.pref.welcomed', '1');
+        window.localStorage.setItem('sa.pref.lang', l);
+        window.localStorage.setItem('sa.pref.theme', s);
+      } catch {
+        /* ignore */
+      }
+    },
+    [lang, scheme] as [string, string],
+  );
   return ctx.newPage();
 }
 
@@ -57,6 +68,8 @@ for (const lang of ['en', 'vi'] as const) {
       for (const [path, name] of routes) {
         await open(p, path);
         await p.waitForLoadState('networkidle').catch(() => undefined);
+        // Fail loudly rather than record a baseline in the wrong theme.
+        await expect(p.locator('html')).toHaveAttribute('data-theme', scheme);
         // A mask hides the text but not its length: a long generated device name wraps on a phone and moves
         // everything below it. Give per-run names one fixed text first.
         await p.evaluate((selectors) => {

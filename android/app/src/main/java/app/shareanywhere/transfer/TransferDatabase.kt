@@ -94,6 +94,10 @@ interface IncomingDao {
     @Query("DELETE FROM incoming_progress WHERE session_id = :sessionId")
     suspend fun removeSession(sessionId: String)
 
+    /** Unverified receive progress untouched since [cutoff]: the sweep deletes its half-written documents first. */
+    @Query("SELECT * FROM incoming_progress WHERE updated_at < :cutoff AND verified = 0")
+    suspend fun staleUnverified(cutoff: Long): List<IncomingProgress>
+
     @Query("DELETE FROM incoming_progress WHERE updated_at < :cutoff")
     suspend fun removeOlderThan(cutoff: Long): Int
 

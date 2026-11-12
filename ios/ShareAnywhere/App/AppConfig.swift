@@ -45,8 +45,12 @@ struct AppConfig {
         #if DEBUG
             if launched.contains("-uiTesting") {
                 testDefaults?.set(Array(launched.dropFirst()).filter { $0 != "-resetState" }, forKey: testLaunchKey)
-            } else if let saved = testDefaults?.stringArray(forKey: testLaunchKey) {
-                // The system launched the test installation (cold start from a link): keep its test configuration.
+                testDefaults?.set(Date().timeIntervalSince1970, forKey: testLaunchKey + ".at")
+            } else if let saved = testDefaults?.stringArray(forKey: testLaunchKey),
+                      let at = testDefaults?.double(forKey: testLaunchKey + ".at"),
+                      Date().timeIntervalSince1970 - at < 15 * 60 {
+                // The system launched the test installation (cold start from a link) right after a UI test: keep its
+                // test configuration. Older entries are ignored, so a later manual Debug run starts normally.
                 arguments = [launched.first ?? ""] + saved
             }
         #endif

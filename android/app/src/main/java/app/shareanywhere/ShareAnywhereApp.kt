@@ -67,6 +67,13 @@ class ShareAnywhereApp : Application() {
             val now = System.currentTimeMillis()
             withContext(Dispatchers.IO) {
                 runCatching {
+                    // A receive forgotten here is never resumed: its half-written document goes with it, so nothing
+                    // partial stays in the user's folder under the real file name.
+                    for (row in incoming.staleUnverified(now - DAY_MS)) {
+                        runCatching {
+                            app.shareanywhere.transfer.storage.Folders.delete(contentResolver, android.net.Uri.parse(row.documentUri))
+                        }
+                    }
                     incoming.removeOlderThan(now - DAY_MS)
                     incoming.removeTargetsOlderThan(now - DAY_MS)
                     outgoing.deleteOlderThan(now - 2 * DAY_MS)

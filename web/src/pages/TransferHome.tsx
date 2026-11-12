@@ -111,7 +111,7 @@ export default function TransferHome() {
           <div className="flex-1 text-caption leading-[1.45] text-fg-2">
             <b className="text-[14px] text-fg">{t('product.this_browser_guest')}</b>
             <br />
-            {device?.display_name ?? t('product.identity_loading')}
+            <span data-testid="home-device-name">{device?.display_name ?? t('product.identity_loading')}</span>
           </div>
         </div>
       </Card>

@@ -1478,7 +1478,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     put:
       operationId: putCloudSettings
-      x-sa-access: account
+      x-sa-access: account+device
       summary: Turn Cloud Distribution on (explicit consent the first time) or off and set the monthly budget.
       requestBody:
         required: true
@@ -1741,10 +1741,11 @@ components:
   schemas:
     CloudSettings:
       type: object
-      required: [available, signed_in, enabled, consented, budget_bytes, used_bytes, max_budget_bytes, ttl_hours, pricing]
+      required: [available, signed_in, device_added, enabled, consented, budget_bytes, used_bytes, max_budget_bytes, ttl_hours, pricing]
       properties:
         available: { type: boolean, description: Cloud Distribution is configured on this server. }
         signed_in: { type: boolean }
+        device_added: { type: boolean, description: "This device is added to the account; a not-added device cannot change Cloud settings or distribute (403 device_not_added)." }
         enabled: { type: boolean }
         consented: { type: boolean }
         budget_bytes: { type: integer, format: int64, minimum: 0, description: Monthly budget (bytes uploaded plus downloaded). }

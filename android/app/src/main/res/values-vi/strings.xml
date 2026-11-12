@@ -882,9 +882,12 @@
     <string name="product_close_h">Đóng phiên này?</string>
     <string name="product_close_p">Người nhận bị ngắt kết nối và mã, liên kết, QR không còn dùng được.</string>
     <string name="product_closed_rx">Người gửi đã đóng phiên này.</string>
+    <string name="product_cloud_add_device">Thêm thiết bị này vào tài khoản để dùng truyền qua Cloud.</string>
     <string name="product_cloud_approve">Đồng ý và dùng Cloud</string>
     <string name="product_cloud_budget">Hạn mức Cloud hằng tháng</string>
     <string name="product_cloud_budget_exhausted">Đã dùng hết hạn mức Cloud tháng này — tạm dừng truyền qua Cloud.</string>
+    <string name="product_cloud_budget_gb">Hạn mức Cloud hằng tháng (GB)</string>
+    <string name="product_cloud_budget_invalid">Nhập hạn mức từ 0 đến {max} GB.</string>
     <string name="product_cloud_budget_line">Tháng này: đã dùng {used} trên {budget}</string>
     <string name="product_cloud_budget_save">Lưu hạn mức</string>
     <string name="product_cloud_budget_used">Đã dùng {used} trên {budget} tháng này</string>
@@ -901,7 +904,7 @@
     <string name="product_cloud_option_p">Tải lên một lần, đã mã hóa trên thiết bị này. Người nhận tải về nếu kết nối trực tiếp và chuyển tiếp không được.</string>
     <string name="product_cloud_over_budget">Việc này sẽ vượt hạn mức Cloud hằng tháng của bạn. Hãy tăng hạn mức trong Cài đặt hoặc gửi không qua Cloud.</string>
     <string name="product_cloud_paused">Đã tạm dừng tải lên Cloud</string>
-    <string name="product_cloud_ready">Đã có trên Cloud — người nhận vẫn tải được khi bạn ngoại tuyến</string>
+    <string name="product_cloud_ready">Đã có trên Cloud — người nhận đã tham gia vẫn hoàn tất được khi bạn ngoại tuyến</string>
     <string name="product_cloud_retention">Giữ tối đa {hours} giờ, xóa khi mọi người nhận đã có tệp</string>
     <string name="product_cloud_signin">Đăng nhập để dùng truyền qua Cloud</string>
     <string name="product_cloud_storage">Lưu trữ tạm thời: {size}</string>

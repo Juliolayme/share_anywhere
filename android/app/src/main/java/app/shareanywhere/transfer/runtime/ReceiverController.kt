@@ -539,7 +539,8 @@ class ReceiverController(private val d: ReceiverDeps) {
             reporter.route = kind.serverRoute
             update { it.copy(route = kind.serverRoute, routeKind = kind) }
         }
-        if (s.phase == RxPhase.Paused) return routeMonitor.rebase(s.verified, now)
+        // Paused or verifying the last file: no blocks are expected, so the stall detector waits.
+        if (s.phase == RxPhase.Paused || s.phase == RxPhase.Verifying) return routeMonitor.rebase(s.verified, now)
         // Migration tears this connection down, which cancels the route loop running this tick: run it on its own.
         if (routeMonitor.sample(ch.isOpen, s.verified, c.rttMs, now) == Decision.MIGRATE) {
             scope.launch { migrate() }
@@ -729,16 +730,26 @@ class ReceiverController(private val d: ReceiverDeps) {
         try {
             for (f in open()) {
                 current = f
-                sinks.remove(f.index)?.close()
-                val doc = withContext(Dispatchers.IO) { Folders.create(resolver, target.treeUri, f.name, f.mime) }
-                d.incoming.put(
-                    IncomingProgress(
-                        key(f.transferId), d.sessionId, f.transferId, f.name, f.size, Wire.BLOCK_SIZE,
-                        Bitmap(maxOf(1, Wire.blockCount(f.size))).bytes, doc.toString(), false, d.clock()
+                val resumeDoc = if (agent.resumable(f.fileId)) d.incoming.get(key(f.transferId))?.documentUri else null
+                val existing = sinks[f.index]
+                val doc: android.net.Uri
+                val sink: SafSink
+                if (resumeDoc != null && existing != null) {
+                    // Resume: the parts so far are in this document.
+                    doc = resumeDoc.toUri()
+                    sink = existing
+                } else {
+                    sinks.remove(f.index)?.close()
+                    doc = withContext(Dispatchers.IO) { Folders.create(resolver, target.treeUri, f.name, f.mime) }
+                    d.incoming.put(
+                        IncomingProgress(
+                            key(f.transferId), d.sessionId, f.transferId, f.name, f.size, Wire.BLOCK_SIZE,
+                            Bitmap(maxOf(1, Wire.blockCount(f.size))).bytes, doc.toString(), false, d.clock()
+                        )
                     )
-                )
-                val sink = SafSink(resolver, doc)
-                sinks[f.index] = sink
+                    sink = SafSink(resolver, doc)
+                    sinks[f.index] = sink
+                }
                 update { st -> st.copy(files = st.files.map { if (it.index == f.index) it.copy(documentUri = doc.toString()) else it }) }
                 val index = f.index
                 agent.download(

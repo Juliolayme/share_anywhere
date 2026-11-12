@@ -694,10 +694,15 @@ public actor ReceiverController {
                 current = f
                 let dir = IncomingFolder(directory: folder.url)
                 let k = key(f.transferId)
-                sinks.removeValue(forKey: f.index)?.close()
-                _ = try dir.create(k, name: f.name, size: f.size, blockSize: Wire.blockSize, blockCount: 1, now: d.clock())
-                let sink = PartialFileSink(url: dir.partialURL(k))
-                sinks[f.index] = sink
+                let sink: PartialFileSink
+                if await agent.resumable(f.fileId), let existing = sinks[f.index] {
+                    sink = existing // resume: the parts so far are in this partial file
+                } else {
+                    sinks.removeValue(forKey: f.index)?.close()
+                    _ = try dir.create(k, name: f.name, size: f.size, blockSize: Wire.blockSize, blockCount: 1, now: d.clock())
+                    sink = PartialFileSink(url: dir.partialURL(k))
+                    sinks[f.index] = sink
+                }
                 let index = f.index
                 try await agent.download(
                     f.fileId,

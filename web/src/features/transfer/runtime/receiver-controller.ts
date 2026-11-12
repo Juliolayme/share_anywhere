@@ -527,7 +527,9 @@ export class ReceiverController extends Observable<RxState> {
       this.log(route === 'relay' ? 'product.log_relay_plain' : 'product.log_direct');
       pushDiag(this.diag, `route ${c.kind}${c.rttMs !== null ? ` rtt ${c.rttMs}` : ''}`);
     }
-    if (this.state_.phase === 'paused') return this.route.rebase(this.state_.verified, now);
+    // Paused or verifying the last file: no blocks are expected, so the stall detector waits.
+    if (this.state_.phase === 'paused' || this.state_.phase === 'verifying')
+      return this.route.rebase(this.state_.verified, now);
     const decision = this.route.sample({
       connected: dc.readyState === 'open',
       verified: this.state_.verified,
@@ -807,6 +809,9 @@ export class ReceiverController extends Observable<RxState> {
   /** Where a cloud download writes: the same staging the P2P path uses for this save target. */
   private async cloudSink(f: RxFile): Promise<Sink> {
     if ((this.state_.target?.mode ?? 'opfs') === 'memory') {
+      // Resuming keeps the parts already written (an in-memory sink holds them only while this page lives).
+      const existing = this.sinks.get(f.index);
+      if (existing) return existing;
       const sink = memorySink(f.size);
       this.sinks.set(f.index, sink);
       return sink;

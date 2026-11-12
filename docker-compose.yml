@@ -38,7 +38,9 @@ services:
       SA_PUBLIC_URL: https://localhost:8443
       # Must match coturn's static-auth-secret below.
       SA_TURN_SECRET: ${TURN_SHARED_SECRET:-dev-turn-secret-change-me}
-      SA_TURN_URIS: turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp
+      SA_TURN_URIS: turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp,turns:127.0.0.1:5349?transport=tcp
+      # Relay byte cap per session from coturn's exporter on the compose network (not published).
+      SA_TURN_METRICS_URL: http://coturn:9641/metrics
       # Password-reset mail: console logs the link (development only). With `--profile mail`, set
       # SA_MAIL_SINK=smtp in .env to deliver to mailpit instead (UI at http://localhost:8025).
       SA_MAIL_SINK: ${SA_MAIL_SINK:-console}
@@ -83,11 +85,14 @@ services:
     command: ["-c", "/etc/coturn/turnserver.conf", "--static-auth-secret=${TURN_SHARED_SECRET:-dev-turn-secret-change-me}"]
     volumes:
       - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # TURN over TLS: run scripts/turn-test-cert.sh first (self-signed, two days); without it TLS stays off.
+      - ./.tools/turn-tls:/etc/coturn/tls:ro
     ports:
       # Bound to loopback for local development. For LAN testing with real phones, change to 0.0.0.0
       # and set a strong TURN_SHARED_SECRET in .env. Production uses a mounted config (Phase 9).
       - "127.0.0.1:3478:3478/udp"
       - "127.0.0.1:3478:3478/tcp"
+      - "127.0.0.1:5349:5349/tcp"
       - "127.0.0.1:49160-49200:49160-49200/udp"
 
   caddy:

@@ -745,8 +745,11 @@ type CloudSettings struct {
 	Available bool `json:"available"`
 
 	// BudgetBytes Monthly budget (bytes uploaded plus downloaded).
-	BudgetBytes    int64         `json:"budget_bytes"`
-	Consented      bool          `json:"consented"`
+	BudgetBytes int64 `json:"budget_bytes"`
+	Consented   bool  `json:"consented"`
+
+	// DeviceAdded This device is added to the account; a not-added device cannot change Cloud settings or distribute (403 device_not_added).
+	DeviceAdded    bool          `json:"device_added"`
 	Enabled        bool          `json:"enabled"`
 	MaxBudgetBytes int64         `json:"max_budget_bytes"`
 	Pricing        *CloudPricing `json:"pricing"`

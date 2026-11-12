@@ -71,12 +71,12 @@ private fun money(amount: Double, currency: String): String = runCatching {
 fun CloudSendOption(settings: CloudSettings?, on: Boolean, onToggle: (Boolean) -> Unit, error: String?) {
     if (settings == null || !settings.available) return
     SaCard {
-        if (!settings.signedIn) {
+        if (!settings.signedIn || !settings.deviceAdded) {
             SwitchRow(
                 label = stringResource(R.string.product_cloud_option),
                 checked = false,
                 onCheckedChange = {},
-                description = stringResource(R.string.product_cloud_signin),
+                description = stringResource(if (!settings.signedIn) R.string.product_cloud_signin else R.string.product_cloud_add_device),
                 enabled = false,
                 modifier = Modifier.testTag("send.cloud")
             )
@@ -236,6 +236,7 @@ fun CloudSettingsSection(viewModel: CloudSettingsViewModel = hiltViewModel()) {
     val locale = LocalConfiguration.current.uiLocale()
     var consenting by remember { mutableStateOf(false) }
     var budget by remember { mutableStateOf("") }
+    var budgetError by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { viewModel.load() }
     LaunchedEffect(settings?.budgetBytes) { settings?.let { budget = "%.1f".format(it.budgetBytes / GIB) } }
     SaCard {
@@ -252,7 +253,8 @@ fun CloudSettingsSection(viewModel: CloudSettingsViewModel = hiltViewModel()) {
                 label = stringResource(R.string.android_yy_s_cloud),
                 checked = s.enabled,
                 onCheckedChange = { on -> if (on && !s.consented) consenting = true else viewModel.save(on, false) },
-                description = stringResource(R.string.android_yy_s_cloud_p),
+                description = stringResource(if (s.deviceAdded) R.string.android_yy_s_cloud_p else R.string.product_cloud_add_device),
+                enabled = s.deviceAdded,
                 modifier = Modifier.testTag("settings.cloud")
             )
             if (s.enabled) {
@@ -260,7 +262,8 @@ fun CloudSettingsSection(viewModel: CloudSettingsViewModel = hiltViewModel()) {
                     OutlinedTextField(
                         value = budget,
                         onValueChange = { budget = it },
-                        label = { Text("${stringResource(R.string.product_cloud_budget)} (GB)") },
+                        label = { Text(stringResource(R.string.product_cloud_budget_gb)) },
+                        isError = budgetError,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.weight(1f).testTag("settings.cloud-budget")
@@ -268,10 +271,19 @@ fun CloudSettingsSection(viewModel: CloudSettingsViewModel = hiltViewModel()) {
                     TextButton(
                         onClick = {
                             val gb = budget.replace(',', '.').toDoubleOrNull()
-                            if (gb != null && gb >= 0) viewModel.save(true, false, (gb * GIB).toLong())
+                            budgetError = gb == null || gb < 0 || gb > s.maxBudgetBytes / GIB
+                            if (!budgetError && gb != null) viewModel.save(true, false, (gb * GIB).toLong())
                         },
                         modifier = Modifier.testTag("settings.cloud-budget-save")
                     ) { Text(stringResource(R.string.product_cloud_budget_save)) }
+                }
+                if (budgetError) {
+                    Text(
+                        str(R.string.product_cloud_budget_invalid, "max" to (s.maxBudgetBytes / GIB).toLong()),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("settings.cloud-budget-error")
+                    )
                 }
                 Text(
                     str(

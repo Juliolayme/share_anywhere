@@ -313,6 +313,14 @@ class CloudReceive(
     private val lock = Mutex()
     private var eph: ByteArray? = null
     private var lastAsk = Long.MIN_VALUE / 2
+
+    /** Per file: the next part to fetch and the hash of the parts before it, so a retry resumes (§9). */
+    private class Cursor(var next: Int, val hasher: StreamHasher)
+
+    private val cursors = HashMap<String, Cursor>()
+
+    /** Whether a download of this file stopped part-way and can resume (its parts so far are in the document). */
+    suspend fun resumable(fileId: String): Boolean = lock.withLock { (cursors[fileId]?.next ?: 0) > 0 }
     private var socketJob: Job? = null
 
     fun start() {
@@ -383,8 +391,9 @@ class CloudReceive(
                 val o = objects[fileId] ?: throw CloudException(CloudFailure.UNAVAILABLE)
                 o to (keys[o.id] ?: throw CloudException(CloudFailure.UNAVAILABLE))
             }
-        val hasher = StreamHasher()
-        for (n in 0 until o.partCount) {
+        val cursor = lock.withLock { cursors.getOrPut(fileId) { Cursor(0, StreamHasher()) } }
+        val hasher = cursor.hasher
+        for (n in cursor.next until o.partCount) {
             if (stopped()) throw CloudException(CloudFailure.NETWORK)
             val stored =
                 try {
@@ -402,12 +411,20 @@ class CloudReceive(
                 } catch (_: Exception) {
                     throw CloudException(CloudFailure.NETWORK)
                 }
-            val plain = CloudCrypto.openPart(k.key, o.id, n, o.partCount, stored)
+            val plain =
+                try {
+                    CloudCrypto.openPart(k.key, o.id, n, o.partCount, stored)
+                } catch (e: CloudException) {
+                    lock.withLock { cursors.remove(fileId) }
+                    throw e
+                }
             val off = n.toLong() * o.partSize
             write(off, plain)
             hasher.update(off, plain)
+            cursor.next = n + 1
             progress(off + plain.size)
         }
+        lock.withLock { cursors.remove(fileId) }
         if (!MessageDigest.isEqual(hexBytes(hasher.hex()), k.sha256)) throw CloudException(CloudFailure.INTEGRITY)
         runCatching { api.received(o.id) }
     }

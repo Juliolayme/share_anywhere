@@ -469,3 +469,86 @@ func TestCloudHTTP(t *testing.T) {
 		t.Fatalf("received: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// A receiver that finished over P2P counts as having the file: with the other receiver finishing from the cloud,
+// the object is deleted (docs/API.md §2.6 Deletion).
+func TestCloudObjectDeletedWhenReceiversFinishOverPeerToPeer(t *testing.T) {
+	e := newCloudEnv(t, nil)
+	sender, rx, rx2 := e.device("Minh"), e.device("Lan"), e.device("Huy")
+	s := e.session(sender, false)
+	e.join(rx, s.Code)
+	j2 := e.join(rx2, s.Code)
+	id := e.account(sender)
+	e.consent(id, 1<<20)
+	o, _, err := e.svc.Distribute(ctx, id, fileOf(t, e.env, s.ID, 1000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.upload(id, o)
+	if _, err := e.svc.Received(ctx, rx.DeviceID, o.ID); err != nil {
+		t.Fatal(err)
+	}
+	l, err := e.svc.List(ctx, rx2.DeviceID, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := byFile(l, 1000)
+	if tr.ParticipantID != j2.Participant.ID {
+		t.Fatalf("transfer of the second receiver: %+v", tr)
+	}
+	route := "direct"
+	for _, st := range []string{Connecting, Transferring} {
+		if _, err := e.svc.Report(ctx, rx2.DeviceID, tr.ID, Report{Status: st}); err != nil {
+			t.Fatal(st, err)
+		}
+	}
+	if _, err := e.svc.Report(ctx, rx2.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 1000, Route: &route}); err != nil {
+		t.Fatal(err)
+	}
+	gone, err := e.svc.Object(ctx, rx.DeviceID, o.ID)
+	if err != nil || gone.Status != CloudDeleted {
+		t.Fatalf("both receivers have the file: deleted, got %+v %v", gone, err)
+	}
+	if len(e.store.live) != 0 {
+		t.Fatalf("stored parts left: %v", e.store.live)
+	}
+}
+
+func TestCloudRefusesNotAddedDevicesRemovedReceiversAndEndedSessions(t *testing.T) {
+	e := newCloudEnv(t, nil)
+	sender, rx, rx2 := e.device("Minh"), e.device("Lan"), e.device("Huy")
+	s := e.session(sender, false)
+	e.join(rx, s.Code)
+	j2 := e.join(rx2, s.Code)
+	id := e.account(sender)
+	fid := fileOf(t, e.env, s.ID, 1000)
+	notAdded := id
+	notAdded.DeviceAdded = false
+	_, _, err := e.svc.Distribute(ctx, notAdded, fid)
+	wantCode(t, err, "device_not_added")
+	if st, _ := e.svc.CloudSettings(ctx, notAdded); st.DeviceAdded || !st.SignedIn {
+		t.Fatalf("settings report the device as not added: %+v", st)
+	}
+	e.consent(id, 1<<20)
+	o, _, err := e.svc.Distribute(ctx, id, fid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.upload(id, o)
+	if _, err := e.share.Decide(ctx, sender, j2.Participant.ID, "remove"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.GetPart(ctx, rx2.DeviceID, o.ID, 0); err == nil {
+		t.Fatal("a removed receiver must not download")
+	}
+	if _, err := e.svc.GetPart(ctx, rx.DeviceID, o.ID, 0); err != nil {
+		t.Fatalf("the remaining receiver still downloads: %v", err)
+	}
+	if err := e.share.Close(ctx, sender, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.svc.GetPart(ctx, rx.DeviceID, o.ID, 1)
+	wantCode(t, err, "session_ended")
+	_, err = e.svc.EstimateCloud(ctx, id, EstimateInput{Bytes: MaxCloudObjectBytes + 1, Receivers: 1})
+	wantCode(t, err, "invalid_estimate")
+}

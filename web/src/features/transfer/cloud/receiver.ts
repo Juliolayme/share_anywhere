@@ -34,6 +34,8 @@ export class CloudReceive {
   private keys = new Map<string, ObjectKey>(); // by object id
   private eph: X25519KeyPair | null = null;
   private lastAsk = 0;
+  /** Per file: the next part to fetch and the hash of the parts before it, so a retry resumes (§9). */
+  private cursors = new Map<string, { next: number; hasher: StreamHasher }>();
   private unsub: (() => void) | null = null;
   private readonly now: () => number;
 
@@ -107,9 +109,15 @@ export class CloudReceive {
     })();
   }
 
+  /** Whether a download of this file stopped part-way and can resume (its parts so far are in the sink). */
+  resumable(fileId: string): boolean {
+    return (this.cursors.get(fileId)?.next ?? 0) > 0;
+  }
+
   /**
    * Downloads and decrypts one file in order, writing each part at its offset; `progress` gets the plaintext bytes
-   * written so far. Resolves once the whole-file SHA-256 matches; then tells the server this receiver has it.
+   * written so far. A retry after a pause or a network error resumes at the next part (the caller keeps the same
+   * sink). Resolves once the whole-file SHA-256 matches; then tells the server this receiver has it.
    */
   async download(
     fileId: string,
@@ -120,8 +128,10 @@ export class CloudReceive {
     const o = this.objects.get(fileId);
     const k = o && this.keys.get(o.id);
     if (!o || !k) throw new CloudDownloadError('unavailable');
-    const hasher = new StreamHasher();
-    for (let n = 0; n < o.part_count; n++) {
+    const cur = this.cursors.get(fileId) ?? { next: 0, hasher: new StreamHasher() };
+    this.cursors.set(fileId, cur);
+    const hasher = cur.hasher;
+    for (let n = cur.next; n < o.part_count; n++) {
       if (stopped()) throw new CloudDownloadError('network');
       let stored: Uint8Array;
       try {
@@ -136,13 +146,16 @@ export class CloudReceive {
       try {
         plain = await openPart(k.key, o.id, n, o.part_count, stored);
       } catch {
+        this.cursors.delete(fileId);
         throw new CloudDownloadError('integrity');
       }
       const off = n * o.part_size;
       await write(off, plain);
       hasher.update(off, plain);
+      cur.next = n + 1;
       progress(off + plain.byteLength);
     }
+    this.cursors.delete(fileId);
     if (!equalBytes(fromHex(hasher.hex()), k.sha256)) throw new CloudDownloadError('integrity');
     await this.d.api.received(o.id).catch(() => undefined);
   }

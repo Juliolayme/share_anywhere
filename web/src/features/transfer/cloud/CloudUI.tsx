@@ -117,6 +117,17 @@ export function CloudSendOption({
       </div>
     );
   }
+  if (!settings.device_added) {
+    return (
+      <div className="flex items-center gap-3" data-testid="cloud-option">
+        <Switch checked={false} onChange={() => undefined} label={t('product.cloud_option')} disabled />
+        <span>
+          <b className="text-[14px] text-fg-2">{t('product.cloud_option')}</b>
+          <span className="block text-[12px] text-fg-2">{t('product.cloud_add_device')}</span>
+        </span>
+      </div>
+    );
+  }
   const ask = async (on: boolean) => {
     if (!on) return onChange(false);
     setError(null);
@@ -194,7 +205,11 @@ export function CloudSettingsCard({ rowClass }: { rowClass: string }) {
       await reload();
     } catch (e) {
       setError(
-        e instanceof ApiError && e.code === 'invalid_budget' ? t('product.error_generic') : t('product.error_generic'),
+        e instanceof ApiError && e.code === 'invalid_budget'
+          ? t('product.cloud_budget_invalid', { max: Math.floor((settings?.max_budget_bytes ?? 0) / GB) })
+          : e instanceof ApiError && e.code === 'device_not_added'
+            ? t('product.cloud_add_device')
+            : t('product.error_generic'),
       );
     } finally {
       setBusy(false);
@@ -215,22 +230,24 @@ export function CloudSettingsCard({ rowClass }: { rowClass: string }) {
           <span className="block text-caption text-fg-2">
             {failed || !settings
               ? t('product.cloud_unavailable')
-              : available
-                ? t('common.s_cloud_p')
-                : t('product.cloud_unavailable')}
+              : available && !settings.device_added
+                ? t('product.cloud_add_device')
+                : available
+                  ? t('common.s_cloud_p')
+                  : t('product.cloud_unavailable')}
           </span>
         </span>
         <Switch
           checked={!!settings?.enabled}
           onChange={(on) => (on && !settings?.consented ? setConsenting(true) : void save(on, false))}
           label={t('common.s_cloud')}
-          disabled={!available || busy}
+          disabled={!available || busy || !settings?.device_added}
         />
       </div>
       {available && settings?.enabled && (
         <div className="flex flex-wrap items-end gap-3 pl-[30px]">
           <label className="flex flex-col gap-1 text-caption text-fg-2">
-            {t('product.cloud_budget')} (GB)
+            {t('product.cloud_budget_gb')}
             <input
               type="number"
               min={0}

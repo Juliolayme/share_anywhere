@@ -310,6 +310,9 @@ func (s *Service) move(ctx context.Context, deviceID, transferID string, change 
 	}
 	if upd.Status != cur.Status {
 		s.count(upd)
+		if upd.Status == Completed {
+			s.cloudDelivered(ctx, upd)
+		}
 	}
 	s.notify(ctx, upd)
 	return upd, nil

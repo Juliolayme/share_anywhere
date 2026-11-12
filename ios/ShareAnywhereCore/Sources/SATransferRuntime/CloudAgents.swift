@@ -206,6 +206,11 @@ public actor CloudReceive {
     private var keys: [String: CloudObjectKey] = [:] // by object id
     private var eph: Curve25519.KeyAgreement.PrivateKey?
     private var lastAsk: Int64 = .min / 2
+    /// Per file: the next part to fetch and the hash of the parts before it, so a retry resumes (§9).
+    private var cursors: [String: (next: Int, hasher: StreamHasher)] = [:]
+
+    /// Whether a download of this file stopped part-way and can resume (its parts so far are in the partial file).
+    public func resumable(_ fileId: String) -> Bool { (cursors[fileId]?.next ?? 0) > 0 }
     private var eventsTask: Task<Void, Never>?
 
     public init(
@@ -280,8 +285,9 @@ public actor CloudReceive {
         stopped: @Sendable () async -> Bool
     ) async throws {
         guard let o = objects[fileId], let k = keys[o.id] else { throw CloudError.unavailable }
-        var hasher = StreamHasher()
-        for n in 0 ..< o.partCount {
+        var hasher = cursors[fileId]?.hasher ?? StreamHasher()
+        let start = cursors[fileId]?.next ?? 0
+        for n in start ..< o.partCount {
             if await stopped() { throw CloudError.network }
             let stored: [UInt8]
             do {
@@ -293,12 +299,20 @@ public actor CloudReceive {
             } catch {
                 throw CloudError.network
             }
-            let plain = try CloudCrypto.openPart(key: k.key, objectId: o.id, n: n, count: o.partCount, stored: stored)
+            let plain: [UInt8]
+            do {
+                plain = try CloudCrypto.openPart(key: k.key, objectId: o.id, n: n, count: o.partCount, stored: stored)
+            } catch {
+                cursors[fileId] = nil
+                throw error
+            }
             let off = Int64(n) * Int64(o.partSize)
             try await write(off, plain)
             hasher.update(offset: off, plain)
+            cursors[fileId] = (n + 1, hasher)
             await progress(off + Int64(plain.count))
         }
+        cursors[fileId] = nil
         guard hexBytes(hasher.hex()) == k.sha256 else { throw CloudError.integrity }
         _ = try? await api.received(objectId: o.id)
     }

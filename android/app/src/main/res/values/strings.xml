@@ -882,9 +882,12 @@
     <string name="product_close_h">Close this session?</string>
     <string name="product_close_p">Receivers are disconnected and the code, link and QR stop working.</string>
     <string name="product_closed_rx">The sender closed this session.</string>
+    <string name="product_cloud_add_device">Add this device to your account to use Cloud transfer.</string>
     <string name="product_cloud_approve">Approve and use Cloud</string>
     <string name="product_cloud_budget">Monthly Cloud budget</string>
     <string name="product_cloud_budget_exhausted">This month’s Cloud budget is used up — Cloud transfer is paused.</string>
+    <string name="product_cloud_budget_gb">Monthly Cloud budget (GB)</string>
+    <string name="product_cloud_budget_invalid">Enter a budget between 0 and {max} GB.</string>
     <string name="product_cloud_budget_line">This month: {used} of {budget} used</string>
     <string name="product_cloud_budget_save">Save budget</string>
     <string name="product_cloud_budget_used">{used} of {budget} used this month</string>
@@ -901,7 +904,7 @@
     <string name="product_cloud_option_p">Upload once, encrypted on this device. Receivers download it if direct and relay fail.</string>
     <string name="product_cloud_over_budget">This would go over your monthly Cloud budget. Raise it in Settings or send without Cloud.</string>
     <string name="product_cloud_paused">Cloud upload paused</string>
-    <string name="product_cloud_ready">In Cloud — receivers can download even if you go offline</string>
+    <string name="product_cloud_ready">In Cloud — receivers who have joined can finish even if you go offline</string>
     <string name="product_cloud_retention">Kept for up to {hours} h, deleted once every receiver has it</string>
     <string name="product_cloud_signin">Sign in to use Cloud transfer</string>
     <string name="product_cloud_storage">Temporary storage: {size}</string>

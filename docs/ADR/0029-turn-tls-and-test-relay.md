@@ -41,3 +41,11 @@ the iOS Simulator and the Android emulator run on one machine and the backend st
 - Production needs a second IP address (or host) and a certificate for the TURN name; the deployment runbook
   (Phase 9) covers renewal.
 - The CI coturn is reachable only from the runner itself, and only relays to 127.0.0.1.
+- The relay byte cap reads `turn_traffic_peer_sentb` / `turn_traffic_peer_rcvb`, which coturn updates as allocations
+  refresh and end, so the cap lags real traffic by up to an allocation lifetime; it is a coarse abuse guard, not
+  metering. `prometheus-username-labels` adds one series per ephemeral username (`expiry:participant`), and coturn
+  documents that this grows memory with REST-style credentials: production restarts coturn on a schedule (or after
+  a series count threshold) until usage moves to a source without per-username growth (backlog, Phase 9).
+- `infra/coturn/turnserver.conf` (development and the production-shaped peer rules) enables TLS on 5349 and the
+  exporter; dev compose mounts the certificate from `scripts/turn-test-cert.sh` and points `SA_TURN_METRICS_URL` at
+  `coturn:9641` on the compose network.

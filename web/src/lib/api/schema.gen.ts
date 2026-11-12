@@ -1410,6 +1410,8 @@ export interface components {
              */
             budget_bytes: number;
             consented: boolean;
+            /** @description This device is added to the account; a not-added device cannot change Cloud settings or distribute (403 device_not_added). */
+            device_added: boolean;
             enabled: boolean;
             /** Format: int64 */
             max_budget_bytes: number;

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/access"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/httpx"
@@ -14,7 +15,7 @@ import (
 // account_required; the handlers require the acct claim and object ownership.
 func (h *HTTP) registerCloud(r *access.Router) {
 	r.Handle(http.MethodGet, "/v1/cloud/settings", access.Device, h.cloudSettings)
-	r.Handle(http.MethodPut, "/v1/cloud/settings", access.Account, h.putCloudSettings)
+	r.Handle(http.MethodPut, "/v1/cloud/settings", access.AccountDevice, h.putCloudSettings)
 	r.Handle(http.MethodPost, "/v1/cloud/estimate", access.Account, h.estimate)
 	r.Handle(http.MethodPost, "/v1/files/{id}/distribute", access.Device, h.distribute)
 	r.Handle(http.MethodPut, "/v1/cloud/objects/{id}/parts/{n}", access.Device, h.putPart)
@@ -28,6 +29,15 @@ func (h *HTTP) registerCloud(r *access.Router) {
 func identity(r *http.Request) access.Identity {
 	id, _ := access.FromContext(r.Context())
 	return id
+}
+
+// partDeadlines gives a part request (4 MiB) longer than the server's 30 s read and write timeouts, so slow links
+// (below about 1 Mbit/s) can still move a part.
+func partDeadlines(w http.ResponseWriter) {
+	rc := http.NewResponseController(w)
+	deadline := time.Now().Add(10 * time.Minute)
+	_ = rc.SetReadDeadline(deadline)
+	_ = rc.SetWriteDeadline(deadline)
 }
 
 func partNumber(r *http.Request) (int, bool) {
@@ -99,6 +109,7 @@ func (h *HTTP) putPart(w http.ResponseWriter, r *http.Request) {
 	if c := h.svc.cfg.Cloud; c != nil {
 		limit = int64(c.PartSize + PartOverhead)
 	}
+	partDeadlines(w)
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		h.fail(w, errCloudPart)
@@ -145,6 +156,7 @@ func (h *HTTP) getPart(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, errCloudPart)
 		return
 	}
+	partDeadlines(w)
 	b, err := h.svc.GetPart(r.Context(), device(r), r.PathValue("id"), n)
 	if err != nil {
 		h.fail(w, err)

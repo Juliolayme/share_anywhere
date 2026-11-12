@@ -149,7 +149,7 @@ object ApiOperations {
     /** Whether Cloud Distribution is available, and the signed-in account's consent, budget and usage (docs/API.md §2.6). */
     val getCloudSettings = ApiOperation("GET", "/v1/cloud/settings", "device")
     /** Turn Cloud Distribution on (explicit consent the first time) or off and set the monthly budget. */
-    val putCloudSettings = ApiOperation("PUT", "/v1/cloud/settings", "account")
+    val putCloudSettings = ApiOperation("PUT", "/v1/cloud/settings", "account+device")
     /** Temporary storage, receiver egress, retention and the cost from configured pricing (null when unknown) before consent. */
     val estimateCloud = ApiOperation("POST", "/v1/cloud/estimate", "account")
     /** Start Cloud Distribution of a shared file. The session's sender, signed in, enabled and consented, within budget; idempotent per file. */
@@ -175,6 +175,8 @@ data class CloudSettings(
     /** Cloud Distribution is configured on this server. */
     @SerialName("available") val available: Boolean,
     @SerialName("signed_in") val signedIn: Boolean,
+    /** This device is added to the account; a not-added device cannot change Cloud settings or distribute (403 device_not_added). */
+    @SerialName("device_added") val deviceAdded: Boolean,
     @SerialName("enabled") val enabled: Boolean,
     @SerialName("consented") val consented: Boolean,
     /** Monthly budget (bytes uploaded plus downloaded). */

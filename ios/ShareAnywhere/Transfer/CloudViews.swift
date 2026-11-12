@@ -33,11 +33,30 @@ struct CloudSendOption: View {
     var body: some View {
         Group {
             if let settings, settings.available {
-                if settings.signedIn { signedIn(settings) } else { guest }
+                if !settings.signedIn {
+                    guest
+                } else if !settings.deviceAdded {
+                    notAdded
+                } else {
+                    signedIn(settings)
+                }
             }
         }
         .task(id: account.state.signedIn) { settings = try? await model.hub.services.cloudSettings() }
         .sheet(isPresented: $asking) { consent.themed() }
+    }
+
+    private var notAdded: some View {
+        Toggle(isOn: .constant(false)) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.t("product.cloud_option")).typeStyle(SATokens.TypeScale.labelLg).foregroundStyle(p.fg2)
+                Text(L10n.t("product.cloud_add_device")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
+            }
+        }
+        .disabled(true)
+        .padding(SATokens.Space.s4)
+        .background(p.surface, in: RoundedRectangle(cornerRadius: SATokens.Radius.lg))
+        .accessibilityIdentifier("send.cloud")
     }
 
     private var guest: some View {
@@ -160,6 +179,7 @@ struct CloudSettingsSection: View {
     @State private var consenting = false
     @State private var budget = ""
     @State private var failed = false
+    @State private var budgetError: String?
 
     var body: some View {
         Section(header: Text(L10n.t("ios_yy.s_strategy")), footer: Text(L10n.t("ios_yy.st_auto_p"))) {
@@ -188,19 +208,25 @@ struct CloudSettingsSection: View {
         )) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.t("ios_yy.s_cloud"))
-                Text(L10n.t("ios_yy.s_cloud_p")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
+                Text(L10n.t(s.deviceAdded ? "ios_yy.s_cloud_p" : "product.cloud_add_device"))
+                    .typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
             }
         }
+        .disabled(!s.deviceAdded)
         .accessibilityIdentifier("settings.cloud")
         if s.enabled {
             HStack {
-                Text("\(L10n.t("product.cloud_budget")) (GB)")
+                Text(L10n.t("product.cloud_budget_gb"))
                 Spacer()
                 TextField("10", text: $budget).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 90)
                     .accessibilityIdentifier("settings.cloud-budget")
                 Button(L10n.t("product.cloud_budget_save")) {
-                    if let gb = Double(budget.replacingOccurrences(of: ",", with: ".")), gb >= 0 {
+                    let max = Double(s.maxBudgetBytes) / gib
+                    if let gb = Double(budget.replacingOccurrences(of: ",", with: ".")), gb >= 0, gb <= max {
+                        budgetError = nil
                         save(enabled: true, consent: false, budget: Int64(gb * gib))
+                    } else {
+                        budgetError = L10n.t("product.cloud_budget_invalid", ["max": String(Int(max))])
                     }
                 }
                 .accessibilityIdentifier("settings.cloud-budget-save")
@@ -208,6 +234,10 @@ struct CloudSettingsSection: View {
             Text(L10n.t("product.cloud_budget_used", ["used": formatBytes(s.usedBytes), "budget": formatBytes(s.budgetBytes)]))
                 .typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                 .accessibilityIdentifier("settings.cloud-usage")
+        }
+        if let budgetError {
+            Text(budgetError).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.dangerInk)
+                .accessibilityIdentifier("settings.cloud-budget-error")
         }
         if failed { Text(L10n.t("product.error_generic")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.dangerInk) }
     }

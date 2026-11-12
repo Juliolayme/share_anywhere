@@ -24,6 +24,9 @@ import (
 // through the server, which meters every byte against the sender's monthly budget. Objects expire after the TTL and
 // are deleted once every joined receiver has them, or when the session ends.
 
+// MaxCloudObjectBytes bounds an estimate (a session holds at most 20 GB, docs/API.md §3 over_limit).
+const MaxCloudObjectBytes = int64(20_000_000_000)
+
 // PartOverhead is the per-part AES-GCM framing: a 12-byte nonce and a 16-byte tag (docs/TRANSFER_PROTOCOL.md §9).
 const PartOverhead = 28
 
@@ -108,6 +111,7 @@ type Pricing struct {
 type CloudSettings struct {
 	Available   bool     `json:"available"`
 	SignedIn    bool     `json:"signed_in"`
+	DeviceAdded bool     `json:"device_added"`
 	Enabled     bool     `json:"enabled"`
 	Consented   bool     `json:"consented"`
 	BudgetBytes int64    `json:"budget_bytes"`
@@ -153,6 +157,7 @@ var (
 	errCloudIncomplete  = errf(http.StatusConflict, "parts_missing", "Upload every part before sealing the object.")
 	errCloudBudgetValue = errf(http.StatusBadRequest, "invalid_budget", "The budget is out of range.")
 	errCloudEstimate    = errf(http.StatusBadRequest, "invalid_estimate", "Bytes and receivers must be positive.")
+	errCloudNotAdded    = errf(http.StatusForbidden, "device_not_added", "Add this device to your account to use Cloud transfer.")
 )
 
 func (s *Service) cloudOn() (*CloudConfig, error) {
@@ -213,7 +218,8 @@ func (s *Service) CloudSettings(ctx context.Context, id access.Identity) (CloudS
 	if c == nil {
 		return CloudSettings{Available: false, SignedIn: id.AccountID != ""}, nil
 	}
-	out := CloudSettings{Available: true, SignedIn: id.AccountID != "", MaxBudget: c.MaxBudget, TTLHours: int(c.TTL.Hours()), Pricing: s.pricing()}
+	out := CloudSettings{Available: true, SignedIn: id.AccountID != "", DeviceAdded: id.AccountID != "" && id.DeviceAdded,
+		MaxBudget: c.MaxBudget, TTLHours: int(c.TTL.Hours()), Pricing: s.pricing()}
 	if id.AccountID == "" {
 		return out, nil
 	}
@@ -284,7 +290,7 @@ func (s *Service) EstimateCloud(ctx context.Context, id access.Identity, in Esti
 	if err != nil {
 		return Estimate{}, err
 	}
-	if in.Bytes < 0 || in.Receivers < 1 || in.Receivers > 5 {
+	if in.Bytes < 0 || in.Bytes > MaxCloudObjectBytes || in.Receivers < 1 || in.Receivers > 5 {
 		return Estimate{}, errCloudEstimate
 	}
 	parts := partCount(in.Bytes, c.PartSize)
@@ -363,6 +369,10 @@ func (s *Service) Distribute(ctx context.Context, id access.Identity, fileID str
 	if id.AccountID == "" {
 		return CloudObject{}, false, errCloudAccount
 	}
+	// A signed-in device that is not added to the account (a shared computer) is read-only (docs/SECURITY_MODEL.md §7).
+	if !id.DeviceAdded {
+		return CloudObject{}, false, errCloudNotAdded
+	}
 	if !sharing.ValidID(fileID) {
 		return CloudObject{}, false, errNotFound
 	}
@@ -411,10 +421,21 @@ func (s *Service) Distribute(ctx context.Context, id access.Identity, fileID str
 	}
 	now := s.now()
 	oid := newObjectID()
-	if _, err := s.cfg.Pool.Exec(ctx, `INSERT INTO cloud_objects (id, session_id, file_id, owner_user_id, owner_device_id, status,
-		size, part_size, part_count, created_at, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, 'UPLOADING', $6, $7, $8, $9, $10)`,
-		oid, sessionID, fileID, id.AccountID, id.DeviceID, size, c.PartSize, parts, now, now.Add(c.TTL)); err != nil {
+	tag, err := s.cfg.Pool.Exec(ctx, `INSERT INTO cloud_objects (id, session_id, file_id, owner_user_id, owner_device_id, status,
+		size, part_size, part_count, created_at, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, 'UPLOADING', $6, $7, $8, $9, $10)
+		ON CONFLICT (file_id) WHERE status <> 'DELETED' DO NOTHING`,
+		oid, sessionID, fileID, id.AccountID, id.DeviceID, size, c.PartSize, parts, now, now.Add(c.TTL))
+	if err != nil {
 		return CloudObject{}, false, err
+	}
+	if tag.RowsAffected() == 0 {
+		// A concurrent distribute of the same file won: answer with its object.
+		o, owner, _, err := scanObject(s.cfg.Pool.QueryRow(ctx, `SELECT `+cloudCols+`, o.owner_user_id::text, o.owner_device_id::text
+			FROM cloud_objects o WHERE o.file_id = $1::uuid AND o.status <> 'DELETED'`, fileID))
+		if err == nil && owner != id.AccountID {
+			return CloudObject{}, false, errCloudState
+		}
+		return o, false, err
 	}
 	s.cm.objects.Inc()
 	o, _, _, err := s.object(ctx, oid)
@@ -540,23 +561,31 @@ func (s *Service) PutPart(ctx context.Context, id access.Identity, objectID stri
 	if n < 0 || n >= o.PartCount || len(body) != o.partBytes(n) {
 		return o, errCloudPart
 	}
-	var have bool
-	if err := s.cfg.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM cloud_object_parts WHERE object_id = $1::uuid AND part = $2)`, o.ID, n).Scan(&have); err != nil {
+	// The part row is claimed first, so two concurrent uploads of one part are charged once; a failed charge or store
+	// write gives the claim (and the charge) back so a retry can upload it.
+	tag, err := s.cfg.Pool.Exec(ctx, `INSERT INTO cloud_object_parts (object_id, part, bytes) VALUES ($1::uuid, $2, $3)
+		ON CONFLICT DO NOTHING`, o.ID, n, len(body))
+	if err != nil {
 		return o, err
 	}
-	if !have {
+	fresh := tag.RowsAffected() == 1
+	release := func() {
+		_, _ = s.cfg.Pool.Exec(ctx, `DELETE FROM cloud_object_parts WHERE object_id = $1::uuid AND part = $2`, o.ID, n)
+	}
+	if fresh {
 		if err := s.charge(ctx, o, id.AccountID, int64(len(body))); err != nil {
+			release()
 			return o, err
 		}
 	}
 	if err := s.cfg.Cloud.Store.Put(ctx, partKey(o.ID, n), body); err != nil {
+		if fresh {
+			release()
+			s.refund(ctx, id.AccountID, int64(len(body)))
+		}
 		return o, err
 	}
-	if _, err := s.cfg.Pool.Exec(ctx, `INSERT INTO cloud_object_parts (object_id, part, bytes) VALUES ($1::uuid, $2, $3)
-		ON CONFLICT DO NOTHING`, o.ID, n, len(body)); err != nil {
-		return o, err
-	}
-	if !have {
+	if fresh {
 		s.cm.uploaded.Add(int64(len(body)))
 	}
 	o, _, _, err = s.object(ctx, o.ID)
@@ -698,8 +727,13 @@ func (s *Service) Received(ctx context.Context, deviceID, objectID string) (Clou
 	if o.Status != CloudReady {
 		return o, errCloudState
 	}
+	return s.receipt(ctx, o, m.ParticipantID)
+}
+
+// receipt records that a receiver has the file; once every joined receiver has, the object is deleted.
+func (s *Service) receipt(ctx context.Context, o CloudObject, participantID string) (CloudObject, error) {
 	if _, err := s.cfg.Pool.Exec(ctx, `INSERT INTO cloud_receipts (object_id, participant_id, received_at) VALUES ($1::uuid, $2::uuid, $3)
-		ON CONFLICT DO NOTHING`, o.ID, m.ParticipantID, s.now()); err != nil {
+		ON CONFLICT DO NOTHING`, o.ID, participantID, s.now()); err != nil {
 		return o, err
 	}
 	var waiting int
@@ -712,6 +746,28 @@ func (s *Service) Received(ctx context.Context, deviceID, objectID string) (Clou
 		return s.deleteObject(ctx, o)
 	}
 	return o, nil
+}
+
+// cloudDelivered runs after a receiver's transfer of a file completed (over P2P or from the cloud): it counts as that
+// receiver's receipt for the file's live object, so the object goes once every joined receiver has the file.
+func (s *Service) cloudDelivered(ctx context.Context, t Transfer) {
+	if s.cfg.Cloud == nil {
+		return
+	}
+	o, _, _, err := scanObject(s.cfg.Pool.QueryRow(ctx, `SELECT `+cloudCols+`, o.owner_user_id::text, o.owner_device_id::text
+		FROM cloud_objects o WHERE o.file_id = $1::uuid AND o.status <> 'DELETED'`, t.FileID))
+	if err != nil {
+		return
+	}
+	if _, err := s.receipt(ctx, o, t.ParticipantID); err != nil && s.cfg.Cloud.Log != nil {
+		s.cfg.Cloud.Log.Warn("cloud receipt failed", "error", err.Error())
+	}
+}
+
+// refund gives back bytes charged for an upload that was not stored.
+func (s *Service) refund(ctx context.Context, userID string, n int64) {
+	_, _ = s.cfg.Pool.Exec(ctx, `UPDATE cloud_usage SET bytes = GREATEST(0, bytes - $3) WHERE user_id = $1::uuid AND period = $2`,
+		userID, period(s.now()), n)
 }
 
 // deleteObject removes every stored part and marks the object DELETED.
@@ -764,7 +820,33 @@ func (s *Service) SweepCloud(ctx context.Context) (int, error) {
 		}
 		n++
 	}
+	s.unpauseWithinBudget(ctx)
 	return n, nil
+}
+
+// unpauseWithinBudget lifts the pause of objects whose owner is under budget again (the month turned).
+func (s *Service) unpauseWithinBudget(ctx context.Context) {
+	rows, err := s.cfg.Pool.Query(ctx, `SELECT DISTINCT owner_user_id::text FROM cloud_objects WHERE paused AND status <> 'DELETED'`)
+	if err != nil {
+		return
+	}
+	var owners []string
+	for rows.Next() {
+		var u string
+		if rows.Scan(&u) == nil {
+			owners = append(owners, u)
+		}
+	}
+	rows.Close()
+	for _, u := range owners {
+		row, err := s.settings(ctx, nil, u)
+		if err != nil {
+			continue
+		}
+		if used, err := s.used(ctx, u); err == nil && used < row.budget {
+			s.unpauseAll(ctx, u)
+		}
+	}
 }
 
 // RunCloud sweeps every interval until ctx ends.

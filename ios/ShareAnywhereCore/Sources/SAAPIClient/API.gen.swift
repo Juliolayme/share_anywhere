@@ -192,7 +192,7 @@ public enum APIOperations {
     /// Whether Cloud Distribution is available, and the signed-in account's consent, budget and usage (docs/API.md §2.6).
     public static let getCloudSettings = APIOperation(method: "GET", path: "/v1/cloud/settings", access: "device")
     /// Turn Cloud Distribution on (explicit consent the first time) or off and set the monthly budget.
-    public static let putCloudSettings = APIOperation(method: "PUT", path: "/v1/cloud/settings", access: "account")
+    public static let putCloudSettings = APIOperation(method: "PUT", path: "/v1/cloud/settings", access: "account+device")
     /// Temporary storage, receiver egress, retention and the cost from configured pricing (null when unknown) before consent.
     public static let estimateCloud = APIOperation(method: "POST", path: "/v1/cloud/estimate", access: "account")
     /// Start Cloud Distribution of a shared file. The session's sender, signed in, enabled and consented, within budget; idempotent per file.
@@ -217,6 +217,8 @@ public struct CloudSettings: Codable, Sendable, Equatable {
     /// Cloud Distribution is configured on this server.
     public var available: Bool
     public var signedIn: Bool
+    /// This device is added to the account; a not-added device cannot change Cloud settings or distribute (403 device_not_added).
+    public var deviceAdded: Bool
     public var enabled: Bool
     public var consented: Bool
     /// Monthly budget (bytes uploaded plus downloaded).
@@ -228,9 +230,10 @@ public struct CloudSettings: Codable, Sendable, Equatable {
     public var ttlHours: Int
     public var pricing: CloudPricing?
 
-    public init(available: Bool, signedIn: Bool, enabled: Bool, consented: Bool, budgetBytes: Int64, usedBytes: Int64, maxBudgetBytes: Int64, ttlHours: Int, pricing: CloudPricing? = nil) {
+    public init(available: Bool, signedIn: Bool, deviceAdded: Bool, enabled: Bool, consented: Bool, budgetBytes: Int64, usedBytes: Int64, maxBudgetBytes: Int64, ttlHours: Int, pricing: CloudPricing? = nil) {
         self.available = available
         self.signedIn = signedIn
+        self.deviceAdded = deviceAdded
         self.enabled = enabled
         self.consented = consented
         self.budgetBytes = budgetBytes
@@ -243,6 +246,7 @@ public struct CloudSettings: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case available = "available"
         case signedIn = "signed_in"
+        case deviceAdded = "device_added"
         case enabled = "enabled"
         case consented = "consented"
         case budgetBytes = "budget_bytes"

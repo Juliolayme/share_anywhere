@@ -429,7 +429,7 @@ extension FakeClient: CloudService {
     func cloudSettings() async throws -> CloudSettings {
         CloudSettings(
             available: true,
-            signedIn: true,
+            signedIn: true, deviceAdded: true,
             enabled: true,
             consented: true,
             budgetBytes: 1 << 30,

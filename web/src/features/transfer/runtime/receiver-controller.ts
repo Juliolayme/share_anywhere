@@ -174,6 +174,12 @@ export class ReceiverController extends Observable<RxState> {
   private cloud: CloudReceive | null = null;
   private cloudRunning = false;
 
+  /** Files whose cloud copy this receiver could download now (READY, unpaused, key held); tests read it. */
+  get cloudReadyCount(): number {
+    const c = this.cloud;
+    return c ? this.state_.files.filter((f) => c.ready(f.fileId)).length : 0;
+  }
+
   /** The sender's display name (for headings), once loaded. */
   get senderDisplayName(): string {
     return this.senderName;

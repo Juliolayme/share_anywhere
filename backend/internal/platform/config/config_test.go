@@ -169,7 +169,7 @@ func TestCloudSettings(t *testing.T) {
 		{"SA_CLOUD_DEFAULT_BUDGET_BYTES": "100", "SA_CLOUD_MAX_BUDGET_BYTES": "10"},
 		{"SA_ENV": "production", "SA_CLOUD_ENABLED": "true", "SA_CLOUD_STORE": "memory", "DATABASE_URL": "postgres://x",
 			"SA_ALLOWED_ORIGINS": "https://a.example", "SA_TOKEN_KEYS": "k:" + seed32, "SA_TOKEN_ACTIVE_KID": "k", "SA_SERVER_SECRET": seed32,
-			"SA_TURN_SECRET": "0123456789abcdef0123"},
+			"SA_TURN_SECRET": strings.Repeat("t", 20)},
 	} {
 		if _, err := LoadFrom(lookupFrom(env)); err == nil {
 			t.Errorf("%v should fail", env)

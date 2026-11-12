@@ -4,5 +4,5 @@
 useDefault = true
 
 [allowlist]
-description = "Deterministic, published protocol test vectors (docs/CLIPBOARD_PROTOCOL.md §1)"
-paths = ['''^shared/protocol/schemas/clipboard-vectors\.json$''']
+description = "Deterministic, published protocol test vectors (docs/CLIPBOARD_PROTOCOL.md §1, docs/TRANSFER_PROTOCOL.md §9)"
+paths = ['''^shared/protocol/schemas/clipboard-vectors\.json$''', '''^shared/protocol/schemas/cloud-vectors\.json$''']

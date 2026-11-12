@@ -13,3 +13,7 @@ a598989701ca93b1c326f9b08f1fbb8c4c16368b:web/src/lib/crypto/x25519.ts:generic-ap
 # Phase 6.2 false positive (45ae141): a made-up share-link token in an Android unit test (SharingTest), never a
 # credential; the test now builds it at runtime.
 45ae1414bf3f5572bf17590a3d76cc3fff75830a:android/app/src/test/java/app/shareanywhere/sharing/SharingTest.kt:generic-api-key:14
+
+# Phase 8 false positive (683b770): a placeholder TURN secret in a config validation test ("0123456789abcdef0123",
+# never a credential). The test now builds the value at run time; the cloud vectors file is path-allowlisted.
+683b770a049598a430936ac437e249ca04d0c80f:backend/internal/platform/config/config_test.go:generic-api-key:172

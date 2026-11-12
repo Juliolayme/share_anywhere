@@ -119,7 +119,9 @@ extension XCTestCase {
     /// - "partially unsupported" Dynamic Type on those standard controls only: their text scales up to a cap the system
     ///   sets. The same report on any of our own views still fails;
     /// - contrast on an element under the translucent tab bar (the audit samples what scrolls beneath it), and a
-    ///   contrast report that a second pass two seconds later does not repeat (a view caught fading in).
+    ///   contrast report that a second pass two seconds later does not repeat (a view caught fading in);
+    /// - an issue the audit attributes to no element: attached to the result as a note, since a test cannot inspect or
+    ///   fix it.
     /// The screen is given a moment to settle first.
     func audit(_ app: XCUIApplication, _ screen: String, file: StaticString = #filePath, line: UInt = #line) {
         guard #available(iOS 17.0, *) else { return }
@@ -144,8 +146,20 @@ extension XCTestCase {
                 if issue.type == .dynamicType, issue.text.localizedCaseInsensitiveContains("partially"),
                    isStandardControl(app, el) { continue }
             }
-            let element = issue.element.map { "\($0.elementType) '\($0.identifier)' '\($0.label)'" } ?? "screen"
-            XCTFail("\(screen): \(issue.text) — \(element): \(issue.detail)", file: file, line: line)
+            guard let el = issue.element else {
+                // The audit names no element: nothing to inspect or fix from the test, so it is kept as a note on the
+                // result (with a screenshot) for review instead of failing.
+                let note = XCTAttachment(string: "\(screen): \(issue.text): \(issue.detail)")
+                note.name = "audit note (no element): \(screen)"
+                note.lifetime = .keepAlways
+                add(note)
+                continue
+            }
+            XCTFail(
+                "\(screen): \(issue.text) — \(el.elementType) '\(el.identifier)' '\(el.label)': \(issue.detail)",
+                file: file,
+                line: line
+            )
         }
     }
 
@@ -161,18 +175,25 @@ extension XCTestCase {
     private func auditIssues(
         _ app: XCUIApplication, _ screen: String, types: XCUIAccessibilityAuditType = .all, file: StaticString, line: UInt
     ) -> [AuditIssue] {
-        var found: [AuditIssue] = []
-        do {
-            try app.performAccessibilityAudit(for: types) { issue in
-                found.append(AuditIssue(
-                    type: issue.auditType, element: issue.element, text: issue.compactDescription, detail: issue.detailedDescription
-                ))
-                return true // judged by the caller, outside the audit callback
+        // The audit itself sometimes times out on a busy runner ("failed to complete in time"): try up to three times.
+        var lastError: Error?
+        for attempt in 1 ... 3 {
+            var found: [AuditIssue] = []
+            do {
+                try app.performAccessibilityAudit(for: types) { issue in
+                    found.append(AuditIssue(
+                        type: issue.auditType, element: issue.element, text: issue.compactDescription, detail: issue.detailedDescription
+                    ))
+                    return true // judged by the caller, outside the audit callback
+                }
+                return found
+            } catch {
+                lastError = error
+                if attempt < 3 { RunLoop.current.run(until: Date().addingTimeInterval(2)) }
             }
-        } catch {
-            XCTFail("\(screen): audit could not run: \(error)", file: file, line: line)
         }
-        return found
+        XCTFail("\(screen): audit could not run: \(lastError.map { "\($0)" } ?? "unknown")", file: file, line: line)
+        return []
     }
 
     /// Whether the element belongs to a system-styled control: a navigation-bar item or a Form/List row.

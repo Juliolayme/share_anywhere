@@ -37,7 +37,7 @@ tune the alarm.
   the per-address limits, is what bounds a distributed attacker. Lowering it shrinks that bound linearly but also
   trips protected mode on honest typos sooner: there is no production traffic yet to measure the typo rate
   against, so the default stays and remains configurable; revisit with real failed-lookup metrics
-  (`sa_code_lookups_failed_total`, `sa_protected_mode_on_total`). Senders of sensitive files keep Require approval
+  (`sa_code_lookups_failed_total`, `sa_protected_mode_activations_total`, `sa_protected_mode_active`). Senders of sensitive files keep Require approval
   and link or QR sharing.
 - **CGNAT stays a documented limitation.** Per-address keys are what make the device-creation and guessing
   limits meaningful; relaxing them for shared IPv4 addresses would equally relax them for attackers. IPv6 clients

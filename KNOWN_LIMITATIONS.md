@@ -58,5 +58,6 @@ What Share Anywhere v1 does not do, or does only partly, and what has not been v
 
 - The production Compose override and Caddyfile are validated with `docker compose config`, `caddy validate` and a backend start, but no deployment to a real VM with a public domain has been done (`docs/runbooks/deploy.md`).
 - **Account deletion is not built** (no endpoint, no screen; the design handoff has none). Google Play and the App Store both require in-app account deletion for apps with sign-up, so this blocks store submission until a later phase adds it. Signing out leaves the account, and guests have no account to delete.
+- **Open-source notices are not shown in the apps** (no Licenses screen, design F7): a release blocker for binary distribution (`docs/RELEASE_CHECKLIST.md` §1).
 - No store submission has been made: signing, Play policy forms, App Store privacy answers and export compliance are prepared but unsubmitted (`docs/RELEASE_CHECKLIST.md`).
 - Throughput numbers come from loopback in CI and local runs (`docs/PERFORMANCE.md`), not real networks.

@@ -12,6 +12,9 @@ services:
 
   backend:
     restart: unless-stopped
+    # Metrics on the VM's loopback only (docs/runbooks/incident-basics.md); the image has no shell to exec into.
+    ports:
+      - "127.0.0.1:9090:9090"
     extra_hosts:
       # coturn runs on the host network; the backend reads its usage exporter through the host gateway.
       - "host.docker.internal:host-gateway"

@@ -97,16 +97,20 @@ fun ComposeTestRule.accessibilityProblems(screen: String): List<String> {
     fun androidx.compose.ui.semantics.SemanticsNode.all(): List<androidx.compose.ui.semantics.SemanticsNode> =
         listOf(this) + children.flatMap { it.all() }
     waitForIdle()
-    val root = onRoot().fetchSemanticsNode()
     val minPx = with(density) { 48.dp.toPx() } - 1f // rounding
     val problems = mutableListOf<String>()
-    for (n in root.all()) {
-        if (n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick) == null) continue
-        if (n.config.contains(androidx.compose.ui.semantics.SemanticsProperties.HideFromAccessibility)) continue
+    val clickable = onRoot().fetchSemanticsNode().all()
+        .filter { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick) != null }
+        .filterNot { it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.HideFromAccessibility) }
+        .map { it.id }
+    for (id in clickable) {
+        // Measure each control on screen: one below the fold is clipped by its scroll container to a sliver.
+        val byId = androidx.compose.ui.test.SemanticsMatcher("semantics node $id") { it.id == id }
+        runCatching { onNode(byId).performScrollTo() }
+        val n = runCatching { onNode(byId).fetchSemanticsNode() }.getOrNull() ?: continue
         val tag = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.TestTag) ?: "#${n.id}"
         if (n.label().isEmpty()) problems += "$screen: $tag has no spoken name"
-        // Bounds in the root are clipped by the viewport (a control below the fold shows a sliver): add back the part
-        // the clip hides, so the check measures the control itself.
+        // Anything still clipped (a control under a fixed bar) is measured at its full size.
         val b = n.touchBoundsInRoot
         val w = b.width + (n.size.width - n.boundsInRoot.width).coerceAtLeast(0f)
         val h = b.height + (n.size.height - n.boundsInRoot.height).coerceAtLeast(0f)

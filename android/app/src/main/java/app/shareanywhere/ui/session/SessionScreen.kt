@@ -364,7 +364,11 @@ private fun Live(
                             color = if (left <= 60) p.warningInk else p.fg2,
                             modifier = Modifier.weight(1f).testTag("countdown")
                         )
-                        TextButton(onClick = vm::stopAccepting, enabled = busy == null, modifier = Modifier.testTag("session.stop")) {
+                        TextButton(
+                            onClick = vm::stopAccepting,
+                            enabled = busy == null,
+                            modifier = Modifier.heightIn(min = SaTokens.TouchTarget).testTag("session.stop")
+                        ) {
                             Text(stringResource(R.string.product_stop_accepting))
                         }
                     }

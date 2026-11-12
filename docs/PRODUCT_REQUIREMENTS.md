@@ -75,6 +75,11 @@ Decisions marked **(v2)** were open in the first brief and are now fixed. Decisi
 | Styling **(v2)** | Tailwind CSS only on Web; Material 3 + Compose on Android; SwiftUI with a shared token file (`shared/design/tokens.json` → generated Swift, Kotlin, CSS) on iOS |
 | Deployment | Docker Compose, Caddy reverse proxy |
 
+### Open decisions (found in Phase 9, not decided yet)
+
+- **Account deletion.** Google Play and the App Store require apps with sign-up to let users delete their account in the app (Play also through a web link). Not specified or built: what is deleted (account, wrapped keys, synced history and clipboard, device list), whether there is a grace period, and what happens to signed-in devices (they could fall back to fresh guest identities, as sign-out does). Blocks store submission (`docs/RELEASE_CHECKLIST.md`).
+- **Open-source notices.** A Licenses screen (design F7) with generated notices per platform; required for binary distribution.
+
 ## 3. Brand identity
 
 Direction: **Concept 3 — Universal Transfer**, realized in the Claude Design handoff as the "Passing lanes" mark: two capsules passing each other with a dot on each leading edge, blue sends and green receives (`design/claude-design/Logo.dc.html`, `Brand.dc.html`). The logo, its four color modes, clear space, minimum sizes, and icon specifications are summarized in `docs/DESIGN_SYSTEM.md` §8; all icons are generated from that single definition by `pnpm brand`.

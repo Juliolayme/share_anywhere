@@ -84,7 +84,10 @@ fun DevicesSignInIntro(actions: DeviceAccountActions) {
                 onClick = actions.signIn,
                 modifier = Modifier.testTag("devices.signin")
             )
-            OutlinedButton(onClick = actions.create, modifier = Modifier.fillMaxWidth().testTag("devices.create")) {
+            OutlinedButton(
+                onClick = actions.create,
+                modifier = Modifier.fillMaxWidth().heightIn(min = SaTokens.TouchTarget).testTag("devices.create")
+            ) {
                 Text(stringResource(R.string.android_yy_create))
             }
         }

@@ -15,6 +15,8 @@ Execution order, exit gates, and what each phase may touch. Run one phase per se
 | 8 | Route strategy, TURN, optional Cloud Distribution | Web, Android emulator, iOS Simulator with forced relay | Forced-relay UDP and TCP/TLS transfers pass on all three clients; route migration mid-transfer resumes; Cloud consent + budget guard tested against MinIO |
 | 9 | Hardening and release readiness | all | Security review, a11y pass (axe, TalkBack, VoiceOver), failure injection, deployment runbook, release checklist, known limitations |
 
+**After Phase 9 — open before a store release (not scheduled as a phase yet):** account deletion on every platform (Google Play and App Store both require it for apps with sign-up; needs a product decision on what is deleted and when, a design, an endpoint and UI), and open-source notices (Settings → Licenses, design F7). Both are release blockers in `docs/RELEASE_CHECKLIST.md`; the PRD owner decides their scope.
+
 ## Rules
 
 - A phase starts only when the previous phase's exit gate is green on `main`. Exception: Phases 6 (Android) and 7 (iOS) both depend on Phase 5 only and may run in parallel on separate branches; Phase 8 starts when both are merged.

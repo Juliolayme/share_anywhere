@@ -10,7 +10,7 @@
     "tokens": "node scripts/gen-tokens.mjs",
     "tokens:check": "node scripts/gen-tokens.mjs --check",
     "test:scripts": "node --test \"scripts/**/*.test.mjs\"",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#design\" \"#**/.build\" \"#.tools\"",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#**/node_modules\" \"#design\" \"#**/.build\" \"#.tools\" \"#**/test-results\" \"#**/playwright-report\"",
     "brand": "node scripts/export-brand.mjs",
     "brand:check": "node scripts/export-brand.mjs --check",
     "i18n": "node scripts/gen-i18n.mjs",

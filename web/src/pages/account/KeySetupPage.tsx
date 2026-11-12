@@ -152,7 +152,7 @@ export default function KeySetupPage() {
                 key={i}
                 className="flex items-center gap-2 rounded-md border border-border bg-bg px-3 py-2 font-mono text-[14px]"
               >
-                <span aria-hidden className="w-[20px] text-right text-caption text-fg-3">
+                <span aria-hidden className="w-[20px] text-right text-caption text-fg-2">
                   {i + 1}
                 </span>
                 <span data-testid="recovery-word">{w}</span>

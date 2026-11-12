@@ -76,6 +76,20 @@ jobs:
         with:
           path: ios/build/SourcePackages
           key: spm-app-${{ hashFiles('ios/ShareAnywhereCore/Package.resolved', 'ios/project.yml') }}
+      - name: xcodebuild build (app)
+        run: |
+          mkdir -p ios/build
+          xcodebuild -list -project ios/ShareAnywhere.xcodeproj
+          for t in ShareAnywhere ShareAnywhereTests; do
+            xcodebuild -showBuildSettings -project ios/ShareAnywhere.xcodeproj -target "$t" -sdk iphonesimulator 2>/dev/null \
+              | grep -E " (PRODUCT_NAME|EXECUTABLE_NAME|WRAPPER_NAME|SUPPORTED_PLATFORMS|SDKROOT|TEST_HOST|BUNDLE_LOADER|INFOPLIST_FILE) = " || true
+          done
+          set -o pipefail
+          xcodebuild build -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
+            -destination "id=${{ steps.sim.outputs.udid }}" -clonedSourcePackagesDirPath ios/build/SourcePackages \
+            -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/build/app-build.log \
+            | grep -E "error:|warning: .*ShareAnywhere/|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" ios/build/app-build.log
       - name: xcodebuild build-for-testing
         run: |
           mkdir -p ios/build
@@ -113,5 +127,6 @@ jobs:
             ios/build/screenshots
             ios/build/xcodebuild.log
             ios/build/build.log
+            ios/build/app-build.log
             backend.log
           retention-days: 14

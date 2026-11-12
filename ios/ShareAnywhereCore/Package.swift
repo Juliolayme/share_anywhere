@@ -38,7 +38,7 @@ let package = Package(
             dependencies: ["CArgon2", .product(name: "Crypto", package: "swift-crypto")],
             resources: [.copy("Resources/bip39-english.txt")]
         ),
-        .target(name: "SAAPIClient"),
+        .target(name: "SAAPIClient", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),
         .testTarget(name: "SAProtocolTests", dependencies: ["SAProtocol"]),
         .testTarget(name: "SATransferEngineTests", dependencies: ["SATransferEngine"]),
         .testTarget(name: "SAClipboardCryptoTests", dependencies: ["SAClipboardCrypto"]),

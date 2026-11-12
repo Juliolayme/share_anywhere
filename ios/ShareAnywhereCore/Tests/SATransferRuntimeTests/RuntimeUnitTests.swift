@@ -218,17 +218,55 @@ final class ReporterTests: XCTestCase {
     }
 
     /// Progress that arrives inside the interval is not lost: it goes out when the interval ends, with the latest bytes.
+    /// A manual clock and sleeper make the interval explicit, so runner speed cannot change the outcome.
     func testProgressInsideTheIntervalIsSentWhenItEnds() async throws {
         let sink = BytesSink()
-        let r = Reporter(sink: sink, intervalMs: 200)
+        let time = ManualTime()
+        let r = Reporter(sink: sink, intervalMs: 200, now: time.now, sleep: time.sleep)
         await r.seed("t", "TRANSFERRING", 0)
         await r.progress("t", 1)
-        try await Task.sleep(nanoseconds: 60_000_000)
+        try await waitFor { sink.all.count == 1 }
         await r.progress("t", 4)
         await r.progress("t", 5)
-        try await Task.sleep(nanoseconds: 600_000_000)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(sink.all, [1], "nothing more until the interval ends")
+        time.advance(200)
+        try await waitFor { sink.all.count == 2 }
         XCTAssertEqual(sink.all, [1, 5])
         await r.dispose()
+    }
+
+    private func waitFor(_ check: @escaping () -> Bool) async throws {
+        for _ in 0 ..< 300 where !check() {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    /// A clock that moves only when the test says so; sleepers wake when it passes their deadline.
+    final class ManualTime: @unchecked Sendable {
+        private let lock = NSLock()
+        private var ms: Int64 = 0
+        private var waiters: [(Int64, CheckedContinuation<Void, Never>)] = []
+
+        var now: MillisClock { { [self] in lock.locked { ms } } }
+        var sleep: Sleeper {
+            { [self] delay in
+                if delay <= 0 { return }
+                await withCheckedContinuation { c in lock.locked { waiters.append((ms + delay, c)) } }
+            }
+        }
+
+        func advance(_ by: Int64) {
+            let due: [CheckedContinuation<Void, Never>] = lock.locked {
+                ms += by
+                let ready = waiters.filter { $0.0 <= ms }.map(\.1)
+                waiters.removeAll { $0.0 <= ms }
+                return ready
+            }
+            for c in due {
+                c.resume()
+            }
+        }
     }
 
     final class BytesSink: ReportSink, @unchecked Sendable {

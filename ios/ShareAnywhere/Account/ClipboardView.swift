@@ -69,13 +69,15 @@ final class PasteboardAccess: ObservableObject {
         changedSinceSync = false
     }
 
-    /// The fallback Sync button: a programmatic read, which iOS confirms with its paste prompt.
-    func readString() -> String? {
+    /// A programmatic read (the fallback button, foreground capture), which iOS confirms with its paste prompt. The read
+    /// waits for the person's answer, so it runs off the main thread and the app stays responsive meanwhile.
+    func readString() async -> String? {
         reads += 1
-        defer { lastRead = UIPasteboard.general.hasStrings ? "read" : "empty" }
         // Seen before iOS's prompt takes the app out of the active state, so coming back does not count as a change.
         if observer != nil { lastCount = UIPasteboard.general.changeCount }
-        return UIPasteboard.general.string
+        let text = await Task.detached(priority: .userInitiated) { UIPasteboard.general.string }.value
+        lastRead = text == nil ? "empty" : "read"
+        return text
     }
 
     /// Whether the pasteboard holds text, without reading it (no prompt).
@@ -268,7 +270,7 @@ struct ClipboardView: View {
             Button(L10n.t("product.cb_paste_fallback")) {
                 Task { @MainActor in
                     let flagged = await pasteboard.probableSecret()
-                    guard let text = pasteboard.readString() else { return model.toast = L10n.t("product.cb_empty_clip") }
+                    guard let text = await pasteboard.readString() else { return model.toast = L10n.t("product.cb_empty_clip") }
                     await sync(text, flagged: flagged)
                 }
             }

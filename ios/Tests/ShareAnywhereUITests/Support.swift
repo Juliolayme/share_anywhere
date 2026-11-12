@@ -45,6 +45,19 @@ enum UITest {
         XCTAssertEqual(toggle.value as? String, want, "switch \(identifier)", file: file, line: line)
     }
 
+    /// Answers iOS's paste prompt for a programmatic read. The prompt is drawn by the system (SpringBoard), so it is
+    /// looked for there first; the app is queried only afterwards, once its read has returned.
+    static func allowPaste(_ app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons["Allow Paste"].firstMatch
+        if allow.waitForExistence(timeout: 10) {
+            allow.tap()
+            return
+        }
+        let inApp = app.alerts.buttons["Allow Paste"].firstMatch
+        if inApp.waitForExistence(timeout: 2) { inApp.tap() }
+    }
+
     /// Scrolls until `element` lies inside the window above the tab bar (coordinate taps do not scroll, and XCUITest's
     /// own scroll-to-visible fails next to iOS's secure Paste control).
     static func reveal(_ app: XCUIApplication, _ element: XCUIElement) {

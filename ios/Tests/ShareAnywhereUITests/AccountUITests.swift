@@ -2,7 +2,8 @@ import SAAccount
 import XCTest
 
 /// Accounts and Clipboard Sync on the simulator (milestone 7.4) against the native backend: sign up from Settings,
-/// add this device, set up the key with the recovery phrase, sync text with iOS's Paste control, sign out to a new
+/// add this device, set up the key with the recovery phrase, assert iOS's Paste control is shown and sync text through the fallback read
+/// (ADR 0028), sign out to a new
 /// anonymous identity; and a second account device (in the test runner) that pairs the app by the pasted code and
 /// exchanges encrypted clipboard items with it.
 final class AccountUITests: XCTestCase {
@@ -28,13 +29,8 @@ final class AccountUITests: XCTestCase {
         allowPaste(app)
     }
 
-    /// iOS's paste prompt for a programmatic read (in the app or from SpringBoard, depending on the runtime). Simulator
-    /// runtimes that do not prompt leave nothing to tap; the caller's assertion on the synced row decides.
-    private func allowPaste(_ app: XCUIApplication) {
-        let allow = app.alerts.buttons["Allow Paste"].firstMatch
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"].firstMatch
-        if allow.waitForExistence(timeout: 8) { allow.tap() } else if springboard.waitForExistence(timeout: 2) { springboard.tap() }
-    }
+    /// iOS's paste prompt for a programmatic read (UITest.allowPaste); runtimes that do not prompt leave nothing to tap.
+    private func allowPaste(_ app: XCUIApplication) { UITest.allowPaste(app) }
 
     private func signUpInApp(_ app: XCUIApplication, _ address: String) {
         UITest.tab(app, "Settings")

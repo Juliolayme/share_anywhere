@@ -78,7 +78,7 @@ final class AccountSession: ObservableObject {
     private func captureOnReturn() async {
         guard let engine, let pasteboard = app?.pasteboard, clip.settings?.paused != true, pasteboard.hasText else { return }
         if clip.settings?.sensitiveSkip ?? true, await pasteboard.probableSecret() { return }
-        guard let text = pasteboard.readString() else { return }
+        guard let text = await pasteboard.readString() else { return }
         // The "new text copied" hint stays unless the text is synced, queued or already in the timeline.
         switch await engine.capture(text, source: .auto) {
         case .synced:

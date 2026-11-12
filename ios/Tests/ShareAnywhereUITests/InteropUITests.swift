@@ -91,9 +91,7 @@ final class InteropUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Paste"].firstMatch.waitForExistence(timeout: 10), "iOS's Paste control is shown")
         // XCUITest cannot operate the secure Paste control; the fallback read syncs (iOS asks to allow the paste).
         UITest.tapRevealed(app, UITest.id(app, "clipboard.sync-fallback"))
-        let allow = app.alerts.buttons["Allow Paste"].firstMatch
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"].firstMatch
-        if allow.waitForExistence(timeout: 8) { allow.tap() } else if springboard.waitForExistence(timeout: 2) { springboard.tap() }
+        UITest.allowPaste(app)
         let myRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", mine)).firstMatch
         UITest.expect(app, myRow, timeout: 60, "the pasted item is in the timeline")
         print("SA-CLIP marker=\(mine)")

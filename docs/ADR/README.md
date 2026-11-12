@@ -32,3 +32,4 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0026](0026-ios-webrtc-dependency.md) | WebRTC on iOS (StreamWebRTC) | Accepted |
 | [0027](0027-ios-background-policy.md) | iOS background policy for transfers | Accepted |
 | [0028](0028-ios-paste-control-testing.md) | Testing iOS's Paste control and pasteboard reads | Accepted |
+| [0029](0029-turn-tls-and-test-relay.md) | TURN over TLS, and a loopback relay for tests | Accepted |

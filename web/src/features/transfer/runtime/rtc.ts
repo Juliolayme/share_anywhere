@@ -1,66 +1,87 @@
-import type { Route, TransfersApi } from './api';
+import { ApiError } from '../../../lib/api/errors';
+import { classify, type Classified, type PolicyStep, type StatsEntry } from '../engine/route';
+import type { TransfersApi } from './api';
+
+type TestWindow = { __SA_TEST_ICE_POLICY?: RTCIceTransportPolicy; __SA_TEST_ROUTE_STEP?: PolicyStep };
 
 /** Test builds only (VITE_TEST_HOOKS): lets a spec force relay-only ICE (docs/TESTING_AND_CI.md §3). */
 function testPolicy(): RTCIceTransportPolicy | undefined {
   if (import.meta.env.VITE_TEST_HOOKS !== 'true') return undefined;
-  return (window as unknown as { __SA_TEST_ICE_POLICY?: RTCIceTransportPolicy }).__SA_TEST_ICE_POLICY;
+  return (window as unknown as TestWindow).__SA_TEST_ICE_POLICY;
+}
+
+/** Test builds only: the policy step a receiver starts on (`relay-udp`, `relay-tls`) instead of `all`. */
+export function testRouteStep(): PolicyStep | undefined {
+  if (import.meta.env.VITE_TEST_HOOKS !== 'true') return undefined;
+  return (window as unknown as TestWindow).__SA_TEST_ROUTE_STEP;
 }
 
 /**
- * ICE configuration for a session: the TURN credentials from the server plus a STUN URI on the same host
- * and port (coturn answers binding requests there), so server-reflexive candidates exist even where host
- * candidates are hidden behind mDNS names.
+ * TURN URIs a policy step may use: UDP for `relay-udp`; TLS for `relay-tls` (TCP when no TLS URI is configured); all
+ * for `all`. A step with nothing to use keeps every URI rather than none.
  */
-export async function rtcConfig(api: TransfersApi, sessionId: string): Promise<RTCConfiguration> {
+export function urisForStep(uris: string[], step: PolicyStep): string[] {
+  const udp = (u: string) => u.startsWith('turn:') && !/transport=tcp/i.test(u);
+  const tls = (u: string) => u.startsWith('turns:');
+  const tcp = (u: string) => u.startsWith('turn:') && /transport=tcp/i.test(u);
+  let pick = uris;
+  if (step === 'relay-udp') pick = uris.filter(udp);
+  if (step === 'relay-tls') pick = uris.some(tls) ? uris.filter(tls) : uris.filter(tcp);
+  return pick.length ? pick : uris;
+}
+
+export interface RtcSetup {
+  config: RTCConfiguration;
+  /** The server refused TURN credentials (`relay_cap_reached`, `rate_limited`, …); null when issued. */
+  turnRefused: string | null;
+  /** When the TURN credential expires (ms since epoch), for renewal before a relayed connection loses it. */
+  expiresAt: number | null;
+}
+
+/**
+ * ICE configuration for a session on a policy step (docs/ARCHITECTURE.md §6): the TURN credentials from the server
+ * plus a STUN URI on the same host and port (coturn answers binding requests there), so server-reflexive candidates
+ * exist even where host candidates are hidden behind mDNS names. Any step but `all` is relay-only.
+ */
+export async function rtcSetup(api: TransfersApi, sessionId: string, step: PolicyStep = 'all'): Promise<RtcSetup> {
   const servers: RTCIceServer[] = [];
+  let turnRefused: string | null = null;
+  let expiresAt: number | null = null;
   try {
     const c = await api.turn(sessionId);
-    if (c.uris.length) {
+    const uris = urisForStep(c.uris, step);
+    if (uris.length) {
       const stun = [
         ...new Set(
           c.uris.filter((u) => u.startsWith('turn:')).map((u) => u.replace(/^turn:/, 'stun:').replace(/\?.*$/, '')),
         ),
       ];
-      if (stun.length) servers.push({ urls: stun });
-      servers.push({ urls: c.uris, username: c.username, credential: c.credential });
+      if (stun.length && step === 'all') servers.push({ urls: stun });
+      servers.push({ urls: uris, username: c.username, credential: c.credential });
     }
-  } catch {
+    expiresAt = Date.parse(c.expires_at) || null;
+  } catch (e) {
     // Without TURN credentials, direct (host or LAN) candidates may still connect.
+    turnRefused = e instanceof ApiError ? e.code : 'network';
   }
-  const policy = testPolicy();
-  return { iceServers: servers, ...(policy ? { iceTransportPolicy: policy } : {}) };
+  const policy = testPolicy() ?? (step === 'all' ? undefined : 'relay');
+  return { config: { iceServers: servers, ...(policy ? { iceTransportPolicy: policy } : {}) }, turnRefused, expiresAt };
 }
 
-/** The route of the selected candidate pair: relay when either end is a TURN relay candidate. */
-export async function selectedRoute(pc: RTCPeerConnection): Promise<Route | null> {
+/** The ICE configuration alone (the sender answers on whatever route the receiver offers). */
+export async function rtcConfig(api: TransfersApi, sessionId: string): Promise<RTCConfiguration> {
+  return (await rtcSetup(api, sessionId)).config;
+}
+
+/** Classifies the selected candidate pair of a live connection (null fields until one is selected). */
+export async function classifyPeer(pc: RTCPeerConnection): Promise<Classified> {
   try {
     const stats = await pc.getStats();
-    let pairId: string | undefined;
-    stats.forEach((s: { type: string; selectedCandidatePairId?: string }) => {
-      if (s.type === 'transport' && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId;
-    });
-    let pair: { localCandidateId?: string; remoteCandidateId?: string } | undefined;
-    stats.forEach(
-      (s: {
-        type: string;
-        id: string;
-        nominated?: boolean;
-        state?: string;
-        selected?: boolean;
-        localCandidateId?: string;
-        remoteCandidateId?: string;
-      }) => {
-        if (s.type !== 'candidate-pair') return;
-        if ((pairId && s.id === pairId) || (!pairId && (s.selected || (s.nominated && s.state === 'succeeded'))))
-          pair = s;
-      },
-    );
-    if (!pair) return null;
-    const type = (id?: string) =>
-      id ? (stats.get(id) as { candidateType?: string } | undefined)?.candidateType : undefined;
-    return type(pair.localCandidateId) === 'relay' || type(pair.remoteCandidateId) === 'relay' ? 'relay' : 'direct';
+    const entries: StatsEntry[] = [];
+    stats.forEach((s: StatsEntry) => entries.push(s));
+    return classify(entries);
   } catch {
-    return null;
+    return { kind: null, rttMs: null };
   }
 }
 

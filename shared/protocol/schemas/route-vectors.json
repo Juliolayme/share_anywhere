@@ -1,0 +1,523 @@
+{
+  "$comment": "Route classification and route-monitor vectors shared by Web (Vitest), Android (JVM) and iOS (swift test). docs/ARCHITECTURE.md section 6, docs/TRANSFER_PROTOCOL.md section 6. Stats are reduced to the fields the classifier reads; rtt is seconds as in WebRTC stats. Monitor rules: a stall is stallMs without verified progress while connected (measured from the last progress, start or rebase); losses are counted per step within lossWindowMs; a migration starts a cooldown (now - lastMigration >= cooldownMs to migrate again), advances the step and clears the losses; the last step never migrates. 'rebase': the caller rebases on the new channel before the sample.",
+  "monitor": {
+    "sampleMs": 2000,
+    "stallMs": 12000,
+    "cooldownMs": 30000,
+    "lossWindowMs": 120000,
+    "lossesToEscalate": 2,
+    "alpha": 0.3
+  },
+  "classify": [
+    {
+      "name": "host pair is direct",
+      "stats": [
+        {
+          "type": "transport",
+          "id": "T",
+          "selectedCandidatePairId": "P"
+        },
+        {
+          "type": "candidate-pair",
+          "id": "P",
+          "localCandidateId": "L",
+          "remoteCandidateId": "R",
+          "currentRoundTripTime": 0.004
+        },
+        {
+          "type": "local-candidate",
+          "id": "L",
+          "candidateType": "host",
+          "protocol": "udp"
+        },
+        {
+          "type": "remote-candidate",
+          "id": "R",
+          "candidateType": "host",
+          "protocol": "udp"
+        }
+      ],
+      "kind": "direct",
+      "rttMs": 4
+    },
+    {
+      "name": "server-reflexive pair is direct",
+      "stats": [
+        {
+          "type": "transport",
+          "id": "T",
+          "selectedCandidatePairId": "P"
+        },
+        {
+          "type": "candidate-pair",
+          "id": "P",
+          "localCandidateId": "L",
+          "remoteCandidateId": "R",
+          "currentRoundTripTime": 0.052
+        },
+        {
+          "type": "local-candidate",
+          "id": "L",
+          "candidateType": "srflx",
+          "protocol": "udp"
+        },
+        {
+          "type": "remote-candidate",
+          "id": "R",
+          "candidateType": "prflx",
+          "protocol": "udp"
+        }
+      ],
+      "kind": "direct",
+      "rttMs": 52
+    },
+    {
+      "name": "local relay over UDP",
+      "stats": [
+        {
+          "type": "transport",
+          "id": "T",
+          "selectedCandidatePairId": "P"
+        },
+        {
+          "type": "candidate-pair",
+          "id": "P",
+          "localCandidateId": "L",
+          "remoteCandidateId": "R",
+          "currentRoundTripTime": 0.031
+        },
+        {
+          "type": "local-candidate",
+          "id": "L",
+          "candidateType": "relay",
+          "protocol": "udp",
+          "relayProtocol": "udp"
+        },
+        {
+          "type": "remote-candidate",
+          "id": "R",
+          "candidateType": "relay",
+          "protocol": "udp"
+        }
+      ],
+      "kind": "relay-udp",
+      "rttMs": 31
+    },
+    {
+      "name": "local relay over TLS",
+      "stats": [
+        {
+          "type": "transport",
+          "id": "T",
+          "selectedCandidatePairId": "P"
+        },
+        {
+          "type": "candidate-pair",
+          "id": "P",
+          "localCandidateId": "L",
+          "remoteCandidateId": "R",
+          "currentRoundTripTime": 0.09
+        },
+        {
+          "type": "local-candidate",
+          "id": "L",
+          "candidateType": "relay",
+          "protocol": "udp",
+          "relayProtocol": "tls"
+        },
+        {
+          "type": "remote-candidate",
+          "id": "R",
+          "candidateType": "srflx",
+          "protocol": "udp"
+        }
+      ],
+      "kind": "relay-tls",
+      "rttMs": 90
+    },
+    {
+      "name": "local relay over TCP",
+      "stats": [
+        {
+          "type": "transport",
+          "id": "T",
+          "selectedCandidatePairId": "P"
+        },
+        {
+          "type": "candidate-pair",
+          "id": "P",
+          "localCandidateId": "L",
+          "remoteCandidateId": "R"
+        },
+        {
+          "type": "local-candidate",
+          "id": "L",
+          "candidateType": "relay",
+          "protocol": "udp",
+          "relayProtocol": "tcp"
+        },
+        {
+          "type": "remote-candidate",
+          "id": "R",
+          "candidateType": "host",
+          "protocol": "udp"
+        }
+      ],
+      "kind": "relay-tcp",
+      "rttMs": null
+    },
+    {
+      "name": "only the remote end relays: relay with an unknown transport",
+      "stats": [
+        {
+          "type": "transport",
+          "id": "T",
+          "selectedCandidatePairId": "P"
+        },
+        {
+          "type": "candidate-pair",
+          "id": "P",
+          "localCandidateId": "L",
+          "remoteCandidateId": "R",
+          "currentRoundTripTime": 0.04
+        },
+        {
+          "type": "local-candidate",
+          "id": "L",
+          "candidateType": "host",
+          "protocol": "udp"
+        },
+        {
+          "type": "remote-candidate",
+          "id": "R",
+          "candidateType": "relay",
+          "protocol": "udp"
+        }
+      ],
+      "kind": "relay",
+      "rttMs": 40
+    },
+    {
+      "name": "no transport entry: the selected pair (Firefox)",
+      "stats": [
+        {
+          "type": "candidate-pair",
+          "id": "P0",
+          "localCandidateId": "L0",
+          "remoteCandidateId": "R0",
+          "state": "failed"
+        },
+        {
+          "type": "candidate-pair",
+          "id": "P",
+          "localCandidateId": "L",
+          "remoteCandidateId": "R",
+          "selected": true,
+          "state": "succeeded",
+          "currentRoundTripTime": 0.02
+        },
+        {
+          "type": "local-candidate",
+          "id": "L0",
+          "candidateType": "host",
+          "protocol": "udp"
+        },
+        {
+          "type": "local-candidate",
+          "id": "L",
+          "candidateType": "relay",
+          "protocol": "udp",
+          "relayProtocol": "udp"
+        },
+        {
+          "type": "remote-candidate",
+          "id": "R0",
+          "candidateType": "host",
+          "protocol": "udp"
+        },
+        {
+          "type": "remote-candidate",
+          "id": "R",
+          "candidateType": "relay",
+          "protocol": "udp"
+        }
+      ],
+      "kind": "relay-udp",
+      "rttMs": 20
+    },
+    {
+      "name": "no selected pair yet",
+      "stats": [
+        {
+          "type": "candidate-pair",
+          "id": "P",
+          "localCandidateId": "L",
+          "remoteCandidateId": "R",
+          "state": "in-progress"
+        },
+        {
+          "type": "local-candidate",
+          "id": "L",
+          "candidateType": "host",
+          "protocol": "udp"
+        }
+      ],
+      "kind": null,
+      "rttMs": null
+    }
+  ],
+  "policy": [
+    {
+      "from": "all",
+      "next": "relay-udp"
+    },
+    {
+      "from": "relay-udp",
+      "next": "relay-tls"
+    },
+    {
+      "from": "relay-tls",
+      "next": null
+    }
+  ],
+  "sequences": [
+    {
+      "name": "steady progress never migrates",
+      "steps": [
+        {
+          "t": 0,
+          "connected": true,
+          "verified": 0,
+          "rttMs": 20,
+          "expect": "stay"
+        },
+        {
+          "t": 2000,
+          "connected": true,
+          "verified": 4000000,
+          "rttMs": 22,
+          "expect": "stay"
+        },
+        {
+          "t": 4000,
+          "connected": true,
+          "verified": 8000000,
+          "rttMs": 21,
+          "expect": "stay"
+        },
+        {
+          "t": 6000,
+          "connected": true,
+          "verified": 12000000,
+          "rttMs": 25,
+          "expect": "stay"
+        }
+      ]
+    },
+    {
+      "name": "noisy samples with short pauses do not flap",
+      "steps": [
+        {
+          "t": 0,
+          "connected": true,
+          "verified": 0,
+          "rttMs": 20,
+          "expect": "stay"
+        },
+        {
+          "t": 2000,
+          "connected": true,
+          "verified": 0,
+          "rttMs": 400,
+          "expect": "stay"
+        },
+        {
+          "t": 4000,
+          "connected": true,
+          "verified": 0,
+          "rttMs": 20,
+          "expect": "stay"
+        },
+        {
+          "t": 6000,
+          "connected": true,
+          "verified": 3000000,
+          "rttMs": 900,
+          "expect": "stay"
+        },
+        {
+          "t": 8000,
+          "connected": true,
+          "verified": 3000000,
+          "rttMs": 30,
+          "expect": "stay"
+        },
+        {
+          "t": 10000,
+          "connected": true,
+          "verified": 3000000,
+          "rttMs": 30,
+          "expect": "stay"
+        },
+        {
+          "t": 12000,
+          "connected": true,
+          "verified": 3000000,
+          "rttMs": 30,
+          "expect": "stay"
+        },
+        {
+          "t": 14000,
+          "connected": true,
+          "verified": 3000000,
+          "rttMs": 30,
+          "expect": "stay"
+        },
+        {
+          "t": 16000,
+          "connected": true,
+          "verified": 6000000,
+          "rttMs": 30,
+          "expect": "stay"
+        }
+      ]
+    },
+    {
+      "name": "a sustained stall while connected migrates, cooldown holds 30 s, then the next step",
+      "steps": [
+        {
+          "t": 0,
+          "connected": true,
+          "verified": 1000,
+          "rttMs": 20,
+          "expect": "stay"
+        },
+        {
+          "t": 2000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "stay"
+        },
+        {
+          "t": 4000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "stay"
+        },
+        {
+          "t": 6000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "stay"
+        },
+        {
+          "t": 8000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "stay"
+        },
+        {
+          "t": 10000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "stay"
+        },
+        {
+          "t": 12000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "migrate"
+        },
+        {
+          "t": 14000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "stay",
+          "rebase": true
+        },
+        {
+          "t": 30000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "stay"
+        },
+        {
+          "t": 42000,
+          "connected": true,
+          "verified": 1000,
+          "expect": "migrate"
+        }
+      ]
+    },
+    {
+      "name": "two losses on the same step escalate; one does not",
+      "steps": [
+        {
+          "t": 0,
+          "connected": true,
+          "verified": 0,
+          "expect": "stay"
+        },
+        {
+          "t": 2000,
+          "event": "lost",
+          "expect": "stay"
+        },
+        {
+          "t": 4000,
+          "connected": true,
+          "verified": 5000,
+          "expect": "stay"
+        },
+        {
+          "t": 60000,
+          "event": "lost",
+          "expect": "migrate"
+        }
+      ]
+    },
+    {
+      "name": "losses far apart do not escalate",
+      "steps": [
+        {
+          "t": 0,
+          "event": "lost",
+          "expect": "stay"
+        },
+        {
+          "t": 200000,
+          "event": "lost",
+          "expect": "stay"
+        }
+      ]
+    },
+    {
+      "name": "the last step never migrates",
+      "step": "relay-tls",
+      "steps": [
+        {
+          "t": 0,
+          "connected": true,
+          "verified": 0,
+          "expect": "stay"
+        },
+        {
+          "t": 14000,
+          "connected": true,
+          "verified": 0,
+          "expect": "stay"
+        },
+        {
+          "t": 16000,
+          "event": "lost",
+          "expect": "stay"
+        },
+        {
+          "t": 18000,
+          "event": "lost",
+          "expect": "stay"
+        }
+      ]
+    }
+  ]
+}

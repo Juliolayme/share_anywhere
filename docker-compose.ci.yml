@@ -39,7 +39,8 @@ services:
       SA_TURN_SECRET: ci-turn-secret
       # Reset mail stays in memory; specs read it with GET /v1/_test/mail/last (testhooks build).
       SA_MAIL_SINK: memory
-      SA_TURN_URIS: turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp
+      # UDP, TCP and TLS on the host-network coturn below (infra/coturn/turnserver.ci.conf, ADR 0029).
+      SA_TURN_URIS: turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp,turns:127.0.0.1:5349?transport=tcp
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,14 +57,16 @@ services:
       args:
         VITE_TEST_HOOKS: "true"
 
+  # Host network, loopback only (infra/coturn/turnserver.ci.conf, ADR 0029): browsers, the iOS Simulator and the
+  # Android emulator (10.0.2.2) reach it, and relay-to-relay traffic stays on 127.0.0.1. TURN over TLS needs the
+  # certificate from scripts/turn-test-cert.sh in .tools/turn-tls (generated before `compose up`, never committed).
   coturn:
     image: coturn/coturn:4.6
+    network_mode: host
     command: ["-c", "/etc/coturn/turnserver.conf", "--static-auth-secret=ci-turn-secret"]
     volumes:
-      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
-    ports:
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
+      - ./infra/coturn/turnserver.ci.conf:/etc/coturn/turnserver.conf:ro
+      - ./.tools/turn-tls:/etc/coturn/tls:ro
 
   caddy:
     image: caddy:2-alpine

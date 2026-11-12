@@ -4,6 +4,7 @@ import type { SessionView } from '../../sharing/api';
 import { Bitmap } from '../engine/bitmap';
 import { fromDataChannel } from '../engine/channel';
 import { Throughput } from '../engine/eta';
+import { RouteMonitor, serverRoute, type RouteKind } from '../engine/route';
 import { ProtocolError, type ErrorCode, type FileMetaEntry } from '../engine/frame';
 import { sha256Hex } from '../engine/hash';
 import { ReceiverConnection, type PreparedFile, type Sink } from '../engine/receiver';
@@ -17,8 +18,9 @@ import { Reporter } from './reporter';
 import {
   CHANNEL_LABEL,
   pushDiag,
-  rtcConfig,
-  selectedRoute,
+  classifyPeer,
+  rtcSetup,
+  testRouteStep,
   watchPeer,
   type CandidatePayload,
   type SdpPayload,
@@ -67,6 +69,10 @@ export interface RxState {
   total: number;
   verified: number;
   route: Route | null;
+  /** What the connection runs over in detail (direct, relay over UDP, TCP or TLS); null until known. */
+  routeKind: RouteKind | null;
+  /** The server refused TURN credentials because this session reached its relay byte cap. */
+  relayCapped: boolean;
   bytesPerSecond: number;
   eta: number | null;
   /** Catalog key of the failure, when phase is failed. */
@@ -130,6 +136,13 @@ export class ReceiverController extends Observable<RxState> {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private openTimer: ReturnType<typeof setTimeout> | null = null;
   private sampler: ReturnType<typeof setInterval> | null = null;
+  /** Route strategy: which ICE policy step to dial on, and when to move one step stricter (ARCHITECTURE §6). */
+  private readonly route = new RouteMonitor(testRouteStep() ?? 'all');
+  private routeTimer: ReturnType<typeof setInterval> | null = null;
+  /** When the current TURN credential expires; a relayed connection is renewed before then. */
+  private credExpiresAt: number | null = null;
+  /** Test hook: drop every frame that arrives over a direct connection (a direct path that stops working). */
+  private blockDirect = false;
   private sinks = new Map<number, Sink>();
   private throughput = new Throughput();
   private unsub: (() => void) | null = null;
@@ -162,6 +175,8 @@ export class ReceiverController extends Observable<RxState> {
       total: 0,
       verified: 0,
       route: null,
+      routeKind: null,
+      relayCapped: false,
       bytesPerSecond: 0,
       eta: null,
       error: null,
@@ -373,13 +388,19 @@ export class ReceiverController extends Observable<RxState> {
   private async dial(): Promise<void> {
     const connId = crypto.randomUUID();
     this.connId = connId;
-    const cfg = await rtcConfig(this.d.api, this.d.sessionId);
+    const setup = await rtcSetup(this.d.api, this.d.sessionId, this.route.step);
     if (this.connId !== connId || this.stopped) return;
+    const cfg = setup.config;
+    this.credExpiresAt = setup.expiresAt;
+    if ((setup.turnRefused === 'relay_cap_reached') !== this.state_.relayCapped) {
+      this.update({ relayCapped: setup.turnRefused === 'relay_cap_reached' });
+      if (setup.turnRefused === 'relay_cap_reached') this.log('product.relay_cap_reached');
+    }
     const pc = this.d.createPeer ? this.d.createPeer(cfg) : new RTCPeerConnection(cfg);
     this.pc = pc;
     watchPeer(pc, this.diag);
     const urls = (cfg.iceServers ?? []).flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]));
-    pushDiag(this.diag, `dial ${connId.slice(0, 8)} servers ${urls.join(' ')}`);
+    pushDiag(this.diag, `dial ${connId.slice(0, 8)} step ${this.route.step} servers ${urls.join(' ')}`);
     const dc = pc.createDataChannel(CHANNEL_LABEL, { ordered: true });
     pc.onicecandidate = (e) => {
       const payload: CandidatePayload = { conn: connId, candidate: e.candidate ? e.candidate.toJSON() : null };
@@ -416,8 +437,15 @@ export class ReceiverController extends Observable<RxState> {
   }
 
   private attach(dc: RTCDataChannel, pc: RTCPeerConnection): void {
+    const channel = fromDataChannel(dc, pc);
+    const deliver = dc.onmessage;
+    // Test hook (blockDirect): frames over a direct connection are dropped, as if that path stopped working.
+    dc.onmessage = (e) => {
+      if (this.blockDirect && this.state_.routeKind === 'direct') return;
+      deliver?.call(dc, e);
+    };
     const conn = new ReceiverConnection({
-      channel: fromDataChannel(dc, pc),
+      channel,
       hello: {
         v: 1,
         role: 'receiver',
@@ -444,12 +472,53 @@ export class ReceiverController extends Observable<RxState> {
     conn.start();
     if (this.state_.phase === 'paused') conn.pause();
     this.sampler = setInterval(() => this.sample(), 500);
-    void selectedRoute(pc).then((route) => {
-      if (!route) return;
+    this.route.rebase(this.state_.verified, Date.now());
+    this.update({ routeKind: null });
+    void this.routeTick(pc, dc);
+    this.routeTimer = setInterval(() => void this.routeTick(pc, dc), 2000);
+  }
+
+  /**
+   * Every 2 s on an open channel: classify the selected pair (badge and report), feed the route monitor, and
+   * migrate one policy step stricter on a sustained stall; a relayed connection is renewed before its TURN
+   * credential expires (a new connection on the same step fetches a fresh one).
+   */
+  private async routeTick(pc: RTCPeerConnection, dc: RTCDataChannel): Promise<void> {
+    if (this.pc !== pc) return;
+    const c = await classifyPeer(pc);
+    if (this.pc !== pc) return;
+    const now = Date.now();
+    if (c.kind && c.kind !== this.state_.routeKind) {
+      const route = serverRoute(c.kind);
       this.reporter.route = route;
-      this.update({ route });
+      this.update({ route, routeKind: c.kind });
       this.log(route === 'relay' ? 'product.log_relay_plain' : 'product.log_direct');
+      pushDiag(this.diag, `route ${c.kind}${c.rttMs !== null ? ` rtt ${c.rttMs}` : ''}`);
+    }
+    if (this.state_.phase === 'paused') return this.route.rebase(this.state_.verified, now);
+    const decision = this.route.sample({
+      connected: dc.readyState === 'open',
+      verified: this.state_.verified,
+      rttMs: c.rttMs,
+      now,
     });
+    if (decision === 'migrate') return this.migrate();
+    const relayed = c.kind !== null && c.kind !== 'direct';
+    if (relayed && this.credExpiresAt !== null && now > this.credExpiresAt - 120_000) this.migrate(true);
+  }
+
+  /** Moves to a new connection: one policy step stricter, or (`renew`) the same step with a fresh credential. */
+  private migrate(renew = false): void {
+    if (this.stopped || rxFinal(this.state_.phase)) return;
+    pushDiag(this.diag, renew ? 'route renew' : `route migrate to ${this.route.step}`);
+    if (!renew) this.log('product.log_route_switch');
+    for (const f of this.open()) void this.reporter.state(f.transferId, 'DISCONNECTED', f.verified);
+    this.connect();
+  }
+
+  /** Test builds only: from now on frames over a direct connection are dropped (the migration test). */
+  testBlockDirect(): void {
+    if (import.meta.env.VITE_TEST_HOOKS === 'true') this.blockDirect = true;
   }
 
   /** Applies the test-only write delay; a no-op unless a test sets `pace.ms`. */
@@ -593,7 +662,7 @@ export class ReceiverController extends Observable<RxState> {
     if (this.stopped || rxFinal(this.state_.phase) || this.retryTimer) return;
     const paused = this.state_.phase === 'paused';
     this.teardown();
-    this.update({ route: null }); // known again once a new channel opens
+    this.update({ route: null, routeKind: null }); // known again once a new channel opens
     if (this.hadData) this.log('product.log_connection_lost_plain');
     for (const f of this.open()) void this.reporter.state(f.transferId, paused ? 'PAUSED' : 'DISCONNECTED', f.verified);
     if (paused) return;
@@ -603,7 +672,13 @@ export class ReceiverController extends Observable<RxState> {
       return this.update({ phase: 'unreachable', eta: null });
     }
     this.update({ phase: 'reconnecting' });
-    const delay = redialDelay(this.attempt);
+    // Repeated losses on one policy step move the next dial one step stricter, at once.
+    const escalate = this.route.lost(Date.now()) === 'migrate';
+    if (escalate) {
+      pushDiag(this.diag, `route migrate to ${this.route.step} after losses`);
+      this.log('product.log_route_switch');
+    }
+    const delay = escalate ? 0 : redialDelay(this.attempt);
     this.attempt++;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
@@ -614,8 +689,10 @@ export class ReceiverController extends Observable<RxState> {
   private teardown(): void {
     if (this.openTimer) clearTimeout(this.openTimer);
     if (this.sampler) clearInterval(this.sampler);
+    if (this.routeTimer) clearInterval(this.routeTimer);
     this.openTimer = null;
     this.sampler = null;
+    this.routeTimer = null;
     if (this.conn) {
       const c = this.conn.counters;
       this.update({

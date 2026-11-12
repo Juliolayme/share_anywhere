@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useI18n } from '../../i18n/i18n';
 import { formatBytes } from '../../lib/format';
+import type { RouteKind } from './engine/route';
 import type { Route } from './runtime/api';
 import type { LogLine } from './runtime/receiver-controller';
 
@@ -75,7 +76,7 @@ export function TransferChip({ state }: { state: ChipState }) {
 }
 
 /** Route badge as in the Design System: Direct (P2P, green, zap) or Relay (TURN, blue, radio tower); never color-only. */
-export function RouteChip({ route }: { route: Route | null }) {
+export function RouteChip({ route, kind }: { route: Route | null; kind?: RouteKind | null }) {
   const { t } = useI18n();
   if (!route) return null;
   const direct = route === 'direct';
@@ -83,6 +84,7 @@ export function RouteChip({ route }: { route: Route | null }) {
     <span
       data-testid="route-chip"
       data-route={route}
+      {...(kind ? { 'data-route-kind': kind } : {})}
       className={`inline-flex h-[26px] items-center gap-[6px] rounded-full px-[10px] text-[12px] font-semibold ${direct ? 'bg-receive-soft text-receive-ink' : 'bg-send-soft text-send-ink'}`}
     >
       {direct ? <Zap aria-hidden size={14} /> : <RadioTower aria-hidden size={14} />}

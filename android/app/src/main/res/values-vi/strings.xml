@@ -1033,6 +1033,7 @@
     <string name="product_log_relay_plain">Đang dùng máy chủ chuyển tiếp · được mã hóa</string>
     <string name="product_log_relay_timeout" formatted="false">Relay quá thời gian {seconds} giây — dừng ở {percent}%</string>
     <string name="product_log_retry_requested">Đã yêu cầu thử lại</string>
+    <string name="product_log_route_switch">Đường kết nối trực tiếp ngừng hoạt động — đã chuyển sang máy chủ chuyển tiếp để tiếp tục</string>
     <string name="product_log_sending_to">Đang gửi tới {name}</string>
     <string name="product_log_title">Nhật ký kết nối</string>
     <string name="product_manage_devices">Quản lý thiết bị</string>
@@ -1135,6 +1136,7 @@
     <string name="product_receive_cta">Nhận</string>
     <string name="product_reconnecting">Đang kết nối lại…</string>
     <string name="product_reject_named">Từ chối {name}</string>
+    <string name="product_relay_cap_reached">Phiên này đã dùng hết hạn mức chuyển tiếp. Việc truyền chỉ tiếp tục qua kết nối trực tiếp.</string>
     <string name="product_remove_confirm">Gỡ {name}</string>
     <string name="product_remove_failed">Không xóa được {name}. Hãy thử lại.</string>
     <string name="product_remove_file">Bỏ {name}</string>
@@ -1158,6 +1160,7 @@
     <string name="product_revoke_named_h">Thu hồi {name}?</string>
     <string name="product_rotate_failed">Một thiết bị đã rời tài khoản của bạn, nhưng chưa gửi được khóa mới đến các thiết bị khác.</string>
     <string name="product_rotate_retry">Xoay vòng khóa</string>
+    <string name="product_route_cloud">Đám mây</string>
     <string name="product_route_direct">P2P trực tiếp</string>
     <string name="product_route_relay">Chuyển tiếp</string>
     <string name="product_rx_cancel_h">Hủy nhận tệp?</string>

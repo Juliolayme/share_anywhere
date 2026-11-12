@@ -45,7 +45,7 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Start CI stack (postgres, backend, web, coturn, caddy)
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Backend reachable on the host (the emulator sees it as 10.0.2.2:8080)
         run: curl -fsS http://localhost:8080/healthz
       - name: Build the app and test APKs before booting the emulator

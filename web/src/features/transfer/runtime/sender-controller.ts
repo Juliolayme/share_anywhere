@@ -3,6 +3,7 @@ import type { HistoryEntry, HistoryStatus, HistoryStore } from '../../history/st
 import type { SessionView } from '../../sharing/api';
 import { fromDataChannel } from '../engine/channel';
 import { Throughput } from '../engine/eta';
+import { serverRoute, type RouteKind } from '../engine/route';
 import type { ErrorCode } from '../engine/frame';
 import { sha256Hex } from '../engine/hash';
 import { BlockCache, defaultBlockCacheBytes } from '../engine/cache';
@@ -12,8 +13,8 @@ import { Observable } from './observable';
 import {
   CHANNEL_LABEL,
   pushDiag,
+  classifyPeer,
   rtcConfig,
-  selectedRoute,
   watchPeer,
   type CandidatePayload,
   type SdpPayload,
@@ -51,6 +52,8 @@ export interface TxReceiver {
   verified: number;
   total: number;
   route: Route | null;
+  /** What this receiver's connection runs over in detail; null until known. */
+  routeKind: RouteKind | null;
   bytesPerSecond: number;
   eta: number | null;
   error: string | null;
@@ -105,6 +108,8 @@ interface Peer {
   throughput: Throughput;
   /** Remote description applied: candidates can be added now (before, they wait in `pendingIce`). */
   ready?: boolean;
+  /** Classifies the selected pair every 2 s while a channel is open (the receiver may migrate it). */
+  routeTimer?: ReturnType<typeof setInterval>;
 }
 
 const RECONNECT_WINDOW_MS = 10 * 60_000;
@@ -377,6 +382,7 @@ export class SenderController extends Observable<TxState> {
           verified: 0,
           total,
           route: prev?.route ?? (mine.find((t) => t.route)?.route as Route | undefined) ?? null,
+          routeKind: prev?.routeKind ?? null,
           bytesPerSecond: prev?.bytesPerSecond ?? 0,
           eta: prev?.eta ?? null,
           error: prev?.error ?? null,
@@ -464,6 +470,7 @@ export class SenderController extends Observable<TxState> {
     const p = this.peers.get(pid);
     if (!p) return;
     this.peers.delete(pid);
+    if (p.routeTimer) clearInterval(p.routeTimer);
     p.conn?.close();
     p.pc.close();
   }
@@ -690,11 +697,17 @@ export class SenderController extends Observable<TxState> {
       this.state_.receivers.find((r) => r.participantId === pid)?.verified ?? 0,
       performance.now(),
     );
-    void selectedRoute(peer.pc).then((route) => {
-      if (!route) return;
-      this.patch(pid, { route });
+    if (peer.routeTimer) clearInterval(peer.routeTimer);
+    const tick = async () => {
+      const c = await classifyPeer(peer.pc);
+      const r = this.state_.receivers.find((x) => x.participantId === pid);
+      if (!c.kind || !r || this.peers.get(pid) !== peer || c.kind === r.routeKind) return;
+      const route = serverRoute(c.kind);
+      this.patch(pid, { route, routeKind: c.kind });
       this.log(pid, route === 'relay' ? 'product.log_relay_plain' : 'product.log_direct');
-    });
+    };
+    void tick();
+    peer.routeTimer = setInterval(() => void tick(), 2000);
   }
 
   private onConnError(pid: string, code: ErrorCode | 'closed', fatal: boolean): void {
@@ -727,12 +740,13 @@ export class SenderController extends Observable<TxState> {
     // The connection is gone whatever the card says (a paused receiver can leave too): close and forget it, so
     // a later Resume does not mistake a dead channel for a live one.
     const p = this.peers.get(pid);
+    if (p?.routeTimer) clearInterval(p.routeTimer);
     if (p?.conn) {
       p.conn.close();
       p.conn = null;
     }
     const r = this.state_.receivers.find((x) => x.participantId === pid);
-    if (r?.route) this.patch(pid, { route: null }); // known again once a new channel opens
+    if (r?.route) this.patch(pid, { route: null, routeKind: null }); // known again once a new channel opens
     if (!r || !txActive(r.status)) return;
     this.log(pid, 'product.log_connection_lost_plain');
     this.patch(pid, { status: 'reconnecting', eta: null });

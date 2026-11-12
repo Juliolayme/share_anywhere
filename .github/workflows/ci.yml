@@ -272,7 +272,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Start CI stack (postgres, backend, web, coturn, caddy)
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium and ${{ matrix.browser }}
         # The pairing specs always run the sender in Chromium, whatever the receiver project.
         # Runner apt mirrors fail intermittently ("Temporary failure resolving", "Some index files failed"); only
@@ -429,7 +429,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Start CI stack
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 180
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 180
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod

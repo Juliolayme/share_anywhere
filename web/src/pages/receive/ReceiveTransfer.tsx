@@ -204,6 +204,7 @@ export function ReceiveTransfer({
           {/* The route is known only while a channel is open; hidden while (re)connecting. */}
           <RouteChip
             route={s.phase === 'reconnecting' || s.phase === 'connecting' || s.phase === 'unreachable' ? null : s.route}
+            kind={s.routeKind}
           />
         </div>
         <Card className="flex flex-col gap-3 px-[20px] py-[18px]" as="section">

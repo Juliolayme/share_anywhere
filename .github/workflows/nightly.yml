@@ -40,7 +40,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Start CI stack
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium
         # Runner apt mirrors fail intermittently ("Temporary failure resolving", "Some index files failed"); only
         # the dependency install is retried, never a test.
@@ -75,6 +75,52 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
 
+  turn-forced:
+    # docs/TESTING_AND_CI.md §2.2, docs/phases/PHASE_8_ROUTE_TURN_CLOUD.md: relay-only Web transfers through the CI
+    # coturn (host network, infra/coturn/turnserver.ci.conf) over UDP and over TLS with the "Using relay" badge, and a
+    # direct path that stops mid-transfer migrating to the relay and resuming from the bitmap.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install chromium
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
+      - name: Forced relay and migration
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_TURN: '1'
+          E2E_FIXTURE_DIR: ${{ runner.temp }}/fixtures
+        run: pnpm --filter @share-anywhere/web exec playwright test e2e/nightly/turn-forced.spec.ts --project=chromium-desktop --retries=0 --trace retain-on-failure
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-turn-forced
+          if-no-files-found: ignore
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 14
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   mobile-snapshots:
     # Generates the mobile visual baselines on the runner (fonts must match CI) and uploads them to commit.
     runs-on: ubuntu-latest
@@ -88,7 +134,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Start CI stack
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium and webkit
         # Runner apt mirrors fail intermittently ("Temporary failure resolving", "Some index files failed"); only
         # the dependency install is retried, never a test.
@@ -129,7 +175,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Start CI stack
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium, firefox and webkit
         # Runner apt mirrors fail intermittently ("Temporary failure resolving", "Some index files failed"); only
         # the dependency install is retried, never a test.
@@ -195,7 +241,7 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Start CI stack
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium
         run: |
           for attempt in 1 2 3; do
@@ -272,7 +318,7 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Start CI stack
-        run: docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
       - name: Install chromium
         run: |
           for attempt in 1 2 3; do
@@ -319,8 +365,7 @@ jobs:
       - name: Remaining nightly jobs land with their phases
         run: |
           cat <<'TXT'
-          Jobs still to be added by later phases (docs/TESTING_AND_CI.md section 2.2):
-            Phase 8  turn-forced         relay-only transfers over UDP and TCP/TLS
+          Jobs still to be added by later phases (docs/TESTING_AND_CI.md section 2.2): none.
           Not built (best effort in Phase 7, see docs/phases/reports/PHASE_7_REPORT.md):
             android-ios-interop  two half-tests against a shared ephemeral backend
           TXT

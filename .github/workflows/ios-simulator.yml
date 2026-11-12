@@ -110,6 +110,9 @@ jobs:
             -derivedDataPath ios/build/DerivedData 2>&1 | tee ios/build/app-build.log \
             | grep -E "error:|warning: .*ShareAnywhere/|\*\* BUILD" || true
           grep -q "\*\* BUILD SUCCEEDED \*\*" ios/build/app-build.log
+          # The privacy manifest must ship in the bundle (docs/RELEASE_CHECKLIST.md, App Review).
+          APP=$(find ios/build/DerivedData/Build/Products -maxdepth 2 -name ShareAnywhere.app -type d | head -1)
+          test -f "$APP/PrivacyInfo.xcprivacy" && plutil -lint "$APP/PrivacyInfo.xcprivacy"
       - name: xcodebuild build-for-testing
         run: |
           mkdir -p ios/build

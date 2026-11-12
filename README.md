@@ -2,7 +2,16 @@
 
 Cross-platform peer-to-peer file sharing and clipboard sync for Web, Android, and iOS. File sharing is guest-first: no account is needed to send or receive. Only Clipboard Sync and a few account-wide features require signing in.
 
-Status: **Phases 0 to 5 done on the Web and backend; Phase 6 (Android) in progress** (milestone 6.1: guest-first shell, anonymous identity, local History, Settings). See `docs/phases/README.md` for the plan and `docs/phases/reports/` for what has actually been built and tested.
+Status: **every phase (0 to 9, with 5A and 5B) implemented** on Web, Android, iOS and the backend. What is tested, and on what, is in `docs/phases/reports/PHASE_9_REPORT.md` (the consolidated final report); what is not done or not verified is in [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md). Nothing has run on a real phone or across real networks yet; store submission is blocked on account deletion, which is not built.
+
+## Screenshots
+
+Captured by CI: the Web from the nightly `visual-snapshots` job (Playwright, iPhone 14 profile on WebKit, Vietnamese, dark), Android from the emulator screenshot suite (API 34), iOS from the simulator screenshot suite (iPhone 16, iOS 18.5).
+
+| Web (mobile browser) | Android | iOS |
+|---|---|---|
+| ![Web transfer home in Vietnamese, dark](docs/assets/web-home-iphone-vi-dark.png) | ![Android transfer home, light](docs/phases/reports/assets/phase6-android-light-home.png) | ![iOS transfer home, light](docs/phases/reports/assets/phase7-ios-light-home.png) |
+| | ![Android receiving, light](docs/phases/reports/assets/phase6-android-light-rx-progress.png) | ![iOS session, dark](docs/phases/reports/assets/phase7-ios-dark-session.png) |
 
 ## Where things are
 
@@ -15,8 +24,11 @@ Status: **Phases 0 to 5 done on the Web and backend; Phase 6 (Android) in progre
 | `backend/` | Go backend (modular monolith) |
 | `web/` | React + TypeScript web app |
 | `android/` | Native Android app (Kotlin, Jetpack Compose), Gradle project |
+| `ios/` | Native iOS app (SwiftUI): XcodeGen `project.yml`, the app, and the `ShareAnywhereCore` Swift package |
 | `shared/design/tokens.json` | Design tokens; `pnpm tokens` generates platform files |
 | `infra/` | coturn and Caddy configuration |
+| `docs/runbooks/` | Deploy, backup and restore, incidents, real-device checklists |
+| `docs/RELEASE_CHECKLIST.md`, `docs/PERFORMANCE.md` | Release steps (signing, store policy) and measured throughput and memory ceilings |
 
 ## Quick start (Docker Compose)
 
@@ -69,6 +81,26 @@ cd android && ./gradlew connectedDebugAndroidTest -Pbackend=http://10.0.2.2:8080
 ```
 
 The last command needs a running emulator or device (CI uses API 34, `.github/workflows/android-emulator.yml`). Theme tokens, string resources, and API models are generated from `shared/` by `pnpm tokens`, `pnpm i18n`, and `pnpm protocol`; never edit `Tokens.kt`, `Api.gen.kt`, or `res/values*/strings.xml` by hand. After changing a dependency, refresh the lockfiles with `./gradlew :app:dependencies buildEnvironment --write-locks`.
+
+## iOS app
+
+Requirements: macOS with Xcode 16.4 (iOS 18 simulator runtime). `scripts/ios-tools.sh` installs the pinned XcodeGen, SwiftLint and SwiftFormat into `.tools/`.
+
+```bash
+scripts/ios-tools.sh && (cd ios && ../.tools/xcodegen/bin/xcodegen generate)
+```
+
+Open `ios/ShareAnywhere.xcodeproj` and run the `ShareAnywhere` scheme on a simulator; the Debug build talks to `http://127.0.0.1:8080` (the plain-HTTP CI backend). The core package's tests also run on Linux:
+
+```bash
+cd ios/ShareAnywhereCore && swift test
+```
+
+Device builds and TestFlight need your own Team ID and signing, set at build time and never committed (`docs/RELEASE_CHECKLIST.md` §4).
+
+## Production
+
+Single-VM deployment with Docker Compose, Caddy (automatic HTTPS) and coturn: `docs/runbooks/deploy.md` (`docker-compose.prod.yml`, `infra/caddy/Caddyfile.prod`). Backups: `docs/runbooks/backup-restore.md`.
 
 ## Checks
 

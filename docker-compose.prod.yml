@@ -1,0 +1,76 @@
+# Production override for a single VM (docs/runbooks/deploy.md). Use with the base file and an env file that is
+# never committed:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file /etc/share-anywhere/prod.env up -d --build
+# Every secret is required (`:?`): the stack refuses to start with a missing one rather than fall back to a default.
+services:
+  postgres:
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    # Not published: only the backend reaches the database, over the compose network.
+    ports: !reset []
+
+  backend:
+    restart: unless-stopped
+    extra_hosts:
+      # coturn runs on the host network; the backend reads its usage exporter through the host gateway.
+      - "host.docker.internal:host-gateway"
+    environment:
+      SA_ENV: production
+      SA_LOG_LEVEL: ${SA_LOG_LEVEL:-info}
+      DATABASE_URL: postgres://shareanywhere:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/shareanywhere?sslmode=disable
+      SA_ALLOWED_ORIGINS: https://${SA_DOMAIN:?set SA_DOMAIN}
+      SA_PUBLIC_URL: https://${SA_DOMAIN:?set SA_DOMAIN}
+      SA_COOKIE_SECURE: "true"
+      SA_TOKEN_KEYS: ${SA_TOKEN_KEYS:?set SA_TOKEN_KEYS}
+      SA_TOKEN_ACTIVE_KID: ${SA_TOKEN_ACTIVE_KID:?set SA_TOKEN_ACTIVE_KID}
+      SA_SERVER_SECRET: ${SA_SERVER_SECRET:?set SA_SERVER_SECRET}
+      SA_TURN_SECRET: ${TURN_SHARED_SECRET:?set TURN_SHARED_SECRET}
+      SA_TURN_URIS: turn:${SA_TURN_HOST:?set SA_TURN_HOST}:3478?transport=udp,turn:${SA_TURN_HOST:?set SA_TURN_HOST}:3478?transport=tcp,turns:${SA_TURN_HOST:?set SA_TURN_HOST}:${SA_TURN_TLS_PORT:-5349}?transport=tcp
+      SA_TURN_METRICS_URL: http://host.docker.internal:9641/metrics
+      SA_METRICS_ADDR: ":9090"
+      SA_MAIL_SINK: smtp
+      SA_SMTP_ADDR: ${SA_SMTP_ADDR:?set SA_SMTP_ADDR}
+      SA_SMTP_USERNAME: ${SA_SMTP_USERNAME:-}
+      SA_SMTP_PASSWORD: ${SA_SMTP_PASSWORD:-}
+      SA_MAIL_FROM: ${SA_MAIL_FROM:?set SA_MAIL_FROM}
+
+  web:
+    restart: unless-stopped
+
+  s3:
+    restart: unless-stopped
+
+  coturn:
+    restart: unless-stopped
+    # Host networking: the relay port range is not proxied through Docker (thousands of UDP ports).
+    network_mode: host
+    ports: !reset []
+    command:
+      - -c
+      - /etc/coturn/turnserver.conf
+      - --static-auth-secret=${TURN_SHARED_SECRET:?set TURN_SHARED_SECRET}
+      - --external-ip=${SA_TURN_EXTERNAL_IP:?set SA_TURN_EXTERNAL_IP}
+      - --realm=${SA_DOMAIN:?set SA_DOMAIN}
+      - --tls-listening-port=${SA_TURN_TLS_PORT:-5349}
+      - --min-port=49152
+      - --max-port=65535
+    volumes: !override
+      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # The TURN host's certificate and key as turn.crt / turn.key (docs/runbooks/deploy.md, ADR 0029).
+      - ${SA_TURN_CERT_DIR:?set SA_TURN_CERT_DIR}:/etc/coturn/tls:ro
+
+  caddy:
+    restart: unless-stopped
+    environment:
+      SA_DOMAIN: ${SA_DOMAIN:?set SA_DOMAIN}
+      SA_ACME_EMAIL: ${SA_ACME_EMAIL:?set SA_ACME_EMAIL}
+      SA_ANDROID_CERT_SHA256: ${SA_ANDROID_CERT_SHA256:-}
+      SA_APPLE_APP_ID: ${SA_APPLE_APP_ID:-}
+    volumes: !override
+      - ./infra/caddy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"

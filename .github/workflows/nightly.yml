@@ -202,6 +202,67 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
 
+  throughput:
+    # Benchmark (docs/PERFORMANCE.md, web/e2e/nightly/throughput.spec.ts): a 256 MiB file from a Chromium sender to a
+    # receiver in each desktop engine over the direct path, and over relay UDP and relay TLS (CI coturn) in Chromium;
+    # MiB/s per route and engine uploaded as throughput-<project>.json.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: chromium-desktop, browser: chromium }
+          - { project: firefox-desktop, browser: firefox }
+          - { project: webkit-desktop, browser: webkit }
+    name: throughput (${{ matrix.project }})
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install chromium and ${{ matrix.browser }}
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium ${{ matrix.browser }} && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
+      - name: Stock Firefox for WebRTC (pinned, checksum verified)
+        if: matrix.browser == 'firefox'
+        env:
+          FIREFOX_VERSION: '160.0'
+          FIREFOX_SHA256: fde774e9757c8878534c05ec210db592bf6a1b244c57941ffb2e364c04f35fcd
+        run: |
+          curl -fsSL --retry 4 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/firefox.tar.xz" "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz"
+          echo "${FIREFOX_SHA256}  $RUNNER_TEMP/firefox.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP"
+          echo "E2E_FIREFOX_BIN=$RUNNER_TEMP/firefox/firefox" >> "$GITHUB_ENV"
+      - name: Throughput
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_BENCH: '1'
+          E2E_TURN: '1'
+          E2E_BENCH_OUT: ${{ runner.temp }}/throughput-${{ matrix.project }}.json
+          E2E_FIXTURE_DIR: ${{ runner.temp }}/fixtures
+        run: pnpm --filter @share-anywhere/web exec playwright test e2e/nightly/throughput.spec.ts --project=${{ matrix.project }} --retries=0
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: throughput-${{ matrix.project }}
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/throughput-${{ matrix.project }}.json
+          retention-days: 30
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   chaos:
     # Failure injection (docs/phases/PHASE_9_HARDENING_RELEASE.md, web/e2e/chaos): restarts the backend during a
     # transfer, makes the database unreachable and drops its connections, stops coturn, and restarts the edge proxy

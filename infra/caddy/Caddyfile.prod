@@ -1,0 +1,46 @@
+# Production edge proxy (docs/runbooks/deploy.md): automatic HTTPS for SA_DOMAIN (Let's Encrypt or ZeroSSL through
+# Caddy's ACME), HTTP redirected to HTTPS. The Web app's own CSP and headers come from web/Caddyfile behind this proxy.
+{
+	admin off
+	email {$SA_ACME_EMAIL}
+}
+
+{$SA_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Android App Links and iOS Universal Links (docs/runbooks/android-app-links.md,
+	# docs/runbooks/ios-real-device-checklist.md): served only when the identifiers are set.
+	@assetlinks {
+		path /.well-known/assetlinks.json
+		expression {env.SA_ANDROID_CERT_SHA256} != ""
+	}
+	handle @assetlinks {
+		header Content-Type application/json
+		respond `[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"app.shareanywhere","sha256_cert_fingerprints":["{$SA_ANDROID_CERT_SHA256}"]}}]` 200
+	}
+	@aasa {
+		path /.well-known/apple-app-site-association
+		expression {env.SA_APPLE_APP_ID} != ""
+	}
+	handle @aasa {
+		header Content-Type application/json
+		respond `{"applinks":{"details":[{"appIDs":["{$SA_APPLE_APP_ID}"],"components":[{"/":"/j/*","comment":"Share links"}]}]}}` 200
+	}
+
+	# The metrics listener is internal (SA_METRICS_ADDR); it is never routed here.
+	@api path /v1/* /healthz /readyz
+	handle @api {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		reverse_proxy web:8080
+	}
+}

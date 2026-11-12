@@ -216,6 +216,8 @@ public struct TxReceiver: Sendable, Equatable, Identifiable {
     public var eta: Int64?
     /// Catalog error key when failed (product.tx_err_*).
     public var error: String?
+    /// What this receiver's selected candidate pair runs over (docs/ARCHITECTURE.md §6).
+    public var routeKind: RouteKind?
     public var id: String { participantId }
 }
 

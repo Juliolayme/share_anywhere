@@ -68,7 +68,10 @@ final class AppModel: ObservableObject {
         history = store
         let keepAwake = KeepAwake()
         self.keepAwake = keepAwake
-        hub = TransferHub(api: client, identity: identity, history: store, keepAwake: keepAwake, graceSeconds: config.backgroundGrace)
+        hub = TransferHub(
+            api: client, identity: identity, history: store, keepAwake: keepAwake, graceSeconds: config.backgroundGrace,
+            routeStep: config.routeStep.flatMap(PolicyStep.init(rawValue:)) ?? .all, insecureTurnTLS: config.insecureTurnTLS
+        )
         keepAwake.setEnabled(settings.keepScreenOn)
         let settingsRef = settings
         keepAwake.enableSetting = { settingsRef.keepScreenOn = true }

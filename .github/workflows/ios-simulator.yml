@@ -55,6 +55,16 @@ jobs:
           for i in $(seq 60); do "$PG/pg_isready" -h 127.0.0.1 && break; sleep 1; done
           "$PG/psql" -h 127.0.0.1 -d postgres -c "CREATE ROLE shareanywhere LOGIN PASSWORD 'ci-password';"
           "$PG/psql" -h 127.0.0.1 -d postgres -c "CREATE DATABASE shareanywhere OWNER shareanywhere;"
+      - name: coturn (Homebrew; UDP and TLS on loopback for the forced-relay tests, docs/ADR/0029)
+        run: |
+          brew install coturn
+          scripts/turn-test-cert.sh .tools/turn-tls
+          # The CI configuration with this runner's certificate paths; Homebrew's coturn may lack the Prometheus
+          # exporter, which only the relay byte cap reads (not exercised here).
+          sed -e "s#/etc/coturn/tls#$PWD/.tools/turn-tls#g" -e '/^prometheus/d' infra/coturn/turnserver.ci.conf > .tools/turnserver.conf
+          nohup "$(brew --prefix)/bin/turnserver" -c .tools/turnserver.conf --static-auth-secret=ci-turn-secret > coturn.log 2>&1 &
+          for i in $(seq 30); do nc -z 127.0.0.1 5349 && nc -zu 127.0.0.1 3478 && break; sleep 1; done
+          nc -z 127.0.0.1 5349 || { cat coturn.log; exit 1; }
       - name: Backend (native, test hooks, migrations on start)
         run: |
           mkdir -p .tools
@@ -62,7 +72,7 @@ jobs:
           SA_ENV=test SA_HTTP_ADDR=127.0.0.1:8080 SA_LOG_LEVEL=info SA_MIGRATE_ON_START=true \
           SA_ALLOWED_ORIGINS=http://127.0.0.1:8080 SA_COOKIE_SECURE=false SA_RATE_LIMIT_MULTIPLIER=100 SA_POW_DIFFICULTY=8 \
           SA_PUBLIC_URL=http://127.0.0.1:8080 SA_TURN_SECRET=ci-turn-secret SA_MAIL_SINK=memory \
-          SA_TURN_URIS="turn:127.0.0.1:3478?transport=udp" \
+          SA_TURN_URIS="turn:127.0.0.1:3478?transport=udp,turns:127.0.0.1:5349?transport=tcp" \
             nohup .tools/sa-server > backend.log 2>&1 &
           for i in $(seq 60); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
           curl -fsS http://127.0.0.1:8080/readyz
@@ -140,4 +150,5 @@ jobs:
             ios/build/build.log
             ios/build/app-build.log
             backend.log
+            coturn.log
           retention-days: 14

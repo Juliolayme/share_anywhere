@@ -70,7 +70,9 @@ final class TestPeer: @unchecked Sendable {
 
     /// Shares one generated file; returns the session (with its code), the file's SHA-256 and the sender controller,
     /// not started yet (`start()` it to serve the app; until then the app's offers find nobody).
-    func share(name: String, size: Int, requireApproval: Bool = false) async throws -> (SessionView, String, SenderController) {
+    func share(
+        name: String, size: Int, requireApproval: Bool = false, relayOnly: Bool = false
+    ) async throws -> (SessionView, String, SenderController) {
         let url = dir.appendingPathComponent(name)
         let bytes = TestPeer.content(size: size, seed: 11)
         try Data(bytes).write(to: url)
@@ -81,8 +83,8 @@ final class TestPeer: @unchecked Sendable {
         let file = try XCTUnwrap(view.files?.first)
         try await outgoing.put(view.id, [OutgoingFile(fileId: file.id, size: file.size, locator: Data(url.path.utf8))])
         let c = SenderController(SenderDeps(
-            sessionId: view.id, sessions: services, transfers: services, socket: socket, peers: WebRTCPeerFactory.shared,
-            outgoing: outgoing, history: nil,
+            sessionId: view.id, sessions: services, transfers: services, socket: socket,
+            peers: relayOnly ? RelayOnlyPeers() : WebRTCPeerFactory.shared, outgoing: outgoing, history: nil,
             openSource: { f in FileReadSource(url: URL(fileURLWithPath: String(decoding: f.locator, as: UTF8.self)), size: f.size) }
         ))
         controllers.append(c)
@@ -181,6 +183,16 @@ extension XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         }
         XCTFail("timed out: \(what)")
+    }
+}
+
+/// Forced relay (docs/ADR/0029): this side gathers TURN relay candidates only, as the app does on a relay policy step;
+/// libwebrtc gathers no loopback host candidates, so on one machine coturn bridges two relay candidates. The CI
+/// coturn's self-signed TLS certificate is accepted (Debug test runner only).
+struct RelayOnlyPeers: PeerFactory {
+    func make(iceServers: [ICEServer], relayOnly _: Bool, callbacks: PeerCallbacks) async throws -> any PeerLink {
+        WebRTCPeerFactory.shared.allowInsecureTurnTLS(true)
+        return try await WebRTCPeerFactory.shared.make(iceServers: iceServers, relayOnly: true, callbacks: callbacks)
     }
 }
 

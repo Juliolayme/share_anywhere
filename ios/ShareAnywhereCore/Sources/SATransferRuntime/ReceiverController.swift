@@ -38,6 +38,10 @@ public struct RxState: Sendable, Equatable {
     public var senderName = ""
     public var duplicates = 0
     public var resumedBytes: Int64 = 0
+    /// What the selected candidate pair runs over (docs/ARCHITECTURE.md §6); nil until a channel is classified.
+    public var routeKind: RouteKind?
+    /// The server stopped issuing TURN credentials: the session's relay byte cap is reached.
+    public var relayCapped = false
     public init() {}
 }
 
@@ -69,6 +73,10 @@ public struct ReceiverDeps: Sendable {
     public var clock: MillisClock
     public var sleep: Sleeper
     public var random: @Sendable () -> Double
+    /// The ICE policy step the first dial uses (`all`; UI tests force a relay step).
+    public var routeStep: PolicyStep = .all
+    /// The route monitor's thresholds (the shared defaults; tests shorten them).
+    public var routeConfig = MonitorConfig()
 
     public init(
         sessionId: String, sessions: any SessionService, transfers: any TransferService, socket: SessionSocket, peers: any PeerFactory,
@@ -123,9 +131,15 @@ public actor ReceiverController {
     private var startedAt: Int64?
     private var downSince: Int64?
     private var everOpened = false
+    /// Route strategy: which ICE policy step to dial on, and when to move one step stricter (ARCHITECTURE §6).
+    private var route = RouteMonitor()
+    private var routeTask: Task<Void, Never>?
+    /// When the current TURN credential expires (ms), to renew a relayed connection before it lapses.
+    private var credExpiresAt: Int64?
 
     public init(_ deps: ReceiverDeps) {
         d = deps
+        route = RouteMonitor(step: deps.routeStep, config: deps.routeConfig)
         reporter = Reporter(sink: TransfersReportSink(api: deps.transfers), now: deps.clock, sleep: deps.sleep)
     }
 
@@ -317,8 +331,11 @@ public actor ReceiverController {
     private func dial() async {
         let id = UUID().uuidString.lowercased()
         connId = id
-        let servers = await ICEServer.from(try? d.transfers.turn(sessionId: d.sessionId))
+        let setup = await rtcSetup(d.transfers, sessionId: d.sessionId, step: route.step)
         if connId != id || stopped { return }
+        credExpiresAt = setup.expiresAt
+        let capped = setup.turnRefused == "relay_cap_reached"
+        if capped != s.relayCapped { update { $0.relayCapped = capped } }
         let sessionId = d.sessionId
         let to = senderPid
         let socket = d.socket
@@ -336,7 +353,9 @@ public actor ReceiverController {
             onDataChannel: { ch in ch.close() },
             onState: { [self, queue] st in queue.run { await self.onLinkState(id, st) } }
         )
-        guard let peer = try? await d.peers.make(iceServers: servers, callbacks: callbacks) else { return lost() }
+        guard let peer = try? await d.peers.make(iceServers: setup.servers, relayOnly: setup.relayOnly, callbacks: callbacks) else {
+            return lost()
+        }
         if connId != id || stopped {
             peer.close()
             return
@@ -403,17 +422,53 @@ public actor ReceiverController {
                 await self?.sample()
             }
         }
+        route.rebase(verified: s.verified, now: d.clock())
+        update { $0.routeKind = nil }
         if let peer = link {
-            Task { [weak self] in
-                guard let route = await peer.selectedRoute() else { return }
-                await self?.setRoute(route)
+            // The tick runs on the event queue, not in this task: a migration tears this task down (cancels it), and
+            // the new dial must not inherit that cancellation.
+            routeTask = Task { [weak self, queue, sleep = d.sleep] in
+                while !Task.isCancelled {
+                    let c = await peer.classify()
+                    if Task.isCancelled { return }
+                    guard let self else { return }
+                    queue.run { await self.routeTick(id, c) }
+                    await sleep(2000)
+                }
             }
         }
     }
 
-    private func setRoute(_ route: String) async {
-        await reporter.setRoute(route)
-        update { $0.route = route }
+    /// Every 2 s on an open channel: the classified pair (badge and report) feeds the route monitor; a sustained stall
+    /// migrates one policy step stricter, and a relayed connection is renewed before its TURN credential expires (a new
+    /// connection on the same step fetches a fresh one).
+    /// The policy step the next dial uses.
+    public var routeStep: PolicyStep { route.step }
+
+    private func routeTick(_ id: String, _ c: Classified) async {
+        guard connId == id, conn != nil, !stopped, !s.phase.isFinal else { return }
+        let now = d.clock()
+        if let kind = c.kind, kind != s.routeKind {
+            await reporter.setRoute(kind.serverRoute)
+            update {
+                $0.route = kind.serverRoute
+                $0.routeKind = kind
+            }
+        }
+        if s.phase == .paused { return route.rebase(verified: s.verified, now: now) }
+        let decision = route.sample(connected: linkState == .connected, verified: s.verified, rttMs: c.rttMs, now: now)
+        if decision == .migrate { return await migrate(renew: false) }
+        let relayed = c.kind != nil && c.kind != .direct
+        if relayed, let exp = credExpiresAt, now > exp - 120_000 { await migrate(renew: true) }
+    }
+
+    /// Moves to a new connection: one policy step stricter, or (`renew`) the same step with a fresh credential.
+    private func migrate(renew _: Bool) async {
+        if stopped || s.phase.isFinal { return }
+        for f in open() {
+            await reporter.state(f.transferId, "DISCONNECTED", bytes: f.verified)
+        }
+        await connect()
     }
 
     private func prepare(_ e: FileMetaEntry) async throws -> PreparedFile {
@@ -523,7 +578,10 @@ public actor ReceiverController {
         if stopped || s.phase.isFinal || retryTask != nil { return }
         let paused = s.phase == .paused
         teardown()
-        update { $0.route = nil }
+        update {
+            $0.route = nil
+            $0.routeKind = nil
+        }
         let report = open()
         let reporter = reporter
         Task {
@@ -540,7 +598,9 @@ public actor ReceiverController {
             }
         }
         update { $0.phase = .reconnecting }
-        let wait = redialDelayMs(attempt, random: d.random())
+        // Repeated losses on one policy step move the next dial one step stricter, at once.
+        let escalate = route.lost(now: d.clock()) == .migrate
+        let wait = escalate ? 0 : redialDelayMs(attempt, random: d.random())
         attempt += 1
         retryTask = Task { [weak self, sleep = d.sleep] in
             await sleep(wait)
@@ -557,8 +617,10 @@ public actor ReceiverController {
     private func teardown() {
         openTask?.cancel()
         samplerTask?.cancel()
+        routeTask?.cancel()
         openTask = nil
         samplerTask = nil
+        routeTask = nil
         if let c = conn {
             conn = nil
             Task { [weak self] in

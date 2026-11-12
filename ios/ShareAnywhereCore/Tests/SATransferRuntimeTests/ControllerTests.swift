@@ -44,7 +44,9 @@ final class ControllerTests: XCTestCase {
         return (url, SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined())
     }
 
-    func rig(sizes: [Int], delayMs: UInt64 = 0, fastClock: Bool = false, keepFiles: Bool = true) async throws -> Rig {
+    func rig(
+        sizes: [Int], delayMs: UInt64 = 0, fastClock: Bool = false, keepFiles: Bool = true, routeConfig: MonitorConfig = MonitorConfig()
+    ) async throws -> Rig {
         let backend = FakeBackend()
         let peers = MemPeerFactory()
         peers.delayMs = delayMs
@@ -72,12 +74,14 @@ final class ControllerTests: XCTestCase {
             sleep: fast
         ))
         let inbox = dir.appendingPathComponent("Inbox")
-        let receiver = ReceiverController(ReceiverDeps(
+        var rDeps = ReceiverDeps(
             sessionId: sid, sessions: rClient, transfers: rClient, socket: rSocket, peers: peers,
             targets: JSONMap(url: dir.appendingPathComponent("targets.json")),
             saved: JSONMap(url: dir.appendingPathComponent("saved.json")),
             history: rh, resolveFolder: { _ in ScopedFolder(url: inbox) }, sleep: fast, random: { 0.5 }
-        ))
+        )
+        rDeps.routeConfig = routeConfig
+        let receiver = ReceiverController(rDeps)
         return Rig(
             backend: backend, peers: peers, sessionId: sid, sender: sender, receiver: receiver, senderHistory: sh, receiverHistory: rh,
             inbox: inbox,
@@ -194,6 +198,47 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(try sha(XCTUnwrap(r.receiver.state.value.files[0].savedURL)), r.sums[0])
         XCTAssertTrue(r.backend.log.contains { $0.hasSuffix(":DISCONNECTED") }, "the drop was reported")
         XCTAssertTrue(r.backend.rejectedReports.isEmpty, "\(r.backend.rejectedReports)")
+        await r.sender.dispose()
+        await r.receiver.dispose()
+    }
+
+    /// Route strategy (docs/ARCHITECTURE.md §6): the direct path stops carrying data mid-transfer; the stall moves the
+    /// receiver one policy step stricter (relay-only over UDP TURN URIs), the transfer resumes from the bitmap without
+    /// duplicate blocks, and both ends show the relay.
+    func testAStalledDirectPathMigratesToTheRelayAndResumes() async throws {
+        var cfg = MonitorConfig()
+        cfg.stallMs = 600
+        cfg.cooldownMs = 5000
+        let r = try await rig(sizes: [24 * 1024 * 1024], delayMs: 1, fastClock: true, routeConfig: cfg)
+        await r.sender.start()
+        await r.receiver.start()
+        await r.receiver.choose(SaveTarget(kind: .documents, label: "Share Anywhere"))
+        try await until("direct route classified") { r.receiver.state.value.routeKind == .direct }
+        try await until("three blocks verified") { r.receiver.state.value.verified >= Int64(Wire.blockSize) * 3 }
+        XCTAssertEqual(r.peers.all.first?.iceServers.flatMap(\.urls).contains("stun:t:3478"), true, "step all keeps STUN")
+        r.peers.blockDirect = true
+        try await until("migrated to relay-udp", timeout: 30) { await r.receiver.routeStep == .relayUdp }
+        try await until("completed over the relay", timeout: 90) { r.receiver.state.value.phase == .completed }
+        let last = try XCTUnwrap(r.peers.all.last { $0.relayOnly })
+        XCTAssertEqual(last.iceServers.flatMap(\.urls), ["turn:t:3478?transport=udp"], "relay-udp dials the UDP TURN URI only")
+        XCTAssertEqual(r.receiver.state.value.routeKind, .relayUdp)
+        XCTAssertEqual(r.receiver.state.value.route, "relay")
+        XCTAssertEqual(r.receiver.state.value.duplicates, 0, "verified blocks are not sent again")
+        XCTAssertEqual(try sha(XCTUnwrap(r.receiver.state.value.files[0].savedURL)), r.sums[0])
+        XCTAssertTrue(r.backend.log.contains { $0.hasSuffix(":DISCONNECTED") }, "the migration was reported")
+        await r.sender.dispose()
+        await r.receiver.dispose()
+    }
+
+    func testARefusedRelayCredentialShowsTheCapAndStillConnectsDirectly() async throws {
+        let r = try await rig(sizes: [5000])
+        r.backend.relayCapped = true
+        await r.sender.start()
+        await r.receiver.start()
+        await r.receiver.choose(SaveTarget(kind: .documents, label: "Share Anywhere"))
+        try await until("completed") { r.receiver.state.value.phase == .completed }
+        XCTAssertTrue(r.receiver.state.value.relayCapped)
+        XCTAssertEqual(r.peers.all.first?.iceServers, [], "no TURN servers without credentials")
         await r.sender.dispose()
         await r.receiver.dispose()
     }

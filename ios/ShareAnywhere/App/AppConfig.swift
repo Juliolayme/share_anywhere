@@ -18,6 +18,10 @@ struct AppConfig {
     let seedFileBytes: Int
     /// Seconds a transfer keeps going after the app leaves the screen before it pauses (`-backgroundGrace`, UI tests).
     let backgroundGrace: Double
+    /// `-routeStep relay-udp|relay-tls` (UI tests): receivers dial relay-only on that ICE policy step (forced relay).
+    let routeStep: String?
+    /// `-insecureTurnTLS` (UI tests): accept the CI coturn's self-signed TURN TLS certificate (docs/ADR/0029).
+    let insecureTurnTLS: Bool
     let accounts = true
     let clipboard = true
     let version: String
@@ -61,6 +65,8 @@ struct AppConfig {
             seedSendFiles: uiTesting ? Int(value(after: "-seedSendFiles") ?? "") ?? 0 : 0,
             seedFileBytes: min(64 << 20, max(1, Int(value(after: "-seedFileBytes") ?? "") ?? 3_000_000)),
             backgroundGrace: uiTesting ? Double(value(after: "-backgroundGrace") ?? "") ?? 20 : 20,
+            routeStep: uiTesting ? value(after: "-routeStep") : nil,
+            insecureTurnTLS: uiTesting && arguments.contains("-insecureTurnTLS"),
             version: "\(short) (\(build))"
         )
     }

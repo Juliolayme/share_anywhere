@@ -9,15 +9,29 @@ final class WebRTCPeerFactory: PeerFactory, @unchecked Sendable {
     static let shared = WebRTCPeerFactory()
 
     private let factory: RTCPeerConnectionFactory
+    private let lock = NSLock()
+    private var acceptAnyTurnCertificate = false
 
     private init() {
         RTCInitializeSSL()
         factory = RTCPeerConnectionFactory()
     }
 
-    func make(iceServers: [ICEServer], callbacks: PeerCallbacks) async throws -> any PeerLink {
+    /// UI tests only (Debug, `-insecureTurnTLS`): accept the CI coturn's self-signed TLS certificate (docs/ADR/0029).
+    func allowInsecureTurnTLS(_ on: Bool) {
+        #if DEBUG
+            lock.locked { acceptAnyTurnCertificate = on }
+        #endif
+    }
+
+    func make(iceServers: [ICEServer], relayOnly: Bool, callbacks: PeerCallbacks) async throws -> any PeerLink {
         let config = RTCConfiguration()
-        config.iceServers = iceServers.map { RTCIceServer(urlStrings: $0.urls, username: $0.username, credential: $0.credential) }
+        let policy: RTCTlsCertPolicy = lock.locked { acceptAnyTurnCertificate } ? .insecureNoCheck : .secure
+        config.iceServers = iceServers.map {
+            RTCIceServer(urlStrings: $0.urls, username: $0.username, credential: $0.credential, tlsCertPolicy: policy)
+        }
+        // Any policy step but `all` gathers relay candidates only (docs/ARCHITECTURE.md §6).
+        config.iceTransportPolicy = relayOnly ? .relay : .all
         config.sdpSemantics = .unifiedPlan
         config.continualGatheringPolicy = .gatherOnce
         let peer = WebRTCPeer(callbacks: callbacks)
@@ -128,24 +142,25 @@ final class WebRTCPeer: NSObject, PeerLink, RTCPeerConnectionDelegate, @unchecke
         }
     }
 
-    func selectedRoute() async -> String? {
-        guard let pc = connection else { return nil }
+    /// The stats the route classifier reads (`classifyRoute` in ShareAnywhereCore, shared vectors with Web and Android).
+    func stats() async -> [StatsEntry] {
+        guard let pc = connection else { return [] }
         let report: RTCStatisticsReport = await withCheckedContinuation { c in pc.statistics { c.resume(returning: $0) } }
-        let stats = report.statistics
-        let pairId = stats.values.first { $0.type == "transport" }?.values["selectedCandidatePairId"] as? String
-        let pair = stats.values.first { s in
-            s.type == "candidate-pair" &&
-                (s.id == pairId || (
-                    pairId == nil && (s.values["nominated"] as? NSNumber)?.boolValue == true &&
-                        s.values["state"] as? String == "succeeded"
-                ))
+        return report.statistics.values.map { s in
+            let v = s.values
+            return StatsEntry(
+                type: s.type, id: s.id,
+                selectedCandidatePairId: v["selectedCandidatePairId"] as? String,
+                localCandidateId: v["localCandidateId"] as? String,
+                remoteCandidateId: v["remoteCandidateId"] as? String,
+                currentRoundTripTime: (v["currentRoundTripTime"] as? NSNumber)?.doubleValue,
+                selected: (v["selected"] as? NSNumber)?.boolValue,
+                nominated: (v["nominated"] as? NSNumber)?.boolValue,
+                state: v["state"] as? String,
+                candidateType: v["candidateType"] as? String,
+                relayProtocol: v["relayProtocol"] as? String
+            )
         }
-        guard let pair else { return nil }
-        func type(_ key: String) -> String? {
-            guard let id = pair.values[key] as? String else { return nil }
-            return stats[id]?.values["candidateType"] as? String
-        }
-        return type("localCandidateId") == "relay" || type("remoteCandidateId") == "relay" ? "relay" : "direct"
     }
 
     func close() {

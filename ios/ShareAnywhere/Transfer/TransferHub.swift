@@ -20,6 +20,8 @@ final class TransferHub: ObservableObject {
     private let history: HistoryStore
     private let peers: any PeerFactory
     private let graceSeconds: Double
+    /// The ICE policy step receivers start on (`all`; UI tests force a relay step).
+    private let routeStep: PolicyStep
     private var senders: [String: SenderController] = [:]
     private var receivers: [String: ReceiverController] = [:]
     private var watchers: [String: Task<Void, Never>] = [:]
@@ -33,12 +35,17 @@ final class TransferHub: ObservableObject {
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var graceTask: Task<Void, Never>?
 
-    init(api: APIClient, identity: IdentityManager, history: HistoryStore, keepAwake: KeepAwake, graceSeconds: Double) {
+    init(
+        api: APIClient, identity: IdentityManager, history: HistoryStore, keepAwake: KeepAwake, graceSeconds: Double,
+        routeStep: PolicyStep = .all, insecureTurnTLS: Bool = false
+    ) {
         let services = LiveServices(client: api, identity: identity)
         self.services = services
         self.history = history
         self.keepAwake = keepAwake
         self.graceSeconds = graceSeconds
+        self.routeStep = routeStep
+        WebRTCPeerFactory.shared.allowInsecureTurnTLS(insecureTurnTLS)
         peers = WebRTCPeerFactory.shared
         socket = SessionSocket(
             baseURL: api.baseURL,
@@ -73,10 +80,12 @@ final class TransferHub: ObservableObject {
 
     func receiver(_ id: String) -> ReceiverController {
         if let r = receivers[id] { return r }
-        let c = ReceiverController(ReceiverDeps(
+        var deps = ReceiverDeps(
             sessionId: id, sessions: services, transfers: services, socket: socket, peers: peers, targets: targets, saved: saved,
             history: history, resolveFolder: { SaveFolders.resolve($0) }
-        ))
+        )
+        deps.routeStep = routeStep
+        let c = ReceiverController(deps)
         receivers[id] = c
         Task { await c.start() }
         let states = c.state.values()

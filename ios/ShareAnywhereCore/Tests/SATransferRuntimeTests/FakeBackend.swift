@@ -58,6 +58,8 @@ struct FakeError: Error {}
 /// records validated against the state machine, TRANSFER_UPDATED and PARTICIPANT_* events, and signaling relayed
 /// between the sender's and receivers' sockets with `from` set to the caller's participant id.
 final class FakeBackend: @unchecked Sendable {
+    /// Test hook: TURN credentials are refused with relay_cap_reached.
+    var relayCapped = false
     struct Member {
         var participant: Participant
         var device: String
@@ -294,7 +296,13 @@ struct FakeClient: SessionService, TransferService, WebSocketConnector {
     }
 
     func turn(sessionId _: String) async throws -> TurnCredentials {
-        TurnCredentials(username: "u", credential: "c", uris: [], ttl: 1800, expiresAt: "")
+        if backend.relayCapped {
+            throw APIError(status: 403, code: "relay_cap_reached", message: "", retryAfterSeconds: nil, body: nil)
+        }
+        return TurnCredentials(
+            username: "u", credential: "c", uris: ["turn:t:3478?transport=udp", "turns:t:5349?transport=tcp"], ttl: 1800,
+            expiresAt: "2099-01-01T00:00:00Z"
+        )
     }
 
     func connect(_: URL) -> any WebSocketConnection {

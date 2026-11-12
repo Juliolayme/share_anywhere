@@ -51,6 +51,7 @@ private final class SenderPeer: @unchecked Sendable {
     var ready = false
     var served = false
     var state: PeerState = .new
+    var routeTask: Task<Void, Never>?
 
     init(link: any PeerLink, connId: String) {
         self.link = link
@@ -194,7 +195,8 @@ public actor SenderController {
                     delivered: !mine.isEmpty && mine.allSatisfy { $0.status == "COMPLETED" }, status: status,
                     perFile: merged, verified: merged.reduce(0, +), total: total,
                     route: prev?.route ?? mine.first { $0.route != nil }?.route,
-                    bytesPerSecond: prev?.bytesPerSecond ?? 0, eta: prev?.eta, error: prev?.error
+                    bytesPerSecond: prev?.bytesPerSecond ?? 0, eta: prev?.eta, error: prev?.error,
+                    routeKind: prev?.routeKind
                 )
             }
         update {
@@ -281,6 +283,7 @@ public actor SenderController {
     private func drop(_ pid: String) {
         guard let p = peers.removeValue(forKey: pid) else { return }
         if let conn = p.conn { Task { await conn.close() } }
+        p.routeTask?.cancel()
         p.channel?.close()
         p.link.close()
     }
@@ -470,9 +473,24 @@ public actor SenderController {
         options.unavailable = !s.hasFiles
         peer.conn = SenderConnection(options)
         let link = peer.link
-        Task { [weak self] in
-            guard let route = await link.selectedRoute() else { return }
-            await self?.patch(pid) { $0.route = route }
+        // The receiver's route badge: the selected pair, every 2 s while this connection lives (it can change after an
+        // ICE restart or a migration on the receiver's side).
+        peer.routeTask = Task { [weak self, queue, sleep = d.sleep] in
+            while !Task.isCancelled {
+                let c = await link.classify()
+                if Task.isCancelled { return }
+                if let kind = c.kind, let self { queue.run { await self.setRoute(pid, id, kind) } }
+                await sleep(2000)
+            }
+        }
+    }
+
+    private func setRoute(_ pid: String, _ id: ObjectIdentifier?, _ kind: RouteKind) {
+        guard let peer = peers[pid], ObjectIdentifier(peer) == id, peer.conn != nil else { return }
+        guard s.receivers.first(where: { $0.participantId == pid })?.routeKind != kind else { return }
+        patch(pid) {
+            $0.route = kind.serverRoute
+            $0.routeKind = kind
         }
     }
 
@@ -546,8 +564,14 @@ public actor SenderController {
             p.conn = nil
             Task { await conn.close() }
         }
+        peers[pid]?.routeTask?.cancel()
         let r = s.receivers.first { $0.participantId == pid }
-        if r?.route != nil { patch(pid) { $0.route = nil } }
+        if r?.route != nil || r?.routeKind != nil {
+            patch(pid) {
+                $0.route = nil
+                $0.routeKind = nil
+            }
+        }
         guard let r, r.status.isActive else { return }
         patch(pid) {
             $0.status = .reconnecting

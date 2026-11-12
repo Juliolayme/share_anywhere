@@ -15,18 +15,20 @@ public struct ICEServer: Sendable, Equatable {
         self.credential = credential
     }
 
-    /// ICE servers for a session, as the Web's rtcConfig and Android's `Rtc.iceServers`: the TURN credentials plus a
-    /// `stun:` URI on the same host and port. Without credentials, direct candidates may still connect.
-    public static func from(_ c: TurnCredentials?) -> [ICEServer] {
+    /// ICE servers for a session on a policy step, as the Web's rtcSetup and Android's `Rtc.iceServers`: the TURN
+    /// credentials (the step's transports, `urisForStep`) plus, on `all`, a `stun:` URI on the same host and port.
+    /// Without credentials, direct candidates may still connect.
+    public static func from(_ c: TurnCredentials?, step: PolicyStep = .all) -> [ICEServer] {
         guard let c, !c.uris.isEmpty else { return [] }
+        let uris = urisForStep(c.uris, step)
         var stun: [String] = []
         for uri in c.uris where uri.hasPrefix("turn:") {
             let s = "stun:" + uri.dropFirst("turn:".count).split(separator: "?", maxSplits: 1)[0]
             if !stun.contains(s) { stun.append(s) }
         }
         var out: [ICEServer] = []
-        if !stun.isEmpty { out.append(ICEServer(urls: stun)) }
-        out.append(ICEServer(urls: c.uris, username: c.username, credential: c.credential))
+        if !stun.isEmpty, step == .all { out.append(ICEServer(urls: stun)) }
+        out.append(ICEServer(urls: uris, username: c.username, credential: c.credential))
         return out
     }
 }
@@ -66,13 +68,25 @@ public protocol PeerLink: AnyObject, Sendable {
     func answer() async throws -> SDPJSON
     func setRemote(_ sdp: SDPJSON) async throws
     func add(_ candidate: CandidateJSON) async
-    /// The selected candidate pair's route: relay when either end is a TURN relay candidate (docs/TRANSFER_PROTOCOL.md §7).
-    func selectedRoute() async -> String?
+    /// The connection's stats, reduced to the fields the route classifier reads (empty when unavailable).
+    func stats() async -> [StatsEntry]
     func close()
 }
 
+public extension PeerLink {
+    /// The selected candidate pair's route kind and round-trip time (docs/ARCHITECTURE.md §6).
+    func classify() async -> Classified { await classifyRoute(stats()) }
+}
+
 public protocol PeerFactory: Sendable {
-    func make(iceServers: [ICEServer], callbacks: PeerCallbacks) async throws -> any PeerLink
+    /// A peer connection over `iceServers`; `relayOnly` gathers TURN relay candidates only (any policy step but `all`).
+    func make(iceServers: [ICEServer], relayOnly: Bool, callbacks: PeerCallbacks) async throws -> any PeerLink
+}
+
+public extension PeerFactory {
+    func make(iceServers: [ICEServer], callbacks: PeerCallbacks) async throws -> any PeerLink {
+        try await make(iceServers: iceServers, relayOnly: false, callbacks: callbacks)
+    }
 }
 
 /// A value that several tasks read and one owner writes, with a stream of changes for the UI.

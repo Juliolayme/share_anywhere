@@ -16,6 +16,8 @@ final class MemDataChannel: DataChannelLink, @unchecked Sendable {
     private var outbox: AsyncStream<[UInt8]?>.Continuation?
     /// Test hook: delay each delivery (a slow link).
     let delayMs: UInt64
+    /// Test hook: while this returns true, messages are lost on the way (a path that stopped working).
+    var drop: (@Sendable () -> Bool)?
 
     init(label: String, delayMs: UInt64) {
         self.label = label
@@ -121,6 +123,7 @@ final class MemDataChannel: DataChannelLink, @unchecked Sendable {
                 }
                 self.lock.locked { self.buffered -= msg.count }
                 self.currentListener?.onBufferedAmountChange()
+                if self.drop?() == true { continue }
                 if peer.lock.locked({ peer.state == "open" || peer.state == "closing" }) { peer.deliver(msg) }
             }
         }
@@ -136,12 +139,20 @@ final class MemPeerFactory: PeerFactory, @unchecked Sendable {
     var delayMs: UInt64 = 0
     /// Test hook: the answering side learns about the channel this long after it opened (the HELLO race).
     var announceDelayMs: UInt64 = 0
+    private var _blockDirect = false
+    /// Test hook: messages over connections that are not relay-only are lost (the migration test).
+    var blockDirect: Bool {
+        get { lock.locked { _blockDirect } }
+        set { lock.locked { _blockDirect = newValue } }
+    }
 
-    func make(iceServers _: [ICEServer], callbacks: PeerCallbacks) async throws -> any PeerLink {
-        let p = MemPeer(factory: self, callbacks: callbacks)
+    func make(iceServers: [ICEServer], relayOnly: Bool, callbacks: PeerCallbacks) async throws -> any PeerLink {
+        let p = MemPeer(factory: self, callbacks: callbacks, iceServers: iceServers, relayOnly: relayOnly)
         lock.locked { made.append(p) }
         return p
     }
+
+    var all: [MemPeer] { lock.locked { made } }
 
     func register(_ id: String, _ p: MemPeer) { lock.locked { offers[id] = p } }
     func lookup(_ id: String) -> MemPeer? { lock.locked { offers[id] } }
@@ -165,10 +176,14 @@ final class MemPeer: PeerLink, @unchecked Sendable {
     private var remote: MemDataChannel?
     private var other: MemPeer?
     private let id = UUID().uuidString
+    let iceServers: [ICEServer]
+    let relayOnly: Bool
 
-    init(factory: MemPeerFactory, callbacks: PeerCallbacks) {
+    init(factory: MemPeerFactory, callbacks: PeerCallbacks, iceServers: [ICEServer] = [], relayOnly: Bool = false) {
         self.factory = factory
         self.callbacks = callbacks
+        self.iceServers = iceServers
+        self.relayOnly = relayOnly
     }
 
     var state: PeerState { lock.locked { _state } }
@@ -184,6 +199,10 @@ final class MemPeer: PeerLink, @unchecked Sendable {
 
     func createDataChannel(label: String) throws -> any DataChannelLink {
         let (a, b) = MemDataChannel.pair(label: label, delayMs: factory?.delayMs ?? 0)
+        let relayOnly = relayOnly
+        let drop: @Sendable () -> Bool = { [weak factory] in !relayOnly && factory?.blockDirect == true }
+        a.drop = drop
+        b.drop = drop
         lock.locked {
             local = a
             remote = b
@@ -235,7 +254,20 @@ final class MemPeer: PeerLink, @unchecked Sendable {
 
     func add(_: CandidateJSON) async {}
 
-    func selectedRoute() async -> String? { "direct" }
+    /// A host pair, or a UDP relay pair on a relay-only connection.
+    func stats() async -> [StatsEntry] {
+        [
+            StatsEntry(type: "transport", id: "T", selectedCandidatePairId: "P"),
+            StatsEntry(type: "candidate-pair", id: "P", localCandidateId: "L", remoteCandidateId: "R", currentRoundTripTime: 0.01),
+            StatsEntry(
+                type: "local-candidate",
+                id: "L",
+                candidateType: relayOnly ? "relay" : "host",
+                relayProtocol: relayOnly ? "udp" : nil
+            ),
+            StatsEntry(type: "remote-candidate", id: "R", candidateType: "host")
+        ]
+    }
 
     func close() {
         let (a, b) = lock.locked { (local, remote) }

@@ -161,6 +161,9 @@ struct ReceivingView: View {
                     // Blocks that arrived although already verified (must stay 0 across a pause and resume).
                     Text("\(m.rx.duplicates)").font(.system(size: 1)).opacity(0.02).frame(width: 1, height: 1)
                         .accessibilityIdentifier("test.rx-duplicates").accessibilityValue("\(m.rx.duplicates)")
+                    // The classified route of the current connection (direct, relay-udp, relay-tls, …), for forced relay.
+                    Text(m.rx.routeKind?.rawValue ?? "").font(.system(size: 1)).opacity(0.02).frame(width: 1, height: 1)
+                        .accessibilityIdentifier("test.rx-route-kind").accessibilityValue(m.rx.routeKind?.rawValue ?? "none")
                 }
             }
         }
@@ -283,6 +286,9 @@ struct ReceivingView: View {
             }
         }
         if rx.phase == .reconnecting { Banner(kind: .warning, title: L10n.t("product.rx_reconnecting")) }
+        if rx.relayCapped {
+            Banner(kind: .warning, title: L10n.t("product.relay_cap_reached")).accessibilityIdentifier("rx.relay-cap")
+        }
         if rx.phase == .unreachable {
             Banner(kind: .danger, title: L10n.t("product.tx_err_unreachable"), actionTitle: L10n.t("ios_yy.retry")) { m.retry() }
         }

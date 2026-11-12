@@ -19,6 +19,7 @@ import app.shareanywhere.transfer.OutgoingFileDao
 import app.shareanywhere.transfer.engine.BlockCache
 import app.shareanywhere.transfer.engine.ErrorCodes
 import app.shareanywhere.transfer.engine.FileHash
+import app.shareanywhere.transfer.engine.RouteKind
 import app.shareanywhere.transfer.engine.SenderConnection
 import app.shareanywhere.transfer.engine.SenderEvents
 import app.shareanywhere.transfer.engine.SenderFile
@@ -31,8 +32,8 @@ import app.shareanywhere.transfer.rtc.CandidatePayload
 import app.shareanywhere.transfer.rtc.DataChannelAdapter
 import app.shareanywhere.transfer.rtc.Rtc
 import app.shareanywhere.transfer.rtc.SdpPayload
+import app.shareanywhere.transfer.rtc.classify
 import app.shareanywhere.transfer.rtc.createAnswerAwait
-import app.shareanywhere.transfer.rtc.selectedRoute
 import app.shareanywhere.transfer.rtc.setLocalAwait
 import app.shareanywhere.transfer.rtc.setRemoteAwait
 import app.shareanywhere.transfer.rtc.toCandidate
@@ -104,7 +105,9 @@ data class TxReceiver(
     val route: String?,
     val bytesPerSecond: Double = 0.0,
     val eta: Long? = null,
-    val error: String? = null
+    val error: String? = null,
+    /** What this receiver's connection runs over in detail; null until known. */
+    val routeKind: RouteKind? = null
 )
 
 data class TxFile(val index: Int, val fileId: String, val name: String, val size: Long, val mime: String)
@@ -199,6 +202,9 @@ class SenderController(private val d: SenderDeps) {
         var conn: SenderConnection? = null
         var channel: DataChannelAdapter? = null
         var ready = false
+
+        /** Classifies the selected pair every 2 s while a channel is open (the receiver may migrate it). */
+        var routeJob: kotlinx.coroutines.Job? = null
     }
 
     private val peers = HashMap<String, Peer>()
@@ -345,6 +351,7 @@ class SenderController(private val d: SenderDeps) {
 
     private fun drop(pid: String) {
         val p = peers.remove(pid) ?: return
+        p.routeJob?.cancel()
         p.conn?.close()
         p.channel?.dispose()
         runCatching { p.pc.dispose() }
@@ -615,10 +622,17 @@ class SenderController(private val d: SenderDeps) {
                 )
             )
         peer.conn = conn
-        scope.launch {
-            val route = peer.pc.selectedRoute() ?: return@launch
-            patch(pid) { it.copy(route = route) }
-        }
+        peer.routeJob?.cancel()
+        peer.routeJob =
+            scope.launch {
+                while (isActive && peers[pid] === peer) {
+                    val kind = peer.pc.classify().kind
+                    if (kind != null && s.receivers.firstOrNull { it.participantId == pid }?.routeKind != kind) {
+                        patch(pid) { it.copy(route = kind.serverRoute, routeKind = kind) }
+                    }
+                    delay(2000)
+                }
+            }
     }
 
     private fun connError(pid: String, code: String, fatal: Boolean) {
@@ -647,11 +661,12 @@ class SenderController(private val d: SenderDeps) {
 
     private fun lostPeer(pid: String) {
         peers[pid]?.let { p ->
+            p.routeJob?.cancel()
             p.conn?.close()
             p.conn = null
         }
         val r = s.receivers.firstOrNull { it.participantId == pid }
-        if (r?.route != null) patch(pid) { it.copy(route = null) }
+        if (r?.route != null) patch(pid) { it.copy(route = null, routeKind = null) }
         if (r == null || !r.status.active()) return
         patch(pid) { it.copy(status = TxStatus.Reconnecting, eta = null) }
     }

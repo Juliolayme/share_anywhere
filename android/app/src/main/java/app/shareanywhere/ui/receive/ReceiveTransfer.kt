@@ -38,8 +38,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -208,6 +210,15 @@ private fun Progress(
         Box(Modifier.padding(horizontal = SaTokens.Space.S3, vertical = SaTokens.Space.S1)) {
             Column(verticalArrangement = Arrangement.spacedBy(SaTokens.Space.S1)) {
                 KeepOpenBanner(pill, onTurnKeepScreenOn)
+                if (rx.relayCapped) {
+                    // The server refused TURN credentials at this session's relay byte cap (docs/SECURITY_MODEL.md §5).
+                    Text(
+                        stringResource(R.string.product_relay_cap_reached),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = p.warningInk,
+                        modifier = Modifier.testTag("relay-cap-reached").semantics { liveRegion = LiveRegionMode.Polite }
+                    )
+                }
                 Text(
                     stringResource(R.string.product_hint_android_screen_off),
                     style = MaterialTheme.typography.bodySmall,
@@ -228,7 +239,7 @@ private fun Progress(
                         heading()
                     }
                 )
-                RouteChip(rx.route)
+                RouteChip(rx.route, kind = rx.routeKind)
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val frac = if (rx.total > 0) rx.verified.toFloat() / rx.total else 0f

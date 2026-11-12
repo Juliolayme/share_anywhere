@@ -216,7 +216,7 @@ private fun ReceiverCard(r: TxReceiver, locale: java.util.Locale, onPause: () ->
             )
             Column(Modifier.weight(1f)) {
                 Text(r.name, style = MaterialTheme.typography.titleSmall)
-                RouteChip(r.route)
+                RouteChip(r.route, kind = r.routeKind)
             }
             StatusChip(r.status.chip(), Modifier.testTag("dashboard.status"))
         }

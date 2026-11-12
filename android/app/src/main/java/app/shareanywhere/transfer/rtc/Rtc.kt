@@ -2,7 +2,12 @@ package app.shareanywhere.transfer.rtc
 
 import android.content.Context
 import app.shareanywhere.data.api.TransfersApi
+import app.shareanywhere.transfer.engine.Classified
+import app.shareanywhere.transfer.engine.PolicyStep
+import app.shareanywhere.transfer.engine.RouteClassifier
+import app.shareanywhere.transfer.engine.StatsEntry
 import app.shareanywhere.transfer.engine.TransferChannel
+import app.shareanywhere.transfer.engine.urisForStep
 import java.nio.ByteBuffer
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
@@ -60,29 +65,84 @@ object Rtc {
     }
 
     /**
-     * ICE servers for a session, as the Web's rtcConfig: the TURN credentials plus a `stun:` URI on the same host and
-     * port. Without credentials, direct candidates may still connect.
+     * ICE configuration for a session on a policy step (docs/ARCHITECTURE.md §6), as the Web's rtcSetup: the TURN
+     * credentials (only the step's URIs) plus a `stun:` URI on the same host and port on the first step; any step but
+     * ALL is relay-only. Without credentials, direct candidates may still connect; [RtcSetup.turnRefused] says why.
      */
-    suspend fun iceServers(api: TransfersApi, sessionId: String): List<PeerConnection.IceServer> = try {
-        val c = api.turn(sessionId)
-        val stun = c.uris.filter { it.startsWith("turn:") }.map { it.replaceFirst("turn:", "stun:").substringBefore('?') }.distinct()
-        buildList {
-            if (stun.isNotEmpty()) add(PeerConnection.IceServer.builder(stun).createIceServer())
-            if (c.uris.isNotEmpty()) {
-                add(
-                    PeerConnection.IceServer.builder(c.uris).setUsername(c.username).setPassword(c.credential).createIceServer()
-                )
-            }
+    suspend fun setup(api: TransfersApi, sessionId: String, step: PolicyStep = PolicyStep.ALL): RtcSetup {
+        val relayOnly = step != PolicyStep.ALL || RtcTestHooks.relayOnly
+        return try {
+            val c = api.turn(sessionId)
+            val uris = urisForStep(c.uris, step).map(RtcTestHooks::rewrite)
+            val stun =
+                c.uris
+                    .filter { it.startsWith("turn:") }
+                    .map { RtcTestHooks.rewrite(it).replaceFirst("turn:", "stun:").substringBefore('?') }
+                    .distinct()
+            val servers =
+                buildList {
+                    if (stun.isNotEmpty() && step == PolicyStep.ALL) add(PeerConnection.IceServer.builder(stun).createIceServer())
+                    if (uris.isNotEmpty()) {
+                        val b = PeerConnection.IceServer.builder(uris).setUsername(c.username).setPassword(c.credential)
+                        if (RtcTestHooks.insecureTls) b.setTlsCertPolicy(PeerConnection.TlsCertPolicy.TLS_CERT_POLICY_INSECURE_NO_CHECK)
+                        add(b.createIceServer())
+                    }
+                }
+            RtcSetup(servers, relayOnly, null, runCatching { java.time.Instant.parse(c.expiresAt).toEpochMilli() }.getOrNull())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            RtcSetup(emptyList(), relayOnly, (e as? app.shareanywhere.data.api.ApiException)?.code ?: "network", null)
         }
-    } catch (e: kotlinx.coroutines.CancellationException) {
-        throw e
-    } catch (_: Exception) {
-        emptyList()
     }
 
-    fun config(servers: List<PeerConnection.IceServer>) = PeerConnection.RTCConfiguration(servers).apply {
-        sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-        continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
+    /** The ICE servers alone (the sender answers on whatever route the receiver offers). */
+    suspend fun iceServers(api: TransfersApi, sessionId: String): List<PeerConnection.IceServer> = setup(api, sessionId).servers
+
+    fun config(servers: List<PeerConnection.IceServer>, relayOnly: Boolean = RtcTestHooks.relayOnly) =
+        PeerConnection.RTCConfiguration(servers).apply {
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
+            if (relayOnly) iceTransportsType = PeerConnection.IceTransportsType.RELAY
+        }
+}
+
+/** The result of [Rtc.setup]. */
+data class RtcSetup(
+    val servers: List<PeerConnection.IceServer>,
+    val relayOnly: Boolean,
+    /** The server refused TURN credentials (`relay_cap_reached`, `rate_limited`, …); null when issued. */
+    val turnRefused: String?,
+    /** When the TURN credential expires (ms since epoch), for renewal before a relayed connection loses it. */
+    val expiresAt: Long?
+)
+
+/**
+ * Debug builds only, set by instrumentation tests (docs/TESTING_AND_CI.md §5, ADR 0029): relay-only ICE, the policy
+ * step a receiver starts on, the CI coturn's self-signed TLS certificate accepted, and the CI TURN host (127.0.0.1)
+ * rewritten to the emulator's alias for the host (10.0.2.2). Release builds ignore every field.
+ */
+object RtcTestHooks {
+    @Volatile var relayOnly = false
+        get() = field && app.shareanywhere.BuildConfig.DEBUG
+
+    @Volatile var routeStep: PolicyStep? = null
+        get() = field?.takeIf { app.shareanywhere.BuildConfig.DEBUG }
+
+    @Volatile var insecureTls = false
+        get() = field && app.shareanywhere.BuildConfig.DEBUG
+
+    /** Host to put in place of 127.0.0.1 in TURN URIs (the emulator reaches the host's loopback as 10.0.2.2). */
+    @Volatile var turnHost: String? = null
+        get() = field?.takeIf { app.shareanywhere.BuildConfig.DEBUG }
+
+    fun rewrite(uri: String): String = turnHost?.let { uri.replace("127.0.0.1", it) } ?: uri
+
+    fun reset() {
+        relayOnly = false
+        routeStep = null
+        insecureTls = false
+        turnHost = null
     }
 }
 
@@ -118,24 +178,32 @@ private fun sdpObserver(
     override fun onSetFailure(error: String?) = onFail(error)
 }
 
-/** The route of the selected candidate pair: relay when either end is a TURN relay candidate (docs/TRANSFER_PROTOCOL.md §7). */
-suspend fun PeerConnection.selectedRoute(): String? = suspendCancellableCoroutine { c ->
+/** Classifies the selected candidate pair (docs/ARCHITECTURE.md §6): null fields until one is selected. */
+suspend fun PeerConnection.classify(): Classified = suspendCancellableCoroutine { c ->
     getStats { report ->
-        val stats = report.statsMap
-        val pairId = stats.values.firstOrNull { it.type == "transport" }?.members?.get("selectedCandidatePairId") as String?
-        val pair =
-            stats.values.firstOrNull {
-                it.type == "candidate-pair" &&
-                    (it.id == pairId || (pairId == null && it.members["nominated"] == true && it.members["state"] == "succeeded"))
+        val entries =
+            report.statsMap.values.map { st ->
+                val m = st.members
+                StatsEntry(
+                    type = st.type,
+                    id = st.id,
+                    selectedCandidatePairId = m["selectedCandidatePairId"] as String?,
+                    localCandidateId = m["localCandidateId"] as String?,
+                    remoteCandidateId = m["remoteCandidateId"] as String?,
+                    currentRoundTripTime = (m["currentRoundTripTime"] as Number?)?.toDouble(),
+                    selected = m["selected"] as Boolean?,
+                    nominated = m["nominated"] as Boolean?,
+                    state = m["state"] as String?,
+                    candidateType = m["candidateType"] as String?,
+                    relayProtocol = m["relayProtocol"] as String?
+                )
             }
-        val route =
-            pair?.let { p ->
-                fun type(id: Any?) = stats[id as String?]?.members?.get("candidateType")
-                if (type(p.members["localCandidateId"]) == "relay" || type(p.members["remoteCandidateId"]) == "relay") "relay" else "direct"
-            }
-        c.resume(route)
+        c.resume(RouteClassifier.classify(entries))
     }
 }
+
+/** The server route of the selected candidate pair (`direct` or `relay`), or null before one is selected. */
+suspend fun PeerConnection.selectedRoute(): String? = classify().kind?.serverRoute
 
 /**
  * Wraps an `sa-transfer/1` DataChannel as the engine's [TransferChannel]. libwebrtc calls its observer on the signaling

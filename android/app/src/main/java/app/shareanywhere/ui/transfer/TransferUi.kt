@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
@@ -90,9 +91,9 @@ fun StatusChip(chip: Chip, modifier: Modifier = Modifier) {
     StatusPill(chip.icon, stringResource(chip.label), bg, fg, modifier)
 }
 
-/** Route chip (design ROUTE): Direct P2P or Relay. */
+/** Route chip (design ROUTE): Direct P2P or Relay; the test tag carries the detailed route kind (route-relay-udp, …). */
 @Composable
-fun RouteChip(route: String?, modifier: Modifier = Modifier) {
+fun RouteChip(route: String?, modifier: Modifier = Modifier, kind: app.shareanywhere.transfer.engine.RouteKind? = null) {
     if (route == null) return
     val p = LocalSaPalette.current
     val relay = route == "relay"
@@ -101,7 +102,7 @@ fun RouteChip(route: String?, modifier: Modifier = Modifier) {
         stringResource(if (relay) R.string.product_route_relay else R.string.product_route_direct),
         if (relay) p.sendSoft else p.receiveSoft,
         if (relay) p.sendInk else p.receiveInk,
-        modifier
+        modifier.testTag("route-${kind?.wire ?: route}")
     )
 }
 

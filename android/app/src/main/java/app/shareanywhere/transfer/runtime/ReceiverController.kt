@@ -18,14 +18,19 @@ import app.shareanywhere.transfer.IncomingDao
 import app.shareanywhere.transfer.IncomingProgress
 import app.shareanywhere.transfer.SaveTarget
 import app.shareanywhere.transfer.engine.Bitmap
+import app.shareanywhere.transfer.engine.Decision
 import app.shareanywhere.transfer.engine.ErrorCodes
 import app.shareanywhere.transfer.engine.FileMetaEntry
 import app.shareanywhere.transfer.engine.HelloReceiver
+import app.shareanywhere.transfer.engine.PolicyStep
 import app.shareanywhere.transfer.engine.PreparedFile
 import app.shareanywhere.transfer.engine.ProtocolException
 import app.shareanywhere.transfer.engine.ReceiverConnection
 import app.shareanywhere.transfer.engine.ReceiverEvents
 import app.shareanywhere.transfer.engine.ReceiverOptions
+import app.shareanywhere.transfer.engine.RouteKind
+import app.shareanywhere.transfer.engine.RouteMonitor
+import app.shareanywhere.transfer.engine.TransferChannel
 import app.shareanywhere.transfer.engine.Wire
 import app.shareanywhere.transfer.engine.hex
 import app.shareanywhere.transfer.engine.sha256
@@ -33,9 +38,10 @@ import app.shareanywhere.transfer.rtc.CHANNEL_LABEL
 import app.shareanywhere.transfer.rtc.CandidatePayload
 import app.shareanywhere.transfer.rtc.DataChannelAdapter
 import app.shareanywhere.transfer.rtc.Rtc
+import app.shareanywhere.transfer.rtc.RtcTestHooks
 import app.shareanywhere.transfer.rtc.SdpPayload
+import app.shareanywhere.transfer.rtc.classify
 import app.shareanywhere.transfer.rtc.createOfferAwait
-import app.shareanywhere.transfer.rtc.selectedRoute
 import app.shareanywhere.transfer.rtc.setLocalAwait
 import app.shareanywhere.transfer.rtc.setRemoteAwait
 import app.shareanywhere.transfer.rtc.toCandidate
@@ -113,6 +119,10 @@ data class RxState(
     val total: Long = 0,
     val verified: Long = 0,
     val route: String? = null,
+    /** What the connection runs over in detail (direct, relay over UDP, TCP or TLS); null until known. */
+    val routeKind: RouteKind? = null,
+    /** The server refused TURN credentials because this session reached its relay byte cap. */
+    val relayCapped: Boolean = false,
     val bytesPerSecond: Double = 0.0,
     val eta: Long? = null,
     /** Catalog error key when failed (product.tx_err_*). */
@@ -163,6 +173,19 @@ class ReceiverController(private val d: ReceiverDeps) {
     private var retryJob: Job? = null
     private var openJob: Job? = null
     private var samplerJob: Job? = null
+
+    /** Route strategy: which ICE policy step to dial on, and when to move one step stricter (ARCHITECTURE §6). */
+    private val routeMonitor = RouteMonitor(RtcTestHooks.routeStep ?: PolicyStep.ALL)
+    private var routeJob: Job? = null
+
+    /** When the current TURN credential expires; a relayed connection is renewed before then. */
+    private var credExpiresAt: Long? = null
+
+    /** Debug builds only (instrumentation tests): drop frames over a direct connection, as if that path stopped working. */
+    @Volatile var testBlockDirect = false
+        set(v) {
+            field = v && app.shareanywhere.BuildConfig.DEBUG
+        }
     private var socketJob: Job? = null
     private val sinks = HashMap<Int, SafSink>()
     private val throughput = Throughput()
@@ -348,8 +371,11 @@ class ReceiverController(private val d: ReceiverDeps) {
     private suspend fun dial() {
         val id = UUID.randomUUID().toString()
         connId = id
-        val servers = Rtc.iceServers(d.transfers, d.sessionId)
+        val setup = Rtc.setup(d.transfers, d.sessionId, routeMonitor.step)
         if (connId != id || stopped) return
+        credExpiresAt = setup.expiresAt
+        val capped = setup.turnRefused == "relay_cap_reached"
+        if (capped != s.relayCapped) update { it.copy(relayCapped = capped) }
         val factory = withContext(Dispatchers.Main) { Rtc.factory(d.context) }
         lateinit var peer: PeerConnection
         val observer =
@@ -377,7 +403,7 @@ class ReceiverController(private val d: ReceiverDeps) {
                     }
                 }
             }
-        peer = factory.createPeerConnection(Rtc.config(servers), observer) ?: return lost()
+        peer = factory.createPeerConnection(Rtc.config(setup.servers, setup.relayOnly), observer) ?: return lost()
         pc = peer
         val dc = peer.createDataChannel(CHANNEL_LABEL, DataChannel.Init().apply { ordered = true })
         lateinit var adapter: DataChannelAdapter
@@ -420,7 +446,7 @@ class ReceiverController(private val d: ReceiverDeps) {
         val c =
             ReceiverConnection(
                 ReceiverOptions(
-                    channel = ch,
+                    channel = GatedChannel(ch) { testBlockDirect && s.routeKind == RouteKind.DIRECT },
                     scope = scope,
                     hello = HelloReceiver(sessionId = d.sessionId, participantId = participantId, capability = capability),
                     prepare = { prepare(it) },
@@ -464,11 +490,47 @@ class ReceiverController(private val d: ReceiverDeps) {
                     sample()
                 }
             }
-        scope.launch {
-            val route = peer.selectedRoute() ?: return@launch
-            reporter.route = route
-            update { it.copy(route = route) }
+        routeMonitor.rebase(s.verified, d.clock())
+        update { it.copy(routeKind = null) }
+        routeJob =
+            scope.launch {
+                while (isActive && pc === peer) {
+                    routeTick(peer, ch)
+                    delay(2000)
+                }
+            }
+    }
+
+    /**
+     * Every 2 s on an open channel: classify the selected pair (badge and report), feed the route monitor, and migrate
+     * one policy step stricter on a sustained stall; a relayed connection is renewed before its TURN credential
+     * expires (a new connection on the same step fetches a fresh one). As the Web's routeTick.
+     */
+    private suspend fun routeTick(peer: PeerConnection, ch: DataChannelAdapter) {
+        val c = peer.classify()
+        if (pc !== peer) return
+        val now = d.clock()
+        val kind = c.kind
+        if (kind != null && kind != s.routeKind) {
+            reporter.route = kind.serverRoute
+            update { it.copy(route = kind.serverRoute, routeKind = kind) }
         }
+        if (s.phase == RxPhase.Paused) return routeMonitor.rebase(s.verified, now)
+        // Migration tears this connection down, which cancels the route loop running this tick: run it on its own.
+        if (routeMonitor.sample(ch.isOpen, s.verified, c.rttMs, now) == Decision.MIGRATE) {
+            scope.launch { migrate() }
+            return
+        }
+        val expires = credExpiresAt
+        if (kind != null && kind != RouteKind.DIRECT && expires != null && now > expires - 120_000) scope.launch { migrate(renew = true) }
+    }
+
+    /** Moves to a new connection: one policy step stricter, or ([renew]) the same step with a fresh credential. */
+    private suspend fun migrate(renew: Boolean = false) {
+        if (stopped || s.phase.final()) return
+        android.util.Log.i("SA-TRANSFER", if (renew) "route renew" else "route migrate to ${routeMonitor.step.wire}")
+        for (f in open()) scope.launch { reporter.state(f.transferId, "DISCONNECTED", f.verified) }
+        connect()
     }
 
     private suspend fun prepare(e: FileMetaEntry): PreparedFile {
@@ -575,14 +637,17 @@ class ReceiverController(private val d: ReceiverDeps) {
         if (stopped || s.phase.final() || retryJob?.isActive == true) return
         val paused = s.phase == RxPhase.Paused
         teardown()
-        update { it.copy(route = null) }
+        update { it.copy(route = null, routeKind = null) }
         for (f in open()) scope.launch { reporter.state(f.transferId, if (paused) "PAUSED" else "DISCONNECTED", f.verified) }
         if (paused) return
         val window = if (everOpened) 10 * 60_000L else 2 * 60_000L
         val since = downSince
         if (since != null && d.clock() - since > window) return update { it.copy(phase = RxPhase.Unreachable, eta = null) }
         update { it.copy(phase = RxPhase.Reconnecting) }
-        val wait = redialDelay(attempt++, d.random)
+        // Repeated losses on one policy step move the next dial one step stricter, at once.
+        val escalate = routeMonitor.lost(d.clock()) == Decision.MIGRATE
+        if (escalate) android.util.Log.i("SA-TRANSFER", "route migrate to ${routeMonitor.step.wire} after losses")
+        val wait = if (escalate) 0L else redialDelay(attempt++, d.random)
         retryJob =
             scope.launch {
                 delay(wait)
@@ -594,8 +659,10 @@ class ReceiverController(private val d: ReceiverDeps) {
     private fun teardown() {
         openJob?.cancel()
         samplerJob?.cancel()
+        routeJob?.cancel()
         openJob = null
         samplerJob = null
+        routeJob = null
         conn?.let { c -> update { it.copy(duplicates = it.duplicates + c.counters.duplicates) } }
         conn = null
         val ch = channel
@@ -746,4 +813,19 @@ class ReceiverController(private val d: ReceiverDeps) {
 class TransfersReportSink(private val api: TransfersApi) : ReportSink {
     override suspend fun report(transferId: String, status: String, verifiedBytes: Long, route: String?): String =
         api.report(transferId, status, verifiedBytes, route).status
+}
+
+/** Passes everything through, but drops incoming messages while [drop] says so (the testBlockDirect hook). */
+private class GatedChannel(private val inner: TransferChannel, private val drop: () -> Boolean) : TransferChannel by inner {
+    override fun setListener(listener: TransferChannel.Listener?) {
+        inner.setListener(
+            listener?.let { l ->
+                object : TransferChannel.Listener by l {
+                    override fun onMessage(data: ByteArray) {
+                        if (!drop()) l.onMessage(data)
+                    }
+                }
+            }
+        )
+    }
 }

@@ -7,7 +7,6 @@ struct HistoryView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var p
     @State private var filter = HistoryFilter()
-    @State private var selected: HistoryEntry?
     @State private var confirmClear = false
 
     var body: some View {
@@ -43,8 +42,7 @@ struct HistoryView: View {
                         .t("product.history_results", ["n": "\(shown.count)"])
                 )) {
                     ForEach(shown) { e in
-                        Button { selected = e } label: { HistoryRow(entry: e) }
-                            .buttonStyle(.plain)
+                        NavigationLink(value: e) { HistoryRow(entry: e) }
                             .accessibilityIdentifier("history.row.\(e.id)")
                             .swipeActions {
                                 Button(role: .destructive) { Task { await model.deleteHistory(e.id) } } label: { Text(L10n.t("ios_yy.del"))
@@ -94,7 +92,7 @@ struct HistoryView: View {
         } message: {
             Text(L10n.t("ios_yy.hc_p"))
         }
-        .sheet(item: $selected) { e in HistoryDetailView(entry: e).themed() }
+        .navigationDestination(for: HistoryEntry.self) { e in HistoryDetailView(entry: e) }
         .screenID("history")
     }
 
@@ -171,47 +169,44 @@ struct HistoryDetailView: View {
     @Environment(\.palette) private var p
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    row(L10n.t("ios_xx.h_status"), statusLabel(entry.status))
-                    row(L10n.t("ios_xx.h_peer"), entry.peerNames.joined(separator: ", "))
+        List {
+            Section {
+                row(L10n.t("ios_xx.h_status"), statusLabel(entry.status))
+                row(L10n.t("ios_xx.h_peer"), entry.peerNames.joined(separator: ", "))
+                row(
+                    L10n.t("ios_xx.h_when"),
+                    Date(timeIntervalSince1970: TimeInterval(entry.createdAt) / 1000).formatted(date: .abbreviated, time: .shortened)
+                )
+                if let moved = entry.transferred, moved != entry.totalBytes {
                     row(
-                        L10n.t("ios_xx.h_when"),
-                        Date(timeIntervalSince1970: TimeInterval(entry.createdAt) / 1000).formatted(date: .abbreviated, time: .shortened)
+                        L10n.t("ios_xx.h_size"),
+                        L10n.t("product.history_partial_bytes", ["done": formatBytes(moved), "total": formatBytes(entry.totalBytes)])
                     )
-                    if let moved = entry.transferred, moved != entry.totalBytes {
-                        row(
-                            L10n.t("ios_xx.h_size"),
-                            L10n.t("product.history_partial_bytes", ["done": formatBytes(moved), "total": formatBytes(entry.totalBytes)])
-                        )
-                    } else {
-                        row(L10n.t("ios_xx.h_size"), formatBytes(entry.totalBytes))
-                    }
-                    row(L10n.t("ios_xx.h_int"), entry.status == .completed ? L10n.t("ios_xx.h_ok") : L10n.t("ios_xx.h_bad"))
+                } else {
+                    row(L10n.t("ios_xx.h_size"), formatBytes(entry.totalBytes))
                 }
-                if let files = entry.files, !files.isEmpty {
-                    Section {
-                        ForEach(Array(files.enumerated()), id: \.offset) { _, f in row(f.name, formatBytes(f.size)) }
-                    }
+                row(L10n.t("ios_xx.h_int"), entry.status == .completed ? L10n.t("ios_xx.h_ok") : L10n.t("ios_xx.h_bad"))
+            }
+            if let files = entry.files, !files.isEmpty {
+                Section {
+                    ForEach(Array(files.enumerated()), id: \.offset) { _, f in row(f.name, formatBytes(f.size)) }
                 }
             }
-            // Always on screen (a List does not render rows below the fold, and the action must stay reachable).
-            .safeAreaInset(edge: .bottom) {
-                PrimaryButton(title: L10n.t("ios_xx.h_del"), tone: .danger) {
-                    Task {
-                        await model.deleteHistory(entry.id)
-                        dismiss()
-                    }
-                }
-                .padding(SATokens.Space.s4)
-                .background(p.bg)
-                .accessibilityIdentifier("history-detail.delete")
-            }
-            .navigationTitle(L10n.t("ios_xx.h_detail"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.t("ios_yy.close")) { dismiss() } } }
         }
+        // Always on screen (a List does not render rows below the fold, and the action must stay reachable).
+        .safeAreaInset(edge: .bottom) {
+            PrimaryButton(title: L10n.t("ios_xx.h_del"), tone: .danger) {
+                Task {
+                    await model.deleteHistory(entry.id)
+                    dismiss()
+                }
+            }
+            .padding(SATokens.Space.s4)
+            .background(p.bg)
+            .accessibilityIdentifier("history-detail.delete")
+        }
+        .navigationTitle(L10n.t("ios_xx.h_detail"))
+        .navigationBarTitleDisplayMode(.inline)
         .screenID("history-detail")
     }
 

@@ -27,7 +27,7 @@ final class HistorySettingsUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "history-detail").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["holiday-photos.zip"].exists)
         shot(app, "history-detail")
-        app.buttons["Close"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap() // back to the list
 
         // Relaunch without reset or seeding: the entries are still there.
         app.terminate()

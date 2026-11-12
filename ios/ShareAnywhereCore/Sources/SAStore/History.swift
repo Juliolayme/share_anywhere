@@ -8,7 +8,7 @@ public enum HistoryStatus: String, Codable, Sendable { case completed, partial, 
 public enum HistoryRoute: String, Codable, Sendable { case direct, relay, mixed }
 
 /// One file of an entry.
-public struct HistoryFile: Codable, Sendable, Equatable {
+public struct HistoryFile: Codable, Sendable, Hashable {
     public var name: String
     public var size: Int64
     /// Bytes that arrived or were verified when the transfer ended short of `size`.
@@ -23,7 +23,7 @@ public struct HistoryFile: Codable, Sendable, Equatable {
 
 /// One local History entry (PRD §2 History, docs/UX_SCREEN_MAP.md HI-1). Fields mirror the Web and Android entries so
 /// cloud history sync carries the same JSON between clients. Guest history never leaves the device.
-public struct HistoryEntry: Codable, Sendable, Equatable, Identifiable {
+public struct HistoryEntry: Codable, Sendable, Hashable, Identifiable {
     public var id: String
     public var direction: Direction
     /// Main file name, or a summary such as "3 files".

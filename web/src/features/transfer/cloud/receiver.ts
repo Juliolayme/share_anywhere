@@ -46,12 +46,18 @@ export class CloudReceive {
   /** Loads the session's objects (Cloud may be off on this server: then nothing is ever ready). */
   async start(): Promise<void> {
     this.unsub = this.d.socket.subscribe((e) => this.onSocket(e));
+    await this.refresh();
+  }
+
+  /** Loads the session's objects and asks for missing keys (at start and after every socket (re)connect). */
+  private async refresh(): Promise<void> {
     try {
       for (const o of await this.d.api.list(this.d.sessionId)) this.objects.set(o.file_id, o);
     } catch {
       /* cloud_unavailable, or a transient error: CLOUD_UPDATED still arrives */
     }
     this.askForKeys();
+    this.d.onChange();
   }
 
   dispose(): void {
@@ -69,6 +75,12 @@ export class CloudReceive {
   }
 
   private onSocket(e: SocketEvent): void {
+    if (e.type === 'SOCKET_OPEN') {
+      // A request sent while the socket was down was dropped: ask again now, without waiting out the 10 s.
+      this.lastAsk = -Infinity;
+      void this.refresh();
+      return;
+    }
     if (e.session_id !== this.d.sessionId) return;
     if (e.type === 'CLOUD_UPDATED') {
       const o = e.object as CloudObject | undefined;
@@ -100,12 +112,14 @@ export class CloudReceive {
     this.lastAsk = this.now();
     void (async () => {
       this.eph ??= await generateX25519();
-      this.d.socket.send({
+      const sent = this.d.socket.send({
         type: 'CLOUD_KEY_REQUEST',
         session_id: this.d.sessionId,
         to: this.d.senderPid,
         payload: { public_key: b64uEncode(this.eph.publicKey) },
       });
+      // Only a request that went out starts the 10 s wait; SOCKET_OPEN retries one that could not be sent.
+      if (!sent) this.lastAsk = -Infinity;
     })();
   }
 

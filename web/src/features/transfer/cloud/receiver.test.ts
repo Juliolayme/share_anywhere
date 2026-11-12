@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../../lib/api/errors';
 import { fromHex } from '../../../lib/crypto/encoding';
-import type { SessionSocket } from '../../../lib/ws/socket';
+import type { SessionSocket, SocketEvent } from '../../../lib/ws/socket';
 import { StreamHasher } from '../engine/hash';
 import { memorySink } from '../storage/memory';
 import type { CloudApi, CloudObject } from './api';
@@ -120,5 +120,48 @@ describe('CloudReceive resume (docs/TRANSFER_PROTOCOL.md §9)', () => {
       () => false,
     );
     expect(await bytesOf(fresh)).toEqual(plain);
+  });
+
+  it('a key request dropped while the socket was down is sent again on SOCKET_OPEN, without the 10 s wait', async () => {
+    const object = {
+      id: 'obj-2',
+      session_id: 's-1',
+      file_id: 'file-2',
+      status: 'READY',
+      paused: false,
+      size: 10,
+      part_size: PART,
+      part_count: 1,
+    } as unknown as CloudObject;
+    let listener: ((e: SocketEvent) => void) | null = null;
+    let connected = false;
+    const sent: Array<Record<string, unknown>> = [];
+    const socket = {
+      subscribe: (l: (e: SocketEvent) => void) => {
+        listener = l;
+        return () => undefined;
+      },
+      send: (m: Record<string, unknown>) => {
+        if (!connected) return false;
+        sent.push(m);
+        return true;
+      },
+    } as unknown as SessionSocket;
+    const api = { list: async () => [object] } as unknown as CloudApi;
+    const c = new CloudReceive({
+      sessionId: 's-1',
+      participantId: 'p-r',
+      senderPid: 'p-s',
+      api,
+      socket,
+      onChange: () => {},
+    });
+    await c.start();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sent).toEqual([]);
+    connected = true;
+    (listener as ((e: SocketEvent) => void) | null)?.({ type: 'SOCKET_OPEN' } as SocketEvent);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sent.map((m) => [m.type, m.to])).toEqual([['CLOUD_KEY_REQUEST', 'p-s']]);
   });
 });

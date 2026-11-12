@@ -276,6 +276,11 @@ class CloudUploader(
         runCatching { json.decodeFromJsonElement(serializer, e) }.getOrNull()
 
     private suspend fun onSocket(e: SocketEvent) {
+        if (e.type == SocketEvent.OPEN) {
+            // A request sent while the socket was down was dropped: ask again now, without waiting out the 10 s.
+            lastAsk = Long.MIN_VALUE / 2
+            return refresh()
+        }
         if (e.sessionId != sessionId) return
         when (e.type) {
             "CLOUD_UPDATED" -> {
@@ -330,11 +335,15 @@ class CloudReceive(
 
     fun start() {
         socketJob = scope.launch { socket.subscribe().collect { onSocket(it) } }
-        scope.launch {
-            val list = runCatching { api.list(sessionId) }.getOrNull()
-            if (list != null) lock.withLock { list.forEach { objects[it.fileId] = it } }
-            askForKeys()
-        }
+        scope.launch { refresh() }
+    }
+
+    /** Loads the session's objects and asks for missing keys (at start and after every socket (re)connect). */
+    private suspend fun refresh() {
+        val list = runCatching { api.list(sessionId) }.getOrNull()
+        if (list != null) lock.withLock { list.forEach { objects[it.fileId] = it } }
+        askForKeys()
+        onChange()
     }
 
     fun dispose() {
@@ -351,6 +360,11 @@ class CloudReceive(
         runCatching { json.decodeFromJsonElement(serializer, e) }.getOrNull()
 
     private suspend fun onSocket(e: SocketEvent) {
+        if (e.type == SocketEvent.OPEN) {
+            // A request sent while the socket was down was dropped: ask again now, without waiting out the 10 s.
+            lastAsk = Long.MIN_VALUE / 2
+            return refresh()
+        }
         if (e.sessionId != sessionId) return
         when (e.type) {
             "CLOUD_UPDATED" -> {
@@ -374,11 +388,11 @@ class CloudReceive(
     suspend fun askForKeys() {
         val missing = lock.withLock { objects.values.any { it.status == "READY" && !keys.containsKey(it.id) } }
         if (!missing || clock() - lastAsk < 10_000) return
-        lastAsk = clock()
         val priv = eph ?: Primitives.random(32).also { eph = it }
         val request = CloudKeyRequest(B64u.encode(Primitives.x25519PublicKey(priv)))
         val payload = json.encodeToJsonElement(CloudKeyRequest.serializer(), request)
-        socket.send(signal("CLOUD_KEY_REQUEST", sessionId, senderPid, payload.jsonObject))
+        // Only a request that went out starts the 10 s wait; SOCKET_OPEN retries one that could not be sent.
+        if (socket.send(signal("CLOUD_KEY_REQUEST", sessionId, senderPid, payload.jsonObject))) lastAsk = clock()
     }
 
     /**

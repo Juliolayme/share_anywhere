@@ -236,12 +236,18 @@ public actor CloudReceive {
                 await self?.onSocket(e)
             }
         }
+        await refresh()
+    }
+
+    /// Loads the session's objects and asks for missing keys (at start and after every socket (re)connect).
+    private func refresh() async {
         if let list = try? await api.cloudObjects(sessionId: sessionId) {
             for o in list {
                 objects[o.fileId] = o
             }
         }
         askForKeys()
+        onChange()
     }
 
     public func dispose() { eventsTask?.cancel() }
@@ -253,6 +259,12 @@ public actor CloudReceive {
     }
 
     private func onSocket(_ e: SocketEvent) {
+        if e.type == "SOCKET_OPEN" {
+            // A request sent while the socket was down was dropped: ask again now, without waiting out the 10 s.
+            lastAsk = .min / 2
+            Task { await self.refresh() }
+            return
+        }
         guard e.sessionId == sessionId else { return }
         if e.type == "CLOUD_UPDATED", let o = e.decode("object", as: CloudObject.self) {
             if o.status == "DELETED" { objects[o.fileId] = nil } else { objects[o.fileId] = o }
@@ -270,14 +282,14 @@ public actor CloudReceive {
     public func askForKeys() {
         let missing = objects.values.contains { $0.status == "READY" && keys[$0.id] == nil }
         guard missing, clock() - lastAsk >= 10000 else { return }
-        lastAsk = clock()
         let k = eph ?? Curve25519.KeyAgreement.PrivateKey()
         eph = k
+        // Only a request that went out starts the 10 s wait; SOCKET_OPEN retries one that could not be sent.
         if let m = signalMessage(
             type: "CLOUD_KEY_REQUEST", sessionId: sessionId, to: senderPid,
             payload: CloudKeyRequestPayload(publicKey: b64uEncode([UInt8](k.publicKey.rawRepresentation)))
-        ) {
-            _ = socket.send(m)
+        ), socket.send(m) {
+            lastAsk = clock()
         }
     }
 

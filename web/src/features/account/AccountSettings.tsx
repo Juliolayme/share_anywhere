@@ -1,9 +1,10 @@
-import { ChevronRight, Cloud, History, KeyRound, LogOut, MonitorSmartphone, ShieldCheck } from 'lucide-react';
+import { ChevronRight, History, KeyRound, LogOut, MonitorSmartphone, ShieldCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Banner, Button, ConfirmDialog, Segmented, Switch } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { useI18n } from '../../i18n/i18n';
+import { CloudSettingsCard } from '../transfer/cloud/CloudUI';
 import { ApiError } from '../../lib/api/errors';
 import { FormError, PasswordField } from '../../pages/account/AuthLayout';
 import { accountErrorText, useAccount } from './AccountContext';
@@ -220,14 +221,7 @@ export default function AccountSettings() {
         <span className="flex-1">{t('product.manage_devices')}</span>
         <ChevronRight aria-hidden size={18} className="text-fg-3" />
       </Link>
-      <div className={row}>
-        <Cloud aria-hidden size={18} className="flex-none text-fg-3" />
-        <span className="flex-1 text-fg-2">
-          {t('common.s_cloud')}
-          <span className="block text-caption">{t('product.cloud_later')}</span>
-        </span>
-        <Switch checked={false} onChange={() => undefined} label={t('common.s_cloud')} disabled />
-      </div>
+      <CloudSettingsCard rowClass={row} />
       {pw ? (
         <ChangePassword onClose={() => setPw(false)} />
       ) : (

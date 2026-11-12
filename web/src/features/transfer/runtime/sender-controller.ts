@@ -8,6 +8,8 @@ import type { ErrorCode } from '../engine/frame';
 import { sha256Hex } from '../engine/hash';
 import { BlockCache, defaultBlockCacheBytes } from '../engine/cache';
 import { FileHash, SenderConnection, fileSource, type SenderFile } from '../engine/sender';
+import type { CloudApi } from '../cloud/api';
+import { CloudUploader, type CloudUploadState } from '../cloud/sender';
 import type { Route, Transfer, TransferList, TransferStatus, TransfersApi } from './api';
 import { Observable } from './observable';
 import {
@@ -89,6 +91,8 @@ export interface TxState {
   windowEndsAt: string | null;
   /** Milliseconds to add to Date.now() to follow the server clock. */
   serverOffset: number;
+  /** Cloud Distribution upload of this session (the sender chose Cloud transfer), or null. */
+  cloud: CloudUploadState | null;
 }
 
 export interface SenderDeps {
@@ -99,6 +103,8 @@ export interface SenderDeps {
   history: HistoryStore | null;
   files: File[] | undefined;
   createPeer?: (cfg: RTCConfiguration) => RTCPeerConnection;
+  /** Set when the sender chose Cloud transfer for this session and consented (docs/TRANSFER_PROTOCOL.md §9). */
+  cloud?: CloudApi;
 }
 
 interface Peer {
@@ -255,6 +261,7 @@ export class SenderController extends Observable<TxState> {
    */
   private pendingIce = new Map<string, Map<string, RTCIceCandidateInit[]>>();
   private hashes = new Map<number, FileHash>();
+  private cloudUp: CloudUploader | null = null;
   /** One block cache for every receiver of this session (docs/TRANSFER_PROTOCOL.md §5.1). */
   readonly cache = new BlockCache(defaultBlockCacheBytes());
   private senderFiles: SenderFile[] = [];
@@ -286,6 +293,7 @@ export class SenderController extends Observable<TxState> {
       elsewhere: false,
       windowEndsAt: null,
       serverOffset: 0,
+      cloud: null,
     });
   }
 
@@ -321,6 +329,7 @@ export class SenderController extends Observable<TxState> {
         .catch(() => undefined);
     if (!this.state_.hasFiles) this.update({ elsewhere: await filesHeldElsewhere(this.d.sessionId) });
     this.unsub = this.d.socket.subscribe((e) => this.onSocket(e));
+    if (this.d.cloud && this.state_.hasFiles) this.startCloud(this.d.cloud);
     await this.refresh(view);
     this.sampler = setInterval(() => this.sample(), 500);
     this.update({ loaded: true });
@@ -454,8 +463,23 @@ export class SenderController extends Observable<TxState> {
     return { blocksSent, verifiedResent };
   }
 
+  /** Uploads every file to Cloud Distribution while P2P keeps serving; receivers fall back to it (§9). */
+  private startCloud(api: CloudApi): void {
+    const up = new CloudUploader({
+      sessionId: this.d.sessionId,
+      api,
+      socket: this.d.socket,
+      files: this.senderFiles.map((f) => ({ fileId: f.fileId, name: f.name, size: f.size, source: f.source })),
+    });
+    this.cloudUp = up;
+    this.update({ cloud: up.state });
+    up.subscribe(() => this.update({ cloud: up.state }));
+    void up.start();
+  }
+
   dispose(): void {
     this.unsub?.();
+    this.cloudUp?.dispose();
     this.releaseFilesLock?.();
     this.releaseFilesLock = undefined;
     for (const t of this.downTimers.values()) clearTimeout(t);

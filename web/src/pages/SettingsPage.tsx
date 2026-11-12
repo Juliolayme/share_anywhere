@@ -211,6 +211,16 @@ export default function SettingsPage() {
           </div>
         </Section>
         <Section title={t('web_vv.k58')}>
+          {/* Transfer strategy: Auto is the only mode in v1, shown for transparency (PRD §5.8, Phase 8). */}
+          <div className="flex items-center gap-3" data-testid="transfer-strategy">
+            <span className="flex-1 text-[14px]">
+              {t('common.s_strategy')}
+              <span className="block text-caption text-fg-2">{t('common.st_auto_p')}</span>
+            </span>
+            <span className="rounded-sm bg-surface-2 px-[8px] py-[3px] text-[12px] font-semibold text-fg-2">
+              {t('common.st_auto')}
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             <span className="flex-1 text-[14px]">
               {t('web_xx.wake_set')}

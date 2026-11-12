@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Ban,
   CircleCheck,
+  Cloud,
   CircleDashed,
   CircleX,
   Clock,
@@ -75,7 +76,10 @@ export function TransferChip({ state }: { state: ChipState }) {
   );
 }
 
-/** Route badge as in the Design System: Direct (P2P, green, zap) or Relay (TURN, blue, radio tower); never color-only. */
+/**
+ * Route badge as in the Design System: Direct (P2P, green, zap), Relay (TURN, blue, radio tower) or Cloud (store and
+ * forward, blue, cloud); never color-only.
+ */
 export function RouteChip({ route, kind }: { route: Route | null; kind?: RouteKind | null }) {
   const { t } = useI18n();
   if (!route) return null;
@@ -87,8 +91,14 @@ export function RouteChip({ route, kind }: { route: Route | null; kind?: RouteKi
       {...(kind ? { 'data-route-kind': kind } : {})}
       className={`inline-flex h-[26px] items-center gap-[6px] rounded-full px-[10px] text-[12px] font-semibold ${direct ? 'bg-receive-soft text-receive-ink' : 'bg-send-soft text-send-ink'}`}
     >
-      {direct ? <Zap aria-hidden size={14} /> : <RadioTower aria-hidden size={14} />}
-      {t(direct ? 'handoff.p2p' : 'handoff.relay')}
+      {direct ? (
+        <Zap aria-hidden size={14} />
+      ) : route === 'cloud' ? (
+        <Cloud aria-hidden size={14} />
+      ) : (
+        <RadioTower aria-hidden size={14} />
+      )}
+      {t(direct ? 'handoff.p2p' : route === 'cloud' ? 'product.route_cloud' : 'handoff.relay')}
     </span>
   );
 }

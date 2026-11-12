@@ -6,7 +6,12 @@ import { formatBytes, formatDateTime, formatDuration } from '../../lib/format';
 import { bytesLabel, directionLabel, DirectionIcon, entryTitle, StatusChip } from './HistoryRow';
 import { entryPeers, transferredOf, type HistoryEntry } from './store/history-store';
 
-const ROUTE_KEY = { direct: 'handoff.p2p', relay: 'handoff.relay', mixed: 'product.history_route_mixed' } as const;
+const ROUTE_KEY = {
+  direct: 'handoff.p2p',
+  relay: 'handoff.relay',
+  cloud: 'product.route_cloud',
+  mixed: 'product.history_route_mixed',
+} as const;
 
 /**
  * HI-2 / design `history` drawer: direction, peer, files, original size vs. transferred, route, duration, integrity,

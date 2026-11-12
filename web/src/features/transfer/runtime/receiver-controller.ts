@@ -12,6 +12,8 @@ import { copyIntoFolder, downloadFile, folderPermission } from '../storage/folde
 import { memorySink, type MemorySink } from '../storage/memory';
 import { openOpfsSink, opfsFile, removeOpfs, type OpfsSink } from '../storage/opfs';
 import { progressKey, type Progress, type ProgressStore, type SaveTarget } from '../storage/progress-store';
+import type { CloudApi } from '../cloud/api';
+import { CloudDownloadError, CloudReceive } from '../cloud/receiver';
 import type { Route, TransferStatus, TransfersApi } from './api';
 import { Observable } from './observable';
 import { Reporter } from './reporter';
@@ -97,6 +99,8 @@ export interface ReceiverDeps {
   store: ProgressStore;
   history: HistoryStore | null;
   createPeer?: (cfg: RTCConfiguration) => RTCPeerConnection;
+  /** Cloud Distribution (docs/TRANSFER_PROTOCOL.md §9): the last route when P2P is down and the sender uploaded. */
+  cloud?: CloudApi;
 }
 
 const ACTIVE: RxPhase[] = ['connecting', 'transferring', 'reconnecting', 'verifying'];
@@ -166,6 +170,9 @@ export class ReceiverController extends Observable<RxState> {
   readonly pace = { ms: 0 };
   /** Per-file completion work (folder copy, records), serialized so completion sees every file. */
   private fileWork: Promise<void> = Promise.resolve();
+  /** Cloud Distribution: the session's objects and keys, and whether a cloud download is running now. */
+  private cloud: CloudReceive | null = null;
+  private cloudRunning = false;
 
   /** The sender's display name (for headings), once loaded. */
   get senderDisplayName(): string {
@@ -243,6 +250,17 @@ export class ReceiverController extends Observable<RxState> {
       resumedBytes: files.filter((f) => !f.done).reduce((a, f) => a + f.verified, 0),
     });
     this.unsub = this.d.socket.subscribe((e) => this.onSocket(e));
+    if (this.d.cloud && this.senderPid && this.participantId) {
+      this.cloud = new CloudReceive({
+        sessionId: this.d.sessionId,
+        participantId: this.participantId,
+        senderPid: this.senderPid,
+        api: this.d.cloud,
+        socket: this.d.socket,
+        onChange: () => this.maybeCloud(),
+      });
+      void this.cloud.start();
+    }
     const statuses = list.transfers.map((t) => t.status);
     if (statuses.length && statuses.every((s) => s === 'COMPLETED')) return this.finish('completed');
     if (statuses.length && statuses.every(terminal))
@@ -372,6 +390,7 @@ export class ReceiverController extends Observable<RxState> {
   dispose(): void {
     this.stopped = true;
     this.unsub?.();
+    this.cloud?.dispose();
     this.teardown();
     this.reporter.dispose();
   }
@@ -379,7 +398,7 @@ export class ReceiverController extends Observable<RxState> {
   // --- connection ---
 
   private connect(): void {
-    if (this.stopped || rxFinal(this.state_.phase) || this.state_.phase === 'paused') return;
+    if (this.stopped || this.cloudRunning || rxFinal(this.state_.phase) || this.state_.phase === 'paused') return;
     this.teardown();
     this.downSince ??= Date.now();
     const reconnecting = this.hadData || this.attempt > 0;
@@ -678,7 +697,8 @@ export class ReceiverController extends Observable<RxState> {
     // Reconnect window: 2 minutes to make a first connection, 10 minutes to get one back.
     const window = this.everOpened ? 10 * 60_000 : 2 * 60_000;
     if (this.downSince !== null && Date.now() - this.downSince > window) {
-      return this.update({ phase: 'unreachable', eta: null });
+      this.update({ phase: 'unreachable', eta: null });
+      return this.maybeCloud();
     }
     this.update({ phase: 'reconnecting' });
     // Repeated losses of open channels on one policy step move the next dial one step stricter, at once. A dial
@@ -701,6 +721,93 @@ export class ReceiverController extends Observable<RxState> {
       this.retryTimer = null;
       this.connect();
     }, delay);
+    this.maybeCloud();
+  }
+
+  /**
+   * The last route (docs/TRANSFER_PROTOCOL.md §9): while P2P is down (reconnecting or offline) and every unfinished
+   * file has a READY, unpaused cloud object whose key this receiver holds, stop redialling and download from the cloud.
+   */
+  private maybeCloud(): void {
+    const c = this.cloud;
+    if (!c || this.cloudRunning || this.stopped || rxFinal(this.state_.phase)) return;
+    if (this.state_.phase !== 'reconnecting' && this.state_.phase !== 'unreachable') {
+      c.askForKeys();
+      return;
+    }
+    const open = this.open();
+    if (open.length === 0) return;
+    if (!open.every((f) => c.ready(f.fileId))) return c.askForKeys();
+    void this.runCloud(c);
+  }
+
+  private async runCloud(c: CloudReceive): Promise<void> {
+    this.cloudRunning = true;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.teardown();
+    this.reporter.route = 'cloud';
+    this.update({ phase: 'transferring', route: 'cloud', routeKind: null, eta: null });
+    this.log('product.log_cloud_receiving');
+    pushDiag(this.diag, 'cloud download');
+    for (const f of this.open()) void this.reporter.state(f.transferId, 'TRANSFERRING', f.verified);
+    const halted = () => this.stopped || this.state_.phase === 'paused' || rxFinal(this.state_.phase);
+    let current: RxFile | undefined;
+    try {
+      for (const f of this.open()) {
+        current = f;
+        const sink = await this.cloudSink(f);
+        await c.download(
+          f.fileId,
+          (off, data) => sink.write(off, data),
+          (bytes) =>
+            this.onProgress(
+              f.index,
+              Math.max(bytes, this.state_.files.find((x) => x.index === f.index)?.verified ?? 0),
+            ),
+          halted,
+        );
+        await sink.flush();
+        await this.onFileDone(f.index, true);
+      }
+      this.cloudRunning = false;
+      await this.onAllDone();
+    } catch (e) {
+      this.cloudRunning = false;
+      if (e instanceof CloudDownloadError && e.code === 'integrity' && current) {
+        // A part that fails authentication or a whole-file hash that does not match: the file is not delivered.
+        const f = current;
+        this.update({
+          files: this.state_.files.map((x) => (x.index === f.index ? { ...x, failed: true } : x)),
+          error: 'product.tx_err_checksum',
+        });
+        await this.reporter.state(f.transferId, 'FAILED', f.verified);
+        await removeOpfs(f.transferId).catch(() => undefined);
+        if (this.open().length === 0) {
+          const files = this.state_.files;
+          return this.finish(files.some((x) => x.done) ? 'partial' : 'failed');
+        }
+      }
+      if (e instanceof CloudDownloadError && e.code === 'paused') this.log('product.cloud_budget_exhausted');
+      if (halted()) return;
+      // Paused budget, a deleted object or the network: back to P2P; CLOUD_UPDATED brings the cloud back.
+      this.reporter.route = undefined;
+      this.update({ route: null });
+      this.attempt = 0;
+      this.connect();
+    }
+  }
+
+  /** Where a cloud download writes: the same staging the P2P path uses for this save target. */
+  private async cloudSink(f: RxFile): Promise<Sink> {
+    if ((this.state_.target?.mode ?? 'opfs') === 'memory') {
+      const sink = memorySink(f.size);
+      this.sinks.set(f.index, sink);
+      return sink;
+    }
+    const sink = await openOpfsSink(f.transferId, f.size);
+    this.sinks.set(f.index, sink);
+    return sink;
   }
 
   private teardown(): void {

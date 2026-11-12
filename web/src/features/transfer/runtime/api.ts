@@ -6,7 +6,7 @@ export type Transfer = S['Transfer'];
 export type TransferList = S['TransferList'];
 export type TransferStatus = S['TransferStatus'];
 export type TurnCredentials = S['TurnCredentials'];
-export type Route = 'direct' | 'relay';
+export type Route = 'direct' | 'relay' | 'cloud';
 
 /** Typed calls for docs/API.md §2.3 and TURN credentials. */
 export function transfersApi(client: DeviceClient) {

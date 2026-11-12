@@ -15,4 +15,16 @@ export function getOutbox(sessionId: string): File[] | undefined {
 
 export function dropOutbox(sessionId: string): void {
   outbox.delete(sessionId);
+  cloudChosen.delete(sessionId);
+}
+
+/** Sessions created with Cloud transfer chosen (after the consent dialog), in this tab's memory like the files. */
+const cloudChosen = new Set<string>();
+
+export function chooseCloud(sessionId: string): void {
+  cloudChosen.add(sessionId);
+}
+
+export function cloudChosenFor(sessionId: string): boolean {
+  return cloudChosen.has(sessionId);
 }

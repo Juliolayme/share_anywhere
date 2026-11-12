@@ -239,6 +239,32 @@ export class DeviceClient {
     }
   }
 
+  /**
+   * Authenticated request with a binary body or response (Cloud Distribution parts, docs/API.md §2.6): sends
+   * `application/octet-stream` when `body` is given and returns the raw response bytes. Same token refresh as
+   * `request`.
+   */
+  async requestBytes(method: string, path: string, body?: Uint8Array): Promise<Uint8Array> {
+    for (let attempt = 0; ; attempt++) {
+      const token = await this.accessToken();
+      const res = await this.send(path, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(body !== undefined ? { 'Content-Type': 'application/octet-stream' } : {}),
+        },
+        ...(body !== undefined ? { body: body as BodyInit } : {}),
+      });
+      if (res.ok) return new Uint8Array(await res.arrayBuffer());
+      const err = await toApiError(res);
+      if (err.status === 401 && STALE_TOKEN.has(err.code) && attempt === 0) {
+        this.token = null;
+        continue;
+      }
+      throw err;
+    }
+  }
+
   /** Unauthenticated JSON request for `public` endpoints (password reset). */
   async publicRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await this.send(path, {

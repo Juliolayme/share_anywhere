@@ -10,7 +10,8 @@ import { useSharing } from '../sharing/SharingContext';
 import type { sessionsApi } from '../sharing/api';
 import { transfersApi } from './runtime/api';
 import { pushDiag } from './runtime/rtc';
-import { getOutbox } from './runtime/outbox';
+import { cloudApi } from './cloud/api';
+import { cloudChosenFor, getOutbox } from './runtime/outbox';
 import type { Observable } from './runtime/observable';
 import { ReceiverController, rxActive, type RxState } from './runtime/receiver-controller';
 import { SenderController, txActive, type TxState } from './runtime/sender-controller';
@@ -104,6 +105,7 @@ export function receiverFor(sessionId: string, d: Deps): ReceiverController {
       socket: d.socket,
       store: progress,
       history: d.history,
+      cloud: cloudApi(d.client),
     });
     receivers.set(sessionId, c);
     const rc = c;
@@ -129,6 +131,7 @@ export function senderFor(sessionId: string, d: Deps): SenderController {
       socket: d.socket,
       history: d.history,
       files: getOutbox(sessionId),
+      ...(cloudChosenFor(sessionId) ? { cloud: cloudApi(d.client) } : {}),
     });
     senders.set(sessionId, c);
     keepAwake ??= d.keepAwake ?? null;

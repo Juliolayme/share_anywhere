@@ -1566,6 +1566,22 @@ paths:
           required: true,
           schema: { type: integer, minimum: 0 },
         }
+    get:
+      operationId: getCloudPart
+      x-sa-access: participant
+      summary: Download one encrypted part of a READY object (sender or JOINED receiver), charged to the sender's budget.
+      responses:
+        "200":
+          description: The part as stored (nonce, ciphertext, tag).
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     put:
       operationId: putCloudPart
       x-sa-access: device
@@ -1581,22 +1597,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CloudObject" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-    get:
-      operationId: getCloudPart
-      x-sa-access: participant
-      summary: Download one encrypted part of a READY object (sender or JOINED receiver), charged to the sender's budget.
-      responses:
-        "200":
-          description: The part as stored (nonce, ciphertext, tag).
-          content:
-            application/octet-stream:
-              schema: { type: string, format: binary }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Banner, Button, Card, ConfirmDialog, Screen, Switch } from '../../components/ui';
 import { KeepOpenBanner } from '../../components/KeepOpenBanner';
+import { CloudUploadCard } from '../../features/transfer/cloud/CloudUI';
 import { QRCode } from '../../components/QRCode';
 import { useToast } from '../../components/Toast';
 import { useI18n } from '../../i18n/i18n';
@@ -206,6 +207,11 @@ export default function SessionPage() {
       )}
       {txState.loaded && !txState.hasFiles && !txState.elsewhere && (
         <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />
+      )}
+      {txState.cloud && (
+        <Card className="px-[20px] py-[16px]" as="section">
+          <CloudUploadCard state={txState.cloud} />
+        </Card>
       )}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">

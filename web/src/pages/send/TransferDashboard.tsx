@@ -40,6 +40,7 @@ import {
   useSpeed,
   type ChipState,
 } from '../../features/transfer/ui';
+import { CloudUploadCard } from '../../features/transfer/cloud/CloudUI';
 
 const FINAL: Record<Exclude<TxFinal, null>, { title: string; body: string; cls: string; icon: typeof CircleCheck }> = {
   completed: {
@@ -234,6 +235,11 @@ export default function TransferDashboard() {
           <Banner tone="warning" role="alert" title={t('product.tx_no_files')} />
         )}
         {s.final && <FinalBanner final={s.final} onNewTransfer={newTransfer} busy={closing} />}
+        {s.cloud && !s.final && (
+          <Card className="px-[20px] py-[16px]" as="section">
+            <CloudUploadCard state={s.cloud} />
+          </Card>
+        )}
         <Card className="flex flex-col gap-3 px-[20px] py-[18px]" as="section">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <span className="flex items-baseline gap-[10px]">

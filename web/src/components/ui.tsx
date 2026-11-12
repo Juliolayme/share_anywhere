@@ -209,6 +209,7 @@ export function ConfirmDialog({
   cancelLabel,
   danger,
   busy,
+  confirmDisabled,
   onConfirm,
   onCancel,
 }: {
@@ -219,6 +220,8 @@ export function ConfirmDialog({
   cancelLabel: string;
   danger?: boolean;
   busy?: boolean;
+  /** The confirm action is not available (for example over a budget); the body says why. */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -272,7 +275,12 @@ export function ConfirmDialog({
           <Button ref={cancelRef} variant="ghost" onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button variant={danger ? 'danger-ghost' : 'send'} busy={busy ?? false} onClick={onConfirm}>
+          <Button
+            variant={danger ? 'danger-ghost' : 'send'}
+            busy={busy ?? false}
+            disabled={confirmDisabled ?? false}
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </Button>
         </div>

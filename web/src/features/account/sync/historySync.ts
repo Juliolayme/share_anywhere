@@ -37,7 +37,7 @@ const omit = (rec: Record<string, string>, keys: string[]) =>
 
 const DIRECTIONS = new Set(['sent', 'received']);
 const STATUSES = new Set(['completed', 'partial', 'failed', 'cancelled']);
-const ROUTES = new Set(['direct', 'relay', 'mixed']);
+const ROUTES = new Set(['direct', 'relay', 'cloud', 'mixed']);
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 const str = (v: unknown, max = 1024): v is string => typeof v === 'string' && v.length <= max;
 

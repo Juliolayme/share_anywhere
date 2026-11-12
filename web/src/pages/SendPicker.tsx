@@ -14,7 +14,8 @@ import {
 import { useRef, useState, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Banner, Button, Card, Screen, Switch } from '../components/ui';
-import { putOutbox } from '../features/transfer/runtime/outbox';
+import { CloudSendOption } from '../features/transfer/cloud/CloudUI';
+import { chooseCloud, putOutbox } from '../features/transfer/runtime/outbox';
 import { useSharing } from '../features/sharing/SharingContext';
 import { OpenSessionsPanel } from '../features/sharing/OpenSessionsPanel';
 import { useIdentity } from '../lib/identity/identity';
@@ -79,6 +80,7 @@ export default function SendPicker() {
   const { api } = useSharing();
   const { status } = useIdentity();
   const [approval, setApproval] = useState(false);
+  const [cloud, setCloud] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   // Bumped each time Create hits the open-session cap: shows (and reloads) the open-sessions panel.
@@ -106,6 +108,7 @@ export default function SendPicker() {
         v.id,
         files.map(({ file }) => file),
       );
+      if (cloud) chooseCloud(v.id);
       navigate(`/send/session/${v.id}`);
     } catch (e) {
       const cap = e instanceof ApiError && e.code === 'too_many_open_sessions';
@@ -249,6 +252,7 @@ export default function SendPicker() {
                     </span>
                   </span>
                 </div>
+                <CloudSendOption totalBytes={total} value={cloud} onChange={setCloud} />
                 <Button
                   variant="send"
                   size="lg"

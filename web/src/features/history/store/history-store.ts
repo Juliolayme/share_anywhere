@@ -14,7 +14,7 @@ export interface HistoryFile {
 }
 
 /** How the bytes travelled: one route for every receiver, or a mix (some direct, some relayed). */
-export type HistoryRoute = 'direct' | 'relay' | 'mixed';
+export type HistoryRoute = 'direct' | 'relay' | 'cloud' | 'mixed';
 
 export interface HistoryEntry {
   id: string;

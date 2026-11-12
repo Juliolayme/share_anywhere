@@ -38,7 +38,7 @@ final class HistorySettingsUITests: XCTestCase {
         // Delete one from its detail sheet.
         UITest.id(again, "history.row.tx:ui-2").tap()
         UITest.id(again, "history-detail.delete").tap()
-        XCTAssertTrue(UITest.id(again, "history.row.tx:ui-2").waitForNonExistence(timeout: 5))
+        XCTAssertTrue(UITest.id(again, "history.row.tx:ui-2").gone(timeout: 5))
     }
 
     func testSettingsSwitchLanguageAndKeepTheScreenOnSetting() {
@@ -67,7 +67,8 @@ final class HistorySettingsUITests: XCTestCase {
 }
 
 extension XCUIElement {
-    func waitForNonExistence(timeout: TimeInterval) -> Bool {
+    /// True once the element no longer exists (works on every Xcode the runners have).
+    func gone(timeout: TimeInterval) -> Bool {
         let p = NSPredicate(format: "exists == false")
         return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: p, object: self)], timeout: timeout) == .completed
     }

@@ -52,8 +52,7 @@ targets:
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, vi]
         LSRequiresIPhoneOS: true
-        UILaunchScreen:
-          UIColorName: ""
+        UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]

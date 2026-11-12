@@ -42,3 +42,4 @@ ios/ShareAnywhereCore/.build/
 ios/build/
 .tools/
 *.xcresult
+ios/ShareAnywhere/Info.plist

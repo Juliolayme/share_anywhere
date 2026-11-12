@@ -84,11 +84,9 @@ struct TransferBar: View {
             }
         }
         .frame(height: 6)
-        // A progress indicator to assistive technologies (not a 6 pt control): label, value and the system's
-        // progress role.
-        .accessibilityRepresentation {
-            ProgressView(L10n.t("ios.overall"), value: fraction)
-        }
+        // Decoration: the text next to every bar says the same (bytes, ETA, status), and a 6 pt element is too small
+        // to be a target for assistive technologies (accessibility audit).
+        .accessibilityHidden(true)
     }
 }
 

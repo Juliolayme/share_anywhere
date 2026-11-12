@@ -53,7 +53,8 @@ struct ReceiveView: View {
 
     @ViewBuilder private var entry: some View {
         Text(L10n.t("product.code_enter_p")).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
-        TextField(L10n.t("ios.code"), text: $code)
+        // May wrap: at the largest text sizes the placeholder is wider than the screen.
+        TextField(L10n.t("ios.code"), text: $code, axis: .vertical)
             .keyboardType(.numberPad)
             .textContentType(.oneTimeCode)
             .font(SAFont.font(size: 34, weight: .semibold, mono: true))

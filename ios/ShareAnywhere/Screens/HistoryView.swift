@@ -157,7 +157,6 @@ struct HistoryRow: View {
         }
         .padding(.vertical, SATokens.Space.s2)
         .frame(minHeight: SATokens.touchTarget)
-        .accessibilityElement(children: .combine)
     }
 }
 

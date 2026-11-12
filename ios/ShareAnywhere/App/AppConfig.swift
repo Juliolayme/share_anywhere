@@ -40,10 +40,15 @@ struct AppConfig {
     private static let testLaunchKey = "lastUITestArguments"
     private static var testDefaults: UserDefaults? { UserDefaults(suiteName: "app.shareanywhere.uitest") }
 
-    static func load(arguments launched: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) -> AppConfig {
+    /// `arguments` nil: this process's launch arguments, with the UI-test fallback below. Explicit arguments (unit
+    /// tests) are used as given.
+    static func load(arguments explicit: [String]? = nil, bundle: Bundle = .main) -> AppConfig {
+        let launched = explicit ?? ProcessInfo.processInfo.arguments
         var arguments = launched
         #if DEBUG
-            if launched.contains("-uiTesting") {
+            if explicit != nil {
+                // As given.
+            } else if launched.contains("-uiTesting") {
                 testDefaults?.set(Array(launched.dropFirst()).filter { $0 != "-resetState" }, forKey: testLaunchKey)
                 testDefaults?.set(Date().timeIntervalSince1970, forKey: testLaunchKey + ".at")
             } else if let saved = testDefaults?.stringArray(forKey: testLaunchKey),

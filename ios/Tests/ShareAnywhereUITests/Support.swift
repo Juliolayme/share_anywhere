@@ -114,34 +114,65 @@ extension XCTestCase {
     /// - the `-uiTesting` probes (`test.*`): invisible, never shown in the product;
     /// - contrast on disabled controls: inactive components are exempt from WCAG 1.4.3;
     /// - the readable-label check on the tests' seeded file names (`sa-seed-N.bin`): user content in real use;
-    /// - clipping in the system search field (`.searchable`): sized by the system;
-    /// - "partially unsupported" Dynamic Type on standard controls only (toolbar buttons, Form and List rows): their
-    ///   text scales up to a cap the system sets. The same report on any of our own views still fails.
-    /// The screen is given a moment to settle first, so the contrast check does not sample a view while it fades in.
+    /// - clipping in the system search field (`.searchable`) and in system-styled controls (navigation-bar titles and
+    ///   items, Form and List rows): sized and truncated by the system;
+    /// - "partially unsupported" Dynamic Type on those standard controls only: their text scales up to a cap the system
+    ///   sets. The same report on any of our own views still fails;
+    /// - contrast on an element under the translucent tab bar (the audit samples what scrolls beneath it), and a
+    ///   contrast report that a second pass two seconds later does not repeat (a view caught fading in).
+    /// The screen is given a moment to settle first.
     func audit(_ app: XCUIApplication, _ screen: String, file: StaticString = #filePath, line: UInt = #line) {
         guard #available(iOS 17.0, *) else { return }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        var found: [XCUIAccessibilityAuditIssue] = []
+        var found = auditIssues(app, screen, file: file, line: line)
+        // Contrast is sampled from pixels: a view fading in or out reads low. Contrast issues count only if a second
+        // pass two seconds later reports the same element again.
+        if found.contains(where: { $0.type == .contrast }) {
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+            let again = Set(auditIssues(app, screen, types: .contrast, file: file, line: line).map(\.key))
+            found.removeAll { $0.type == .contrast && !again.contains($0.key) }
+        }
+        let tabBar = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame : .null
+        for issue in found {
+            if let el = issue.element {
+                if el.identifier.hasPrefix("test.") { continue }
+                if issue.type == .contrast, !el.isEnabled { continue }
+                // Behind the translucent tab bar the audit samples whatever scrolls under it.
+                if issue.type == .contrast, el.frame.intersects(tabBar) { continue }
+                if issue.type == .sufficientElementDescription, el.label.hasPrefix("sa-seed-") { continue }
+                if issue.type == .textClipped, el.elementType == .searchField || isStandardControl(app, el) { continue }
+                if issue.type == .dynamicType, issue.text.localizedCaseInsensitiveContains("partially"),
+                   isStandardControl(app, el) { continue }
+            }
+            let element = issue.element.map { "\($0.elementType) '\($0.identifier)' '\($0.label)'" } ?? "screen"
+            XCTFail("\(screen): \(issue.text) — \(element): \(issue.detail)", file: file, line: line)
+        }
+    }
+
+    private struct AuditIssue {
+        let type: XCUIAccessibilityAuditType
+        let element: XCUIElement?
+        let text: String
+        let detail: String
+        var key: String { "\(text)|\(element?.identifier ?? "")|\(element?.label ?? "")" }
+    }
+
+    @available(iOS 17.0, *)
+    private func auditIssues(
+        _ app: XCUIApplication, _ screen: String, types: XCUIAccessibilityAuditType = .all, file: StaticString, line: UInt
+    ) -> [AuditIssue] {
+        var found: [AuditIssue] = []
         do {
-            try app.performAccessibilityAudit { issue in
-                found.append(issue)
-                return true // judged below, outside the audit callback
+            try app.performAccessibilityAudit(for: types) { issue in
+                found.append(AuditIssue(
+                    type: issue.auditType, element: issue.element, text: issue.compactDescription, detail: issue.detailedDescription
+                ))
+                return true // judged by the caller, outside the audit callback
             }
         } catch {
             XCTFail("\(screen): audit could not run: \(error)", file: file, line: line)
         }
-        for issue in found {
-            if let el = issue.element {
-                if el.identifier.hasPrefix("test.") { continue }
-                if issue.auditType == .contrast, !el.isEnabled { continue }
-                if issue.auditType == .sufficientElementDescription, el.label.hasPrefix("sa-seed-") { continue }
-                if issue.auditType == .textClipped, el.elementType == .searchField { continue }
-                if issue.auditType == .dynamicType, issue.compactDescription.localizedCaseInsensitiveContains("partially"),
-                   isStandardControl(app, el) { continue }
-            }
-            let element = issue.element.map { "\($0.elementType) '\($0.identifier)' '\($0.label)'" } ?? "screen"
-            XCTFail("\(screen): \(issue.compactDescription) — \(element): \(issue.detailedDescription)", file: file, line: line)
-        }
+        return found
     }
 
     /// Whether the element belongs to a system-styled control: a navigation-bar item or a Form/List row.

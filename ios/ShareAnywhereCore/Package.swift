@@ -14,7 +14,8 @@ let package = Package(
         .library(name: "ClipboardCrypto", targets: ["SAClipboardCrypto"]),
         .library(name: "APIClient", targets: ["SAAPIClient"]),
         .library(name: "Store", targets: ["SAStore"]),
-        .library(name: "TransferRuntime", targets: ["SATransferRuntime"])
+        .library(name: "TransferRuntime", targets: ["SATransferRuntime"]),
+        .library(name: "Account", targets: ["SAAccount"])
     ],
     dependencies: [
         // CryptoKit on Apple platforms (swift-crypto re-exports it there), BoringSSL-backed elsewhere.
@@ -50,12 +51,16 @@ let package = Package(
             name: "SATransferRuntime",
             dependencies: ["SATransferEngine", "SAAPIClient", "SAStore", .product(name: "Crypto", package: "swift-crypto")]
         ),
+        // Accounts on top of the device identity: key flows (setup, recovery, pairing, rotation), account keys, history
+        // sync and the Clipboard Sync engine (docs/CLIPBOARD_PROTOCOL.md), as Android's account/ and clipboard/ packages.
+        .target(name: "SAAccount", dependencies: ["SAAPIClient", "SAClipboardCrypto", "SAStore"]),
         .testTarget(name: "SAProtocolTests", dependencies: ["SAProtocol"]),
         .testTarget(name: "SATransferEngineTests", dependencies: ["SATransferEngine"]),
         .testTarget(name: "SAClipboardCryptoTests", dependencies: ["SAClipboardCrypto"]),
         .testTarget(name: "SAAPIClientTests", dependencies: ["SAAPIClient"]),
         .testTarget(name: "SAStoreTests", dependencies: ["SAStore"]),
-        .testTarget(name: "SATransferRuntimeTests", dependencies: ["SATransferRuntime"])
+        .testTarget(name: "SATransferRuntimeTests", dependencies: ["SATransferRuntime"]),
+        .testTarget(name: "SAAccountTests", dependencies: ["SAAccount"])
     ],
     swiftLanguageModes: [.v6]
 )

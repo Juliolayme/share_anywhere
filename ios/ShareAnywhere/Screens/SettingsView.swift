@@ -86,6 +86,7 @@ struct SettingsView: View {
                     .disabled(model.historyEntries.isEmpty)
                     .accessibilityIdentifier("settings.clear-history")
             }
+            CloudSettingsSection(signedIn: account.state.signedIn)
             if account.state.signedIn { accountSections }
             Section(L10n.t("ios_yy.g_about")) {
                 HStack {

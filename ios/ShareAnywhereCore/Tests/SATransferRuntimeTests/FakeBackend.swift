@@ -60,6 +60,10 @@ struct FakeError: Error {}
 final class FakeBackend: @unchecked Sendable {
     /// Test hook: TURN credentials are refused with relay_cap_reached.
     var relayCapped = false
+    /// Cloud Distribution (docs/API.md §2.6): objects by id and stored parts by "<object>/<n>", part size 1 MiB.
+    var cloudObjects: [String: CloudObject] = [:]
+    var cloudParts: [String: [UInt8]] = [:]
+    var cloudPartSize = 1 << 20
     struct Member {
         var participant: Participant
         var device: String
@@ -76,7 +80,7 @@ final class FakeBackend: @unchecked Sendable {
         var status = "WAITING"
     }
 
-    private let lock = NSLock()
+    fileprivate let lock = NSLock()
     private var sessions: [String: Session] = [:]
     private var sockets: [String: [AsyncQueue<String>]] = [:]
     private(set) var reports: [(String, String)] = []
@@ -329,4 +333,137 @@ final class FakeSocketConnection: WebSocketConnection, @unchecked Sendable {
     func send(_ text: String) async throws { backend.received(text, from: device) }
 
     func close() { backend.disconnect(device: device, inbox) }
+}
+
+// MARK: - Cloud Distribution (in memory)
+
+extension FakeBackend {
+    private func cloudDevices(_ sessionId: String) -> [String] {
+        lock.locked {
+            guard let sess = sessions[sessionId] else { return [] }
+            return [sess.senderDevice] + sess.members.filter { $0.participant.status == "JOINED" }.map(\.device)
+        }
+    }
+
+    func cloudNotify(_ o: CloudObject) {
+        guard let data = try? APIClient.encoder.encode(o), let obj = try? JSONDecoder().decode(JSONValue.self, from: data) else { return }
+        for d in cloudDevices(o.sessionId) {
+            push(to: d, ["type": .string("CLOUD_UPDATED"), "session_id": .string(o.sessionId), "object": obj])
+        }
+    }
+
+    func cloudDistribute(fileId: String) throws -> CloudObject {
+        let found: (String, Int64)? = lock.locked {
+            for (sid, sess) in sessions {
+                if let f = sess.files.first(where: { $0.id == fileId }) { return (sid, f.size) }
+            }
+            return nil
+        }
+        guard let (sid, size) = found
+        else { throw APIError(status: 404, code: "not_found", message: "", retryAfterSeconds: nil, body: nil) }
+        if let o = lock.locked({ cloudObjects.values.first { $0.fileId == fileId && $0.status != "DELETED" } }) { return o }
+        let count = max(1, Int((size + Int64(cloudPartSize) - 1) / Int64(cloudPartSize)))
+        let o = CloudObject(
+            id: UUID().uuidString.lowercased(), sessionId: sid, fileId: fileId, status: "UPLOADING", paused: false, size: size,
+            partSize: cloudPartSize, partCount: count, partsUploaded: 0, ciphertextSize: size + Int64(count * 28),
+            createdAt: "2026-01-01T00:00:00Z", expiresAt: "2026-01-02T00:00:00Z"
+        )
+        lock.locked { cloudObjects[o.id] = o }
+        return o
+    }
+
+    func cloudPut(_ id: String, _ n: Int, _ bytes: [UInt8]) throws -> CloudObject {
+        try lock.locked {
+            guard var o = cloudObjects[id], o.status == "UPLOADING", n >= 0, n < o.partCount else {
+                throw APIError(status: 400, code: "invalid_part", message: "", retryAfterSeconds: nil, body: nil)
+            }
+            if cloudParts["\(id)/\(n)"] == nil { o.partsUploaded += 1 }
+            cloudParts["\(id)/\(n)"] = bytes
+            cloudObjects[id] = o
+            return o
+        }
+    }
+
+    func cloudSeal(_ id: String) throws -> CloudObject {
+        let o: CloudObject = try lock.locked {
+            guard var o = cloudObjects[id], o.partsUploaded == o.partCount else {
+                throw APIError(status: 409, code: "parts_missing", message: "", retryAfterSeconds: nil, body: nil)
+            }
+            o.status = "READY"
+            cloudObjects[id] = o
+            return o
+        }
+        cloudNotify(o)
+        return o
+    }
+
+    func cloudGet(_ id: String, _ n: Int) throws -> [UInt8] {
+        guard let b = lock.locked({ cloudObjects[id]?.status == "READY" ? cloudParts["\(id)/\(n)"] : nil }) else {
+            throw APIError(status: 409, code: "invalid_state", message: "", retryAfterSeconds: nil, body: nil)
+        }
+        return b
+    }
+
+    func cloudReceived(_ id: String) throws -> CloudObject {
+        let o: CloudObject = try lock.locked {
+            guard var o = cloudObjects[id] else { throw APIError(
+                status: 404,
+                code: "not_found",
+                message: "",
+                retryAfterSeconds: nil,
+                body: nil
+            ) }
+            o.status = "DELETED"
+            for n in 0 ..< o.partCount {
+                cloudParts["\(id)/\(n)"] = nil
+            }
+            cloudObjects[id] = o
+            return o
+        }
+        cloudNotify(o)
+        return o
+    }
+}
+
+extension FakeClient: CloudService {
+    func cloudSettings() async throws -> CloudSettings {
+        CloudSettings(
+            available: true,
+            signedIn: true,
+            enabled: true,
+            consented: true,
+            budgetBytes: 1 << 30,
+            usedBytes: 0,
+            maxBudgetBytes: 1 << 40,
+            ttlHours: 24
+        )
+    }
+
+    func putCloudSettings(
+        enabled _: Bool,
+        consent _: Bool,
+        budgetBytes _: Int64?
+    ) async throws -> CloudSettings { try await cloudSettings() }
+
+    func estimateCloud(bytes: Int64, receivers: Int) async throws -> CloudEstimate {
+        CloudEstimate(
+            storageBytes: bytes,
+            egressBytes: bytes * Int64(receivers),
+            retentionHours: 24,
+            budgetBytes: 1 << 30,
+            usedBytes: 0,
+            withinBudget: true
+        )
+    }
+
+    func distribute(fileId: String) async throws -> CloudObject { try backend.cloudDistribute(fileId: fileId) }
+    func putPart(objectId: String, n: Int, bytes: [UInt8]) async throws -> CloudObject { try backend.cloudPut(objectId, n, bytes) }
+    func seal(objectId: String) async throws -> CloudObject { try backend.cloudSeal(objectId) }
+
+    func cloudObjects(sessionId: String) async throws -> [CloudObject] {
+        backend.lock.locked { backend.cloudObjects.values.filter { $0.sessionId == sessionId && $0.status != "DELETED" } }
+    }
+
+    func getPart(objectId: String, n: Int) async throws -> [UInt8] { try backend.cloudGet(objectId, n) }
+    func received(objectId: String) async throws -> CloudObject { try backend.cloudReceived(objectId) }
 }

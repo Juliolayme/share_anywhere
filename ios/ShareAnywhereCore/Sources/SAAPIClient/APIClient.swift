@@ -129,7 +129,8 @@ public struct APIClient: Sendable {
         }
         if let body {
             req.httpBody = body
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            // A caller may send another media type (Cloud Distribution parts are application/octet-stream).
+            if req.value(forHTTPHeaderField: "Content-Type") == nil { req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         } else if ["POST", "PUT", "PATCH"].contains(op.method) {
             req.httpBody = Data()
         }

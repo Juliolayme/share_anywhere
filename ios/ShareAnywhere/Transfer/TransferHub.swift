@@ -63,10 +63,12 @@ final class TransferHub: ObservableObject {
 
     func sender(_ id: String) -> SenderController {
         if let s = senders[id] { return s }
-        let c = SenderController(SenderDeps(
+        var deps = SenderDeps(
             sessionId: id, sessions: services, transfers: services, socket: socket, peers: peers, outgoing: outgoing, history: history,
             openSource: { ScopedFileSource($0) }
-        ))
+        )
+        if cloudSessions.contains(id) { deps.cloud = services }
+        let c = SenderController(deps)
         senders[id] = c
         Task { await c.start() }
         let states = c.state.values()
@@ -85,6 +87,7 @@ final class TransferHub: ObservableObject {
             history: history, resolveFolder: { SaveFolders.resolve($0) }
         )
         deps.routeStep = routeStep
+        deps.cloud = services
         let c = ReceiverController(deps)
         receivers[id] = c
         Task { await c.start() }
@@ -126,13 +129,17 @@ final class TransferHub: ObservableObject {
     // MARK: Sending
 
     /// TR-3 → TR-4: creates the session and keeps the picked files' bookmarks for it.
-    func createSession(files: [PickedFile], requireApproval: Bool) async throws -> SessionView {
+    /// Sessions created with Cloud transfer chosen (after the consent sheet); their senders upload (§9).
+    private var cloudSessions: Set<String> = []
+
+    func createSession(files: [PickedFile], requireApproval: Bool, cloud: Bool = false) async throws -> SessionView {
         let view = try await services.create(
             files: files.map { FileInput(name: $0.name, size: $0.size, mime: $0.mime) }, requireApproval: requireApproval
         )
         let shared = view.files ?? []
         let rows = zip(shared, files).map { OutgoingFile(fileId: $0.id, size: $0.size, locator: $1.bookmark) }
         try await outgoing.put(view.id, rows)
+        if cloud { cloudSessions.insert(view.id) }
         return view
     }
 
@@ -189,6 +196,9 @@ final class TransferHub: ObservableObject {
         guard !isForeground else { return }
         var any = false
         for (id, c) in senders where c.state.value.isActive {
+            // Cloud Distribution (PRD §2 iOS long transfers): with the files sealed in the cloud, receivers finish from
+            // there once this suspended app drops off, so the transfer is not paused.
+            if c.state.value.cloud?.ready == true { continue }
             suspended.insert("tx:\(id)")
             let active = c.state.value.receivers.filter(\.status.isActive).map(\.participantId)
             suspendedReceivers[id] = active

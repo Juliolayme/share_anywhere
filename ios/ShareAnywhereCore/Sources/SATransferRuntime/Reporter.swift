@@ -237,6 +237,8 @@ public struct TxState: Sendable, Equatable {
     public var hasFiles = false
     public var final: TxFinal?
     public var ended = false
+    /// Cloud Distribution upload of this session (the sender chose Cloud transfer), or nil.
+    public var cloud: CloudUploadState?
     public init() {}
 
     public var isActive: Bool { receivers.contains { $0.status.isActive } }

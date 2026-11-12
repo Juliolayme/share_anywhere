@@ -45,7 +45,8 @@ final class ControllerTests: XCTestCase {
     }
 
     func rig(
-        sizes: [Int], delayMs: UInt64 = 0, fastClock: Bool = false, keepFiles: Bool = true, routeConfig: MonitorConfig = MonitorConfig()
+        sizes: [Int], delayMs: UInt64 = 0, fastClock: Bool = false, keepFiles: Bool = true, routeConfig: MonitorConfig = MonitorConfig(),
+        cloud: Bool = false
     ) async throws -> Rig {
         let backend = FakeBackend()
         let peers = MemPeerFactory()
@@ -68,11 +69,13 @@ final class ControllerTests: XCTestCase {
         let rSocket = SessionSocket(baseURL: URL(string: "http://fake")!, connector: rClient, ticket: { "t" }, pause: { _ in })
         let sh = try HistoryStore(path: dir.appendingPathComponent("s.sqlite").path)
         let rh = try HistoryStore(path: dir.appendingPathComponent("r.sqlite").path)
-        let sender = SenderController(SenderDeps(
+        var sDeps = SenderDeps(
             sessionId: sid, sessions: sClient, transfers: sClient, socket: sSocket, peers: peers, outgoing: outgoing, history: sh,
             openSource: { f in FileReadSource(url: URL(fileURLWithPath: String(decoding: f.locator, as: UTF8.self)), size: f.size) },
             sleep: fast
-        ))
+        )
+        if cloud { sDeps.cloud = sClient }
+        let sender = SenderController(sDeps)
         let inbox = dir.appendingPathComponent("Inbox")
         var rDeps = ReceiverDeps(
             sessionId: sid, sessions: rClient, transfers: rClient, socket: rSocket, peers: peers,
@@ -81,6 +84,7 @@ final class ControllerTests: XCTestCase {
             history: rh, resolveFolder: { _ in ScopedFolder(url: inbox) }, sleep: fast, random: { 0.5 }
         )
         rDeps.routeConfig = routeConfig
+        if cloud { rDeps.cloud = rClient }
         let receiver = ReceiverController(rDeps)
         return Rig(
             backend: backend, peers: peers, sessionId: sid, sender: sender, receiver: receiver, senderHistory: sh, receiverHistory: rh,
@@ -226,6 +230,27 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(r.receiver.state.value.duplicates, 0, "verified blocks are not sent again")
         XCTAssertEqual(try sha(XCTUnwrap(r.receiver.state.value.files[0].savedURL)), r.sums[0])
         XCTAssertTrue(r.backend.log.contains { $0.hasSuffix(":DISCONNECTED") }, "the migration was reported")
+        await r.sender.dispose()
+        await r.receiver.dispose()
+    }
+
+    /// Cloud Distribution (docs/TRANSFER_PROTOCOL.md §9): the sender uploads encrypted parts and answers the receiver's
+    /// key request; once no peer connection can be made, the receiver finishes from the cloud with route cloud, a
+    /// matching SHA-256, and the object is deleted after receipt.
+    func testTheReceiverFinishesFromTheCloudWhenPeerToPeerCannotConnect() async throws {
+        let r = try await rig(sizes: [3 * 1024 * 1024 + 5], fastClock: true, cloud: true)
+        await r.sender.start()
+        try await until("uploaded to the cloud", timeout: 30) { r.sender.state.value.cloud?.ready == true }
+        await r.receiver.start()
+        try await until("the receiver holds the key", timeout: 30) { await r.receiver.cloudReadyCount() == 1 }
+        r.peers.refuse = true
+        await r.receiver.choose(SaveTarget(kind: .documents, label: "Share Anywhere"))
+        try await until("completed from the cloud", timeout: 60) { r.receiver.state.value.phase == .completed }
+        XCTAssertEqual(r.receiver.state.value.route, "cloud")
+        XCTAssertEqual(try sha(XCTUnwrap(r.receiver.state.value.files[0].savedURL)), r.sums[0])
+        XCTAssertTrue(r.backend.log.contains { $0.hasSuffix(":COMPLETED") }, "\(r.backend.log)")
+        XCTAssertEqual(r.backend.cloudObjects.values.first?.status, "DELETED", "deleted after the only receiver had it")
+        XCTAssertTrue(r.backend.cloudParts.isEmpty)
         await r.sender.dispose()
         await r.receiver.dispose()
     }

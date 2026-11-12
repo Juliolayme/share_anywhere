@@ -9,7 +9,10 @@ struct SendView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var p
     @State private var files: [PickedFile] = []
+    @EnvironmentObject private var account: AccountSession
     @State private var requireApproval = false
+    @State private var cloud = false
+    @State private var accountSheet: AccountSheet.Step?
     @State private var picking = false
     @State private var creating = false
     @State private var error: String?
@@ -31,6 +34,7 @@ struct SendView: View {
                 } else {
                     fileList
                     approval
+                    CloudSendOption(on: $cloud, total: total) { accountSheet = .signIn }
                     if let error { Banner(kind: .danger, title: error).accessibilityIdentifier("send.error") }
                     if let openSessions { OpenSessionsPanel(list: openSessions) { self.openSessions = nil } }
                     PrimaryButton(title: L10n.t("ios.create"), enabled: !creating && total <= SendView.limit) { create() }
@@ -52,6 +56,9 @@ struct SendView: View {
             error = unreadable.isEmpty ? nil : L10n.t("product.file_unreadable", ["name": unreadable.joined(separator: ", ")])
         }
         .onAppear(perform: seedForTests)
+        .sheet(item: Binding(get: { accountSheet.map(AccountSheetItem.init) }, set: { accountSheet = $0?.step })) { item in
+            AccountSheet(start: item.step).environmentObject(account).environmentObject(model)
+        }
         .screenID("send")
     }
 
@@ -112,7 +119,7 @@ struct SendView: View {
         Task {
             defer { creating = false }
             do {
-                let view = try await model.hub.createSession(files: files, requireApproval: requireApproval)
+                let view = try await model.hub.createSession(files: files, requireApproval: requireApproval, cloud: cloud)
                 model.homePath.removeLast(model.homePath.count)
                 model.homePath.append(.session(view.id))
             } catch let e as APIError where e.code == "too_many_open_sessions" {

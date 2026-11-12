@@ -247,6 +247,7 @@ struct SessionScreen: View {
             share(v)
             if v.protectedMode { Banner(kind: .warning, title: L10n.t("product.protected_mode_sender")) }
             KeepOpenBanner(paused: s.tx.receivers.contains { $0.status == .paused } && !s.tx.isActive, context: id)
+            if let cloud = s.tx.cloud, s.tx.final == nil { CloudUploadCard(state: cloud) }
         }
         if s.tx.loaded, !s.tx.hasFiles, !s.tx.files.isEmpty {
             Banner(kind: .danger, title: L10n.t("product.tx_err_files_gone_app")).accessibilityIdentifier("session.files-gone")

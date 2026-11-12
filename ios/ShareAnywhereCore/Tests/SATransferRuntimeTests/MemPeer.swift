@@ -146,7 +146,15 @@ final class MemPeerFactory: PeerFactory, @unchecked Sendable {
         set { lock.locked { _blockDirect = newValue } }
     }
 
+    private var _refuse = false
+    /// Test hook: no peer connection can be made any more (the sender is gone for good).
+    var refuse: Bool {
+        get { lock.locked { _refuse } }
+        set { lock.locked { _refuse = newValue } }
+    }
+
     func make(iceServers: [ICEServer], relayOnly: Bool, callbacks: PeerCallbacks) async throws -> any PeerLink {
+        if refuse { throw FakeError() }
         let p = MemPeer(factory: self, callbacks: callbacks, iceServers: iceServers, relayOnly: relayOnly)
         lock.locked { made.append(p) }
         return p

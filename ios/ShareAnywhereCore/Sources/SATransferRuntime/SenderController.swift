@@ -22,6 +22,8 @@ public struct SenderDeps: Sendable {
     public var sleep: Sleeper
     /// The 10-minute window after which a receiver with no channel shows Offline.
     public var reconnectWindowMs: Int64 = 10 * 60000
+    /// Set when the sender chose Cloud transfer for this session and consented (docs/TRANSFER_PROTOCOL.md §9).
+    public var cloud: (any CloudService)?
 
     public init(
         sessionId: String, sessions: any SessionService, transfers: any TransferService, socket: SessionSocket, peers: any PeerFactory,
@@ -77,6 +79,8 @@ public actor SenderController {
     private var hashes: [Int: FileHash] = [:]
     private let cache = BlockCache()
     private var senderFiles: [SenderFile] = []
+    private var cloudUploader: CloudUploader?
+    private var cloudWatch: Task<Void, Never>?
     private var sources: [any ClosableFileSource] = []
     private var list: TransferList?
     private var historyKey = ""
@@ -137,6 +141,7 @@ public actor SenderController {
                 await self.onSocket(e)
             }
         }
+        if has, let api = d.cloud { startCloud(api) }
         await refresh(view)
         samplerTask = Task { [weak self, sleep = d.sleep] in
             while !Task.isCancelled {
@@ -259,8 +264,29 @@ public actor SenderController {
         }
     }
 
+    /// Uploads every file to Cloud Distribution while P2P keeps serving; receivers fall back to it (§9).
+    private func startCloud(_ api: any CloudService) {
+        let up = CloudUploader(
+            sessionId: d.sessionId, api: api, socket: d.socket,
+            files: senderFiles.map { CloudUploader.File(fileId: $0.fileId, name: $0.name, size: $0.size, source: $0.source) },
+            sleep: d.sleep
+        )
+        cloudUploader = up
+        let states = up.state.values()
+        cloudWatch = Task { [weak self] in
+            for await c in states {
+                await self?.setCloud(c)
+            }
+        }
+        Task { await up.start() }
+    }
+
+    private func setCloud(_ c: CloudUploadState) { update { $0.cloud = c } }
+
     public func dispose() async {
         disposed = true
+        cloudWatch?.cancel()
+        await cloudUploader?.dispose()
         socketTask?.cancel()
         samplerTask?.cancel()
         for t in downTimers.values {

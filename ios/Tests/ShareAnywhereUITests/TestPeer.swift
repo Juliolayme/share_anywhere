@@ -50,19 +50,25 @@ final class TestPeer: @unchecked Sendable {
         return try await services.join(sessionId: preview.sessionId, ticket: preview.joinTicket)
     }
 
-    /// Starts receiving into the peer's temporary folder; returns the controller to watch.
-    func receive(_ sessionId: String) async -> ReceiverController {
+    /// Starts receiving into the peer's temporary folder; returns the controller to watch. With `choose: false` it loads
+    /// (and, with `cloud`, learns the session's cloud objects and asks for their keys) without starting; `choose(_:)`
+    /// starts it later. `peers` replaces the WebRTC factory (a factory that refuses stands for "no network path").
+    func receive(
+        _ sessionId: String, choose: Bool = true, cloud: Bool = false, peers: (any PeerFactory)? = nil
+    ) async -> ReceiverController {
         let inbox = dir.appendingPathComponent("inbox-\(sessionId.prefix(8))")
-        let c = ReceiverController(ReceiverDeps(
-            sessionId: sessionId, sessions: services, transfers: services, socket: socket, peers: WebRTCPeerFactory.shared,
+        var deps = ReceiverDeps(
+            sessionId: sessionId, sessions: services, transfers: services, socket: socket, peers: peers ?? WebRTCPeerFactory.shared,
             targets: JSONMap(url: dir.appendingPathComponent("targets.json")),
             saved: JSONMap(url: dir.appendingPathComponent("saved.json")),
             history: nil, resolveFolder: { _ in ScopedFolder(url: inbox) }
-        ))
+        )
+        if cloud { deps.cloud = services }
+        let c = ReceiverController(deps)
         controllers.append(c)
         await c.start()
         await c.loaded()
-        await c.choose(SaveTarget(kind: .documents, label: "peer"))
+        if choose { await c.choose(SaveTarget(kind: .documents, label: "peer")) }
         return c
     }
 
@@ -194,6 +200,11 @@ struct RelayOnlyPeers: PeerFactory {
         WebRTCPeerFactory.shared.allowInsecureTurnTLS(true)
         return try await WebRTCPeerFactory.shared.make(iceServers: iceServers, relayOnly: true, callbacks: callbacks)
     }
+}
+
+/// No peer connection can be made (the receiver's network path to the sender is gone), so only Cloud can deliver.
+struct NoPeers: PeerFactory {
+    func make(iceServers _: [ICEServer], relayOnly _: Bool, callbacks _: PeerCallbacks) async throws -> any PeerLink { throw TimedOut() }
 }
 
 struct TimedOut: Error {}

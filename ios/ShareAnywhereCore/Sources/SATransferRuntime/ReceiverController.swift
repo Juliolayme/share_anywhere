@@ -77,6 +77,8 @@ public struct ReceiverDeps: Sendable {
     public var routeStep: PolicyStep = .all
     /// The route monitor's thresholds (the shared defaults; tests shorten them).
     public var routeConfig = MonitorConfig()
+    /// Cloud Distribution (docs/TRANSFER_PROTOCOL.md §9): the last route when P2P is down and the sender uploaded.
+    public var cloud: (any CloudService)?
 
     public init(
         sessionId: String, sessions: any SessionService, transfers: any TransferService, socket: SessionSocket, peers: any PeerFactory,
@@ -139,6 +141,8 @@ public actor ReceiverController {
     /// Whether the current connection's channel opened; dials on a stricter step that never opened, in a row.
     private var connOpened = false
     private var unopened = 0
+    private var cloudAgent: CloudReceive?
+    private var cloudRunning = false
 
     public init(_ deps: ReceiverDeps) {
         d = deps
@@ -202,6 +206,17 @@ public actor ReceiverController {
                 guard let self else { return }
                 await self.onSocket(e)
             }
+        }
+        if let api = d.cloud, !senderPid.isEmpty, !participantId.isEmpty {
+            let agent = CloudReceive(
+                sessionId: d.sessionId, participantId: participantId, senderPid: senderPid, api: api, socket: d.socket, clock: d.clock,
+                onChange: { [weak self, queue] in
+                    let me = self
+                    queue.run { await me?.maybeCloud() }
+                }
+            )
+            cloudAgent = agent
+            Task { await agent.start() }
         }
         let statuses = list.transfers.map(\.status)
         if !statuses.isEmpty, statuses.allSatisfy({ $0 == "COMPLETED" }) { return finish(.completed) }
@@ -307,6 +322,7 @@ public actor ReceiverController {
     public func dispose() async {
         stopped = true
         teardown()
+        await cloudAgent?.dispose()
         await reporter.dispose()
         socketTask?.cancel()
         for sink in sinks.values {
@@ -320,7 +336,7 @@ public actor ReceiverController {
     // MARK: - Connection
 
     private func connect() async {
-        if stopped || s.phase.isFinal || s.phase == .paused { return }
+        if stopped || cloudRunning || s.phase.isFinal || s.phase == .paused { return }
         teardown()
         if downSince == nil { downSince = d.clock() }
         let reconnecting = hadData || attempt > 0
@@ -600,10 +616,12 @@ public actor ReceiverController {
         if paused { return }
         let window: Int64 = everOpened ? 10 * 60000 : 2 * 60000
         if let since = downSince, d.clock() - since > window {
-            return update {
+            update {
                 $0.phase = .unreachable
                 $0.eta = nil
             }
+            queue.run { [self] in await maybeCloud() }
+            return
         }
         update { $0.phase = .reconnecting }
         // Repeated losses of open channels on one policy step move the next dial one step stricter, at once. A dial that
@@ -626,6 +644,98 @@ public actor ReceiverController {
             if Task.isCancelled { return }
             await self?.redial()
         }
+        queue.run { [self] in await maybeCloud() }
+    }
+
+    // MARK: - Cloud Distribution
+
+    /// Files whose cloud copy this receiver could download now (tests and UI read it).
+    public func cloudReadyCount() async -> Int {
+        guard let agent = cloudAgent else { return 0 }
+        var n = 0
+        for f in s.files where await agent.ready(f.fileId) {
+            n += 1
+        }
+        return n
+    }
+
+    /// The last route (docs/TRANSFER_PROTOCOL.md §9): while P2P is down (reconnecting or offline) and every unfinished
+    /// file has a READY, unpaused cloud object whose key this receiver holds, stop redialling and download from it.
+    private func maybeCloud() async {
+        guard let agent = cloudAgent, !cloudRunning, !stopped, !s.phase.isFinal else { return }
+        guard s.phase == .reconnecting || s.phase == .unreachable else { return await agent.askForKeys() }
+        let open = open()
+        guard !open.isEmpty else { return }
+        for f in open where await !agent.ready(f.fileId) {
+            return await agent.askForKeys()
+        }
+        await runCloud(agent)
+    }
+
+    private func runCloud(_ agent: CloudReceive) async {
+        guard let folder else { return }
+        cloudRunning = true
+        retryTask?.cancel()
+        retryTask = nil
+        teardown()
+        await reporter.setRoute("cloud")
+        update {
+            $0.phase = .transferring
+            $0.route = "cloud"
+            $0.routeKind = nil
+            $0.eta = nil
+        }
+        for f in open() {
+            await reporter.state(f.transferId, "TRANSFERRING", bytes: f.verified)
+        }
+        var current: RxFile?
+        do {
+            for f in open() {
+                current = f
+                let dir = IncomingFolder(directory: folder.url)
+                let k = key(f.transferId)
+                sinks.removeValue(forKey: f.index)?.close()
+                _ = try dir.create(k, name: f.name, size: f.size, blockSize: Wire.blockSize, blockCount: 1, now: d.clock())
+                let sink = PartialFileSink(url: dir.partialURL(k))
+                sinks[f.index] = sink
+                let index = f.index
+                try await agent.download(
+                    f.fileId,
+                    write: { off, data in try await sink.write(offset: off, data) },
+                    progress: { [weak self] bytes in await self?.cloudProgress(index, bytes) },
+                    stopped: { [weak self] in await self?.cloudHalted() ?? true }
+                )
+                await fileDone(f.index, true)
+            }
+            cloudRunning = false
+            allDone()
+        } catch {
+            cloudRunning = false
+            if case CloudError.integrity = error, let f = current {
+                // A part that fails authentication or a whole-file hash that does not match: the file is not delivered.
+                update { st in
+                    if let i = st.files.firstIndex(where: { $0.index == f.index }) { st.files[i].failed = true }
+                    st.error = "product.tx_err_checksum"
+                }
+                sinks.removeValue(forKey: f.index)?.close()
+                IncomingFolder(directory: folder.url).discard(key(f.transferId))
+                await reporter.state(f.transferId, "FAILED", bytes: f.verified)
+                if open().isEmpty { return finish(s.files.contains(where: \.done) ? .partial : .failed) }
+            }
+            if cloudHalted() { return }
+            // A paused budget, a deleted object or the network: back to P2P; CLOUD_UPDATED brings the cloud back.
+            await reporter.setRoute(nil)
+            update { $0.route = nil }
+            attempt = 0
+            await connect()
+        }
+    }
+
+    private func cloudHalted() -> Bool { stopped || s.phase == .paused || s.phase.isFinal }
+
+    private func cloudProgress(_ index: Int, _ bytes: Int64) async {
+        let prev = s.files.first { $0.index == index }?.verified ?? 0
+        await onFileProgress(index, max(bytes, prev))
     }
 
     private func redial() async {

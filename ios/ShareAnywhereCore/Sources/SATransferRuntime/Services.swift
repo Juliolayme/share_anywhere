@@ -91,6 +91,24 @@ public struct LiveServices: SessionService, TransferService {
 
     private struct Empty: Decodable, Sendable {}
 
+    /// JSON calls for the Cloud extension (Cloud.swift).
+    func cloudCall<Res: Decodable & Sendable>(
+        _ op: APIOperation, path: String? = nil, body: (some Encodable & Sendable)? = String?.none, as _: Res.Type = Res.self
+    ) async throws -> Res {
+        try await call(op, path: path, body: body, as: Res.self)
+    }
+
+    /// A call with a raw `application/octet-stream` body or response (Cloud Distribution parts).
+    func raw(_ op: APIOperation, path: String, body: Data?) async throws -> Data {
+        let client = client
+        return try await identity.authorized { token in
+            try await client.send(
+                op, path: path, body: body, token: token,
+                headers: body == nil ? ["Accept": "application/octet-stream"] : ["Content-Type": "application/octet-stream"]
+            )
+        }
+    }
+
     public func create(files: [FileInput], requireApproval: Bool) async throws -> SessionView {
         try await call(APIOperations.createSession, body: CreateSessionRequest(files: files, requireApproval: requireApproval))
     }

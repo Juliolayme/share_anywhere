@@ -74,18 +74,27 @@ jobs:
         with:
           path: ios/build/SourcePackages
           key: spm-app-${{ hashFiles('ios/ShareAnywhereCore/Package.resolved', 'ios/project.yml') }}
-      - name: xcodebuild test
+      - name: xcodebuild build-for-testing
+        run: |
+          mkdir -p ios/build
+          set -o pipefail
+          xcodebuild build-for-testing -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
+            -destination "id=${{ steps.sim.outputs.udid }}" -clonedSourcePackagesDirPath ios/build/SourcePackages \
+            -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/build/build.log \
+            | grep -E "error:|warning: .*ShareAnywhere/|\*\* (TEST )?BUILD" || true
+          grep -qE "\*\* TEST BUILD SUCCEEDED \*\*" ios/build/build.log
+      - name: xcodebuild test-without-building
         env:
           TEST_RUNNER_BACKEND_URL: http://127.0.0.1:8080
         run: |
           ONLY=()
           if [ -n "${{ inputs.only-testing }}" ]; then ONLY=(-only-testing "${{ inputs.only-testing }}"); fi
           set -o pipefail
-          xcodebuild test -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
-            -destination "id=${{ steps.sim.outputs.udid }}" -clonedSourcePackagesDirPath ios/build/SourcePackages \
-            -resultBundlePath ios/build/ShareAnywhere.xcresult "${ONLY[@]}" \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/build/xcodebuild.log | grep -E "Test Case|error:|\*\* TEST|Executed" || true
-          grep -q "\*\* TEST SUCCEEDED \*\*" ios/build/xcodebuild.log
+          xcodebuild test-without-building -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath ios/build/DerivedData \
+            -resultBundlePath ios/build/ShareAnywhere.xcresult "${ONLY[@]}" 2>&1 | tee ios/build/xcodebuild.log \
+            | grep -E "Test Case|error:|\*\* TEST|Executed" || true
+          grep -q "\*\* TEST EXECUTE SUCCEEDED \*\*" ios/build/xcodebuild.log
       - name: Export screenshots
         if: always()
         run: |
@@ -101,5 +110,6 @@ jobs:
             ios/build/ShareAnywhere.xcresult
             ios/build/screenshots
             ios/build/xcodebuild.log
+            ios/build/build.log
             backend.log
           retention-days: 14

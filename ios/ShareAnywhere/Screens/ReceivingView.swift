@@ -235,7 +235,7 @@ struct ReceivingView: View {
                 title: target.kind == .folder ? target.label : L10n.t("product.rx_choose_folder"),
                 detail: L10n.t("product.rx_folder_hint_ios"), selected: target.kind == .folder, id: "rx.save-folder"
             ) { pickingFolder = true }
-            Text(L10n.t("product.rx_save_note")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+            Text(L10n.t("product.rx_save_note")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
         }
         if let e = m.rx.error { Banner(kind: .danger, title: L10n.t(e)) }
         fileList
@@ -282,7 +282,7 @@ struct ReceivingView: View {
             .typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
             if rx.phase == .transferring { Text(TransferText.eta(rx.eta)).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2) }
             if let target = rx.target {
-                Text(L10n.t("product.rx_saved_to", ["folder": target.label])).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+                Text(L10n.t("product.rx_saved_to", ["folder": target.label])).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
             }
         }
         if rx.phase == .reconnecting { Banner(kind: .warning, title: L10n.t("product.rx_reconnecting")) }
@@ -364,7 +364,7 @@ struct ReceivingView: View {
                 }
                 if let target = rx.target {
                     Text(L10n.t("product.rx_saved_to", ["folder": target.label])).typeStyle(SATokens.TypeScale.caption)
-                        .foregroundStyle(p.fg3)
+                        .foregroundStyle(p.fg2)
                 }
             }
         }

@@ -21,7 +21,7 @@ struct WelcomeView: View {
             Spacer()
             PrimaryButton(title: L10n.t("ios_vv.k35"), action: onStart)
                 .accessibilityIdentifier("welcome.start")
-            Text(L10n.t("ios_vv.k144")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3).multilineTextAlignment(.center)
+            Text(L10n.t("ios_vv.k144")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2).multilineTextAlignment(.center)
         }
         .padding(SATokens.Space.s6)
         .frame(maxWidth: 520)

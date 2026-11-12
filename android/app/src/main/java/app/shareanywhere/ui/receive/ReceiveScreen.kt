@@ -295,7 +295,7 @@ private fun CodeTab(ui: ReceiveUi, onCode: (String) -> Unit, onSubmit: () -> Uni
     Text(
         stringResource(R.string.common_cx_hint),
         style = MaterialTheme.typography.bodySmall,
-        color = p.fg3,
+        color = p.fg2,
         textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth()
     )

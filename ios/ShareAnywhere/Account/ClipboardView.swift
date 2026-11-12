@@ -276,8 +276,8 @@ struct ClipboardView: View {
             }
             .frame(minHeight: SATokens.touchTarget)
             .accessibilityIdentifier("clipboard.sync-fallback")
-            Text(L10n.t("product.cb_fallback_p")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
-            Text(L10n.t("ios_yy.keep7")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+            Text(L10n.t("product.cb_fallback_p")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
+            Text(L10n.t("ios_yy.keep7")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
         }
         if pasteboard.changedSinceSync {
             Banner(kind: .info, title: L10n.t("product.cb_new_copy_ios")).accessibilityIdentifier("clipboard.changed")
@@ -401,7 +401,7 @@ struct ClipRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.text ?? L10n.t("product.cb_locked_device")).typeStyle(SATokens.TypeScale.body)
-                    .foregroundStyle(item.text == nil ? p.fg3 : p.fg)
+                    .foregroundStyle(item.text == nil ? p.fg2 : p.fg)
                     .lineLimit(3)
                 HStack(spacing: SATokens.Space.s2) {
                     Text(mine ? L10n.t("product.cb_this_device") : L10n.t("product.cb_other_device"))

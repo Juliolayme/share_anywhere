@@ -108,6 +108,30 @@ enum UITest {
 }
 
 extension XCTestCase {
+    /// XCTest's accessibility audit (`performAccessibilityAudit()`, the Accessibility Inspector's checks: element
+    /// descriptions, hit regions, contrast, Dynamic Type, clipped text, traits) on the current screen; every issue
+    /// fails the test with the element it names. Skipped by design: the `-uiTesting` probes (`test.*`, invisible and
+    /// never shown in the product), contrast on disabled controls (inactive components are exempt from WCAG 1.4.3),
+    /// and the readable-label check on the tests' own seeded file names (`sa-seed-N.bin`, user content in real use).
+    func audit(_ app: XCUIApplication, _ screen: String, file: StaticString = #filePath, line: UInt = #line) {
+        guard #available(iOS 17.0, *) else { return }
+        do {
+            try app.performAccessibilityAudit { issue in
+                if let el = issue.element {
+                    if el.identifier.hasPrefix("test.") { return true }
+                    if issue.auditType == .contrast, !el.isEnabled { return true }
+                    if issue.auditType == .sufficientElementDescription || issue.auditType == .textClipped,
+                       el.label.hasPrefix("sa-seed-") { return true }
+                }
+                let element = issue.element.map { "\($0.elementType) '\($0.identifier)' '\($0.label)'" } ?? "screen"
+                XCTFail("\(screen): \(issue.compactDescription) — \(element): \(issue.detailedDescription)", file: file, line: line)
+                return true // reported here; do not fail twice
+            }
+        } catch {
+            XCTFail("\(screen): audit could not run: \(error)", file: file, line: line)
+        }
+    }
+
     /// A screenshot attached to the result bundle (kept for the phase report).
     func shot(_ app: XCUIApplication, _ name: String) {
         let a = XCTAttachment(screenshot: app.screenshot())

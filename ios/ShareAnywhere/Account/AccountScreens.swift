@@ -119,7 +119,7 @@ struct SignInView: View {
                 Button(L10n.t("ios_yy.forgot")) { path.append(.forgot) }.frame(minHeight: SATokens.touchTarget)
                 Button(L10n.t("ios_yy.create")) { path.append(.signUp) }.frame(minHeight: SATokens.touchTarget)
                     .accessibilityIdentifier("signin.create")
-                Text(L10n.t("ios_vv.k144")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+                Text(L10n.t("ios_vv.k144")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
             }
             .padding(SATokens.Space.s4)
         }
@@ -158,7 +158,7 @@ struct SignUpView: View {
                 Text(L10n.t("ios_yy.su_p")).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
                 FormField(label: L10n.t("ios_yy.email"), text: $email, content: .emailAddress, id: "signup.email")
                 FormField(label: L10n.t("ios_yy.pw"), text: $password, secure: true, content: .newPassword, id: "signup.password")
-                Text(L10n.t("product.acct_weak_password")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+                Text(L10n.t("product.acct_weak_password")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                 if let error { Banner(kind: .danger, title: error).accessibilityIdentifier("signup.error") }
                 PrimaryButton(title: L10n.t("ios_yy.create"), enabled: !busy && !email.isEmpty && password.count >= 10) { submit() }
                     .accessibilityIdentifier("signup.submit")
@@ -200,7 +200,7 @@ struct ForgotView: View {
                 if sent {
                     Text(L10n.t("ios_yy.fp_sent_h")).typeStyle(SATokens.TypeScale.title).foregroundStyle(p.fg)
                     Text(L10n.t("ios_yy.fp_sent_p")).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
-                    Text(L10n.t("product.fp_open_link")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+                    Text(L10n.t("product.fp_open_link")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                 } else {
                     Text(L10n.t("ios_yy.fp_p")).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
                     FormField(label: L10n.t("ios_yy.email"), text: $email, content: .emailAddress, id: "forgot.email")
@@ -385,7 +385,7 @@ struct KeyPairView: View {
                     Text(start.payload).typeStyle(SATokens.TypeScale.code).textSelection(.enabled)
                         .accessibilityIdentifier("key-pair.code").accessibilityValue(start.payload)
                     SecondaryButton(title: L10n.t("product.pair_copy_code")) { account.copy(start.payload) }
-                    Text(L10n.t("product.pair_steps")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+                    Text(L10n.t("product.pair_steps")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                     HStack(spacing: SATokens.Space.s2) {
                         ProgressView()
                         Text(L10n.t("product.pair_waiting")).typeStyle(SATokens.TypeScale.body)
@@ -471,7 +471,7 @@ struct PhraseView: View {
                     .background(p.surface, in: RoundedRectangle(cornerRadius: SATokens.Radius.md))
                     .accessibilityIdentifier("phrase.input")
                 let count = Phrase.normalize(phrase).split(separator: " ").count
-                Text(L10n.t("product.phrase_count", ["n": "\(count)"])).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+                Text(L10n.t("product.phrase_count", ["n": "\(count)"])).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                 if let problem = count == 12 ? Phrase.check(phrase) : nil {
                     Text(problem.word.map { L10n.t("product.phrase_unknown", ["word": $0]) } ?? L10n.t("product.phrase_checksum"))
                         .typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.dangerInk)

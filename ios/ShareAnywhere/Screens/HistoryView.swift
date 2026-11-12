@@ -40,7 +40,7 @@ struct HistoryView: View {
                 Section(header: Text(
                     shown.count == 1 ? L10n.t("product.history_results_one") : L10n
                         .t("product.history_results", ["n": "\(shown.count)"])
-                )) {
+                ).foregroundStyle(p.fg2)) {
                     ForEach(shown) { e in
                         NavigationLink(value: e) { HistoryRow(entry: e) }
                             .accessibilityIdentifier("history.row.\(e.id)")
@@ -152,7 +152,8 @@ struct HistoryRow: View {
             Spacer()
             Chip(
                 text: statusLabel(entry.status),
-                color: entry.status == .completed ? p.success : entry.status == .failed ? p.danger : p.warning
+                color: entry.status == .completed ? p.receiveInk : entry.status == .failed ? p.dangerInk : p.warningInk,
+                background: entry.status == .completed ? p.receiveSoft : entry.status == .failed ? p.dangerSoft : p.warningSoft
             )
         }
         .padding(.vertical, SATokens.Space.s2)

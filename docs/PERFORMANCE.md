@@ -8,15 +8,19 @@ Nightly job `throughput` (`.github/workflows/nightly.yml`, spec `web/e2e/nightly
 
 | Route | Receiver engine | CI (GitHub-hosted, 4 vCPU) MiB/s | Local (container, 4 vCPU) MiB/s |
 |---|---|---|---|
-| Direct | Chromium | _see §1.1_ | 15.1 |
-| Direct | Firefox | _see §1.1_ | 9.5 (stock Firefox 160) |
-| Direct | WebKit | _see §1.1_ | — (WebKit not installed in the container) |
-| Relay, UDP | Chromium | _see §1.1_ | 13.1 |
-| Relay, TLS | Chromium | _see §1.1_ | 13.2 |
+| Direct | Chromium | 13.8 | 15.1 |
+| Direct | Firefox | 18.8 | 9.5 (stock Firefox 160) |
+| Direct | WebKit | 17.2 | — (WebKit not installed in the container) |
+| Relay, UDP | Chromium | 14.7 | 13.1 |
+| Relay, TLS | Chromium | 14.3 | 13.2 |
 
 ### 1.1 CI runs
 
-Filled from the nightly artifacts (run link, date, commit).
+| Run | Date | Commit | Artifacts |
+|---|---|---|---|
+| Nightly [43300135250](https://github.com/Juliolayme/share_anywhere/actions/runs/43300135250) | 2026-11-12 | 11ae428 | `throughput-chromium-desktop`, `throughput-firefox-desktop`, `throughput-webkit-desktop` |
+
+One run per engine, so treat the numbers as an order of magnitude: they move with the machine (Chromium direct gave 15.1 locally and 13.8 in CI; Firefox 9.5 locally and 18.8 in CI). Relay matching or beating direct is a loopback effect: both paths stay on one host, and the relay adds a hop that costs nothing there.
 
 ### 1.2 Reading the numbers
 

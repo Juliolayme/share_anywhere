@@ -299,7 +299,7 @@ struct SessionScreen: View {
                         .accessibilityIdentifier("session.share")
                     }
                 }
-                Text(L10n.t("common.cx_valid")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
+                Text(L10n.t("common.cx_valid")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
             }
         } else {
             Card {
@@ -364,7 +364,7 @@ struct SessionScreen: View {
             Text(L10n.t(v.requireApproval ? "product.empty_receivers_appr" : "product.empty_receivers"))
                 .typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
                 .accessibilityIdentifier("session.empty")
-            if s.windowOpen { Text(L10n.t("ios.waiting_r")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3) }
+            if s.windowOpen { Text(L10n.t("ios.waiting_r")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2) }
         }
         ForEach(list, id: \.id) { participant in
             ParticipantCard(

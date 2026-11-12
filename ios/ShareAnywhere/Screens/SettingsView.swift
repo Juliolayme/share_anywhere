@@ -11,6 +11,10 @@ struct SettingsView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var account: AccountSession
     @Environment(\.palette) private var p
+
+    /// Section headers and footers in the palette's secondary text colour (`fg-2`, AA on the grouped background); the
+    /// system's secondary label only nearly reaches 4.5:1 (accessibility audit).
+    private func groupText(_ text: String) -> some View { Text(text).foregroundStyle(p.fg2) }
     @State private var accountSheet: AccountSheet.Step?
     @State private var signingOut = false
     @State private var renaming = false
@@ -57,7 +61,7 @@ struct SettingsView: View {
                 .disabled(model.identityState.device == nil)
                 .accessibilityIdentifier("settings.device-name")
             }
-            Section(L10n.t("ios_yy.g_app")) {
+            Section(header: groupText(L10n.t("ios_yy.g_app"))) {
                 Picker(L10n.t("ios_yy.s_theme"), selection: $settings.theme) {
                     Text(L10n.t("ios_yy.th_sys")).tag(SettingsStore.Theme.system)
                     Text(L10n.t("ios_yy.th_light")).tag(SettingsStore.Theme.light)
@@ -71,11 +75,11 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings.language")
             }
-            Section(footer: Text(L10n.t("ios_yy.s_wake_p"))) {
+            Section(footer: groupText(L10n.t("ios_yy.s_wake_p"))) {
                 Toggle(L10n.t("ios_yy.s_wake"), isOn: $settings.keepScreenOn).accessibilityIdentifier("settings.keep-screen-on")
                 notificationsRow
             }
-            Section(header: Text(L10n.t("ios_yy.g_priv")), footer: Text(L10n.t("ios_yy.s_priv_p"))) {
+            Section(header: groupText(L10n.t("ios_yy.g_priv")), footer: groupText(L10n.t("ios_yy.s_priv_p"))) {
                 Picker(L10n.t("ios_yy.s_histkeep"), selection: Binding(get: { settings.retention }, set: { model.setRetention($0) })) {
                     Text(L10n.t("ios_yy.h30")).tag(Retention.days30)
                     Text(L10n.t("ios_yy.h90")).tag(Retention.days90)
@@ -88,7 +92,7 @@ struct SettingsView: View {
             }
             CloudSettingsSection(signedIn: account.state.signedIn)
             if account.state.signedIn { accountSections }
-            Section(L10n.t("ios_yy.g_about")) {
+            Section(header: groupText(L10n.t("ios_yy.g_about"))) {
                 HStack {
                     Text(L10n.t("ios_yy.s_version"))
                     Spacer()
@@ -115,7 +119,7 @@ struct SettingsView: View {
 
     /// Account, history sync and Clipboard Sync settings (signed in).
     @ViewBuilder private var accountSections: some View {
-        Section(header: Text(L10n.t("ios_yy.g_account")), footer: Text(L10n.t("product.history_sync_p"))) {
+        Section(header: groupText(L10n.t("ios_yy.g_account")), footer: groupText(L10n.t("product.history_sync_p"))) {
             if !account.state.added {
                 Button(L10n.t("product.add_device_btn")) { accountSheet = .trust }.accessibilityIdentifier("settings.add-device")
             } else if account.state.keys == .setup || account.state.keys == .pair {
@@ -134,7 +138,7 @@ struct SettingsView: View {
             Button(L10n.t("ios_yy.s_signout"), role: .destructive) { signingOut = true }.accessibilityIdentifier("settings.signout")
         }
         if let cb = account.clip.settings {
-            Section(header: Text(L10n.t("ios_yy.g_clip")), footer: Text(L10n.t("product.cb_skip_disclaimer"))) {
+            Section(header: groupText(L10n.t("ios_yy.g_clip")), footer: groupText(L10n.t("product.cb_skip_disclaimer"))) {
                 Toggle(L10n.t("product.cb_pause_label"), isOn: Binding(get: { cb.paused }, set: { v in saveClip { $0.paused = v } }))
                     .accessibilityIdentifier("settings.cb-pause")
                 Toggle(L10n.t("ios_yy.s_skip"), isOn: Binding(get: { cb.sensitiveSkip }, set: { v in saveClip { $0.sensitiveSkip = v } }))

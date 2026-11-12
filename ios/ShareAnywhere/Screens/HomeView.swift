@@ -148,7 +148,7 @@ struct HomeTile: View {
                 Image(systemName: icon).font(.system(size: 30)).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).typeStyle(SATokens.TypeScale.title)
-                    Text(subtitle).typeStyle(SATokens.TypeScale.caption).opacity(0.9)
+                    Text(subtitle).typeStyle(SATokens.TypeScale.caption)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").accessibilityHidden(true)

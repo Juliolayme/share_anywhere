@@ -127,10 +127,12 @@ struct Banner: View {
     }
 }
 
-/// Small status label (Status chip / badge).
+/// Small status label (Status chip / badge). Status chips pass a token pair (`*-ink` text on `*-soft`), which the
+/// token contrast check holds to WCAG AA; a colour without a background gets a light tint of itself.
 struct Chip: View {
     let text: String
     var color: Color?
+    var background: Color?
     @Environment(\.palette) private var p
 
     var body: some View {
@@ -139,7 +141,7 @@ struct Chip: View {
             .padding(.horizontal, SATokens.Space.s2)
             .padding(.vertical, SATokens.Space.s1)
             .foregroundStyle(color ?? p.fg2)
-            .background((color ?? p.fg2).opacity(0.12), in: Capsule())
+            .background(background ?? (color ?? p.fg2).opacity(0.12), in: Capsule())
     }
 }
 
@@ -189,7 +191,7 @@ struct LogoMark: View {
             .frame(width: size, height: size)
             if wordmark {
                 Text("Share Anywhere")
-                    .font(.system(size: size * SATokens.Logo.wordmarkSizeRatio, weight: .bold))
+                    .font(SAFont.font(size: size * SATokens.Logo.wordmarkSizeRatio, weight: .bold))
                     .foregroundStyle(c.text)
             }
         }

@@ -56,7 +56,7 @@ struct ReceiveView: View {
         TextField(L10n.t("ios.code"), text: $code)
             .keyboardType(.numberPad)
             .textContentType(.oneTimeCode)
-            .font(.system(size: 34, weight: .semibold, design: .monospaced))
+            .font(SAFont.font(size: 34, weight: .semibold, mono: true))
             .multilineTextAlignment(.center)
             .padding(SATokens.Space.s3)
             .background(p.surface, in: RoundedRectangle(cornerRadius: SATokens.Radius.md))

@@ -580,7 +580,7 @@ export default function ClipboardHome({ runtime }: { runtime: ClipboardRuntime }
               </li>
             ))}
           </ol>
-          <p className="m-0 text-center text-[12px] text-fg-3">
+          <p className="m-0 text-center text-[12px] text-fg-2">
             {days === 1 ? t('product.cb_keep_note_1') : t('product.cb_keep_note', { n: days })} ·{' '}
             <Link to="/settings/clipboard">{t('product.cb_settings_link')}</Link>
           </p>

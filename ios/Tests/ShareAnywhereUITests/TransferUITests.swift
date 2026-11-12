@@ -70,6 +70,7 @@ final class TransferUITests: XCTestCase {
         let joined = try blocking { try await receiver.join(code: code) }
         XCTAssertEqual(joined.participant.status, "JOINED", "open join: no approval step")
         XCTAssertTrue(card(app, "UITest iPad").waitForExistence(timeout: 20), "the receiver appears on the session")
+        audit(app, "session with a receiver")
 
         let rx = try blocking(60) { await receiver.receive(joined.sessionId) }
         eventually("the receiver finishes", timeout: 120) { rx.state.value.phase.isFinal }
@@ -78,6 +79,7 @@ final class TransferUITests: XCTestCase {
         XCTAssertEqual(TestPeer.sha256(file: saved), TestPeer.sha256(TestPeer.seededContent(index: 0, size: size)))
         XCTAssertTrue(UITest.id(app, "dashboard-done").waitForExistence(timeout: 30), "the sender sees the result")
         shot(app, "dashboard-done")
+        audit(app, "dashboard-done")
     }
 
     func testGuestReceivesIntoDocumentsWithAVerifiedHashAndHistory() throws {
@@ -103,10 +105,12 @@ final class TransferUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "preview.receive").waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["holiday.bin"].exists)
         shot(app, "rx-preview")
+        audit(app, "rx-preview")
         UITest.id(app, "preview.receive").tap()
         XCTAssertTrue(UITest.id(app, "rx.start").waitForExistence(timeout: 20), "open join goes straight to where to save")
         XCTAssertTrue(UITest.id(app, "security-words").exists)
         shot(app, "rx-save")
+        audit(app, "rx-save")
 
         // The sender is not serving yet: the receive is connecting, which keeps the screen on; Pause lets it sleep.
         UITest.id(app, "rx.start").tap()
@@ -114,6 +118,7 @@ final class TransferUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "keepopen.lock-hint").exists, "Locking your iPhone pauses the transfer")
         eventually("connecting keeps the screen on") { idle(app) == "true" }
         shot(app, "rx-progress")
+        audit(app, "rx-progress")
         UITest.id(app, "rx.pause").tap()
         eventually("paused: the screen may sleep") { idle(app) == "false" }
         XCTAssertTrue(UITest.id(app, "rx.resume").waitForExistence(timeout: 10))
@@ -122,6 +127,7 @@ final class TransferUITests: XCTestCase {
         UITest.id(app, "rx.resume").tap()
         XCTAssertTrue(UITest.id(app, "rx-done").waitForExistence(timeout: 120), "the files arrive")
         XCTAssertTrue(UITest.id(app, "rx.result").exists)
+        audit(app, "rx-done")
         eventually("finished: the screen may sleep") { idle(app) == "false" }
         let hashes = UITest.id(app, "test.rx-sha256")
         eventually("the saved file's hash is computed") { (hashes.value as? String)?.isEmpty == false }
@@ -192,6 +198,7 @@ final class TransferUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "session.window-closed").waitForExistence(timeout: 30), "Code expired — Create new code")
         XCTAssertTrue(UITest.id(app, "session-expired").exists)
         XCTAssertFalse(UITest.id(app, "session-code").exists, "the old code is no longer shown")
+        audit(app, "session-expired")
         shot(app, "session-expired")
         let late = try peer("Too Late")
         XCTAssertThrowsError(try blocking { try await late.join(code: code) }, "an expired code admits nobody")
@@ -248,6 +255,7 @@ final class TransferUITests: XCTestCase {
         let approve = button(card(app, "Needs Approval"), "participant.approve")
         XCTAssertTrue(approve.waitForExistence(timeout: 20))
         shot(app, "session-approval")
+        audit(app, "session with a request")
         approve.tap()
         eventually("approved") { ((try? self.blocking { try await r.services.get(joined.sessionId) })?.me?.status) == "JOINED" }
     }

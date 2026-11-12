@@ -85,6 +85,7 @@ class TransferTest {
             ActivityScenario.launch<MainActivity>(intent).use { scenario ->
                 compose.dumpOnFailure {
                     compose.waitForTag(ScreenIds.SESSION, 30_000)
+                    compose.assertAccessible(ScreenIds.SESSION)
                     val joined =
                         runBlocking { peer.peer.api.resolveCode(view.code!!).let { peer.peer.api.join(it.sessionId, it.joinTicket) } }
                     assertEquals("JOINED", joined.participant.status)
@@ -96,6 +97,7 @@ class TransferTest {
                     compose.onNodeWithTag("session.dashboard").tap()
                     waitForSendEnd(view.id, 120_000)
                     compose.waitForTag(ScreenIds.DASHBOARD_DONE, 30_000)
+                    compose.assertAccessible(ScreenIds.DASHBOARD_DONE)
                     val done = runBlocking { withTimeout(30_000) { rx.state.first { it.phase == RxPhase.Completed } } }
                     assertEquals(sum, TestPeer.sha256(peer.context, done.files.single().documentUri!!.toUri()))
                     // Nothing is moving any more: the window no longer keeps the screen on.
@@ -128,13 +130,16 @@ class TransferTest {
                     compose.onNodeWithTag("receive.code-input").performTextInput(view.code!!)
                     compose.onNodeWithTag("receive.continue").performClick()
                     compose.waitForTag(ScreenIds.RX_PREVIEW, 30_000)
+                    compose.assertAccessible(ScreenIds.RX_PREVIEW)
                     compose.onNodeWithTag("preview.receive").tap()
                     // RX-5b: Download/Share Anywhere is preselected, so Start receiving is ready.
                     compose.waitForTag("rx.start", 30_000)
+                    compose.assertAccessible("rx.save")
                     compose.onNodeWithTag("rx.start").tap()
                     waitForReceiveEnd(view.id, 120_000)
                     compose.waitForTag(ScreenIds.RX_DONE, 30_000)
                     compose.onNodeWithTag("rx.result").assertExists()
+                    compose.assertAccessible(ScreenIds.RX_DONE)
                     // RX-7 names the default destination (it was blank when the default was passed as a URI).
                     compose.waitForText(app.shareanywhere.transfer.storage.Folders.DEFAULT_LABEL)
                     val rx = entry.transferRuntime().existingReceiver(view.id)!!

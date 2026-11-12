@@ -2,23 +2,11 @@ import XCTest
 
 /// Accessibility audit (docs/phases/PHASE_9_HARDENING_RELEASE.md): XCTest's `performAccessibilityAudit()` (the checks of
 /// Xcode's Accessibility Inspector: element descriptions, hit regions, contrast, Dynamic Type, clipped text, traits)
-/// on every main screen. Every issue fails the test; each one is recorded with the element it names, so the failure
-/// message lists what to fix. VoiceOver use itself is on the real-device checklist.
+/// on every main screen (`audit` in Support.swift); the transfer, session and account screens are audited inside
+/// TransferUITests and AccountUITests. Every issue fails the test with the element it names. VoiceOver use itself is
+/// on the real-device checklist.
 final class AccessibilityAuditUITests: XCTestCase {
     override func setUp() { continueAfterFailure = true }
-
-    private func audit(_ app: XCUIApplication, _ screen: String, file: StaticString = #filePath, line: UInt = #line) {
-        guard #available(iOS 17.0, *) else { return }
-        do {
-            try app.performAccessibilityAudit { issue in
-                let element = issue.element.map { "\($0.elementType) '\($0.identifier)' '\($0.label)'" } ?? "screen"
-                XCTFail("\(screen): \(issue.compactDescription) — \(element): \(issue.detailedDescription)", file: file, line: line)
-                return true // reported here; do not fail twice
-            }
-        } catch {
-            XCTFail("\(screen): audit could not run: \(error)", file: file, line: line)
-        }
-    }
 
     func testEveryMainScreenPassesTheAccessibilityAudit() throws {
         let app = UITest.app(extra: ["-seedHistory", "-seedSendFiles", "2", "-seedFileBytes", "2000000"])

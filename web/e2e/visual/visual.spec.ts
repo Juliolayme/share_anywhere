@@ -27,6 +27,9 @@ const MASK = [
   '[role="status"]',
 ];
 
+// Per-run names replaced by a fixed text before each capture (masked as well).
+const STABLE_TEXT = ['[data-testid="device-name"]', '[data-testid="settings-device-name"]'];
+
 async function page(
   browser: import('@playwright/test').Browser,
   lang: 'en' | 'vi',
@@ -54,6 +57,13 @@ for (const lang of ['en', 'vi'] as const) {
       for (const [path, name] of routes) {
         await open(p, path);
         await p.waitForLoadState('networkidle').catch(() => undefined);
+        // A mask hides the text but not its length: a long generated device name wraps on a phone and moves
+        // everything below it. Give per-run names one fixed text first.
+        await p.evaluate((selectors) => {
+          for (const el of Array.from(document.querySelectorAll(selectors.join(',')))) {
+            if (el.children.length === 0) el.textContent = 'Test device';
+          }
+        }, STABLE_TEXT);
         await expect(p).toHaveScreenshot(`${name}-${lang}-${scheme}.png`, {
           animations: 'disabled',
           caret: 'hide',

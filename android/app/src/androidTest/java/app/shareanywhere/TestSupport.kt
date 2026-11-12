@@ -1,5 +1,6 @@
 package app.shareanywhere
 
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -7,6 +8,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.printToLog
+import androidx.compose.ui.unit.dp
 import app.shareanywhere.transfer.runtime.final
 import kotlinx.coroutines.flow.first
 
@@ -76,4 +78,45 @@ fun deleteReceived(sessionId: String) {
             }
         }
     }
+}
+
+/**
+ * Accessibility audit of the current screen (docs/phases/PHASE_9_HARDENING_RELEASE.md), the automated part of a TalkBack
+ * and Accessibility Scanner review: each control TalkBack can activate (a node with a click action in the merged
+ * semantics tree) has a spoken name (text or content description) and a touch target of at least 48 × 48 dp. Returns
+ * readable problems, empty when the screen passes.
+ */
+fun ComposeTestRule.accessibilityProblems(screen: String): List<String> {
+    fun androidx.compose.ui.semantics.SemanticsNode.label(): String {
+        val c = config
+        val text = c.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString(" ") { it.text }.orEmpty()
+        val edit = c.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.text.orEmpty()
+        val desc = c.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.joinToString(" ").orEmpty()
+        return listOf(text, edit, desc).joinToString(" ").trim()
+    }
+    fun androidx.compose.ui.semantics.SemanticsNode.all(): List<androidx.compose.ui.semantics.SemanticsNode> =
+        listOf(this) + children.flatMap { it.all() }
+    waitForIdle()
+    val root = onRoot().fetchSemanticsNode()
+    val minPx = with(density) { 48.dp.toPx() } - 1f // rounding
+    val problems = mutableListOf<String>()
+    for (n in root.all()) {
+        if (n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick) == null) continue
+        if (n.config.contains(androidx.compose.ui.semantics.SemanticsProperties.HideFromAccessibility)) continue
+        val tag = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.TestTag) ?: "#${n.id}"
+        if (n.label().isEmpty()) problems += "$screen: $tag has no spoken name"
+        // Bounds in the root are clipped by the viewport (a control below the fold shows a sliver): add back the part
+        // the clip hides, so the check measures the control itself.
+        val b = n.touchBoundsInRoot
+        val w = b.width + (n.size.width - n.boundsInRoot.width).coerceAtLeast(0f)
+        val h = b.height + (n.size.height - n.boundsInRoot.height).coerceAtLeast(0f)
+        if (w < minPx || h < minPx) problems += "$screen: $tag touch target ${w.toInt()}×${h.toInt()} px is under 48 dp"
+    }
+    return problems
+}
+
+/** Fails with every accessibility problem on the current screen ([accessibilityProblems]). */
+fun ComposeTestRule.assertAccessible(screen: String) {
+    val problems = accessibilityProblems(screen)
+    org.junit.Assert.assertTrue("accessibility problems:\n" + problems.joinToString("\n"), problems.isEmpty())
 }

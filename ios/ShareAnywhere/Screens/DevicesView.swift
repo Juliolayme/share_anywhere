@@ -21,7 +21,7 @@ struct DevicesView: View {
                             .accessibilityIdentifier("devices.name")
                         Text("iOS · \(UIDevice.current.model)").typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
                         Text(L10n.t("product.anon_since", ["date": anonSince(d.createdAt)])).typeStyle(SATokens.TypeScale.caption)
-                            .foregroundStyle(p.fg3)
+                            .foregroundStyle(p.fg2)
                         HStack(spacing: SATokens.Space.s3) {
                             SecondaryButton(title: L10n.t("ios_yy.rename")) { renaming = true }.accessibilityIdentifier("devices.rename")
                             SecondaryButton(title: L10n.t("product.reset_identity")) { confirmReset = true }

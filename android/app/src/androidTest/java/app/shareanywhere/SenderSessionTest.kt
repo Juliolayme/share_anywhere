@@ -78,11 +78,13 @@ class SenderSessionTest {
                 val words = runBlocking { alice.api.get(view.id).me?.securityWords.orEmpty() }
                 assertEquals(3, words.size)
                 compose.waitForText(words.joinToString(" · "))
+                compose.assertAccessible("${ScreenIds.SESSION} with a receiver")
 
                 // The join window ends (test clock): expired state, screen released, the joined receiver keeps its place.
                 Backend.advanceClock(601)
                 compose.waitForTag(ScreenIds.SESSION_EXPIRED, 30_000)
                 compose.onNodeWithTag("code-expired").assertExists()
+                compose.assertAccessible(ScreenIds.SESSION_EXPIRED)
                 compose.waitUntil(5_000) { !entry.keepAwake().screenOn.value }
                 scenario.onActivity { assertFalse(it.keepsScreenOn()) }
                 assertEquals("JOINED", runBlocking { alice.api.get(view.id).me?.status })
@@ -105,6 +107,7 @@ class SenderSessionTest {
                 val requested = runBlocking { bob.api.resolveCode(secondCode).let { bob.api.join(it.sessionId, it.joinTicket) } }
                 assertEquals("REQUESTED", requested.participant.status)
                 compose.waitForTag("request-card", 20_000)
+                compose.assertAccessible("${ScreenIds.SESSION} with a request")
                 compose.onNodeWithTag("participant.approve").tap()
                 compose.waitForTag("participant-card", 20_000)
                 assertEquals("JOINED", runBlocking { bob.api.get(view.id).me?.status })
@@ -112,6 +115,7 @@ class SenderSessionTest {
                 // Block, after the confirmation dialog.
                 compose.onNodeWithTag("participant.block").tap()
                 compose.onNodeWithText(Backend.entryString(R.string.product_block_confirm_h)).assertExists()
+                compose.assertAccessible("block confirmation")
                 compose.onNodeWithTag("dialog.confirm").tap()
                 compose.waitUntil(20_000) { compose.onAllNodesWithTag("participant-card").fetchSemanticsNodes().isEmpty() }
                 assertEquals("BLOCKED", runBlocking { bob.api.get(view.id).me?.status })
@@ -121,6 +125,7 @@ class SenderSessionTest {
                 compose.waitForTag("session.close-confirm")
                 compose.onNodeWithTag("session.close-confirm").tap()
                 compose.waitForTag("session.ended", 20_000)
+                compose.assertAccessible("session ended")
                 assertEquals("CLOSED", runBlocking { entry.sessionsApi().get(view.id).status })
             }
         }

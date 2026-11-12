@@ -35,10 +35,51 @@ extension View {
 
 struct TypeStyleModifier: ViewModifier {
     let style: SATypeStyle
-    @ScaledMetric private var scale: CGFloat = 1
+    @ScaledMetric private var scale: CGFloat
+
+    init(style: SATypeStyle) {
+        self.style = style
+        _scale = ScaledMetric(wrappedValue: 1, relativeTo: style.textStyle)
+    }
+
     func body(content: Content) -> some View {
         content
-            .font(.system(size: style.size * scale, weight: style.weight, design: style.mono ? .monospaced : .default))
+            .font(style.font)
             .lineSpacing(max(0, style.line - style.size) * scale / 2)
+    }
+}
+
+extension SATypeStyle {
+    /// The Dynamic Type text style this step scales with: the one whose default size (Large) equals the step, or the
+    /// nearest smaller one.
+    var textStyle: Font.TextStyle { SAFont.textStyle(for: size) }
+
+    /// The token step as a Dynamic Type font: a system text style when its default size is the step's size (every
+    /// step but the 40 pt display), otherwise the system font at the step's size scaled relative to the nearest
+    /// text style. Fixed `.system(size:)` fonts do not follow the user's text size (accessibility audit).
+    var font: Font { SAFont.font(size: size, weight: weight, mono: mono) }
+}
+
+enum SAFont {
+    /// Default (Large) point sizes of the text styles (Apple Human Interface Guidelines, iOS).
+    private static let defaults: [(Font.TextStyle, CGFloat)] = [
+        (.largeTitle, 34), (.title, 28), (.title2, 22), (.title3, 20), (.body, 17), (.callout, 16),
+        (.subheadline, 15), (.footnote, 13), (.caption, 12), (.caption2, 11)
+    ]
+
+    static func textStyle(for size: CGFloat) -> Font.TextStyle {
+        defaults.first { size >= $0.1 }?.0 ?? .caption2
+    }
+
+    static func font(size: CGFloat, weight: Font.Weight, mono: Bool = false) -> Font {
+        let style = textStyle(for: size)
+        let design: Font.Design = mono ? .monospaced : .default
+        if defaults.contains(where: { $0.0 == style && $0.1 == size }) {
+            return .system(style, design: design, weight: weight)
+        }
+        // No text style has this default size: the system font (a name no font has resolves to it) at the step's
+        // size, scaled with the nearest text style.
+        let custom = Font.custom("SAFontSystem", size: size, relativeTo: style).weight(weight)
+        return mono ? custom.monospaced() : custom
     }
 }

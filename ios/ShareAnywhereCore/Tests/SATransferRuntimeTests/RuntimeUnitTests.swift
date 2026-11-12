@@ -191,13 +191,15 @@ final class ReporterTests: XCTestCase {
 
     func testProgressIsThrottled() async throws {
         let sink = Sink()
-        let r = Reporter(sink: sink, intervalMs: 50)
+        // The first report goes at once; the interval is long enough that a slow runner cannot reach the next one.
+        let r = Reporter(sink: sink, intervalMs: 10000)
         await r.seed("t", "TRANSFERRING", 0)
         for i in 0 ..< 20 {
             await r.progress("t", Int64(i))
         }
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(sink.all.count, 1)
+        await r.dispose()
     }
 }
 

@@ -154,7 +154,19 @@ export class RouteMonitor {
     return s.now - this.lastProgressAt >= this.config.stallMs ? this.migrate(s.now) : 'stay';
   }
 
-  /** The channel was lost (ICE failed, channel closed). */
+  /**
+   * Back to `step` (the receiver's starting step) after dials on a stricter step never opened: the relay is not
+   * usable from here (unreachable, or refused like loopback TURN in Firefox). Clears the losses and starts the
+   * cooldown, so a later stall or loss pair can migrate again.
+   */
+  reset(step: PolicyStep, now: number): void {
+    this.step = step;
+    this.losses = [];
+    this.lastMigrationAt = now;
+    this.lastProgressAt = now;
+  }
+
+  /** A channel that had opened was lost (ICE failed, channel closed). */
   lost(now: number): Decision {
     this.losses = [...this.losses.filter((t) => now - t < this.config.lossWindowMs), now];
     return this.losses.length >= this.config.lossesToEscalate ? this.migrate(now) : 'stay';

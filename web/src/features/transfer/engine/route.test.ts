@@ -67,4 +67,17 @@ describe('route monitor (shared vectors)', () => {
     expect(m.sample({ connected: true, verified: 2_000_000, now: 14_000 })).toBe('migrate');
     expect(m.step).toBe('relay-udp');
   });
+
+  it('goes back to the starting step and holds the cooldown after the stricter step never connected', () => {
+    const m = new RouteMonitor('all', vectors.monitor);
+    m.lost(0);
+    expect(m.lost(1000)).toBe('migrate');
+    expect(m.step).toBe('relay-udp');
+    m.reset('all', 5000);
+    expect(m.step).toBe('all');
+    // Losses before the reset are gone, and the cooldown counts from the reset.
+    expect(m.lost(6000)).toBe('stay');
+    expect(m.lost(7000)).toBe('stay');
+    expect(m.lost(36_000)).toBe('migrate');
+  });
 });

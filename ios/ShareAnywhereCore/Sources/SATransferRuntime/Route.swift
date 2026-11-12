@@ -182,7 +182,16 @@ public struct RouteMonitor: Sendable {
         return now - lastProgressAt >= config.stallMs ? migrate(now) : .stay
     }
 
-    /// The channel was lost (ICE failed, channel closed).
+    /// Back to `step` (the receiver's starting step) after dials on a stricter step never opened: the relay is not
+    /// usable from here. Clears the losses and starts the cooldown, so a later stall or loss pair can migrate again.
+    public mutating func reset(to step: PolicyStep, now: Int64) {
+        self.step = step
+        losses.removeAll()
+        lastMigrationAt = now
+        lastProgressAt = now
+    }
+
+    /// A channel that had opened was lost (ICE failed, channel closed).
     public mutating func lost(now: Int64) -> RouteDecision {
         losses = losses.filter { now - $0 < config.lossWindowMs } + [now]
         return losses.count >= config.lossesToEscalate ? migrate(now) : .stay

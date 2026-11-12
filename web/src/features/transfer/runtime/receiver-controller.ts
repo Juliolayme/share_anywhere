@@ -137,7 +137,11 @@ export class ReceiverController extends Observable<RxState> {
   private openTimer: ReturnType<typeof setTimeout> | null = null;
   private sampler: ReturnType<typeof setInterval> | null = null;
   /** Route strategy: which ICE policy step to dial on, and when to move one step stricter (ARCHITECTURE §6). */
-  private readonly route = new RouteMonitor(testRouteStep() ?? 'all');
+  private readonly startStep = testRouteStep() ?? 'all';
+  private readonly route = new RouteMonitor(this.startStep);
+  /** Whether the current connection's channel opened; dials on a stricter step that never opened, in a row. */
+  private connOpened = false;
+  private unopened = 0;
   private routeTimer: ReturnType<typeof setInterval> | null = null;
   /** When the current TURN credential expires; a relayed connection is renewed before then. */
   private credExpiresAt: number | null = null;
@@ -388,6 +392,7 @@ export class ReceiverController extends Observable<RxState> {
   private async dial(): Promise<void> {
     const connId = crypto.randomUUID();
     this.connId = connId;
+    this.connOpened = false;
     const setup = await rtcSetup(this.d.api, this.d.sessionId, this.route.step);
     if (this.connId !== connId || this.stopped) return;
     const cfg = setup.config;
@@ -423,6 +428,8 @@ export class ReceiverController extends Observable<RxState> {
       if (this.openTimer) clearTimeout(this.openTimer);
       this.downSince = null;
       this.everOpened = true;
+      this.connOpened = true;
+      this.unopened = 0;
       this.attach(dc, pc);
     };
     this.openTimer = setTimeout(() => {
@@ -661,6 +668,8 @@ export class ReceiverController extends Observable<RxState> {
   private lost(): void {
     if (this.stopped || rxFinal(this.state_.phase) || this.retryTimer) return;
     const paused = this.state_.phase === 'paused';
+    const opened = this.connOpened;
+    this.connOpened = false;
     this.teardown();
     this.update({ route: null, routeKind: null }); // known again once a new channel opens
     if (this.hadData) this.log('product.log_connection_lost_plain');
@@ -672,8 +681,16 @@ export class ReceiverController extends Observable<RxState> {
       return this.update({ phase: 'unreachable', eta: null });
     }
     this.update({ phase: 'reconnecting' });
-    // Repeated losses on one policy step move the next dial one step stricter, at once.
-    const escalate = this.route.lost(Date.now()) === 'migrate';
+    // Repeated losses of open channels on one policy step move the next dial one step stricter, at once. A dial
+    // that never opened says nothing about the path (the sender may simply be away), unless it was on a stricter
+    // step: two of those in a row mean the relay is not usable from here, so go back to the starting step.
+    let escalate = false;
+    if (opened) escalate = this.route.lost(Date.now()) === 'migrate';
+    else if (this.route.step !== this.startStep && ++this.unopened >= 2) {
+      this.unopened = 0;
+      this.route.reset(this.startStep, Date.now());
+      pushDiag(this.diag, `route back to ${this.startStep}: the stricter step never connected`);
+    }
     if (escalate) {
       pushDiag(this.diag, `route migrate to ${this.route.step} after losses`);
       this.log('product.log_route_switch');

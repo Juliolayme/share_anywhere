@@ -149,7 +149,18 @@ class RouteMonitor(var step: PolicyStep = PolicyStep.ALL, private val config: Mo
         return if (now - lastProgressAt >= config.stallMs) migrate(now) else Decision.STAY
     }
 
-    /** The channel was lost (ICE failed, channel closed). */
+    /**
+     * Back to [step] (the receiver's starting step) after dials on a stricter step never opened: the relay is not usable
+     * from here. Clears the losses and starts the cooldown, so a later stall or loss pair can migrate again.
+     */
+    fun reset(step: PolicyStep, now: Long) {
+        this.step = step
+        losses.clear()
+        lastMigrationAt = now
+        lastProgressAt = now
+    }
+
+    /** A channel that had opened was lost (ICE failed, channel closed). */
     fun lost(now: Long): Decision {
         losses = (losses.filter { now - it < config.lossWindowMs } + now).toMutableList()
         return if (losses.size >= config.lossesToEscalate) migrate(now) else Decision.STAY

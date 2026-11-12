@@ -93,6 +93,18 @@ final class RouteVectorsTests: XCTestCase {
         XCTAssertTrue(m.step.relayOnly)
     }
 
+    func testResetReturnsToTheStartingStepAndHoldsTheCooldown() {
+        var m = RouteMonitor()
+        _ = m.lost(now: 0)
+        XCTAssertEqual(m.lost(now: 1000), .migrate)
+        XCTAssertEqual(m.step, .relayUdp)
+        m.reset(to: .all, now: 5000)
+        XCTAssertEqual(m.step, .all)
+        XCTAssertEqual(m.lost(now: 6000), .stay)
+        XCTAssertEqual(m.lost(now: 7000), .stay)
+        XCTAssertEqual(m.lost(now: 36000), .migrate)
+    }
+
     func testUrisForStepPicksTheTransport() {
         let all = ["turn:t:3478?transport=udp", "turn:t:3478?transport=tcp", "turns:t:443?transport=tcp"]
         XCTAssertEqual(urisForStep(all, .all), all)

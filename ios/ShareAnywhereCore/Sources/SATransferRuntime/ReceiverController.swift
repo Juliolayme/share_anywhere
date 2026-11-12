@@ -136,6 +136,9 @@ public actor ReceiverController {
     private var routeTask: Task<Void, Never>?
     /// When the current TURN credential expires (ms), to renew a relayed connection before it lapses.
     private var credExpiresAt: Int64?
+    /// Whether the current connection's channel opened; dials on a stricter step that never opened, in a row.
+    private var connOpened = false
+    private var unopened = 0
 
     public init(_ deps: ReceiverDeps) {
         d = deps
@@ -331,6 +334,7 @@ public actor ReceiverController {
     private func dial() async {
         let id = UUID().uuidString.lowercased()
         connId = id
+        connOpened = false
         let setup = await rtcSetup(d.transfers, sessionId: d.sessionId, step: route.step)
         if connId != id || stopped { return }
         credExpiresAt = setup.expiresAt
@@ -403,6 +407,8 @@ public actor ReceiverController {
         openTask?.cancel()
         downSince = nil
         everOpened = true
+        connOpened = true
+        unopened = 0
         let events = ReceiverEventsBridge(controller: self, queue: queue)
         let c = ReceiverConnection(ReceiverOptions(
             channel: ch,
@@ -577,6 +583,8 @@ public actor ReceiverController {
     private func lost() {
         if stopped || s.phase.isFinal || retryTask != nil { return }
         let paused = s.phase == .paused
+        let wasOpen = connOpened
+        connOpened = false
         teardown()
         update {
             $0.route = nil
@@ -598,8 +606,19 @@ public actor ReceiverController {
             }
         }
         update { $0.phase = .reconnecting }
-        // Repeated losses on one policy step move the next dial one step stricter, at once.
-        let escalate = route.lost(now: d.clock()) == .migrate
+        // Repeated losses of open channels on one policy step move the next dial one step stricter, at once. A dial that
+        // never opened says nothing about the path (the sender may be away), unless it was on a stricter step: two of
+        // those in a row mean the relay is not usable from here, so go back to the starting step.
+        var escalate = false
+        if wasOpen {
+            escalate = route.lost(now: d.clock()) == .migrate
+        } else if route.step != d.routeStep {
+            unopened += 1
+            if unopened >= 2 {
+                unopened = 0
+                route.reset(to: d.routeStep, now: d.clock())
+            }
+        }
         let wait = escalate ? 0 : redialDelayMs(attempt, random: d.random())
         attempt += 1
         retryTask = Task { [weak self, sleep = d.sleep] in

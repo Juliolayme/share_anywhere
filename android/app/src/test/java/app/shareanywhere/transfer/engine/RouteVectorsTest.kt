@@ -89,6 +89,19 @@ class RouteVectorsTest {
     }
 
     @Test
+    fun resetReturnsToTheStartingStepAndHoldsTheCooldown() {
+        val m = RouteMonitor(PolicyStep.ALL, config)
+        m.lost(0)
+        assertEquals(Decision.MIGRATE, m.lost(1_000))
+        assertEquals(PolicyStep.RELAY_UDP, m.step)
+        m.reset(PolicyStep.ALL, 5_000)
+        assertEquals(PolicyStep.ALL, m.step)
+        assertEquals(Decision.STAY, m.lost(6_000))
+        assertEquals(Decision.STAY, m.lost(7_000))
+        assertEquals(Decision.MIGRATE, m.lost(36_000))
+    }
+
+    @Test
     fun urisForStepPicksTheTransport() {
         val all = listOf("turn:t:3478?transport=udp", "turn:t:3478?transport=tcp", "turns:t:443?transport=tcp")
         assertEquals(all, urisForStep(all, PolicyStep.ALL))

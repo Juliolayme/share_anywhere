@@ -175,7 +175,12 @@ class ReceiverController(private val d: ReceiverDeps) {
     private var samplerJob: Job? = null
 
     /** Route strategy: which ICE policy step to dial on, and when to move one step stricter (ARCHITECTURE §6). */
-    private val routeMonitor = RouteMonitor(RtcTestHooks.routeStep ?: PolicyStep.ALL)
+    private val startStep = RtcTestHooks.routeStep ?: PolicyStep.ALL
+    private val routeMonitor = RouteMonitor(startStep)
+
+    /** Whether the current connection's channel opened; dials on a stricter step that never opened, in a row. */
+    private var connOpened = false
+    private var unopened = 0
     private var routeJob: Job? = null
 
     /** When the current TURN credential expires; a relayed connection is renewed before then. */
@@ -371,6 +376,7 @@ class ReceiverController(private val d: ReceiverDeps) {
     private suspend fun dial() {
         val id = UUID.randomUUID().toString()
         connId = id
+        connOpened = false
         val setup = Rtc.setup(d.transfers, d.sessionId, routeMonitor.step)
         if (connId != id || stopped) return
         credExpiresAt = setup.expiresAt
@@ -413,6 +419,8 @@ class ReceiverController(private val d: ReceiverDeps) {
                 openJob?.cancel()
                 downSince = null
                 everOpened = true
+                connOpened = true
+                unopened = 0
                 attach(adapter, peer)
             }
         channel = adapter
@@ -636,6 +644,8 @@ class ReceiverController(private val d: ReceiverDeps) {
     private fun lost() {
         if (stopped || s.phase.final() || retryJob?.isActive == true) return
         val paused = s.phase == RxPhase.Paused
+        val opened = connOpened
+        connOpened = false
         teardown()
         update { it.copy(route = null, routeKind = null) }
         for (f in open()) scope.launch { reporter.state(f.transferId, if (paused) "PAUSED" else "DISCONNECTED", f.verified) }
@@ -644,8 +654,17 @@ class ReceiverController(private val d: ReceiverDeps) {
         val since = downSince
         if (since != null && d.clock() - since > window) return update { it.copy(phase = RxPhase.Unreachable, eta = null) }
         update { it.copy(phase = RxPhase.Reconnecting) }
-        // Repeated losses on one policy step move the next dial one step stricter, at once.
-        val escalate = routeMonitor.lost(d.clock()) == Decision.MIGRATE
+        // Repeated losses of open channels on one policy step move the next dial one step stricter, at once. A dial that
+        // never opened says nothing about the path (the sender may be away), unless it was on a stricter step: two of
+        // those in a row mean the relay is not usable from here, so go back to the starting step.
+        var escalate = false
+        if (opened) {
+            escalate = routeMonitor.lost(d.clock()) == Decision.MIGRATE
+        } else if (routeMonitor.step != startStep && ++unopened >= 2) {
+            unopened = 0
+            routeMonitor.reset(startStep, d.clock())
+            android.util.Log.i("SA-TRANSFER", "route back to ${startStep.wire}: the stricter step never connected")
+        }
         if (escalate) android.util.Log.i("SA-TRANSFER", "route migrate to ${routeMonitor.step.wire} after losses")
         val wait = if (escalate) 0L else redialDelay(attempt++, d.random)
         retryJob =

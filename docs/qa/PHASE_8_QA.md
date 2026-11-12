@@ -65,6 +65,10 @@ P2 (report §7 or applied): replace rather than merge the receiver's cloud objec
 
 Every technical gate item verified from the CI 43275258671 and Nightly 43275288440 job logs (ForcedRelayTest ran in the API 34 job; both `CloudUITests` and both `RelayUITests` passed in `ios-simulator`; turn-forced UDP, TLS and migration passed). One P1 in the report: §1 listed the Android Cloud UI and the Settings Cloud and strategy rows on all platforms as tested, but no test drives them → moved to "Implemented but untested"; the tested sentence is limited to the Web and iOS Send option, consent dialog and upload card. P2 report fixes applied: partial and planned split, `SA_METRICS_ADDR` in §5, the oldest-runtime lane described, the backend metrics wording.
 
+## Round 6 — commit 67e97c3 — PASS
+
+The round 5 report P1 and P2s verified fixed (four separate buckets; only the Web and iOS Send option, consent dialog and upload card listed as tested). No open P0 or P1; every exit-gate item met. Backlog accepted as listed in the report §7.
+
 ## Final gate
 
 CI 43275258671 and Nightly 43275288440 on c405866 are green in every job; the report is committed with them (`docs/phases/reports/PHASE_8_REPORT.md`).

@@ -14,6 +14,7 @@ on:
       - 'scripts/android-clipboard-interop.sh'
       # The API 29 / 35 matrix re-checks instrumentation test changes made on a branch.
       - 'android/app/src/androidTest/**'
+      - '.github/workflows/android-emulator.yml'
       - 'web/e2e/transfer/helpers.ts'
       - 'web/e2e/pairing/helpers.ts'
       - 'web/e2e/mobile/snapshots.spec.ts'

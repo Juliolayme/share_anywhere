@@ -58,7 +58,8 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ inputs.api-level }}-${{ inputs.target }}-${{ inputs.arch }}-v1
+          # v2: the v1 API 29 snapshot booted without system services ("No service published for: input").
+          key: avd-${{ inputs.api-level }}-${{ inputs.target }}-${{ inputs.arch }}-v2
       - name: Create AVD and snapshot for the cache
         if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2.33.0

@@ -236,7 +236,12 @@ class TransferService : Service() {
 
         /** Starts the service when there is transfer work; call while the app is in the foreground. */
         fun start(context: Context) {
-            runCatching { ContextCompat.startForegroundService(context, Intent(context, TransferService::class.java)) }
+            try {
+                ContextCompat.startForegroundService(context, Intent(context, TransferService::class.java))
+            } catch (e: Exception) {
+                // Refused (for example the Android 15 dataSync budget is spent): transfers continue while the app is open.
+                android.util.Log.w("SA-TRANSFER", "foreground service refused: ${e::class.java.simpleName}")
+            }
         }
     }
 }

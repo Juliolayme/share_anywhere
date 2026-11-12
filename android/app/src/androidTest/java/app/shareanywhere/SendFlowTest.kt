@@ -95,6 +95,12 @@ class SendFlowTest {
                         row = device.wait(Until.findObject(file), 15_000) ?: dump("$name not found")
                     }
                     row.click()
+                    // In search results the first tap can only select the row: press Select (or tap again) until the app is back.
+                    repeat(3) {
+                        if (device.wait(Until.hasObject(By.res("send.total")), 5_000)) return@repeat
+                        val select = device.findObject(By.text(Pattern.compile("^Select$", Pattern.CASE_INSENSITIVE)))
+                        if (select != null) select.click() else device.findObject(file)?.click()
+                    }
 
                     // Back in the app: the file is listed; Require approval is off by default.
                     compose.waitForTag("send.total", 20_000)

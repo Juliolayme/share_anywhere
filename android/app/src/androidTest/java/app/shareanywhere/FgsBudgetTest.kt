@@ -80,7 +80,12 @@ class FgsBudgetTest {
                     }
 
                     // The budget only runs while the app is in the background (being in front resets it).
-                    compose.waitUntil(15_000) { TransferService.running }
+                    try {
+                        compose.waitUntil(15_000) { TransferService.running }
+                    } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
+                        android.util.Log.e("SA-TEST", "service not running; activity=${entry.transferRuntime().activity.value}")
+                        throw e
+                    }
                     android.util.Log.i(
                         "SA-TEST",
                         "budget=" + device.executeShellCommand("device_config get activity_manager data_sync_fgs_timeout_duration").trim() +

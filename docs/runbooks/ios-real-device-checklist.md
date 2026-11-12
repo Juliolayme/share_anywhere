@@ -30,7 +30,8 @@ build and result next to each item. Nothing here has been run yet (Phase 7).
 - [ ] A link whose join window ended shows "Code expired — ask the sender for a new code".
 - Build: a Release build signed with the team's profile, `SA_APPLINKS_HOST` set to the public host (it fills the
   `applinks:` associated domain in `ShareAnywhere-Release.entitlements`) and `SA_APPLE_APP_ID` set on Caddy. The
-  `shareanywhere://` scheme opens nothing in Release builds; only Universal Links do.
+  `shareanywhere://` scheme brings the app forward but opens nothing outside UI tests; only Universal Links
+  open the join preview.
 
 ## Background suspension timing (ADR 0027)
 

@@ -41,7 +41,8 @@ struct AppConfig {
         #else
             let requireHTTPS = true
         #endif
-        let publicRaw = value(after: "-publicURL") ?? (bundle.object(forInfoDictionaryKey: "SAPublicURL") as? String) ?? ""
+        let publicRaw = (uiTesting ? value(after: "-publicURL") : nil) ?? (bundle.object(forInfoDictionaryKey: "SAPublicURL") as? String) ??
+            ""
         let publicURL = URL(string: publicRaw).flatMap { $0.host == nil ? nil : $0 } ?? url
         let short = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"

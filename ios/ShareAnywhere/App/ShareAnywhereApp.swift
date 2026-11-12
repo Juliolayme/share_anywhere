@@ -63,7 +63,10 @@ struct RootView: View {
         }
         .overlay(alignment: .bottom) { ToastView() }
         .overlay(alignment: .topLeading) { if model.config.uiTesting { TestProbes() } }
-        .onChange(of: scenePhase) { model.hub.scenePhase($0) }
+        .onChange(of: scenePhase) { phase in
+            model.hub.scenePhase(phase)
+            if phase == .active { model.pasteboard.checkOnActive() }
+        }
         .onChange(of: settings.keepScreenOn) { model.keepAwake.setEnabled($0) }
         .onOpenURL { model.openLink($0) }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in

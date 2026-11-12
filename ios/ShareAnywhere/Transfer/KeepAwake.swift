@@ -41,9 +41,13 @@ final class KeepAwake: ObservableObject {
         apply()
     }
 
+    /// `isIdleTimerDisabled` right after the app last left the screen (the `-uiTesting` probe shows it; nil before).
+    @Published private(set) var onBackground: Bool?
+
     func setSceneActive(_ active: Bool) {
         sceneActive = active
         apply()
+        if !active { onBackground = UIApplication.shared.isIdleTimerDisabled }
     }
 
     private func apply() {
@@ -96,9 +100,10 @@ struct ScreenOnPill: View {
 
     private var mode: Mode {
         if !keepAwake.enabled { return .setOff }
+        // Nothing moving or waiting (paused, finished, cancelled): the screen may sleep whatever the pill said.
+        if paused || !keepAwake.wanted(context) { return .paused }
         if keepAwake.userOff.contains(context) { return .userOff }
-        if keepAwake.screenOn, keepAwake.wanted(context) { return .on }
-        return .paused
+        return keepAwake.screenOn ? .on : .paused
     }
 
     var body: some View {
@@ -128,6 +133,7 @@ struct ScreenOnPill: View {
         }
         .buttonStyle(.plain)
         .disabled(m == .paused)
+        .accessibilityAddTraits(m == .on ? .isSelected : [])
         .accessibilityHint(L10n.t("ios_xx.wake_set_p"))
         .accessibilityIdentifier("screen-on-pill")
     }
@@ -146,5 +152,12 @@ struct IdleTimerProbe: View {
             .frame(width: 1, height: 1)
             .accessibilityIdentifier("test.idle-timer-disabled")
             .accessibilityValue(value ? "true" : "false")
+        let bg = keepAwake.onBackground.map { $0 ? "true" : "false" } ?? ""
+        Text(bg.isEmpty ? "-" : bg)
+            .font(.system(size: 1))
+            .opacity(0.02)
+            .frame(width: 1, height: 1)
+            .accessibilityIdentifier("test.idle-on-background")
+            .accessibilityValue(bg)
     }
 }

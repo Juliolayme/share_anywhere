@@ -54,6 +54,11 @@ final class AppUnitTests: XCTestCase {
         XCTAssertEqual(plain.seedSendFiles, 0)
         XCTAssertEqual(plain.backgroundGrace, 20, "the real grace period outside UI tests")
         XCTAssertEqual(plain.publicURL, plain.backendURL, "share links default to the backend's origin")
+        let foreign = AppConfig.load(arguments: ["app", "-publicURL", "https://evil.example", "-backendURL", "https://evil.example"])
+        XCTAssertEqual(foreign.publicURL, plain.publicURL, "-publicURL is ignored outside UI tests")
+        XCTAssertEqual(foreign.backendURL, plain.backendURL, "-backendURL is ignored outside UI tests")
+        let tested = AppConfig.load(arguments: ["app", "-uiTesting", "-publicURL", "https://share.example"])
+        XCTAssertEqual(tested.publicURL.host, "share.example")
     }
 
     func testCodesAndShareLinksAreParsedStrictly() {

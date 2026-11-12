@@ -10,7 +10,7 @@ struct JoinPreviewView: View {
     @Environment(\.palette) private var p
     @State private var joining = false
     @State private var error: String?
-    @State private var offset: TimeInterval = 0
+    @State private var offset: TimeInterval?
 
     var body: some View {
         ScrollView {
@@ -28,7 +28,8 @@ struct JoinPreviewView: View {
         .navigationBarTitleDisplayMode(.inline)
         // Server time minus device time, measured once when the preview arrives, so the countdown follows the server.
         .onAppear {
-            if let p = model.previews[sessionId], let server = ISO8601.parse(p.serverTime) { offset = server.timeIntervalSinceNow }
+            guard offset == nil, let p = model.previews[sessionId], let server = ISO8601.parse(p.serverTime) else { return }
+            offset = server.timeIntervalSinceNow
         }
         .screenID("rx-preview")
     }
@@ -82,7 +83,7 @@ struct JoinPreviewView: View {
 
     private func secondsLeft(_ preview: JoinPreview, _ now: Date) -> Int {
         guard let ends = ISO8601.parse(preview.joinWindowEndsAt) else { return 0 }
-        return Int(ends.timeIntervalSince(now.addingTimeInterval(offset)).rounded(.up))
+        return Int(ends.timeIntervalSince(now.addingTimeInterval(offset ?? 0)).rounded(.up))
     }
 
     private func join(_ preview: JoinPreview) {

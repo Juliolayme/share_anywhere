@@ -68,7 +68,21 @@ final class AccountSession: ObservableObject {
         })
     }
 
-    func attach(_ app: AppModel) { self.app = app }
+    func attach(_ app: AppModel) {
+        self.app = app
+        app.pasteboard.onReturn = { [weak self] in await self?.captureOnReturn() }
+    }
+
+    /// Foreground capture: the pasteboard changed while the app was away. Likely secrets (`detectPatterns`, no read)
+    /// are left for the user to paste on purpose; otherwise the text is read, which iOS confirms with its paste prompt.
+    private func captureOnReturn() async {
+        guard let engine, let pasteboard = app?.pasteboard, clip.settings?.paused != true else { return }
+        if clip.settings?.sensitiveSkip ?? true, await pasteboard.probableSecret() { return }
+        guard let text = pasteboard.readString() else { return }
+        let r = await engine.capture(text, source: .auto)
+        pasteboard.synced()
+        if case .synced = r { app?.toast = L10n.t("product.cb_synced") }
+    }
 
     func identityChanged(_ claims: TokenClaims?) { Task { await manager.identityChanged(claims) } }
 
@@ -77,11 +91,12 @@ final class AccountSession: ObservableObject {
         state = s
         let wantsEngine = s.signedIn && s.added && s.keys == .ready && s.accountId != nil && s.deviceId != nil
         if wantsEngine, engine == nil || changedDevice { startEngine(account: s.accountId!, device: s.deviceId!) }
-        if !wantsEngine, engine != nil, s.keys != .checking { stopEngine() }
+        if !wantsEngine, engine != nil || engineTask != nil, s.keys != .checking { stopEngine() }
     }
 
     private func startEngine(account: String, device: String) {
         stopEngine()
+        app?.pasteboard.observe(true)
         let manager = manager
         let api = api
         let store = clipStore
@@ -105,6 +120,7 @@ final class AccountSession: ObservableObject {
     }
 
     private func stopEngine() {
+        app?.pasteboard.observe(false)
         engineTask?.cancel()
         engineTask = nil
         snapshotTask?.cancel()

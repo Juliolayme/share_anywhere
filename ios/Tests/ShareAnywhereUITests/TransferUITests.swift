@@ -252,6 +252,9 @@ final class TransferUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         app.activate()
+        let onBackground = UITest.id(app, "test.idle-on-background")
+        XCTAssertTrue(onBackground.waitForExistence(timeout: 10))
+        XCTAssertEqual(onBackground.value as? String, "false", "off while the app was not on screen")
         eventually("on again after returning") { idle(app) == "true" }
     }
 

@@ -24,10 +24,16 @@ final class AccountUITests: XCTestCase {
             control.tap()
         } else {
             UITest.id(app, "clipboard.sync-fallback").tap()
-            let allow = app.alerts.buttons["Allow Paste"].firstMatch
-            let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"].firstMatch
-            if allow.waitForExistence(timeout: 5) { allow.tap() } else if springboard.waitForExistence(timeout: 5) { springboard.tap() }
+            allowPaste(app)
         }
+    }
+
+    /// iOS's paste prompt for a programmatic read (in the app or from SpringBoard, depending on the runtime). Simulator
+    /// runtimes that do not prompt leave nothing to tap; the caller's assertion on the synced row decides.
+    private func allowPaste(_ app: XCUIApplication) {
+        let allow = app.alerts.buttons["Allow Paste"].firstMatch
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"].firstMatch
+        if allow.waitForExistence(timeout: 8) { allow.tap() } else if springboard.waitForExistence(timeout: 2) { springboard.tap() }
     }
 
     private func signUpInApp(_ app: XCUIApplication, _ address: String) {
@@ -76,6 +82,15 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(row(app, text).waitForExistence(timeout: 30), "the item is in the timeline")
         shot(app, "clipboard")
 
+        // The fallback button reads the pasteboard itself (iOS confirms with its paste prompt).
+        let reads = Int(UITest.id(app, "test.pasteboard-reads").value as? String ?? "") ?? 0
+        let viaFallback = "Through the fallback button \(UUID().uuidString.prefix(6))"
+        UIPasteboard.general.string = viaFallback
+        UITest.id(app, "clipboard.sync-fallback").tap()
+        allowPaste(app)
+        XCTAssertTrue(row(app, viaFallback).waitForExistence(timeout: 30), "the fallback read syncs the text")
+        XCTAssertGreaterThan(Int(UITest.id(app, "test.pasteboard-reads").value as? String ?? "") ?? 0, reads)
+
         UITest.tab(app, "Settings")
         UITest.id(app, "settings.signout").tap()
         XCTAssertTrue(UITest.id(app, "signout").waitForExistence(timeout: 10))
@@ -123,6 +138,21 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(row(app, fromApp).waitForExistence(timeout: 30))
         eventually("decrypted on the other device", timeout: 30) {
             (try? self.blocking(20) { try await other.texts() })?.contains(fromApp) == true
+        }
+
+        // Foreground capture: text copied while the app is in the background is not read there; coming back captures
+        // it (after iOS's paste prompt) and the other device decrypts it.
+        let copied = "Copied in another app \(UUID().uuidString.prefix(6))"
+        XCUIDevice.shared.press(.home)
+        UIPasteboard.general.string = copied
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+        let seenWhileAway = try blocking(20) { try await other.texts() }
+        XCTAssertFalse(seenWhileAway.contains(copied), "nothing is captured while the app is in the background")
+        app.activate()
+        allowPaste(app)
+        XCTAssertTrue(row(app, copied).waitForExistence(timeout: 30), "captured when the app is back in front")
+        eventually("the captured item reaches the other device", timeout: 30) {
+            (try? self.blocking(20) { try await other.texts() })?.contains(copied) == true
         }
         try blocking(30) { await other.dispose() }
     }

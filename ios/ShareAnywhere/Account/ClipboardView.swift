@@ -3,7 +3,8 @@ import SwiftUI
 import UIKit
 
 /// Every read of the system pasteboard goes through here, so a guest provably never touches it (the `-uiTesting` probe
-/// shows the count, docs/phases/PHASE_7_IOS.md) and the change observation runs only while Clipboard Sync is ready.
+/// shows the count, docs/phases/PHASE_7_IOS.md). The account session starts and stops the change observation with the
+/// Clipboard Sync engine, whichever tab is on screen.
 @MainActor
 final class PasteboardAccess: ObservableObject {
     @Published private(set) var reads = 0
@@ -30,10 +31,18 @@ final class PasteboardAccess: ObservableObject {
         }
     }
 
-    /// Back in front: a copy made in another app shows the "new text copied" hint.
+    /// Foreground capture (PRD §2 "Clipboard iOS"): set by the account session while Clipboard Sync is ready.
+    var onReturn: (@MainActor () async -> Void)?
+
+    /// Back in front: a copy made in another app while this one was away is captured (after iOS's paste prompt) and
+    /// shows the "new text copied" hint until it syncs. Nothing is read while the app is in the background.
     func checkOnActive() {
         guard observer != nil else { return }
-        changed()
+        let c = UIPasteboard.general.changeCount
+        guard c != lastCount else { return }
+        lastCount = c
+        changedSinceSync = true
+        if let onReturn { Task { await onReturn() } }
     }
 
     private func changed() {
@@ -53,11 +62,16 @@ final class PasteboardAccess: ObservableObject {
     /// The fallback Sync button: a programmatic read, which iOS confirms with its paste prompt.
     func readString() -> String? {
         reads += 1
+        // Seen before iOS's prompt takes the app out of the active state, so coming back does not count as a change.
+        if observer != nil { lastCount = UIPasteboard.general.changeCount }
         return UIPasteboard.general.string
     }
 
     /// Text received through `PasteButton` (no prompt).
-    func received() { reads += 1 }
+    func received() {
+        reads += 1
+        if observer != nil { lastCount = UIPasteboard.general.changeCount }
+    }
 
     /// `detectPatterns` without reading the text: a bare number is a probable one-time code.
     func probableSecret() async -> Bool {
@@ -82,7 +96,6 @@ struct ClipboardView: View {
     @EnvironmentObject private var account: AccountSession
     @EnvironmentObject private var pasteboard: PasteboardAccess
     @Environment(\.palette) private var p
-    @Environment(\.scenePhase) private var scenePhase
     @State private var sheet: AccountSheet.Step?
     @State private var query = ""
     @State private var detail: ClipItem?
@@ -154,9 +167,6 @@ struct ClipboardView: View {
             }
             Button(L10n.t("ios.cancel"), role: .cancel) {}
         } message: { Text(L10n.t("ios_yy.cbc_p")) }
-        .onAppear { pasteboard.observe(ready) }
-        .onChange(of: ready) { pasteboard.observe($0) }
-        .onChange(of: scenePhase) { if $0 == .active { pasteboard.checkOnActive() } }
         .screenID("clipboard")
     }
 

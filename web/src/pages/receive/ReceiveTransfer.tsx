@@ -237,6 +237,7 @@ export function ReceiveTransfer({
               {t(s.verified > 0 ? 'product.rx_reconnecting' : 'product.rx_connecting')}
             </div>
           )}
+          {s.relayCapped && !rxFinal(s.phase) && <Banner tone="warning" title={t('product.relay_cap_reached')} />}
           {s.phase === 'unreachable' && (
             <Banner
               tone="danger"

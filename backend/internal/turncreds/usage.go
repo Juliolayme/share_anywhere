@@ -67,7 +67,7 @@ func (c *CoturnUsage) totals(ctx context.Context) (map[string]int64, error) {
 	if c.byParty != nil && now.Sub(c.at) < c.MaxAge {
 		return c.byParty, nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil) // #nosec G704 -- operator configuration (SA_TURN_METRICS_URL), never request input
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (c *CoturnUsage) totals(ctx context.Context) (map[string]int64, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 3 * time.Second}
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- see above: the coturn exporter URL from configuration
 	if err != nil {
 		return nil, err
 	}

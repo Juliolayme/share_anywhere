@@ -9,8 +9,8 @@ Nightly job `throughput` (`.github/workflows/nightly.yml`, spec `web/e2e/nightly
 | Route | Receiver engine | CI (GitHub-hosted, 4 vCPU) MiB/s | Local (container, 4 vCPU) MiB/s |
 |---|---|---|---|
 | Direct | Chromium | _see §1.1_ | 15.1 |
-| Direct | Firefox | _see §1.1_ | — |
-| Direct | WebKit | _see §1.1_ | — |
+| Direct | Firefox | _see §1.1_ | 9.5 (stock Firefox 160) |
+| Direct | WebKit | _see §1.1_ | — (WebKit not installed in the container) |
 | Relay, UDP | Chromium | _see §1.1_ | 13.1 |
 | Relay, TLS | Chromium | _see §1.1_ | 13.2 |
 

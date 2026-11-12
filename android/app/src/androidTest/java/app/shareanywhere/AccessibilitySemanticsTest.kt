@@ -57,7 +57,7 @@ class AccessibilitySemanticsTest {
     @Test
     fun everyControlOnTheMainScreensHasANameAndA48dpTarget() {
         val problems = mutableListOf<String>()
-        ActivityScenario.launch(MainActivity::class.java).use {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             compose.dumpOnFailure {
                 compose.waitForTag(ScreenIds.WELCOME)
                 problems += audit(ScreenIds.WELCOME)
@@ -73,7 +73,8 @@ class AccessibilitySemanticsTest {
                 compose.onNodeWithTag("home.send").tap()
                 compose.waitForTag(ScreenIds.SEND)
                 problems += audit(ScreenIds.SEND)
-                compose.onNodeWithTag("nav.${ScreenIds.HOME}").tap()
+                // Send is a full-screen step without the bottom bar: Back returns to Transfer home.
+                scenario.onActivity { a -> a.onBackPressedDispatcher.onBackPressed() }
                 compose.waitForTag(ScreenIds.HOME)
                 compose.onNodeWithTag("home.receive").tap()
                 compose.waitForTag(ScreenIds.RECEIVE)

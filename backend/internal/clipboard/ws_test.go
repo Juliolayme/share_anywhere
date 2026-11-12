@@ -99,15 +99,22 @@ func TestWebSocketFanOut(t *testing.T) {
 	// the other sockets; each connect waits for that, so a late announcement cannot reach a later socket.
 	settled := make(chan string, 64)
 	e.hub.OnPresence(func(deviceID string, connected bool) { settled <- fmt.Sprint(deviceID, connected) })
+	// Presence for sockets closed back to back can settle in either order: keep the ones not waited for yet.
+	early := map[string]int{}
 	waitPresence := func(deviceID string, connected bool) {
 		t.Helper()
 		want := fmt.Sprint(deviceID, connected)
+		if early[want] > 0 {
+			early[want]--
+			return
+		}
 		for {
 			select {
 			case got := <-settled:
 				if got == want {
 					return
 				}
+				early[got]++
 			case <-time.After(5 * time.Second):
 				t.Fatalf("presence for %s never ran", want)
 			}

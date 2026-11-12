@@ -1,6 +1,8 @@
 package app.shareanywhere.transfer.runtime
 
 import android.content.Context
+import app.shareanywhere.data.api.CloudApi
+import app.shareanywhere.data.api.CloudChoices
 import app.shareanywhere.data.api.SessionsApi
 import app.shareanywhere.data.api.TransfersApi
 import app.shareanywhere.data.ws.SessionSocket
@@ -50,7 +52,9 @@ class TransferRuntime(
     private val incoming: IncomingDao,
     private val history: HistoryRepository,
     private val json: Json,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val cloud: CloudApi? = null,
+    private val cloudChoices: CloudChoices? = null
 ) {
     private val senders = ConcurrentHashMap<String, SenderController>()
     private val receivers = ConcurrentHashMap<String, ReceiverController>()
@@ -62,7 +66,12 @@ class TransferRuntime(
     // would not drive the activity (foreground service, notification) until some other session came or went.
     @Synchronized
     fun sender(sessionId: String): SenderController = senders[sessionId]
-        ?: SenderController(SenderDeps(context, sessionId, sessions, transfers, socket, outgoing, history, json)).also {
+        ?: SenderController(
+            SenderDeps(
+                context, sessionId, sessions, transfers, socket, outgoing, history, json,
+                cloud = cloud?.takeIf { cloudChoices?.chosen(sessionId) == true }
+            )
+        ).also {
             it.init()
             senders[sessionId] = it
             rewatch()
@@ -70,7 +79,7 @@ class TransferRuntime(
 
     @Synchronized
     fun receiver(sessionId: String): ReceiverController = receivers[sessionId]
-        ?: ReceiverController(ReceiverDeps(context, sessionId, sessions, transfers, socket, incoming, history, json)).also {
+        ?: ReceiverController(ReceiverDeps(context, sessionId, sessions, transfers, socket, incoming, history, json, cloud = cloud)).also {
             it.init()
             receivers[sessionId] = it
             rewatch()

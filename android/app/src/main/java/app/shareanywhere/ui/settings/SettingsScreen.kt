@@ -47,6 +47,7 @@ import app.shareanywhere.ui.nav.LocalSnackbar
 import app.shareanywhere.ui.nav.ScreenIds
 import app.shareanywhere.ui.theme.LocalSaPalette
 import app.shareanywhere.ui.theme.SaTokens
+import app.shareanywhere.ui.transfer.CloudSettingsSection
 
 private enum class Picker { Theme, Language, Retention }
 
@@ -179,6 +180,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsItems(
             )
         }
     }
+    // Transfer strategy (Auto, shown for transparency) and, for a signed-in account, Cloud Distribution (Phase 8).
+    item { CloudSettingsSection() }
     item { SectionLabel(stringResource(R.string.android_yy_g_priv)) }
     item {
         SaCard {

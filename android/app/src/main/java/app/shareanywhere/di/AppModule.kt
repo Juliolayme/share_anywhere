@@ -23,6 +23,8 @@ import app.shareanywhere.clipboard.ClipboardStore
 import app.shareanywhere.config.AppConfig
 import app.shareanywhere.data.api.AccountApi
 import app.shareanywhere.data.api.ApiClient
+import app.shareanywhere.data.api.CloudApi
+import app.shareanywhere.data.api.CloudChoices
 import app.shareanywhere.data.api.DeviceApi
 import app.shareanywhere.data.api.SessionsApi
 import app.shareanywhere.data.api.TransfersApi
@@ -155,8 +157,17 @@ object AppModule {
         incoming: IncomingDao,
         history: HistoryRepository,
         json: Json,
-        @AppScope scope: CoroutineScope
-    ): TransferRuntime = TransferRuntime(context, sessions, transfers, socket, outgoing, incoming, history, json, scope)
+        @AppScope scope: CoroutineScope,
+        cloud: CloudApi,
+        cloudChoices: CloudChoices
+    ): TransferRuntime =
+        TransferRuntime(context, sessions, transfers, socket, outgoing, incoming, history, json, scope, cloud, cloudChoices)
+
+    @Provides @Singleton
+    fun cloudApi(client: ApiClient, identity: IdentityManager): CloudApi = CloudApi(client, identity)
+
+    @Provides @Singleton
+    fun cloudChoices(): CloudChoices = CloudChoices()
 
     @Provides @Singleton
     fun pickedFiles(@ApplicationContext context: Context): PickedFiles = PickedFiles(context.contentResolver)

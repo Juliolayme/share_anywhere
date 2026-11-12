@@ -2,6 +2,7 @@ package app.shareanywhere.transfer.runtime
 
 import android.content.Context
 import androidx.core.net.toUri
+import app.shareanywhere.data.api.CloudApi
 import app.shareanywhere.data.api.SessionView
 import app.shareanywhere.data.api.SessionsApi
 import app.shareanywhere.data.api.Transfer
@@ -16,6 +17,8 @@ import app.shareanywhere.history.HistoryRepository
 import app.shareanywhere.history.HistoryRoute
 import app.shareanywhere.history.HistoryStatus
 import app.shareanywhere.transfer.OutgoingFileDao
+import app.shareanywhere.transfer.cloud.CloudUploadState
+import app.shareanywhere.transfer.cloud.CloudUploader
 import app.shareanywhere.transfer.engine.BlockCache
 import app.shareanywhere.transfer.engine.ErrorCodes
 import app.shareanywhere.transfer.engine.FileHash
@@ -121,7 +124,9 @@ data class TxState(
     /** This device still holds read access to every picked file. */
     val hasFiles: Boolean = false,
     val final: TxFinal? = null,
-    val ended: Boolean = false
+    val ended: Boolean = false,
+    /** Cloud Distribution upload of this session (the sender chose Cloud transfer), or null. */
+    val cloud: CloudUploadState? = null
 )
 
 /** One receiver as the result rule sees it (docs/ARCHITECTURE.md §4.5, the server's EndStatus). */
@@ -183,7 +188,9 @@ class SenderDeps(
     val outgoing: OutgoingFileDao,
     val history: HistoryRepository,
     val json: Json,
-    val clock: () -> Long = System::currentTimeMillis
+    val clock: () -> Long = System::currentTimeMillis,
+    /** Set when the sender chose Cloud transfer for this session and consented (docs/TRANSFER_PROTOCOL.md §9). */
+    val cloud: CloudApi? = null
 )
 
 /**
@@ -216,6 +223,7 @@ class SenderController(private val d: SenderDeps) {
     private val hashes = HashMap<Int, FileHash>()
     private val cache = BlockCache()
     private var senderFiles: List<SenderFile> = emptyList()
+    private var cloudUploader: CloudUploader? = null
     private val sources = mutableListOf<SafSource>()
     private var list: TransferList? = null
     private var historyKey = ""
@@ -245,6 +253,8 @@ class SenderController(private val d: SenderDeps) {
         }
         update { it.copy(files = files, hasFiles = senderFiles.size == files.size && files.isNotEmpty()) }
         socketJob = scope.launch { d.socket.subscribe().collect { onSocket(it) } }
+        val api = d.cloud
+        if (api != null && s.hasFiles) startCloud(api)
         refresh(view)
         samplerJob =
             scope.launch {
@@ -335,7 +345,24 @@ class SenderController(private val d: SenderDeps) {
     /** Stop all (TR-6): cancels every transfer still going. */
     fun cancelAll() = scope.launch { for (r in s.receivers) if (!r.status.ended()) cancelNow(r.participantId) }
 
+    /** Uploads every file to Cloud Distribution while P2P keeps serving; receivers fall back to it (§9). */
+    private fun startCloud(api: CloudApi) {
+        val up =
+            CloudUploader(
+                scope,
+                d.sessionId,
+                api,
+                d.socket,
+                d.json,
+                senderFiles.map { CloudUploader.File(it.fileId, it.name, it.size, it.source) }
+            )
+        cloudUploader = up
+        scope.launch { up.state.collect { c -> update { it.copy(cloud = c) } } }
+        up.start()
+    }
+
     fun dispose() = scope.launch {
+        cloudUploader?.dispose()
         socketJob?.cancel()
         samplerJob?.cancel()
         downTimers.values.forEach { it.cancel() }

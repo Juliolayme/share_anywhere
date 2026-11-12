@@ -84,6 +84,33 @@ class ApiClient(baseUrl: String, private val http: OkHttpClient, val json: Json,
         }
     }
 
+    /**
+     * Sends [op] with a raw `application/octet-stream` [body] (or none) and returns the raw response bytes: Cloud
+     * Distribution parts (docs/API.md §2.6).
+     */
+    suspend fun sendBytes(op: ApiOperation, path: String, body: ByteArray?, token: String?): ByteArray {
+        val url = base.newBuilder().encodedPath(path).build()
+        val builder =
+            Request
+                .Builder()
+                .url(url)
+                .header("Accept", if (body == null) "application/octet-stream" else "application/json")
+                .header("User-Agent", userAgent)
+        if (token != null) builder.header("Authorization", "Bearer $token")
+        builder.method(op.method, body?.toRequestBody(OCTET) ?: if (op.method == "POST" || op.method == "PUT") EMPTY else null)
+        val res =
+            try {
+                http.newCall(builder.build()).await()
+            } catch (e: IOException) {
+                throw NetworkException(e)
+            }
+        res.use {
+            val bytes = it.body?.bytes() ?: ByteArray(0)
+            if (it.isSuccessful) return bytes
+            throw toApiException(it, bytes.decodeToString())
+        }
+    }
+
     private fun toApiException(res: Response, text: String): ApiException {
         val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull()
         val code = obj?.get("error")?.jsonPrimitive?.content ?: "http_${res.code}"
@@ -96,6 +123,7 @@ class ApiClient(baseUrl: String, private val http: OkHttpClient, val json: Json,
 
     private companion object {
         val JSON = "application/json".toMediaType()
+        val OCTET = "application/octet-stream".toMediaType()
         val EMPTY = ByteArray(0).toRequestBody(null)
     }
 }

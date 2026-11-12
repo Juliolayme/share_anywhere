@@ -3,6 +3,7 @@ package app.shareanywhere.transfer.runtime
 import android.content.ContentResolver
 import android.content.Context
 import androidx.core.net.toUri
+import app.shareanywhere.data.api.CloudApi
 import app.shareanywhere.data.api.SessionView
 import app.shareanywhere.data.api.SessionsApi
 import app.shareanywhere.data.api.TransfersApi
@@ -17,6 +18,9 @@ import app.shareanywhere.history.HistoryStatus
 import app.shareanywhere.transfer.IncomingDao
 import app.shareanywhere.transfer.IncomingProgress
 import app.shareanywhere.transfer.SaveTarget
+import app.shareanywhere.transfer.cloud.CloudException
+import app.shareanywhere.transfer.cloud.CloudFailure
+import app.shareanywhere.transfer.cloud.CloudReceive
 import app.shareanywhere.transfer.engine.Bitmap
 import app.shareanywhere.transfer.engine.Decision
 import app.shareanywhere.transfer.engine.ErrorCodes
@@ -145,7 +149,9 @@ class ReceiverDeps(
     val history: HistoryRepository,
     val json: Json,
     val clock: () -> Long = System::currentTimeMillis,
-    val random: () -> Double = Math::random
+    val random: () -> Double = Math::random,
+    /** Cloud Distribution (docs/TRANSFER_PROTOCOL.md §9): the last route when P2P is down and the sender uploaded. */
+    val cloud: CloudApi? = null
 )
 
 /**
@@ -181,6 +187,8 @@ class ReceiverController(private val d: ReceiverDeps) {
     /** Whether the current connection's channel opened; dials on a stricter step that never opened, in a row. */
     private var connOpened = false
     private var unopened = 0
+    private var cloudAgent: CloudReceive? = null
+    private var cloudRunning = false
     private var routeJob: Job? = null
 
     /** When the current TURN credential expires; a relayed connection is renewed before then. */
@@ -261,6 +269,13 @@ class ReceiverController(private val d: ReceiverDeps) {
             )
         }
         socketJob = scope.launch { d.socket.subscribe().collect { onSocket(it) } }
+        val api = d.cloud
+        if (api != null && senderPid.isNotEmpty() && participantId.isNotEmpty()) {
+            cloudAgent =
+                CloudReceive(scope, d.sessionId, participantId, senderPid, api, d.socket, d.json, d.clock) {
+                    scope.launch { maybeCloud() }
+                }.also { it.start() }
+        }
         val statuses = list.transfers.map { it.status }
         if (statuses.isNotEmpty() && statuses.all { it == "COMPLETED" }) return finish(RxPhase.Completed)
         if (statuses.isNotEmpty() &&
@@ -352,6 +367,7 @@ class ReceiverController(private val d: ReceiverDeps) {
 
     fun dispose() {
         stopped = true
+        cloudAgent?.dispose()
         scope.launch {
             teardown()
             reporter.dispose()
@@ -364,7 +380,7 @@ class ReceiverController(private val d: ReceiverDeps) {
     // --- connection ---
 
     private suspend fun connect() {
-        if (stopped || s.phase.final() || s.phase == RxPhase.Paused) return
+        if (stopped || cloudRunning || s.phase.final() || s.phase == RxPhase.Paused) return
         teardown()
         if (downSince == null) downSince = d.clock()
         val reconnecting = hadData || attempt > 0
@@ -652,7 +668,11 @@ class ReceiverController(private val d: ReceiverDeps) {
         if (paused) return
         val window = if (everOpened) 10 * 60_000L else 2 * 60_000L
         val since = downSince
-        if (since != null && d.clock() - since > window) return update { it.copy(phase = RxPhase.Unreachable, eta = null) }
+        if (since != null && d.clock() - since > window) {
+            update { it.copy(phase = RxPhase.Unreachable, eta = null) }
+            scope.launch { maybeCloud() }
+            return
+        }
         update { it.copy(phase = RxPhase.Reconnecting) }
         // Repeated losses of open channels on one policy step move the next dial one step stricter, at once. A dial that
         // never opened says nothing about the path (the sender may be away), unless it was on a stricter step: two of
@@ -673,6 +693,91 @@ class ReceiverController(private val d: ReceiverDeps) {
                 retryJob = null
                 connect()
             }
+        scope.launch { maybeCloud() }
+    }
+
+    /** Files whose cloud copy this receiver could download now (tests read it). */
+    suspend fun cloudReadyCount(): Int {
+        val agent = cloudAgent ?: return 0
+        return s.files.count { agent.ready(it.fileId) }
+    }
+
+    /**
+     * The last route (docs/TRANSFER_PROTOCOL.md §9): while P2P is down (reconnecting or offline) and every unfinished
+     * file has a READY, unpaused cloud object whose key this receiver holds, stop redialling and download from it.
+     */
+    private suspend fun maybeCloud() {
+        val agent = cloudAgent ?: return
+        if (cloudRunning || stopped || s.phase.final()) return
+        if (s.phase != RxPhase.Reconnecting && s.phase != RxPhase.Unreachable) return agent.askForKeys()
+        val open = open()
+        if (open.isEmpty()) return
+        if (!open.all { agent.ready(it.fileId) }) return agent.askForKeys()
+        runCloud(agent)
+    }
+
+    private suspend fun runCloud(agent: CloudReceive) {
+        val target = s.target ?: return
+        cloudRunning = true
+        retryJob?.cancel()
+        retryJob = null
+        teardown()
+        reporter.route = "cloud"
+        update { it.copy(phase = RxPhase.Transferring, route = "cloud", routeKind = null, eta = null) }
+        for (f in open()) scope.launch { reporter.state(f.transferId, "TRANSFERRING", f.verified) }
+        var current: RxFile? = null
+        try {
+            for (f in open()) {
+                current = f
+                sinks.remove(f.index)?.close()
+                val doc = withContext(Dispatchers.IO) { Folders.create(resolver, target.treeUri, f.name, f.mime) }
+                d.incoming.put(
+                    IncomingProgress(
+                        key(f.transferId), d.sessionId, f.transferId, f.name, f.size, Wire.BLOCK_SIZE,
+                        Bitmap(maxOf(1, Wire.blockCount(f.size))).bytes, doc.toString(), false, d.clock()
+                    )
+                )
+                val sink = SafSink(resolver, doc)
+                sinks[f.index] = sink
+                update { st -> st.copy(files = st.files.map { if (it.index == f.index) it.copy(documentUri = doc.toString()) else it }) }
+                val index = f.index
+                agent.download(
+                    f.fileId,
+                    write = { off, data -> sink.write(off, data) },
+                    progress = { bytes ->
+                        val prev = s.files.firstOrNull { it.index == index }?.verified ?: 0
+                        onFileProgress(index, maxOf(bytes, prev))
+                    },
+                    stopped = { stopped || s.phase == RxPhase.Paused || s.phase.final() }
+                )
+                sink.flush()
+                fileWork.withLock { fileDone(f.index, true) }
+            }
+            cloudRunning = false
+            fileWork.withLock { allDone() }
+        } catch (e: CloudException) {
+            cloudRunning = false
+            val f = current
+            if (e.failure == CloudFailure.INTEGRITY && f != null) {
+                // A part that fails authentication or a whole-file hash that does not match: the file is not delivered.
+                update { st ->
+                    val files = st.files.map { if (it.index == f.index) it.copy(failed = true) else it }
+                    st.copy(files = files, error = "product.tx_err_checksum")
+                }
+                sinks.remove(f.index)?.close()
+                withContext(Dispatchers.IO) {
+                    d.incoming.get(key(f.transferId))?.let { Folders.delete(resolver, it.documentUri.toUri()) }
+                }
+                reporter.state(f.transferId, "FAILED", f.verified)
+                if (open().isEmpty()) return finish(if (s.files.any { it.done }) RxPhase.Partial else RxPhase.Failed)
+            }
+            if (stopped || s.phase == RxPhase.Paused || s.phase.final()) return
+            // A paused budget, a deleted object or the network: back to P2P; CLOUD_UPDATED brings the cloud back.
+            reporter.route = null
+            update { it.copy(route = null) }
+            attempt = 0
+            connect()
+        }
     }
 
     private fun teardown() {

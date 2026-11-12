@@ -80,6 +80,7 @@ import app.shareanywhere.ui.nav.ScreenIds
 import app.shareanywhere.ui.sharing.ParticipantCard
 import app.shareanywhere.ui.theme.LocalSaPalette
 import app.shareanywhere.ui.theme.SaTokens
+import app.shareanywhere.ui.transfer.CloudUploadCard
 import app.shareanywhere.ui.transfer.chip
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -305,6 +306,7 @@ private fun Live(
         verticalArrangement = Arrangement.spacedBy(SaTokens.Space.S3)
     ) {
         if (showKeep) KeepOpenBanner(pill, onTurnKeepScreenOn)
+        tx?.cloud?.let { if (tx.final == null) CloudUploadCard(it) }
         if (view.protectedMode) {
             InlineNotice(
                 NoticeKind.Warning,

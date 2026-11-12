@@ -58,6 +58,8 @@ import app.shareanywhere.ui.i18n.uiLocale
 import app.shareanywhere.ui.nav.ScreenIds
 import app.shareanywhere.ui.theme.LocalSaPalette
 import app.shareanywhere.ui.theme.SaTokens
+import app.shareanywhere.ui.transfer.CloudConsentDialog
+import app.shareanywhere.ui.transfer.CloudSendOption
 import java.text.DateFormat
 import java.util.Date
 
@@ -80,6 +82,7 @@ fun SendScreen(
     val openPicker = { picker.launch(arrayOf("*/*")) }
     var confirmClose by remember { mutableStateOf<OpenSession?>(null) }
     LaunchedEffect(viewModel) { viewModel.created.collect(onCreated) }
+    if (ui.consenting) CloudConsentDialog(ui.estimate, ui.cloudBusy, viewModel::approveCloud, viewModel::dismissCloud)
 
     Column(Modifier.fillMaxSize().testTag(ScreenIds.SEND)) {
         FlowTopBar(stringResource(R.string.android_choose), R.drawable.ic_arrow_back, stringResource(R.string.product_back), onBack)
@@ -166,6 +169,10 @@ fun SendScreen(
                             modifier = Modifier.testTag("send.approval")
                         )
                     }
+                }
+                item {
+                    val cloudError = ui.cloudError?.let { str(it.id, *it.args.toList().toTypedArray()) }
+                    CloudSendOption(ui.cloudSettings, ui.cloud, viewModel::toggleCloud, cloudError)
                 }
             }
             if (ui.overLimit) {

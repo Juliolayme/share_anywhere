@@ -5,6 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.shareanywhere.R
 import app.shareanywhere.data.api.ApiException
+import app.shareanywhere.data.api.CloudApi
+import app.shareanywhere.data.api.CloudChoices
+import app.shareanywhere.data.api.CloudEstimate
+import app.shareanywhere.data.api.CloudSettings
 import app.shareanywhere.data.api.FileInput
 import app.shareanywhere.data.api.OpenSessionList
 import app.shareanywhere.data.api.SessionsApi
@@ -46,7 +50,15 @@ data class SendUi(
     val error: UiMessage? = null,
     val unreadable: List<String> = emptyList(),
     val open: OpenSessions = OpenSessions.Hidden,
-    val closingId: String? = null
+    val closingId: String? = null,
+    /** Cloud Distribution (PRD §6.6): server availability and the account's state; null until read. */
+    val cloudSettings: CloudSettings? = null,
+    val cloud: Boolean = false,
+    /** The consent dialog is open; its estimate once computed. */
+    val consenting: Boolean = false,
+    val estimate: CloudEstimate? = null,
+    val cloudBusy: Boolean = false,
+    val cloudError: UiMessage? = null
 ) {
     val total: Long get() = files.sumOf { it.size }
     val overLimit: Boolean get() = total > SESSION_LIMIT_BYTES || files.size > MAX_FILES
@@ -65,10 +77,57 @@ const val MAX_FILES = 1000
 class SendViewModel @Inject constructor(
     private val api: SessionsApi,
     private val picked: PickedFiles,
-    private val outgoing: OutgoingStore
+    private val outgoing: OutgoingStore,
+    private val cloudApi: CloudApi,
+    private val cloudChoices: CloudChoices
 ) : ViewModel() {
     private val _ui = MutableStateFlow(SendUi())
     val ui: StateFlow<SendUi> = _ui.asStateFlow()
+
+    init {
+        loadCloud()
+    }
+
+    /** Reads Cloud availability (and the account's consent) again, for example after signing in. */
+    fun loadCloud() {
+        viewModelScope.launch {
+            val s = runCatching { cloudApi.settings() }.getOrNull()
+            _ui.update { it.copy(cloudSettings = s, cloud = it.cloud && s?.signedIn == true) }
+        }
+    }
+
+    /** Turning Cloud transfer on shows the estimate and asks for consent every time (PRD §6.6). */
+    fun toggleCloud(on: Boolean) {
+        if (!on) return _ui.update { it.copy(cloud = false) }
+        _ui.update { it.copy(consenting = true, estimate = null, cloudError = null) }
+        viewModelScope.launch {
+            try {
+                val e = cloudApi.estimate(_ui.value.total, 5)
+                _ui.update { it.copy(estimate = e) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.update { it.copy(consenting = false, cloudError = UiMessage(R.string.product_cloud_unavailable)) }
+            }
+        }
+    }
+
+    fun dismissCloud() = _ui.update { it.copy(consenting = false) }
+
+    fun approveCloud() {
+        val s = _ui.value.cloudSettings ?: return
+        _ui.update { it.copy(cloudBusy = true) }
+        viewModelScope.launch {
+            try {
+                val next = if (!s.enabled || !s.consented) cloudApi.putSettings(enabled = true, consent = true) else s
+                _ui.update { it.copy(cloudSettings = next, cloud = true, consenting = false, cloudBusy = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.update { it.copy(consenting = false, cloudBusy = false, cloudError = UiMessage(R.string.product_cloud_consent_needed)) }
+            }
+        }
+    }
     private val _created = Channel<String>(Channel.BUFFERED)
 
     /** Session ids to open once created. */
@@ -104,7 +163,8 @@ class SendViewModel @Inject constructor(
                 // The server keeps the order it was given (shared_files.position).
                 val ids = view.files.orEmpty().map { it.id }.zip(s.files)
                 outgoing.save(view.id, ids, System.currentTimeMillis())
-                _ui.update { SendUi(requireApproval = it.requireApproval) }
+                if (s.cloud) cloudChoices.choose(view.id)
+                _ui.update { SendUi(requireApproval = it.requireApproval, cloudSettings = it.cloudSettings) }
                 _created.send(view.id)
             } catch (e: CancellationException) {
                 throw e

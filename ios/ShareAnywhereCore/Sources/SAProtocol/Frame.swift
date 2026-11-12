@@ -27,7 +27,7 @@ public struct Frame: Sendable, Equatable {
     /// Decodes the JSON body; throws `ProtocolError` for anything malformed.
     public func body<T: Decodable>(_: T.Type) throws -> T {
         guard self.type.carriesJSON else { throw ProtocolError("frame type \(self.type.rawValue) does not carry JSON") }
-        guard String(validating: payload, as: UTF8.self) != nil else { throw ProtocolError("invalid JSON payload") }
+        guard String(bytes: payload, encoding: .utf8) != nil else { throw ProtocolError("invalid JSON payload") }
         do {
             return try JSONDecoder().decode(T.self, from: Data(payload))
         } catch {

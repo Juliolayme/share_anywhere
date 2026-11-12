@@ -149,7 +149,7 @@ public actor SenderConnection {
         o = options
         corruptBlocks = options.corruptBlocks
         frameData = Wire.dataPerFrame(maxMessageSize: options.channel.maxMessageSize)
-        let (stream, continuation) = AsyncStream<ChannelEvent>.makeStream()
+        let (stream, continuation) = makeStream(of: ChannelEvent.self)
         options.channel.setListener(ChannelInbox(continuation, drain))
         Task { await self.run(stream) }
     }

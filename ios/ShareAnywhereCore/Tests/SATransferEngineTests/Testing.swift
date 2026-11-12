@@ -57,7 +57,7 @@ final class MemChannel: TransferChannel, @unchecked Sendable {
     private func setState(_ s: String) { lock.withLock { state = s } }
 
     private func startDelivery() {
-        let (stream, continuation) = AsyncStream<[UInt8]?>.makeStream()
+        let (stream, continuation) = makeStream(of: [UInt8]?.self)
         outbox = continuation
         Task { [weak self] in
             for await msg in stream {

@@ -61,6 +61,13 @@ public final class Drain: @unchecked Sendable {
     }
 }
 
+/// An unbounded stream and its continuation (`AsyncStream.makeStream` without relying on its availability).
+func makeStream<T: Sendable>(of _: T.Type = T.self) -> (AsyncStream<T>, AsyncStream<T>.Continuation) {
+    var continuation: AsyncStream<T>.Continuation!
+    let stream = AsyncStream<T> { continuation = $0 }
+    return (stream, continuation)
+}
+
 /// What a connection reads from its channel, in arrival order.
 enum ChannelEvent: Sendable {
     case message([UInt8])

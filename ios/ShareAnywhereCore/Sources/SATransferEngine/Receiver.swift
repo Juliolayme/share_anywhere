@@ -113,8 +113,8 @@ public actor ReceiverConnection {
 
     public init(_ options: ReceiverOptions) {
         o = options
-        let (stream, continuation) = AsyncStream<ChannelEvent>.makeStream()
-        let (workStream, workContinuation) = AsyncStream<Work>.makeStream()
+        let (stream, continuation) = makeStream(of: ChannelEvent.self)
+        let (workStream, workContinuation) = makeStream(of: Work.self)
         work = workContinuation
         options.channel.setListener(ChannelInbox(continuation, drain))
         Task { await self.run(stream) }

@@ -69,7 +69,12 @@ final class CloudUITests: XCTestCase {
         UITest.tab(app, "Transfer")
         UITest.id(app, "home.send").tap()
         XCTAssertTrue(UITest.scrollTo(app, "send.cloud", timeout: 15).exists)
-        UITest.flip(app, "send.cloud", to: true)
+        // One tap: the switch stays off until consent, so `flip` (which taps until the value changes) would tap
+        // through the sheet onto Approve.
+        let cloudSwitch = app.switches.matching(identifier: "send.cloud").firstMatch
+        XCTAssertTrue(cloudSwitch.waitForExistence(timeout: 10))
+        UITest.reveal(app, cloudSwitch)
+        cloudSwitch.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
         XCTAssertTrue(UITest.id(app, "cloud-consent").waitForExistence(timeout: 15), "the consent sheet opens")
         XCTAssertTrue(UITest.id(app, "cloud.background").exists)
         XCTAssertTrue(UITest.id(app, "cloud.cost").waitForExistence(timeout: 15))

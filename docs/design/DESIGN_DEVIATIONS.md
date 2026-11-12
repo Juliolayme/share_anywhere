@@ -219,6 +219,13 @@ The design shows the finished product with sample data. These elements are left 
 ## L. iOS shell: differences from the design (Phase 7, milestone 7.2)
 
 1. **History detail is a pushed screen, not a sheet.** `iOS App.dc.html` shows Transfer details over the list; the app pushes `history-detail` with a back button. In the simulator the detail sheet stopped presenting after a relaunch, and a pushed detail is the platform pattern for list rows. Content and the Delete from history action match the design; Delete stays on screen above the home indicator.
-2. **No Send and Receive tiles on Transfer home until milestone 7.3**, and no Sign in on Welcome, Settings or Devices until 7.4 (`accounts` flag off, `CLAUDE.md` §8b): no control is shown before it works.
+2. **No Send and Receive tiles on Transfer home until milestone 7.3** (added in 7.3, section M), and no Sign in on Welcome, Settings or Devices until 7.4 (`accounts` flag off, `CLAUDE.md` §8b): no control is shown before it works.
 3. **Transfer strategy, Data & battery and Cloud rows are not in Settings yet.** They have no effect before Phase 8 (route strategy, Cloud Distribution) and transfers (7.3); they are added with the features.
 4. **The header logo uses the token geometry** (`SATokens.Logo`, drawn with `Canvas`) rather than an exported image, so it follows light and dark from the tokens.
+
+## M. iOS transfers: differences from the design (Phase 7, milestone 7.3)
+
+1. **Session and dashboard are one screen.** `iOS App.dc.html` moves from `session` to `dashboard` once receivers transfer; the app keeps the share panel, participants and per-receiver progress on one scrolling screen so a sender can approve, remove or block while files move, and switches the screen ID to `session-expired`, `dashboard-done` or `dashboard-partial` as the state changes. The connection-log sheet of the design is not built (no log events are recorded on iOS yet).
+2. **Save to Files is a choice, not a system sheet.** The design shows `rx-preview` with "Save to" opening the Files picker. The app offers On My iPhone › Share Anywhere (the app's Documents, recommended) or Choose folder (Files folder picker, kept as a bookmark), then Start receiving, so the common case needs no picker.
+3. **Camera scanning is real-device only.** The simulator has no camera; Receive opens on code entry there and the scan tab says no camera is available. Universal Links (`/j/<token>`) are not handled yet (they need the `apple-app-site-association` file and a signed device build; real-device checklist).
+4. **Strings the design does not have** come from `shared/i18n/product.json` with `_ios` variants where the shared text named Android (camera settings, folder picker, empty send state) and new keys for On My iPhone, Open in Files and the paused-in-background notification body (`DESIGN_DEVIATIONS.md` section E rules).

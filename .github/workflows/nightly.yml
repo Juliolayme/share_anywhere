@@ -12,6 +12,9 @@ on:
       - 'web/e2e/nightly/**'
       - 'scripts/android-interop.sh'
       - 'scripts/android-clipboard-interop.sh'
+      - 'scripts/ios-interop.sh'
+      - 'ios/Tests/ShareAnywhereUITests/**'
+      - '.github/workflows/ios-simulator.yml'
       # The API 29 / 35 matrix re-checks instrumentation test changes made on a branch.
       - 'android/app/src/androidTest/**'
       - '.github/workflows/android-emulator.yml'
@@ -321,3 +324,120 @@ jobs:
             Phase 8  turn-forced         relay-only transfers over UDP and TCP/TLS
             Phase 7  android-ios-interop best-effort, two half-tests against a shared ephemeral backend
           TXT
+
+  ios-matrix:
+    # docs/TESTING_AND_CI.md §2.2: the simulator suite on iPhone SE (3rd gen) and iPhone 15 Pro Max (latest runtime),
+    # iPhone 15 on the oldest runtime at or above iOS 16, and an accessibility XXXL Dynamic Type run (ci.yml runs
+    # iPhone 15 on the latest runtime).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { device: 'iPhone SE (3rd generation)', runtime: latest, dynamic: '', artifact: matrix-se }
+          - { device: 'iPhone 15 Pro Max', runtime: latest, dynamic: '', artifact: matrix-pro-max }
+          - { device: 'iPhone 15', runtime: oldest, dynamic: '', artifact: matrix-oldest }
+          - { device: 'iPhone 15', runtime: latest, dynamic: UICTContentSizeCategoryAccessibilityXXXL, artifact: matrix-xxxl }
+    uses: ./.github/workflows/ios-simulator.yml
+    with:
+      device: ${{ matrix.device }}
+      runtime: ${{ matrix.runtime }}
+      dynamic-type: ${{ matrix.dynamic }}
+      artifact: ${{ matrix.artifact }}
+
+  ios-background-suspend:
+    # ADR 0027: a receive paused by leaving the app (after the background-task grace period) resumes on return.
+    uses: ./.github/workflows/ios-simulator.yml
+    with:
+      only-testing: ShareAnywhereUITests/TransferUITests/testLeavingTheAppPausesTheReceiveWhichResumesOnReturn
+      artifact: background-suspend
+
+  ios-web-interop:
+    # docs/TESTING_AND_CI.md §2.4: the iOS app on the simulator <-> Playwright Chromium, a 64 MB file each way with SHA-256
+    # checks on both ends (scripts/ios-interop.sh). macOS runners have no Docker: the backend runs natively and Caddy
+    # serves the built Web app and proxies the API on http://localhost:8080, as the CI stack does.
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      DATABASE_URL: postgres://shareanywhere:ci-password@127.0.0.1:5432/shareanywhere?sslmode=disable
+      E2E_BASE_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: PostgreSQL 16 and Caddy (Homebrew)
+        run: |
+          brew install postgresql@16 caddy
+          PG=$(brew --prefix postgresql@16)/bin
+          echo "$PG" >> "$GITHUB_PATH"
+          brew services start postgresql@16
+          for i in $(seq 60); do "$PG/pg_isready" -h 127.0.0.1 && break; sleep 1; done
+          "$PG/psql" -h 127.0.0.1 -d postgres -c "CREATE ROLE shareanywhere LOGIN PASSWORD 'ci-password';"
+          "$PG/psql" -h 127.0.0.1 -d postgres -c "CREATE DATABASE shareanywhere OWNER shareanywhere;"
+      - name: Backend (native, test hooks) behind Caddy with the built Web app
+        run: |
+          mkdir -p .tools
+          (cd backend && go build -tags testhooks -o ../.tools/sa-server ./cmd/server)
+          SA_ENV=test SA_HTTP_ADDR=127.0.0.1:8081 SA_LOG_LEVEL=info SA_MIGRATE_ON_START=true \
+          SA_ALLOWED_ORIGINS=http://localhost:8080 SA_COOKIE_SECURE=false SA_RATE_LIMIT_MULTIPLIER=100 SA_POW_DIFFICULTY=8 \
+          SA_PUBLIC_URL=http://localhost:8080 SA_TURN_SECRET=ci-turn-secret SA_MAIL_SINK=memory SA_TRUSTED_PROXIES=127.0.0.1/32 \
+          SA_TURN_URIS="turn:127.0.0.1:3478?transport=udp" \
+            nohup .tools/sa-server > backend.log 2>&1 &
+          VITE_TEST_HOOKS=true pnpm --filter @share-anywhere/web build
+          nohup caddy run --config infra/caddy/Caddyfile.macos --adapter caddyfile > caddy.log 2>&1 &
+          for i in $(seq 60); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          curl -fsS http://localhost:8080/readyz
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+      - name: Install chromium
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install chromium && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
+      - name: Pinned tools and project generation
+        run: |
+          scripts/ios-tools.sh
+          (cd ios && "$GITHUB_WORKSPACE/.tools/xcodegen/bin/xcodegen" generate)
+      - name: Boot the simulator
+        id: sim
+        run: |
+          UDID=$(python3 scripts/ios-pick-simulator.py "iPhone 15" latest)
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+      - name: xcodebuild build-for-testing
+        run: |
+          mkdir -p ios/build
+          set -o pipefail
+          xcodebuild build-for-testing -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath ios/build/DerivedData 2>&1 | tee ios/build/build.log \
+            | grep -E "error:|\*\* TEST BUILD" || true
+          grep -q "\*\* TEST BUILD SUCCEEDED \*\*" ios/build/build.log
+      - name: Interop both ways
+        env:
+          SIM_UDID: ${{ steps.sim.outputs.udid }}
+          E2E_FIXTURE_DIR: ${{ runner.temp }}/fixtures
+          INTEROP_DIR: ${{ runner.temp }}/interop
+        run: bash scripts/ios-interop.sh
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-web-interop
+          if-no-files-found: ignore
+          path: |
+            web/playwright-report
+            web/test-results
+            ${{ runner.temp }}/interop
+            backend.log
+            caddy.log
+          retention-days: 7
+

@@ -155,8 +155,13 @@ struct ReceivingView: View {
         .task(id: m.rx.phase) { if m.rx.phase == .completed, model.config.uiTesting { hashes = await savedHashes() } }
         .overlay(alignment: .bottomLeading) {
             if model.config.uiTesting {
-                Text(hashes).font(.system(size: 1)).opacity(0.02).frame(width: 1, height: 1)
-                    .accessibilityIdentifier("test.rx-sha256").accessibilityValue(hashes)
+                VStack {
+                    Text(hashes).font(.system(size: 1)).opacity(0.02).frame(width: 1, height: 1)
+                        .accessibilityIdentifier("test.rx-sha256").accessibilityValue(hashes)
+                    // Blocks that arrived although already verified (must stay 0 across a pause and resume).
+                    Text("\(m.rx.duplicates)").font(.system(size: 1)).opacity(0.02).frame(width: 1, height: 1)
+                        .accessibilityIdentifier("test.rx-duplicates").accessibilityValue("\(m.rx.duplicates)")
+                }
             }
         }
         .screenID(screenID)

@@ -4,30 +4,31 @@ import { expect, test } from '@playwright/test';
 import { closeContexts, closeSenderBrowser, createSession, senderPage } from '../pairing/helpers';
 import { downloadAndHash, fixture, joinToSave, receiverPage, startInBrowser } from '../transfer/helpers';
 
-// Nightly only (nightly.yml android-web-interop, scripts/android-interop.sh): Web ↔ Android emulator transfers of a
-// 64 MB fixture with SHA-256 checks, both directions (docs/phases/PHASE_6_ANDROID.md). The script passes values
-// between this spec and the instrumentation test through INTEROP_DIR (Web → Android) and env (Android → Web).
+// Nightly only: Web ↔ native app transfers of a 64 MB fixture with SHA-256 checks, both directions. Used by
+// android-web-interop (scripts/android-interop.sh, the Android emulator; docs/phases/PHASE_6_ANDROID.md) and
+// ios-web-interop (scripts/ios-interop.sh, the iOS Simulator; docs/phases/PHASE_7_IOS.md). The scripts pass values
+// between this spec and the native test through INTEROP_DIR (Web → app) and env (app → Web).
 const DIR = process.env.INTEROP_DIR ?? '';
-test.skip(!DIR, 'android-web-interop job only (INTEROP_DIR)');
+test.skip(!DIR, 'native interop jobs only (INTEROP_DIR)');
 test.afterAll(closeSenderBrowser);
 test.afterEach(closeContexts);
 
-test('web sends a 64 MB file to the Android app', async () => {
+test('web sends a 64 MB file to the native app', async () => {
   test.skip(process.env.INTEROP_ROLE !== 'web-sender', 'INTEROP_ROLE=web-sender');
   test.setTimeout(15 * 60_000);
   const f = fixture('64M');
   const sender = await senderPage();
   const s = await createSession(sender, { files: [f.path] });
   mkdirSync(DIR, { recursive: true });
-  // The script hands these to the Android test (instrumentation arguments) and waits for the result.
+  // The script hands these to the native test and waits for the result.
   writeFileSync(join(DIR, 'web-session.json'), JSON.stringify({ code: s.code, sha256: f.sha256, id: s.id }));
   // Stay in the app: a reload would drop the picked file (the Web keeps it in memory), so the sender would answer
-  // file_unreadable. View transfers appears once the Android receiver has joined.
+  // file_unreadable. View transfers appears once the native receiver has joined.
   await sender.getByRole('button', { name: 'View transfers' }).click({ timeout: 5 * 60_000 });
   await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 14 * 60_000 });
 });
 
-test('web receives a 64 MB file from the Android app', async ({ browser, browserName }) => {
+test('web receives a 64 MB file from the native app', async ({ browser, browserName }) => {
   test.skip(process.env.INTEROP_ROLE !== 'web-receiver', 'INTEROP_ROLE=web-receiver');
   test.setTimeout(15 * 60_000);
   const code = process.env.INTEROP_CODE ?? '';

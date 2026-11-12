@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, expect, firefox, test, webkit, type Browser, type Download, type Page } from '@playwright/test';
@@ -32,7 +32,7 @@ export function fixture(size: string, name = `fixture-${size}.bin`): Fixture {
     const sha = execFileSync(SCRIPT, [size, path], { encoding: 'utf8' }).trim();
     writeFileSync(shaFile, sha);
   }
-  const bytes = Number(execFileSync('stat', ['-c', '%s', path], { encoding: 'utf8' }).trim());
+  const bytes = statSync(path).size;
   return { path, sha256: readFileSync(shaFile, 'utf8').trim(), size: bytes };
 }
 

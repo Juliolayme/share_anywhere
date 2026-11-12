@@ -2,7 +2,8 @@
 """Prints the UDID of an available iOS simulator the active Xcode can build for: runtimes newer than the selected
 Xcode's iphonesimulator SDK are skipped (CoreSimulator lists every installed runtime, including those of other Xcode
 versions on the runner). Preference: the named device on the requested runtime ("latest" = newest usable), then the
-named device on any usable runtime, then the first iPhone (docs/TESTING_AND_CI.md §2.3)."""
+named device on any usable runtime, then the first iPhone (docs/TESTING_AND_CI.md §2.3). "oldest" picks the oldest
+usable runtime at or above the app's iOS 16 deployment target (nightly ios-matrix)."""
 import json
 import subprocess
 import sys
@@ -26,8 +27,11 @@ for rt, devices in data["devices"].items():
         continue  # not buildable with this Xcode
     for d in devices:
         rows.append((ver, rt, d["name"], d["udid"]))
-rows.sort(reverse=True)
-want = version(runtime) if runtime != "latest" else None
+oldest = runtime == "oldest"
+if oldest:
+    rows = [r for r in rows if r[0] >= (16,)]
+rows.sort(reverse=not oldest)
+want = version(runtime) if runtime not in ("latest", "oldest") else None
 for pick in (
     lambda r: r[2] == name and (want is None or r[0][: len(want)] == want),
     lambda r: r[2] == name,

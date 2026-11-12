@@ -5,10 +5,16 @@ import XCTest
 enum UITest {
     static var backendURL: String { ProcessInfo.processInfo.environment["BACKEND_URL"] ?? "http://127.0.0.1:8080" }
 
+    /// The nightly matrix's Dynamic Type run (`TEST_RUNNER_DYNAMIC_TYPE`), e.g. accessibility XXXL.
+    static var dynamicType: [String] {
+        guard let size = ProcessInfo.processInfo.environment["DYNAMIC_TYPE"], !size.isEmpty else { return [] }
+        return ["-UIPreferredContentSizeCategoryName", size]
+    }
+
     static func app(reset: Bool = true, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-backendURL", backendURL, "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-            + (reset ? ["-resetState"] : []) + extra
+            + (reset ? ["-resetState"] : []) + dynamicType + extra
         return app
     }
 

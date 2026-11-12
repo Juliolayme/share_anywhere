@@ -17,7 +17,8 @@ case "$size_arg" in
 esac
 block=65536
 rm -f "$path"
-truncate -s "$bytes" "$path"
+# GNU truncate where present; macOS (the iOS interop runner) has neither truncate nor sha256sum by default.
+if command -v truncate >/dev/null; then truncate -s "$bytes" "$path"; else dd if=/dev/zero of="$path" bs=1 count=0 seek="$bytes" status=none 2>/dev/null; fi
 write_at() {
   local offset=$1
   local n=$block
@@ -30,4 +31,4 @@ write_at 0
 step=$(( 97 * 1024 * 1024 ))
 for (( off = step; off < bytes; off += step )); do write_at "$off"; done
 if [ "$bytes" -gt "$block" ]; then write_at $(( bytes - block )); fi
-sha256sum "$path" | cut -d' ' -f1
+if command -v sha256sum >/dev/null; then sha256sum "$path" | cut -d' ' -f1; else shasum -a 256 "$path" | cut -d' ' -f1; fi

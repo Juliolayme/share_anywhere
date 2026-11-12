@@ -135,14 +135,31 @@ struct SendView: View {
         seeded = true
         for i in 0 ..< model.config.seedSendFiles {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("sa-seed-\(i + 1).bin")
-            let size = model.config.seedFileBytes
-            var bytes = [UInt8](repeating: 0, count: size)
-            for j in 0 ..< size {
-                bytes[j] = UInt8(truncatingIfNeeded: (j &* 31) ^ (i &* 7) ^ (j >> 9))
-            }
-            try? Data(bytes).write(to: url)
+            try? SendView.seedContent(index: i, size: model.config.seedFileBytes).write(to: url)
             if let f = PickedFile.from(url) { files.append(f) }
         }
+    }
+
+    /// Test content: a 64 KiB pattern per file, each block stamped with its index (fast to build in Debug builds).
+    /// The UI tests' `TestPeer.seededContent` builds the same bytes to check the receiver's SHA-256.
+    static func seedContent(index: Int, size: Int) -> Data {
+        var block = [UInt8](repeating: 0, count: 65536)
+        for j in 0 ..< block.count {
+            block[j] = UInt8(truncatingIfNeeded: (j &* 31) ^ (index &* 7) ^ (j >> 9))
+        }
+        var out = Data(capacity: size)
+        var k: UInt64 = 0
+        while out.count < size {
+            var b = block
+            withUnsafeBytes(of: k.littleEndian) { stamp in
+                for (i, byte) in stamp.enumerated() {
+                    b[i] ^= byte
+                }
+            }
+            out.append(contentsOf: b.prefix(size - out.count))
+            k += 1
+        }
+        return out
     }
 }
 

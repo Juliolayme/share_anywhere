@@ -258,5 +258,6 @@ final class TransferUITests: XCTestCase {
         let hashes = UITest.id(app, "test.rx-sha256")
         eventually("hash computed", timeout: 60) { (hashes.value as? String)?.isEmpty == false }
         XCTAssertEqual(hashes.value as? String, "big.bin=\(sum)")
+        XCTAssertEqual(UITest.id(app, "test.rx-duplicates").value as? String, "0", "resumed from the bitmap: no verified block again")
     }
 }

@@ -112,25 +112,43 @@ final class TestPeer: @unchecked Sendable {
         XCTAssertEqual((res as? HTTPURLResponse)?.statusCode, 200, "clock hook")
     }
 
-    /// The app's seeded send files (`-seedSendFiles`) use the same generator as SendView.
+    /// The app's seeded send files (`-seedSendFiles`): the same bytes as `SendView.seedContent`.
     static func seededContent(index: Int, size: Int) -> [UInt8] {
-        var bytes = [UInt8](repeating: 0, count: size)
-        for j in 0 ..< size {
-            bytes[j] = UInt8(truncatingIfNeeded: (j &* 31) ^ (index &* 7) ^ (j >> 9))
+        var block = [UInt8](repeating: 0, count: 65536)
+        for j in 0 ..< block.count {
+            block[j] = UInt8(truncatingIfNeeded: (j &* 31) ^ (index &* 7) ^ (j >> 9))
         }
-        return bytes
+        return stamped(block, size: size)
     }
 
+    /// Pseudo-random content: one random-looking 64 KiB block, stamped with each block's index.
     static func content(size: Int, seed: UInt32) -> [UInt8] {
         var x: UInt32 = 2_463_534_242 ^ seed
-        var bytes = [UInt8](repeating: 0, count: size)
-        for i in 0 ..< size {
+        var block = [UInt8](repeating: 0, count: 65536)
+        for i in 0 ..< block.count {
             x ^= x << 13
             x ^= x >> 17
             x ^= x << 5
-            bytes[i] = UInt8(truncatingIfNeeded: x)
+            block[i] = UInt8(truncatingIfNeeded: x)
         }
-        return bytes
+        return stamped(block, size: size)
+    }
+
+    private static func stamped(_ block: [UInt8], size: Int) -> [UInt8] {
+        var out = [UInt8]()
+        out.reserveCapacity(size)
+        var k: UInt64 = 0
+        while out.count < size {
+            var b = block
+            withUnsafeBytes(of: k.littleEndian) { stamp in
+                for (i, byte) in stamp.enumerated() {
+                    b[i] ^= byte
+                }
+            }
+            out.append(contentsOf: b.prefix(size - out.count))
+            k += 1
+        }
+        return out
     }
 
     static func sha256(_ bytes: [UInt8]) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }

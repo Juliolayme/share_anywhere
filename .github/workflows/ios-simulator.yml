@@ -17,6 +17,14 @@ on:
         description: Optional xcodebuild -only-testing value (e.g. ShareAnywhereUITests)
         type: string
         default: ''
+      skip-testing:
+        description: Tests left out (the interop class needs the Web app; nightly ios-web-interop runs it)
+        type: string
+        default: ShareAnywhereUITests/InteropUITests
+      dynamic-type:
+        description: Optional content size category for every launch (e.g. UICTContentSizeCategoryAccessibilityXXXL)
+        type: string
+        default: ''
       artifact:
         description: Artifact name suffix
         type: string
@@ -103,9 +111,11 @@ jobs:
       - name: xcodebuild test-without-building
         env:
           TEST_RUNNER_BACKEND_URL: http://127.0.0.1:8080
+          TEST_RUNNER_DYNAMIC_TYPE: ${{ inputs.dynamic-type }}
         run: |
           ONLY=()
           if [ -n "${{ inputs.only-testing }}" ]; then ONLY=(-only-testing "${{ inputs.only-testing }}"); fi
+          if [ -n "${{ inputs.skip-testing }}" ]; then ONLY+=(-skip-testing "${{ inputs.skip-testing }}"); fi
           set -o pipefail
           xcodebuild test-without-building -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
             -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath ios/build/DerivedData \

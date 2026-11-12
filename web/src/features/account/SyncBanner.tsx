@@ -9,7 +9,8 @@ import { useAccount } from './AccountContext';
 import { KeyProblemBanner } from './KeyProblem';
 
 const RETURN = '%2Fhistory';
-const link = 'whitespace-nowrap font-semibold';
+// The banner's own ink, underlined: the default link colour is too faint on the soft banner backgrounds.
+const link = 'whitespace-nowrap font-semibold text-current underline underline-offset-2 hover:text-current';
 
 function StatusLine({ icon: Icon, children, testId }: { icon: typeof Cloud; children: ReactNode; testId: string }) {
   return (

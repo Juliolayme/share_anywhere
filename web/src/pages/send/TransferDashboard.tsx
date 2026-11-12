@@ -304,64 +304,71 @@ export default function TransferDashboard() {
           </div>
         )}
         {n > 0 && (
-          <Card className="overflow-auto" as="section">
+          <Card as="section">
             <div className="border-b border-border px-[18px] py-[14px]">
-              <h2 className="m-0 text-[16px]">{t('web.matrix')}</h2>
+              <h2 id="matrix-heading" className="m-0 text-[16px]">
+                {t('web.matrix')}
+              </h2>
             </div>
-            <table className="w-full min-w-[480px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-border text-[12px] text-fg-2">
-                  <th scope="col" className="px-[18px] py-[10px] font-semibold">
-                    {t('product.matrix_file')}
-                  </th>
-                  {s.receivers.map((r) => (
-                    <th
-                      key={r.participantId}
-                      scope="col"
-                      className="max-w-[160px] truncate px-3 py-[10px] font-semibold"
-                    >
-                      {r.name}
+            {/* Scrolls sideways on narrow screens: focusable so the keyboard can scroll it (WCAG 2.1.1, axe
+                scrollable-region-focusable); jsx-a11y does not know this pattern. */}
+            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+            <div className="overflow-auto" tabIndex={0} role="region" aria-labelledby="matrix-heading">
+              <table className="w-full min-w-[480px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-border text-[12px] text-fg-2">
+                    <th scope="col" className="px-[18px] py-[10px] font-semibold">
+                      {t('product.matrix_file')}
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {s.files.map((f) => (
-                  <tr key={f.fileId} className="border-b border-border last:border-b-0">
-                    <th scope="row" className="px-[18px] py-3 text-left font-normal">
-                      <span className="block truncate text-[13px] font-semibold">{f.name}</span>
-                      <span className="font-mono text-[11px] text-fg-2">{formatBytes(f.size, locale)}</span>
-                    </th>
-                    {s.receivers.map((r) => {
-                      const done = (r.perFile[f.index] ?? 0) >= f.size && (r.status === 'completed' || f.size === 0);
-                      const v = r.perFile[f.index] ?? 0;
-                      return (
-                        <td key={r.participantId} className="px-3 py-3">
-                          <span className="flex flex-col gap-1">
-                            {done ? (
-                              <span className="flex items-center gap-1 text-[12px] font-semibold text-receive-ink">
-                                <CircleCheck aria-hidden size={14} />
-                                {t('common.done')}
-                              </span>
-                            ) : v === 0 ? (
-                              <span className="text-[12px] text-fg-2">{t('common.queued')}</span>
-                            ) : (
-                              <span className="font-mono text-[12px] text-fg-2">{percent(v, f.size)}</span>
-                            )}
-                            <ProgressBar
-                              value={f.size ? v / f.size : 1}
-                              label={`${f.name} · ${r.name}`}
-                              height={4}
-                              tone={matrixTone(r.status)}
-                            />
-                          </span>
-                        </td>
-                      );
-                    })}
+                    {s.receivers.map((r) => (
+                      <th
+                        key={r.participantId}
+                        scope="col"
+                        className="max-w-[160px] truncate px-3 py-[10px] font-semibold"
+                      >
+                        {r.name}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {s.files.map((f) => (
+                    <tr key={f.fileId} className="border-b border-border last:border-b-0">
+                      <th scope="row" className="px-[18px] py-3 text-left font-normal">
+                        <span className="block truncate text-[13px] font-semibold">{f.name}</span>
+                        <span className="font-mono text-[11px] text-fg-2">{formatBytes(f.size, locale)}</span>
+                      </th>
+                      {s.receivers.map((r) => {
+                        const done = (r.perFile[f.index] ?? 0) >= f.size && (r.status === 'completed' || f.size === 0);
+                        const v = r.perFile[f.index] ?? 0;
+                        return (
+                          <td key={r.participantId} className="px-3 py-3">
+                            <span className="flex flex-col gap-1">
+                              {done ? (
+                                <span className="flex items-center gap-1 text-[12px] font-semibold text-receive-ink">
+                                  <CircleCheck aria-hidden size={14} />
+                                  {t('common.done')}
+                                </span>
+                              ) : v === 0 ? (
+                                <span className="text-[12px] text-fg-2">{t('common.queued')}</span>
+                              ) : (
+                                <span className="font-mono text-[12px] text-fg-2">{percent(v, f.size)}</span>
+                              )}
+                              <ProgressBar
+                                value={f.size ? v / f.size : 1}
+                                label={`${f.name} · ${r.name}`}
+                                height={4}
+                                tone={matrixTone(r.status)}
+                              />
+                            </span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Card>
         )}
       </div>

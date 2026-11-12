@@ -19,6 +19,8 @@ const firefox = process.env.E2E_FIREFOX_BIN
 // http://localhost:8080 unless E2E_BASE_URL points elsewhere.
 export default defineConfig({
   testDir: './e2e',
+  // The accessibility pass (e2e/a11y) is its own required CI job (`a11y`); it runs only with E2E_A11Y=1.
+  testIgnore: process.env.E2E_A11Y === '1' ? [] : ['**/a11y/**'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

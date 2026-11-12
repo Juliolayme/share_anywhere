@@ -41,7 +41,7 @@ export default function TransferHome() {
           </span>
           <span className="flex flex-col gap-[6px]">
             <span className="text-[24px] font-bold tracking-[-0.02em]">{t('web.send')}</span>
-            <span className="text-[14px] opacity-90">{t('web.send_sub')}</span>
+            <span className="text-[14px]">{t('web.send_sub')}</span>
           </span>
         </Link>
         <Link

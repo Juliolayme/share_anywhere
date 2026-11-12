@@ -11,7 +11,7 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Logo } from '../components/Logo';
 import { useI18n } from '../i18n/i18n';
 import { flags } from '../config/flags';
@@ -57,7 +57,8 @@ export function HeaderControls() {
       <button
         type="button"
         onClick={() => setLocale(locale === 'en' ? 'vi' : 'en')}
-        aria-label={t('web_vv.k51')}
+        // The accessible name contains the visible code (WCAG 2.5.3, axe label-content-name-mismatch).
+        aria-label={`${t('web_vv.k51')}: ${locale === 'en' ? 'EN' : 'VI'}`}
         className="inline-flex h-[44px] min-w-touch items-center gap-[6px] rounded-md px-[10px] text-caption font-semibold text-fg-2 hover:bg-surface-2"
       >
         <Languages aria-hidden size={18} />
@@ -184,7 +185,14 @@ export function AppShell() {
   // A navigation inside one screen (History list ↔ entry drawer) passes `{ keepFocus: true }` and manages focus itself.
   const keepFocus = (state as { keepFocus?: boolean } | null)?.keepFocus === true;
 
+  // Focus moves to the main region on navigation, so screen readers start at the new screen; not on the first render
+  // of a page load, which would put "Skip to content" behind the focus (it must be the first Tab stop).
+  const firstRender = useRef(true);
   useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
     if (!keepFocus) document.getElementById('main')?.focus({ preventScroll: true });
   }, [pathname, keepFocus]);
 

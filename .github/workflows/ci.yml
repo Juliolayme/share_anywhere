@@ -333,6 +333,72 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
 
+  a11y:
+    # docs/phases/PHASE_9_HARDENING_RELEASE.md: axe-core on every route in every Playwright project, light and dark,
+    # failing on serious or critical violations, plus the keyboard-only walkthrough (desktop Chromium and Firefox).
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: chromium-desktop, browser: chromium }
+          - { project: firefox-desktop, browser: firefox }
+          - { project: webkit-desktop, browser: webkit }
+          - { project: android-chrome, browser: chromium }
+          - { project: ios-safari, browser: webkit }
+    name: a11y (${{ matrix.project }})
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install chromium and ${{ matrix.browser }}
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium ${{ matrix.browser }} && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
+      - name: Stock Firefox for WebRTC (pinned, checksum verified)
+        if: matrix.browser == 'firefox'
+        env:
+          FIREFOX_VERSION: '160.0'
+          FIREFOX_SHA256: fde774e9757c8878534c05ec210db592bf6a1b244c57941ffb2e364c04f35fcd
+        run: |
+          curl -fsSL --retry 4 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/firefox.tar.xz" "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz"
+          echo "${FIREFOX_SHA256}  $RUNNER_TEMP/firefox.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP"
+          echo "E2E_FIREFOX_BIN=$RUNNER_TEMP/firefox/firefox" >> "$GITHUB_ENV"
+      - name: Accessibility suite
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_A11Y: '1'
+        run: pnpm --filter @share-anywhere/web exec playwright test e2e/a11y --project=${{ matrix.project }} --trace retain-on-failure
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-${{ matrix.project }}
+          if-no-files-found: ignore
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   android:
     needs: changes
     if: needs.changes.outputs.android == 'true'

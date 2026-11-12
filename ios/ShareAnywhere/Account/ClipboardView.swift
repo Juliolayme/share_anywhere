@@ -57,7 +57,10 @@ final class PasteboardAccess: ObservableObject {
     /// A change while the app is in front comes from the app itself (Copy code, text selected in an item): it is
     /// marked seen and never captured or hinted, so a join code or pairing payload is not synced by accident.
     private func changed() {
-        lastCount = UIPasteboard.general.changeCount
+        let c = UIPasteboard.general.changeCount
+        guard c != lastCount else { return }
+        lastCount = c
+        changedSinceSync = false
     }
 
     func synced() {
@@ -94,7 +97,9 @@ final class PasteboardAccess: ObservableObject {
 
     func write(_ text: String) {
         UIPasteboard.general.string = text
-        if observer != nil { lastCount = UIPasteboard.general.changeCount }
+        guard observer != nil else { return }
+        lastCount = UIPasteboard.general.changeCount
+        changedSinceSync = false
     }
 }
 

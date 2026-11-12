@@ -286,7 +286,7 @@ struct SessionScreen: View {
                 }
                 HStack(spacing: SATokens.Space.s3) {
                     SecondaryButton(title: L10n.t("product.copy_code")) {
-                        UIPasteboard.general.string = code
+                        model.pasteboard.write(code)
                         model.toast = L10n.t("common.n_copied")
                     }
                     .accessibilityIdentifier("session.copy")

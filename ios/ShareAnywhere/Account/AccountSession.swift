@@ -174,6 +174,11 @@ final class AccountSession: ObservableObject {
 
     // MARK: Actions for the screens
 
+    /// Copies app text (the pairing payload) without it counting as a copy to capture.
+    func copy(_ text: String) {
+        if let pasteboard = app?.pasteboard { pasteboard.write(text) } else { UIPasteboard.general.string = text }
+    }
+
     var signedIn: Bool { state.signedIn }
 
     func loadDevices() async {

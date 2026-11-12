@@ -363,7 +363,7 @@ struct KeyPairView: View {
                     Text(L10n.t("product.pair_code_label")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                     Text(start.payload).typeStyle(SATokens.TypeScale.code).textSelection(.enabled)
                         .accessibilityIdentifier("key-pair.code").accessibilityValue(start.payload)
-                    SecondaryButton(title: L10n.t("product.pair_copy_code")) { UIPasteboard.general.string = start.payload }
+                    SecondaryButton(title: L10n.t("product.pair_copy_code")) { account.copy(start.payload) }
                     Text(L10n.t("product.pair_steps")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg3)
                     HStack(spacing: SATokens.Space.s2) {
                         ProgressView()

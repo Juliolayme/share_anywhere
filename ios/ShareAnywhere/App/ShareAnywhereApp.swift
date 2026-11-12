@@ -73,12 +73,13 @@ struct RootView: View {
         .onOpenURL { links.receive($0) }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { links.receive($0.webpageURL) }
         // onReceive also delivers a value set before this view first appeared (a link or quick action at cold launch).
+        // Cleared on the next turn: @Published sends from willSet, so clearing inside the handler would be overwritten.
         .onReceive(links.$pending.compactMap { $0 }) { url in
-            links.pending = nil
+            DispatchQueue.main.async { links.pending = nil }
             model.openLink(url)
         }
         .onReceive(quick.$pending.compactMap { $0 }) { action in
-            quick.pending = nil
+            DispatchQueue.main.async { quick.pending = nil }
             guard action == QuickActions.clipboard, model.config.clipboard else { return }
             settings.welcomed = true
             model.tab = .clipboard

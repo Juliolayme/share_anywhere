@@ -396,7 +396,7 @@ jobs:
           E2E_VISUAL: '1'
         run: |
           if ! ls web/e2e/visual/visual.spec.ts-snapshots/*-${{ matrix.project }}-linux.png >/dev/null 2>&1; then
-            echo "::warning::no committed baselines for ${{ matrix.project }} yet (visual-snapshots generates them)"; exit 0
+            echo "::error::no committed baselines for ${{ matrix.project }} (commit the visual-snapshots artifact)"; exit 1
           fi
           pnpm --filter @share-anywhere/web exec playwright test e2e/visual --project=${{ matrix.project }} --retries=0
       - name: Upload report

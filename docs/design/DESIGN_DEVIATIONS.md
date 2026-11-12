@@ -222,4 +222,3 @@ The design shows the finished product with sample data. These elements are left 
 2. **No Send and Receive tiles on Transfer home until milestone 7.3**, and no Sign in on Welcome, Settings or Devices until 7.4 (`accounts` flag off, `CLAUDE.md` §8b): no control is shown before it works.
 3. **Transfer strategy, Data & battery and Cloud rows are not in Settings yet.** They have no effect before Phase 8 (route strategy, Cloud Distribution) and transfers (7.3); they are added with the features.
 4. **The header logo uses the token geometry** (`SATokens.Logo`, drawn with `Canvas`) rather than an exported image, so it follows light and dark from the tokens.
-

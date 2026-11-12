@@ -276,11 +276,6 @@ class CloudUploader(
         runCatching { json.decodeFromJsonElement(serializer, e) }.getOrNull()
 
     private suspend fun onSocket(e: SocketEvent) {
-        if (e.type == SocketEvent.OPEN) {
-            // A request sent while the socket was down was dropped: ask again now, without waiting out the 10 s.
-            lastAsk = Long.MIN_VALUE / 2
-            return refresh()
-        }
         if (e.sessionId != sessionId) return
         when (e.type) {
             "CLOUD_UPDATED" -> {

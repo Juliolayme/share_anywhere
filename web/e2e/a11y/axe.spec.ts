@@ -80,8 +80,12 @@ for (const scheme of ['light', 'dark'] as const) {
     test.setTimeout(120_000);
     const page = await guestPage(browser);
     await page.emulateMedia({ colorScheme: scheme });
+    // Also through the app's own theme preference (an engine may ignore the emulated scheme), asserted per route.
+    await open(page, '/');
+    await page.evaluate((v) => window.localStorage.setItem('sa.pref.theme', v), scheme);
     for (const [path, label] of guestRoutes) {
       await open(page, path);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
       await audit(page, `${label} (${scheme})`);
     }
     // Welcome is shown once, before the welcomed flag is set.

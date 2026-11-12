@@ -163,6 +163,7 @@ extension XCTestCase {
         }
     }
 
+    @available(iOS 17.0, *)
     private struct AuditIssue {
         let type: XCUIAccessibilityAuditType
         let element: XCUIElement?

@@ -265,9 +265,10 @@ final class IdentityTests: XCTestCase {
     }
 
     func testSecretsTravelInTheBodyOnly() async throws {
+        let device = #"{"id":"d","kind":"anonymous","display_name":"x","platform":"ios","created_at":"a","last_seen_at":"b"}"#
         let t = FakeTransport(
             status: 200,
-            body: #"{"device":{"id":"d","kind":"anonymous","display_name":"x","platform":"ios","created_at":"a","last_seen_at":"b"},"access_token":"tok","expires_in":900,"refresh_secret":"new","server_time":"2027-01-01T00:00:00Z"}"#
+            body: #"{"device":\#(device),"access_token":"tok","expires_in":900,"refresh_secret":"new","server_time":"2027-01-01T00:00:00Z"}"#
         )
         let client = try APIClient(baseURL: URL(string: "http://127.0.0.1:8080")!, transport: t, requireHTTPS: false, userAgent: "t")
         _ = try await DeviceAPI(client: client).refresh(secret: "the-secret")

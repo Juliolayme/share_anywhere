@@ -127,7 +127,7 @@ struct ScreenOnPill: View {
                 .padding(.horizontal, SATokens.Space.s2)
                 .padding(.vertical, SATokens.Space.s1)
                 .foregroundStyle(m == .on ? p.receiveInk : p.fg2)
-                .background((m == .on ? p.receive : p.fg2).opacity(0.14), in: Capsule())
+                .background(m == .on ? p.receiveSoft : p.surface2, in: Capsule())
                 .frame(minHeight: SATokens.touchTarget)
                 .contentShape(Rectangle())
         }

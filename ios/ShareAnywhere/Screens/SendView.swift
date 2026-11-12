@@ -198,7 +198,7 @@ struct OpenSessionsPanel: View {
             ForEach(list.sessions, id: \.id) { s in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(s.firstFileName).typeStyle(SATokens.TypeScale.body).lineLimit(1)
+                        Text(s.firstFileName).typeStyle(SATokens.TypeScale.body)
                         Text(TransferText.files(s.fileCount) + " · " + formatBytes(s.totalBytes))
                             .typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                     }

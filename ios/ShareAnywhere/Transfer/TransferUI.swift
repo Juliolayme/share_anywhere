@@ -84,8 +84,11 @@ struct TransferBar: View {
             }
         }
         .frame(height: 6)
-        .accessibilityElement()
-        .accessibilityValue("\(Int(fraction * 100))%")
+        // A progress indicator to assistive technologies (not a 6 pt control): label, value and the system's
+        // progress role.
+        .accessibilityRepresentation {
+            ProgressView(L10n.t("ios.overall"), value: fraction)
+        }
     }
 }
 

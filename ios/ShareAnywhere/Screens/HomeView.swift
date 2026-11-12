@@ -145,7 +145,7 @@ struct HomeTile: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: SATokens.Space.s3) {
-                Image(systemName: icon).font(.system(size: 30)).accessibilityHidden(true)
+                Image(systemName: icon).font(.title).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).typeStyle(SATokens.TypeScale.title)
                     Text(subtitle).typeStyle(SATokens.TypeScale.caption)

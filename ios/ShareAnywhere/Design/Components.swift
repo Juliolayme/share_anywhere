@@ -154,7 +154,7 @@ struct EmptyState: View {
 
     var body: some View {
         VStack(spacing: SATokens.Space.s3) {
-            Image(systemName: icon).font(.system(size: 36)).foregroundStyle(p.fg3).accessibilityHidden(true)
+            Image(systemName: icon).font(.largeTitle).foregroundStyle(p.fg3).accessibilityHidden(true)
             Text(title).typeStyle(SATokens.TypeScale.title).foregroundStyle(p.fg).multilineTextAlignment(.center)
             Text(message).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2).multilineTextAlignment(.center)
         }

@@ -182,7 +182,10 @@ struct CloudSettingsSection: View {
     @State private var budgetError: String?
 
     var body: some View {
-        Section(header: Text(L10n.t("ios_yy.s_strategy")), footer: Text(L10n.t("ios_yy.st_auto_p"))) {
+        Section(
+            header: Text(L10n.t("ios_yy.s_strategy")).foregroundStyle(p.fg2),
+            footer: Text(L10n.t("ios_yy.st_auto_p")).foregroundStyle(p.fg2)
+        ) {
             HStack {
                 Text(L10n.t("ios_yy.s_strategy"))
                 Spacer()

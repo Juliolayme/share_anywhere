@@ -358,6 +358,7 @@ struct SessionScreen: View {
                 Text(TransferText.eta(SessionResult.groupEta(s.tx.receivers).flatMap { $0 < 0 ? nil : $0 }))
                     .typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("dashboard")
         }
         if list.isEmpty {

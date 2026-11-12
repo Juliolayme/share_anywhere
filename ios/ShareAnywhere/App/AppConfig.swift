@@ -35,7 +35,21 @@ struct AppConfig {
         #endif
     }
 
-    static func load(arguments: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) -> AppConfig {
+    /// Debug only: the arguments of the last XCUITest launch, for a launch the system starts on its own (a link opened
+    /// while the app is not running gets no launch arguments). A separate suite, so `-resetState` does not wipe it.
+    private static let testLaunchKey = "lastUITestArguments"
+    private static var testDefaults: UserDefaults? { UserDefaults(suiteName: "app.shareanywhere.uitest") }
+
+    static func load(arguments launched: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) -> AppConfig {
+        var arguments = launched
+        #if DEBUG
+            if launched.contains("-uiTesting") {
+                testDefaults?.set(Array(launched.dropFirst()).filter { $0 != "-resetState" }, forKey: testLaunchKey)
+            } else if let saved = testDefaults?.stringArray(forKey: testLaunchKey) {
+                // The system launched the test installation (cold start from a link): keep its test configuration.
+                arguments = [launched.first ?? ""] + saved
+            }
+        #endif
         func value(after flag: String) -> String? {
             guard let i = arguments.firstIndex(of: flag), i + 1 < arguments.count else { return nil }
             return arguments[i + 1]

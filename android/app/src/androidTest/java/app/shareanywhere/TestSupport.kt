@@ -99,7 +99,8 @@ fun ComposeTestRule.accessibilityProblems(screen: String): List<String> {
     waitForIdle()
     val minPx = with(density) { 48.dp.toPx() } - 1f // rounding
     val problems = mutableListOf<String>()
-    val clickable = onRoot().fetchSemanticsNode().all()
+    // Every window: a dialog is a second root over the screen.
+    val clickable = onAllNodes(androidx.compose.ui.test.isRoot()).fetchSemanticsNodes().flatMap { it.all() }
         .filter { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick) != null }
         .filterNot { it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.HideFromAccessibility) }
         .map { it.id }

@@ -254,10 +254,11 @@ final class TransferHub: ObservableObject {
         }
         for (id, c) in receivers where c.state.value.phase.isActive {
             suspended.insert("rx:\(id)")
-            await c.pause()
-            // If iOS ends the suspended app, the next launch resumes this receive (resumeUnfinished).
+            // Recorded before pausing: iOS may end the suspended app as soon as the pause has gone out, and the next
+            // launch must still know to resume this receive (resumeUnfinished).
             let since = await pending.get(id)?.since ?? Int64(Date().timeIntervalSince1970 * 1000)
             try? await pending.put(id, PendingReceive(since: since, suspended: true))
+            await c.pause()
             any = true
         }
         if any { Notifications.post(id: "suspended", title: L10n.t("ios.susp_h"), body: L10n.t("product.ios_susp_p")) }

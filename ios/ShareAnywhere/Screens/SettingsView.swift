@@ -26,7 +26,7 @@ struct SettingsView: View {
             Section {
                 if account.state.signedIn {
                     HStack(spacing: SATokens.Space.s3) {
-                        Image(systemName: "person.crop.circle.fill").font(.system(size: 36)).foregroundStyle(p.send)
+                        Image(systemName: "person.crop.circle.fill").font(.largeTitle).foregroundStyle(p.send)
                             .accessibilityHidden(true)
                         VStack(alignment: .leading) {
                             Text(account.state.email ?? "—").typeStyle(SATokens.TypeScale.labelLg)
@@ -38,7 +38,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.account")
                 } else {
                     HStack(spacing: SATokens.Space.s3) {
-                        Image(systemName: "person.crop.circle").font(.system(size: 36)).foregroundStyle(p.fg3).accessibilityHidden(true)
+                        Image(systemName: "person.crop.circle").font(.largeTitle).foregroundStyle(p.fg3).accessibilityHidden(true)
                         VStack(alignment: .leading) {
                             Text(L10n.t("ios_yy.s_guest")).typeStyle(SATokens.TypeScale.labelLg)
                             Text(L10n.t("ios_vv.k144")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
@@ -86,9 +86,12 @@ struct SettingsView: View {
                     Text(L10n.t("ios_yy.h0")).tag(Retention.none)
                 }
                 .accessibilityIdentifier("settings.retention")
-                Button(L10n.t("ios_yy.cb_clear"), role: .destructive) { confirmClear = true }
-                    .disabled(model.historyEntries.isEmpty)
-                    .accessibilityIdentifier("settings.clear-history")
+                Button(role: .destructive) { confirmClear = true } label: {
+                    // The token danger ink (AA on the grouped background); the system red only nearly reaches 4.5:1.
+                    Text(L10n.t("ios_yy.cb_clear")).foregroundStyle(model.historyEntries.isEmpty ? p.fg3 : p.dangerInk)
+                }
+                .disabled(model.historyEntries.isEmpty)
+                .accessibilityIdentifier("settings.clear-history")
             }
             CloudSettingsSection(signedIn: account.state.signedIn)
             if account.state.signedIn { accountSections }

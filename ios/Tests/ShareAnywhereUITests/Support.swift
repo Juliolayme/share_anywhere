@@ -112,9 +112,13 @@ extension XCTestCase {
     /// descriptions, hit regions, contrast, Dynamic Type, clipped text, traits) on the current screen; every issue
     /// fails the test with the element it names. Skipped by design: the `-uiTesting` probes (`test.*`, invisible and
     /// never shown in the product), contrast on disabled controls (inactive components are exempt from WCAG 1.4.3),
-    /// and the readable-label check on the tests' own seeded file names (`sa-seed-N.bin`, user content in real use).
+    /// the readable-label check on the tests' own seeded file names (`sa-seed-N.bin`, user content in real use),
+    /// clipping in the system search field (`.searchable`, sized by the system), and "partially unsupported" Dynamic
+    /// Type (the text does scale, up to a cap the standard control sets: Form rows, toolbar buttons). The screen is
+    /// given a moment to settle first, so the contrast check does not sample a view while it fades in.
     func audit(_ app: XCUIApplication, _ screen: String, file: StaticString = #filePath, line: UInt = #line) {
         guard #available(iOS 17.0, *) else { return }
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
         do {
             try app.performAccessibilityAudit { issue in
                 if let el = issue.element {
@@ -122,6 +126,10 @@ extension XCTestCase {
                     if issue.auditType == .contrast, !el.isEnabled { return true }
                     if issue.auditType == .sufficientElementDescription || issue.auditType == .textClipped,
                        el.label.hasPrefix("sa-seed-") { return true }
+                    if issue.auditType == .textClipped, el.elementType == .searchField { return true }
+                }
+                if issue.auditType == .dynamicType, issue.compactDescription.localizedCaseInsensitiveContains("partially") {
+                    return true
                 }
                 let element = issue.element.map { "\($0.elementType) '\($0.identifier)' '\($0.label)'" } ?? "screen"
                 XCTFail("\(screen): \(issue.compactDescription) — \(element): \(issue.detailedDescription)", file: file, line: line)

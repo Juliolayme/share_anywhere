@@ -141,13 +141,12 @@ struct HistoryRow: View {
     var body: some View {
         HStack(spacing: SATokens.Space.s3) {
             Image(systemName: entry.direction == .sent ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                .font(.system(size: 28))
+                .font(.title)
                 .foregroundStyle(entry.direction == .sent ? p.send : p.receive)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.title).typeStyle(SATokens.TypeScale.labelLg).foregroundStyle(p.fg).lineLimit(1)
+                Text(entry.title).typeStyle(SATokens.TypeScale.labelLg).foregroundStyle(p.fg)
                 Text("\(entry.peer) · \(formatBytes(entry.totalBytes))").typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
-                    .lineLimit(1)
             }
             Spacer()
             Chip(

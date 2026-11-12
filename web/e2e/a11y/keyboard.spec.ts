@@ -105,3 +105,16 @@ test('keyboard: Settings switches and the theme toggle work from the keyboard', 
   await page.keyboard.press('Enter');
   await expect(theme).not.toHaveAttribute('aria-pressed', pressed ?? '');
 });
+
+test('keyboard: after Welcome, focus starts at the new screen', async ({ browser }) => {
+  const page = await guestPage(browser);
+  await open(page, '/');
+  await page.evaluate(() => window.localStorage.removeItem('sa.pref.welcomed'));
+  await page.goto('/welcome');
+  await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
+  await tabTo(page, page.getByRole('button', { name: /Start/ }), 'Start sharing');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/$/);
+  // The shell moves focus to the main region on this navigation, so screen readers begin at Transfer home.
+  await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe('main');
+});

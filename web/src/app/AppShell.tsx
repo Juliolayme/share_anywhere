@@ -11,7 +11,7 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Logo } from '../components/Logo';
 import { useI18n } from '../i18n/i18n';
 import { flags } from '../config/flags';
@@ -178,6 +178,10 @@ function StatusPill() {
 const navClass = (active: boolean) =>
   active ? 'bg-send-soft text-send-ink font-bold' : 'text-fg-2 font-semibold hover:bg-surface-2';
 
+// The path this document was loaded at, and whether its screen was shown (module state: one per page load).
+const loadPath = typeof window === 'undefined' ? '' : window.location.pathname;
+let loadScreenShown = false;
+
 export function AppShell() {
   const { t } = useI18n();
   const items = useNavItems();
@@ -185,14 +189,15 @@ export function AppShell() {
   // A navigation inside one screen (History list ↔ entry drawer) passes `{ keepFocus: true }` and manages focus itself.
   const keepFocus = (state as { keepFocus?: boolean } | null)?.keepFocus === true;
 
-  // Focus moves to the main region on navigation, so screen readers start at the new screen; not on the first render
-  // of a page load, which would put "Skip to content" behind the focus (it must be the first Tab stop).
-  const firstRender = useRef(true);
+  // Focus moves to the main region on navigation, so screen readers start at the new screen, including the first
+  // shell screen after Welcome or sign-in; but not on the screen the page loaded with, which would put "Skip to
+  // content" behind the focus (it must be the first Tab stop).
   useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
+    if (!loadScreenShown && pathname === loadPath) {
+      loadScreenShown = true;
       return;
     }
+    loadScreenShown = true;
     if (!keepFocus) document.getElementById('main')?.focus({ preventScroll: true });
   }, [pathname, keepFocus]);
 

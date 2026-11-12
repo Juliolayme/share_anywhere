@@ -69,6 +69,27 @@ func (e ClipboardEventRequestMimeType) Valid() bool {
 	}
 }
 
+// Defines values for CloudObjectStatus.
+const (
+	DELETED   CloudObjectStatus = "DELETED"
+	READY     CloudObjectStatus = "READY"
+	UPLOADING CloudObjectStatus = "UPLOADING"
+)
+
+// Valid indicates whether the value is a known member of the CloudObjectStatus enum.
+func (e CloudObjectStatus) Valid() bool {
+	switch e {
+	case DELETED:
+		return true
+	case READY:
+		return true
+	case UPLOADING:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateDeviceRequestTransport.
 const (
 	Body   CreateDeviceRequestTransport = "body"
@@ -669,6 +690,82 @@ type ClipboardSettings struct {
 
 	// SensitiveSkip Clients skip capturing possibly sensitive text (best effort).
 	SensitiveSkip bool `json:"sensitive_skip"`
+}
+
+// CloudEstimate defines model for CloudEstimate.
+type CloudEstimate struct {
+	BudgetBytes int64 `json:"budget_bytes"`
+
+	// Cost null when no price is configured: clients show product.cost_unknown.
+	Cost           *float32 `json:"cost"`
+	Currency       *string  `json:"currency,omitempty"`
+	EgressBytes    int64    `json:"egress_bytes"`
+	RetentionHours int      `json:"retention_hours"`
+	StorageBytes   int64    `json:"storage_bytes"`
+	UsedBytes      int64    `json:"used_bytes"`
+	WithinBudget   bool     `json:"within_budget"`
+}
+
+// CloudObject defines model for CloudObject.
+type CloudObject struct {
+	// CiphertextSize size + 28 × part_count.
+	CiphertextSize int64              `json:"ciphertext_size"`
+	CreatedAt      time.Time          `json:"created_at"`
+	ExpiresAt      time.Time          `json:"expires_at"`
+	FileId         openapi_types.UUID `json:"file_id"`
+	Id             openapi_types.UUID `json:"id"`
+	PartCount      int                `json:"part_count"`
+
+	// PartSize Plaintext bytes per part (the last part holds the remainder).
+	PartSize      int `json:"part_size"`
+	PartsUploaded int `json:"parts_uploaded"`
+
+	// Paused The sender's monthly budget is used up; uploads and downloads wait.
+	Paused    bool               `json:"paused"`
+	SessionId openapi_types.UUID `json:"session_id"`
+
+	// Size Plaintext file size.
+	Size   int64             `json:"size"`
+	Status CloudObjectStatus `json:"status"`
+}
+
+// CloudObjectStatus defines model for CloudObject.Status.
+type CloudObjectStatus string
+
+// CloudPricing defines model for CloudPricing.
+type CloudPricing struct {
+	Currency       string   `json:"currency"`
+	EgressGb       *float32 `json:"egress_gb,omitempty"`
+	StorageGbMonth *float32 `json:"storage_gb_month,omitempty"`
+}
+
+// CloudSettings defines model for CloudSettings.
+type CloudSettings struct {
+	// Available Cloud Distribution is configured on this server.
+	Available bool `json:"available"`
+
+	// BudgetBytes Monthly budget (bytes uploaded plus downloaded).
+	BudgetBytes    int64         `json:"budget_bytes"`
+	Consented      bool          `json:"consented"`
+	Enabled        bool          `json:"enabled"`
+	MaxBudgetBytes int64         `json:"max_budget_bytes"`
+	Pricing        *CloudPricing `json:"pricing"`
+	SignedIn       bool          `json:"signed_in"`
+
+	// TtlHours How long an object is kept at most.
+	TtlHours int `json:"ttl_hours"`
+
+	// UsedBytes Bytes used this calendar month (UTC).
+	UsedBytes int64 `json:"used_bytes"`
+}
+
+// CloudSettingsInput defines model for CloudSettingsInput.
+type CloudSettingsInput struct {
+	BudgetBytes *int64 `json:"budget_bytes,omitempty"`
+
+	// Consent Required (true) the first time Cloud Distribution is turned on.
+	Consent bool `json:"consent"`
+	Enabled bool `json:"enabled"`
 }
 
 // CreateDeviceRequest defines model for CreateDeviceRequest.
@@ -1300,6 +1397,12 @@ type GetClipboardHistoryParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// EstimateCloudJSONBody defines parameters for EstimateCloud.
+type EstimateCloudJSONBody struct {
+	Bytes     int64 `json:"bytes"`
+	Receivers int   `json:"receivers"`
+}
+
 // AddCurrentDeviceJSONBody defines parameters for AddCurrentDevice.
 type AddCurrentDeviceJSONBody struct {
 	// CopyHistory The client imports its local history with POST /v1/history/entries; the server only accepts the flag.
@@ -1396,6 +1499,12 @@ type CreateClipboardEventJSONRequestBody = ClipboardEventRequest
 
 // PutClipboardSettingsJSONRequestBody defines body for PutClipboardSettings for application/json ContentType.
 type PutClipboardSettingsJSONRequestBody = ClipboardSettings
+
+// EstimateCloudJSONRequestBody defines body for EstimateCloud for application/json ContentType.
+type EstimateCloudJSONRequestBody EstimateCloudJSONBody
+
+// PutCloudSettingsJSONRequestBody defines body for PutCloudSettings for application/json ContentType.
+type PutCloudSettingsJSONRequestBody = CloudSettingsInput
 
 // CreateAnonymousDeviceJSONRequestBody defines body for CreateAnonymousDevice for application/json ContentType.
 type CreateAnonymousDeviceJSONRequestBody = CreateDeviceRequest

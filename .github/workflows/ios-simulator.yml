@@ -66,6 +66,8 @@ jobs:
       - name: Boot the simulator
         id: sim
         run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
           UDID=$(python3 scripts/ios-pick-simulator.py "${{ inputs.device }}" "${{ inputs.runtime }}")
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl boot "$UDID" || true

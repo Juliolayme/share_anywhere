@@ -84,7 +84,14 @@ public enum Retention: String, Sendable, CaseIterable {
     case days30 = "30", days90 = "90", none
 
     public static let `default` = Retention.days30
-    public var days: Int { switch self { case .days30: 30; case .days90: 90; case .none: 0 } }
+    public var days: Int {
+        switch self {
+        case .days30: 30
+        case .days90: 90
+        case .none: 0
+        }
+    }
+
     public static func fromStored(_ v: String?) -> Retention { v.flatMap(Retention.init(rawValue:)) ?? .default }
 }
 

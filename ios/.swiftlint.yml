@@ -3,6 +3,7 @@ excluded:
   - ShareAnywhereCore/.build
   - ShareAnywhereCore/Sources/CArgon2
   - ShareAnywhereCore/Sources/SAAPIClient/API.gen.swift
+  - ShareAnywhere/Design/Tokens.gen.swift
   - build
   - DerivedData
 disabled_rules:

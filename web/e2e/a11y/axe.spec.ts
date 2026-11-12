@@ -42,10 +42,12 @@ async function audit(page: Page, label: string) {
       contentType: 'application/json',
     });
   // Soft: one run lists every screen's violations instead of stopping at the first.
-  expect.soft(
-    blocking.map((v) => `${v.impact} ${v.id}: ${v.help} — ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`),
-    `${label}: serious/critical axe violations`,
-  ).toEqual([]);
+  expect
+    .soft(
+      blocking.map((v) => `${v.impact} ${v.id}: ${v.help} — ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`),
+      `${label}: serious/critical axe violations`,
+    )
+    .toEqual([]);
 }
 
 const guestRoutes: Array<[string, string]> = [

@@ -202,6 +202,156 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
 
+  chaos:
+    # Failure injection (docs/phases/PHASE_9_HARDENING_RELEASE.md, web/e2e/chaos): restarts the backend during a
+    # transfer, makes the database unreachable and drops its connections, stops coturn, and restarts the edge proxy
+    # (WebSockets drop), each while guests are in a session; asserts the user-visible recovery.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install chromium
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps chromium && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
+      - name: Chaos specs
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_CHAOS: '1'
+          E2E_COMPOSE: docker compose -f ../docker-compose.ci.yml
+        run: pnpm --filter @share-anywhere/web exec playwright test e2e/chaos --project=chromium-desktop --retries=0 --trace retain-on-failure
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos
+          if-no-files-found: ignore
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 14
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
+  visual-snapshots:
+    # docs/phases/PHASE_9_HARDENING_RELEASE.md: generates the visual baselines of web/e2e/visual (five projects, light
+    # and dark, English and Vietnamese) on the runner, whose fonts match the comparison job, and uploads them to commit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: chromium-desktop, browser: chromium }
+          - { project: firefox-desktop, browser: firefox }
+          - { project: webkit-desktop, browser: webkit }
+          - { project: android-chrome, browser: chromium }
+          - { project: ios-safari, browser: webkit }
+    name: visual-snapshots (${{ matrix.project }})
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install ${{ matrix.browser }}
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps ${{ matrix.browser }} && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
+      - name: Generate baselines
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_VISUAL: '1'
+        run: pnpm --filter @share-anywhere/web exec playwright test e2e/visual --project=${{ matrix.project }} --update-snapshots=all --retries=0
+      - name: Upload baselines
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines-${{ matrix.project }}
+          if-no-files-found: error
+          path: web/e2e/visual/visual.spec.ts-snapshots
+          retention-days: 14
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
+  visual:
+    # Compares the main screens with the committed baselines (web/e2e/visual/visual.spec.ts-snapshots) in all five
+    # projects; a difference over 1 % of the pixels fails, with the diff images in the uploaded report.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: chromium-desktop, browser: chromium }
+          - { project: firefox-desktop, browser: firefox }
+          - { project: webkit-desktop, browser: webkit }
+          - { project: android-chrome, browser: chromium }
+          - { project: ios-safari, browser: webkit }
+    name: visual (${{ matrix.project }})
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start CI stack
+        run: scripts/turn-test-cert.sh && docker compose -f docker-compose.ci.yml up -d --build --wait --wait-timeout 240
+      - name: Install ${{ matrix.browser }}
+        run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @share-anywhere/web exec playwright install --with-deps ${{ matrix.browser }} && exit 0
+            echo "playwright install failed (attempt $attempt); retrying in 30 s"; sleep 30
+          done
+          exit 1
+      - name: Compare with the baselines
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_VISUAL: '1'
+        run: |
+          if ! ls web/e2e/visual/visual.spec.ts-snapshots/*-${{ matrix.project }}-linux.png >/dev/null 2>&1; then
+            echo "::warning::no committed baselines for ${{ matrix.project }} yet (visual-snapshots generates them)"; exit 0
+          fi
+          pnpm --filter @share-anywhere/web exec playwright test e2e/visual --project=${{ matrix.project }} --retries=0
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-${{ matrix.project }}
+          if-no-files-found: ignore
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   five-receivers:
     # docs/TESTING_AND_CI.md §2.2: one sender, five receivers (three Chromium, stock Firefox, WebKit), one slowed,
     # the other four finish first, a sixth join is refused.

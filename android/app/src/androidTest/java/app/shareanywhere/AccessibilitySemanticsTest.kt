@@ -7,7 +7,6 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -44,7 +43,7 @@ class AccessibilitySemanticsTest {
         val problems = mutableListOf<String>()
         for (n in root.all()) {
             if (n.config.getOrNull(SemanticsActions.OnClick) == null) continue
-            if (n.config.contains(SemanticsProperties.InvisibleToUser)) continue
+            if (n.config.contains(SemanticsProperties.HideFromAccessibility)) continue
             val tag = n.config.getOrNull(SemanticsProperties.TestTag) ?: "#${n.id}"
             if (n.label().isEmpty()) problems += "$screen: $tag has no spoken name"
             val b = n.touchBoundsInRoot
@@ -62,23 +61,23 @@ class AccessibilitySemanticsTest {
             compose.dumpOnFailure {
                 compose.waitForTag(ScreenIds.WELCOME)
                 problems += audit(ScreenIds.WELCOME)
-                compose.onNodeWithTag("welcome.start").performClick()
+                compose.onNodeWithTag("welcome.start").tap()
                 compose.waitForTag(ScreenIds.HOME)
                 problems += audit(ScreenIds.HOME)
                 for (tab in listOf(ScreenIds.CLIPBOARD, ScreenIds.HISTORY, ScreenIds.DEVICES, ScreenIds.SETTINGS, ScreenIds.HOME)) {
-                    compose.onNodeWithTag("nav.$tab").performClick()
+                    compose.onNodeWithTag("nav.$tab").tap()
                     compose.waitForTag(tab)
                     compose.waitForIdle()
                     problems += audit(tab)
                 }
-                compose.onNodeWithTag("home.send").performClick()
+                compose.onNodeWithTag("home.send").tap()
                 compose.waitForTag(ScreenIds.SEND)
                 problems += audit(ScreenIds.SEND)
-                compose.onNodeWithTag("nav.${ScreenIds.HOME}").performClick()
+                compose.onNodeWithTag("nav.${ScreenIds.HOME}").tap()
                 compose.waitForTag(ScreenIds.HOME)
-                compose.onNodeWithTag("home.receive").performClick()
+                compose.onNodeWithTag("home.receive").tap()
                 compose.waitForTag(ScreenIds.RECEIVE)
-                compose.onNodeWithTag("receive.tab-code").performClick()
+                compose.onNodeWithTag("receive.tab-code").tap()
                 compose.waitForIdle()
                 problems += audit(ScreenIds.RECEIVE_CODE)
             }

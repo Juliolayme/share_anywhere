@@ -129,3 +129,31 @@ The sender keeps its file handles and whole-file hash state across reconnects, b
 - frame counts for two message-size limits.
 
 `web/src/features/transfer/engine/vectors.test.ts` regenerates and compares it. Change it only together with a protocol version bump.
+
+## 9. Cloud Distribution (Phase 8)
+
+Store-and-forward for a signed-in sender who turned Cloud Distribution on and consented (`docs/PRODUCT_REQUIREMENTS.md` §6.6, `docs/API.md` §2.6, `docs/ADR/0030-cloud-distribution.md`). It is the last route: Direct → TURN UDP → TURN TLS → Cloud. The server stores and relays ciphertext only.
+
+**Parts.** The sender splits each file into parts of `part_size` plaintext bytes (4 MiB; the object says), the last holding the remainder (an empty file is one empty part). For each file it draws a random 32-byte file key `K`. Part `n` (0-based) is stored as
+
+```text
+nonce (12 random bytes) || AES-256-GCM(K, nonce, plaintext_n, AAD) (ciphertext || 16-byte tag)
+AAD = UTF-8 "sa-cloud-v1|<object_id>|<n>|<part_count>"
+```
+
+so each part is its plaintext length + 28 bytes, and a part cannot be moved, swapped between objects, or dropped from the end without failing authentication. After the last part the receiver also checks the SHA-256 of the whole file, which travels with the key.
+
+**Key exchange (over signaling, never through the server in the clear).** The server relays `CLOUD_KEY_REQUEST` and `CLOUD_KEY` like `OFFER` (sender ↔ a `JOINED` receiver, `docs/API.md` §4):
+
+1. The receiver makes an ephemeral X25519 key pair `r` and sends `CLOUD_KEY_REQUEST {public_key: b64u(r.pub)}` to the sender's participant ID. It asks when it learns of a `READY` object (`GET /v1/sessions/{id}/cloud`, or `CLOUD_UPDATED`) whose key it lacks, at most once every 10 s while unanswered.
+2. The sender makes an ephemeral X25519 key pair `s` and derives `W = HKDF-SHA256(ikm = X25519(s, r.pub), salt = s.pub || r.pub, info = "sa-cloud-key-v1|<session_id>|<receiver participant_id>", 32 bytes)`; the receiver's participant ID is the relayed message's `from`.
+3. For each object whose key it holds: `wrapped = AES-256-GCM(W, nonce, K || SHA-256(file), AAD = "sa-cloud-wrap-v1|<object_id>|<file_id>")` with a random 12-byte nonce. It answers `CLOUD_KEY {public_key: b64u(s.pub), keys: [{object_id, file_id, nonce, wrapped}]}` (base64url without padding).
+4. The receiver derives `W` the same way with its own participant ID, unwraps each entry, and keeps `K` and the file hash in memory for this receive.
+
+A passive server (or its logs) learns nothing; an active server that substitutes public keys is the same man-in-the-middle position as substituting DTLS fingerprints in SDP, which the security words address (`docs/SECURITY_MODEL.md` §7). Keys live only in memory: a sender that quits before a receiver asked cannot hand the key out later, and that receiver keeps using P2P.
+
+**When the receiver uses Cloud.** While a `READY`, unpaused object exists for an unfinished file and its key is held, a receiver whose P2P connection is lost or never opened (reconnecting or offline) stops redialling and downloads the parts in order with `GET /v1/cloud/objects/{id}/parts/{n}`, decrypting each into the partial file at `n × part_size`. It reports `TRANSFERRING` and progress with route `cloud`, verifies the whole-file SHA-256, reports `COMPLETED` with route `cloud`, and calls `POST /v1/cloud/objects/{id}/received`. A paused object (the sender's budget) shows as waiting; `403 cloud_budget_exhausted` keeps the bytes verified so far and resumes at the next part once `CLOUD_UPDATED` lifts the pause. A part that fails authentication fails the file (`product.tx_err_protocol`).
+
+**When the sender uploads.** After the session is created with Cloud transfer chosen (the consent dialog shown first), the sender calls `POST /v1/files/{id}/distribute` per file, encrypts and uploads every part with `PUT …/parts/{n}` (retrying a part on network errors), then seals. Upload progress is shown per file; the P2P route stays available meanwhile. On iOS this lets a transfer finish while the app is not in the foreground: once sealed, receivers no longer need the sender online (`docs/ADR/0027-ios-background-policy.md`).
+
+**Vectors.** `shared/protocol/schemas/cloud-vectors.json` holds fixed keys, nonces, parts and a key-wrap exchange; Web (Vitest), Android (JVM) and iOS (`swift test`) reproduce them byte for byte.

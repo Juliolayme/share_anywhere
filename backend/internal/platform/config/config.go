@@ -53,6 +53,21 @@ type Config struct {
 	PublicURL string
 	// MetricsAddr serves Prometheus metrics on a separate internal listener; empty disables it.
 	MetricsAddr string
+	// Cloud Distribution (docs/ADR/0030-cloud-distribution.md), off unless SA_CLOUD_ENABLED=true. CloudStore is s3
+	// (an S3-compatible endpoint) or memory (development and test only; lost on restart).
+	CloudEnabled        bool
+	CloudStore          string
+	S3Endpoint          string
+	S3Region            string
+	S3Bucket            string
+	S3AccessKey         string
+	S3SecretKey         string
+	CloudTTL            time.Duration
+	CloudDefaultBudget  int64
+	CloudMaxBudget      int64
+	CloudPriceStorageGB *float64
+	CloudPriceEgressGB  *float64
+	CloudCurrency       string
 	// CodeGuessAlarmPerMin trips protected mode (docs/SECURITY_MODEL.md §3.1).
 	CodeGuessAlarmPerMin int
 	// RateLimitMultiplier scales rate limits for test stacks (SA_ENV=test only; 1 elsewhere).
@@ -217,6 +232,7 @@ func LoadFrom(lookup Lookup) (Config, error) {
 	}
 	cfg.CodeGuessAlarmPerMin = alarm
 	cfg.MetricsAddr = get("SA_METRICS_ADDR", "")
+	errs = append(errs, loadCloud(&cfg, get)...)
 
 	cfg.MailSink = get("SA_MAIL_SINK", "console")
 	cfg.SMTPAddr = get("SA_SMTP_ADDR", "")
@@ -298,4 +314,78 @@ func LoadFrom(lookup Lookup) (Config, error) {
 	}
 
 	return cfg, errors.Join(errs...)
+}
+
+// loadCloud reads the Cloud Distribution settings; nothing is required while SA_CLOUD_ENABLED is off.
+func loadCloud(cfg *Config, get func(key, def string) string) []error {
+	var errs []error
+	switch get("SA_CLOUD_ENABLED", "false") {
+	case "true":
+		cfg.CloudEnabled = true
+	case "false":
+	default:
+		errs = append(errs, errors.New("SA_CLOUD_ENABLED must be true or false"))
+	}
+	cfg.CloudStore = get("SA_CLOUD_STORE", "s3")
+	cfg.S3Endpoint = strings.TrimRight(get("SA_S3_ENDPOINT", ""), "/")
+	cfg.S3Region = get("SA_S3_REGION", "us-east-1")
+	cfg.S3Bucket = get("SA_S3_BUCKET", "share-anywhere-cloud")
+	cfg.S3AccessKey = get("SA_S3_ACCESS_KEY", "")
+	cfg.S3SecretKey = get("SA_S3_SECRET_KEY", "")
+	cfg.CloudCurrency = get("SA_CLOUD_CURRENCY", "USD")
+	ttl, err := time.ParseDuration(get("SA_CLOUD_TTL", "24h"))
+	if err != nil || ttl < time.Minute || ttl > 30*24*time.Hour {
+		errs = append(errs, errors.New("SA_CLOUD_TTL must be a duration between 1m and 720h"))
+	}
+	cfg.CloudTTL = ttl
+	for _, c := range []struct {
+		key string
+		def int64
+		dst *int64
+	}{{"SA_CLOUD_DEFAULT_BUDGET_BYTES", 10 << 30, &cfg.CloudDefaultBudget}, {"SA_CLOUD_MAX_BUDGET_BYTES", 1 << 40, &cfg.CloudMaxBudget}} {
+		v, err := strconv.ParseInt(get(c.key, strconv.FormatInt(c.def, 10)), 10, 64)
+		if err != nil || v < 0 {
+			errs = append(errs, fmt.Errorf("%s must be a non-negative number of bytes", c.key))
+			continue
+		}
+		*c.dst = v
+	}
+	if cfg.CloudDefaultBudget > cfg.CloudMaxBudget {
+		errs = append(errs, errors.New("SA_CLOUD_DEFAULT_BUDGET_BYTES must not exceed SA_CLOUD_MAX_BUDGET_BYTES"))
+	}
+	// Prices are configuration, never hard-coded facts; unset prices make the estimate "cost unknown".
+	for _, p := range []struct {
+		key string
+		dst **float64
+	}{{"SA_CLOUD_PRICE_STORAGE_GB_MONTH", &cfg.CloudPriceStorageGB}, {"SA_CLOUD_PRICE_EGRESS_GB", &cfg.CloudPriceEgressGB}} {
+		raw := get(p.key, "")
+		if raw == "" {
+			continue
+		}
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || v < 0 {
+			errs = append(errs, fmt.Errorf("%s must be a non-negative price", p.key))
+			continue
+		}
+		*p.dst = &v
+	}
+	if !cfg.CloudEnabled {
+		return errs
+	}
+	switch cfg.CloudStore {
+	case "memory":
+		if cfg.Env == EnvProduction {
+			errs = append(errs, errors.New("SA_CLOUD_STORE=memory is not allowed in production"))
+		}
+	case "s3":
+		if !strings.HasPrefix(cfg.S3Endpoint, "http://") && !strings.HasPrefix(cfg.S3Endpoint, "https://") {
+			errs = append(errs, errors.New("SA_S3_ENDPOINT must start with http:// or https:// when Cloud is on"))
+		}
+		if cfg.S3AccessKey == "" || cfg.S3SecretKey == "" || cfg.S3Bucket == "" {
+			errs = append(errs, errors.New("SA_S3_ACCESS_KEY, SA_S3_SECRET_KEY and SA_S3_BUCKET are required when Cloud is on"))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("SA_CLOUD_STORE must be s3 or memory; got %q", cfg.CloudStore))
+	}
+	return errs
 }

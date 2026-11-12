@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Share Anywhere API
   version: 0.1.0
-  x-sa-api-sections: ["2.1", "2.2", "2.3", "2.4", "2.5"]
+  x-sa-api-sections: ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6"]
   description: |
     Machine-readable contract. Every operation declares `x-sa-access` (public, device, participant,
     account, account+device), which must match docs/API.md and is enforced by the backend
@@ -1464,6 +1464,235 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/cloud/settings:
+    get:
+      operationId: getCloudSettings
+      x-sa-access: device
+      summary: Whether Cloud Distribution is available, and the signed-in account's consent, budget and usage (docs/API.md §2.6).
+      responses:
+        "200":
+          description: Availability and settings (zero values for guests).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      operationId: putCloudSettings
+      x-sa-access: account
+      summary: Turn Cloud Distribution on (explicit consent the first time) or off and set the monthly budget.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CloudSettingsInput" }
+      responses:
+        "200":
+          description: The stored settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/cloud/estimate:
+    post:
+      operationId: estimateCloud
+      x-sa-access: account
+      summary: Temporary storage, receiver egress, retention and the cost from configured pricing (null when unknown) before consent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bytes, receivers]
+              additionalProperties: false
+              properties:
+                bytes: { type: integer, format: int64, minimum: 0 }
+                receivers: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        "200":
+          description: The estimate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudEstimate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/files/{id}/distribute:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    post:
+      operationId: distributeFile
+      x-sa-access: device
+      summary: Start Cloud Distribution of a shared file. The session's sender, signed in, enabled and consented, within budget; idempotent per file.
+      description: >-
+        Device level so that a guest gets 403 cloud_requires_account (docs/PRODUCT_REQUIREMENTS.md section 6.6); no consent
+        gives 403 cloud_consent_required and a used-up budget 403 cloud_budget_exhausted.
+      responses:
+        "200":
+          description: The live object of this file.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudObject" }
+        "201":
+          description: A new object, uploading.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudObject" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/cloud/objects/{id}/parts/{n}:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+      - {
+          name: n,
+          in: path,
+          required: true,
+          schema: { type: integer, minimum: 0 },
+        }
+    put:
+      operationId: putCloudPart
+      x-sa-access: device
+      summary: Upload one encrypted part (exactly part_size + 28 bytes; the last part the remainder + 28) from the object's owner device.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: The object with its uploaded part count.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudObject" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      operationId: getCloudPart
+      x-sa-access: participant
+      summary: Download one encrypted part of a READY object (sender or JOINED receiver), charged to the sender's budget.
+      responses:
+        "200":
+          description: The part as stored (nonce, ciphertext, tag).
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/cloud/objects/{id}/seal:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    post:
+      operationId: sealCloudObject
+      x-sa-access: device
+      summary: Mark a fully uploaded object READY (owner device); participants get CLOUD_UPDATED.
+      responses:
+        "200":
+          description: The object.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudObject" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/cloud/objects/{id}:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    get:
+      operationId: getCloudObject
+      x-sa-access: participant
+      summary: One cloud object for the sender or a JOINED receiver of its session.
+      responses:
+        "200":
+          description: The object.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudObject" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/cloud/objects/{id}/received:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    post:
+      operationId: receivedCloudObject
+      x-sa-access: participant
+      summary: A JOINED receiver has the whole file; once every joined receiver has, the object is deleted.
+      responses:
+        "200":
+          description: The object (DELETED once every joined receiver has it).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudObject" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/sessions/{id}/cloud:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    get:
+      operationId: listSessionCloudObjects
+      x-sa-access: participant
+      summary: The live cloud objects of a session for its sender and JOINED receivers.
+      responses:
+        "200":
+          description: Objects, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [objects]
+                properties:
+                  objects:
+                    type: array
+                    items: { $ref: "#/components/schemas/CloudObject" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     deviceToken:
@@ -1510,6 +1739,64 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    CloudSettings:
+      type: object
+      required: [available, signed_in, enabled, consented, budget_bytes, used_bytes, max_budget_bytes, ttl_hours, pricing]
+      properties:
+        available: { type: boolean, description: Cloud Distribution is configured on this server. }
+        signed_in: { type: boolean }
+        enabled: { type: boolean }
+        consented: { type: boolean }
+        budget_bytes: { type: integer, format: int64, minimum: 0, description: Monthly budget (bytes uploaded plus downloaded). }
+        used_bytes: { type: integer, format: int64, minimum: 0, description: Bytes used this calendar month (UTC). }
+        max_budget_bytes: { type: integer, format: int64, minimum: 0 }
+        ttl_hours: { type: integer, minimum: 0, description: How long an object is kept at most. }
+        pricing:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/CloudPricing" }]
+    CloudPricing:
+      type: object
+      required: [currency]
+      properties:
+        currency: { type: string }
+        storage_gb_month: { type: number, nullable: true }
+        egress_gb: { type: number, nullable: true }
+    CloudSettingsInput:
+      type: object
+      required: [enabled, consent]
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean }
+        consent: { type: boolean, description: Required (true) the first time Cloud Distribution is turned on. }
+        budget_bytes: { type: integer, format: int64, minimum: 0 }
+    CloudEstimate:
+      type: object
+      required: [storage_bytes, egress_bytes, retention_hours, cost, budget_bytes, used_bytes, within_budget]
+      properties:
+        storage_bytes: { type: integer, format: int64 }
+        egress_bytes: { type: integer, format: int64 }
+        retention_hours: { type: integer }
+        cost: { type: number, nullable: true, description: "null when no price is configured: clients show product.cost_unknown." }
+        currency: { type: string }
+        budget_bytes: { type: integer, format: int64 }
+        used_bytes: { type: integer, format: int64 }
+        within_budget: { type: boolean }
+    CloudObject:
+      type: object
+      required: [id, session_id, file_id, status, paused, size, part_size, part_count, parts_uploaded, ciphertext_size, created_at, expires_at]
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        file_id: { type: string, format: uuid }
+        status: { type: string, enum: [UPLOADING, READY, DELETED] }
+        paused: { type: boolean, description: The sender's monthly budget is used up; uploads and downloads wait. }
+        size: { type: integer, format: int64, minimum: 0, description: Plaintext file size. }
+        part_size: { type: integer, minimum: 1, description: Plaintext bytes per part (the last part holds the remainder). }
+        part_count: { type: integer, minimum: 1 }
+        parts_uploaded: { type: integer, minimum: 0 }
+        ciphertext_size: { type: integer, format: int64, minimum: 0, description: "size + 28 × part_count." }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
     Error:
       type: object
       required: [error, message]

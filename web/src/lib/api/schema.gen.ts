@@ -216,6 +216,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/cloud/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Temporary storage, receiver egress, retention and the cost from configured pricing (null when unknown) before consent. */
+        post: operations["estimateCloud"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/cloud/objects/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** One cloud object for the sender or a JOINED receiver of its session. */
+        get: operations["getCloudObject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/cloud/objects/{id}/parts/{n}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        /** Download one encrypted part of a READY object (sender or JOINED receiver), charged to the sender's budget. */
+        get: operations["getCloudPart"];
+        /** Upload one encrypted part (exactly part_size + 28 bytes; the last part the remainder + 28) from the object's owner device. */
+        put: operations["putCloudPart"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/cloud/objects/{id}/received": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A JOINED receiver has the whole file; once every joined receiver has, the object is deleted. */
+        post: operations["receivedCloudObject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/cloud/objects/{id}/seal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a fully uploaded object READY (owner device); participants get CLOUD_UPDATED. */
+        post: operations["sealCloudObject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/cloud/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Cloud Distribution is available, and the signed-in account's consent, budget and usage (docs/API.md §2.6). */
+        get: operations["getCloudSettings"];
+        /** Turn Cloud Distribution on (explicit consent the first time) or off and set the monthly budget. */
+        put: operations["putCloudSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/devices": {
         parameters: {
             query?: never;
@@ -357,6 +470,28 @@ export interface paths {
          * @description Native clients send refresh_secret in the body. Web clients send the sa_device cookie and must send X-SA-Refresh 1. acct and dl are re-derived from the device's live account session. A not-added account session started from a Web device is bound to the browser session: the sa_acct cookie (set at sign-in, same path, no Max-Age) must match, or the account session ends and the token is a guest token; the response then expires sa_acct (docs/ADR/0013-session-hardening.md). Presenting a refresh secret that was already used or retired revokes the device (401 refresh_reused).
          */
         post: operations["refreshDeviceToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/files/{id}/distribute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Cloud Distribution of a shared file. The session's sender, signed in, enabled and consented, within budget; idempotent per file.
+         * @description Device level so that a guest gets 403 cloud_requires_account (docs/PRODUCT_REQUIREMENTS.md section 6.6); no consent gives 403 cloud_consent_required and a used-up budget 403 cloud_budget_exhausted.
+         */
+        post: operations["distributeFile"];
         delete?: never;
         options?: never;
         head?: never;
@@ -802,6 +937,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sessions/{id}/cloud": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** The live cloud objects of a session for its sender and JOINED receivers. */
+        get: operations["listSessionCloudObjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sessions/{id}/files": {
         parameters: {
             query?: never;
@@ -1196,6 +1350,85 @@ export interface components {
             retention_days: number;
             /** @description Clients skip capturing possibly sensitive text (best effort). */
             sensitive_skip: boolean;
+        };
+        CloudEstimate: {
+            /** Format: int64 */
+            budget_bytes: number;
+            /** @description null when no price is configured: clients show product.cost_unknown. */
+            cost: number | null;
+            currency?: string;
+            /** Format: int64 */
+            egress_bytes: number;
+            retention_hours: number;
+            /** Format: int64 */
+            storage_bytes: number;
+            /** Format: int64 */
+            used_bytes: number;
+            within_budget: boolean;
+        };
+        CloudObject: {
+            /**
+             * Format: int64
+             * @description size + 28 × part_count.
+             */
+            ciphertext_size: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            file_id: string;
+            /** Format: uuid */
+            id: string;
+            part_count: number;
+            /** @description Plaintext bytes per part (the last part holds the remainder). */
+            part_size: number;
+            parts_uploaded: number;
+            /** @description The sender's monthly budget is used up; uploads and downloads wait. */
+            paused: boolean;
+            /** Format: uuid */
+            session_id: string;
+            /**
+             * Format: int64
+             * @description Plaintext file size.
+             */
+            size: number;
+            /** @enum {string} */
+            status: "UPLOADING" | "READY" | "DELETED";
+        };
+        CloudPricing: {
+            currency: string;
+            egress_gb?: number | null;
+            storage_gb_month?: number | null;
+        };
+        CloudSettings: {
+            /** @description Cloud Distribution is configured on this server. */
+            available: boolean;
+            /**
+             * Format: int64
+             * @description Monthly budget (bytes uploaded plus downloaded).
+             */
+            budget_bytes: number;
+            consented: boolean;
+            enabled: boolean;
+            /** Format: int64 */
+            max_budget_bytes: number;
+            pricing: components["schemas"]["CloudPricing"] | null;
+            signed_in: boolean;
+            /** @description How long an object is kept at most. */
+            ttl_hours: number;
+            /**
+             * Format: int64
+             * @description Bytes used this calendar month (UTC).
+             */
+            used_bytes: number;
+        };
+        CloudSettingsInput: {
+            /** Format: int64 */
+            budget_bytes?: number;
+            /** @description Required (true) the first time Cloud Distribution is turned on. */
+            consent: boolean;
+            enabled: boolean;
         };
         CreateDeviceRequest: {
             display_name?: string;
@@ -2146,6 +2379,225 @@ export interface operations {
             429: components["responses"]["RateLimited"];
         };
     };
+    estimateCloud: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    bytes: number;
+                    receivers: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The estimate. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudEstimate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getCloudObject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The object. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudObject"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getCloudPart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The part as stored (nonce, ciphertext, tag). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    putCloudPart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description The object with its uploaded part count. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudObject"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    receivedCloudObject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The object (DELETED once every joined receiver has it). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudObject"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    sealCloudObject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The object. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudObject"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getCloudSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability and settings (zero values for guests). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putCloudSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloudSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description The stored settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listAccountDevices: {
         parameters: {
             query?: never;
@@ -2425,6 +2877,42 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
+        };
+    };
+    distributeFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The live object of this file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudObject"];
+                };
+            };
+            /** @description A new object, uploading. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudObject"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     clearHistory: {
@@ -3246,6 +3734,32 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSessionCloudObjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Objects, oldest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        objects: components["schemas"]["CloudObject"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };

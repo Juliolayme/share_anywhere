@@ -1,4 +1,5 @@
-// Package signaling relays WebRTC signaling (OFFER, ANSWER, ICE_CANDIDATE) over the WebSocket hub between
+// Package signaling relays WebRTC signaling (OFFER, ANSWER, ICE_CANDIDATE) and the Cloud Distribution key exchange
+// (CLOUD_KEY_REQUEST, CLOUD_KEY: an X25519-wrapped per-file key, docs/TRANSFER_PROTOCOL.md §9) over the WebSocket hub between
 // the sender and a JOINED receiver of the same live session (docs/API.md §4). The server never inspects
 // SDP or candidates; it only checks who may talk to whom and forwards.
 package signaling
@@ -16,7 +17,7 @@ import (
 const MaxPayload = 32 << 10
 
 // Types are the relayed message types.
-var Types = []string{"OFFER", "ANSWER", "ICE_CANDIDATE"}
+var Types = []string{"OFFER", "ANSWER", "ICE_CANDIDATE", "CLOUD_KEY_REQUEST", "CLOUD_KEY"}
 
 // Router authorizes a route (implemented by sharing.Service).
 type Router interface {

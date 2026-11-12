@@ -146,9 +146,100 @@ object ApiOperations {
     val getClipboardSettings = ApiOperation("GET", "/v1/clipboard/settings", "account+device")
     /** Replace the account's clipboard settings (all fields required). A new retention applies to events created afterwards. */
     val putClipboardSettings = ApiOperation("PUT", "/v1/clipboard/settings", "account+device")
+    /** Whether Cloud Distribution is available, and the signed-in account's consent, budget and usage (docs/API.md §2.6). */
+    val getCloudSettings = ApiOperation("GET", "/v1/cloud/settings", "device")
+    /** Turn Cloud Distribution on (explicit consent the first time) or off and set the monthly budget. */
+    val putCloudSettings = ApiOperation("PUT", "/v1/cloud/settings", "account")
+    /** Temporary storage, receiver egress, retention and the cost from configured pricing (null when unknown) before consent. */
+    val estimateCloud = ApiOperation("POST", "/v1/cloud/estimate", "account")
+    /** Start Cloud Distribution of a shared file. The session's sender, signed in, enabled and consented, within budget; idempotent per file. */
+    val distributeFile = ApiOperation("POST", "/v1/files/{id}/distribute", "device")
+    /** Download one encrypted part of a READY object (sender or JOINED receiver), charged to the sender's budget. */
+    val getCloudPart = ApiOperation("GET", "/v1/cloud/objects/{id}/parts/{n}", "participant")
+    /** Upload one encrypted part (exactly part_size + 28 bytes; the last part the remainder + 28) from the object's owner device. */
+    val putCloudPart = ApiOperation("PUT", "/v1/cloud/objects/{id}/parts/{n}", "device")
+    /** Mark a fully uploaded object READY (owner device); participants get CLOUD_UPDATED. */
+    val sealCloudObject = ApiOperation("POST", "/v1/cloud/objects/{id}/seal", "device")
+    /** One cloud object for the sender or a JOINED receiver of its session. */
+    val getCloudObject = ApiOperation("GET", "/v1/cloud/objects/{id}", "participant")
+    /** A JOINED receiver has the whole file; once every joined receiver has, the object is deleted. */
+    val receivedCloudObject = ApiOperation("POST", "/v1/cloud/objects/{id}/received", "participant")
+    /** The live cloud objects of a session for its sender and JOINED receivers. */
+    val listSessionCloudObjects = ApiOperation("GET", "/v1/sessions/{id}/cloud", "participant")
 
-    val all: List<ApiOperation> = listOf(getHealth, getReady, getDeviceChallenge, createAnonymousDevice, refreshDeviceToken, getCurrentDevice, updateCurrentDevice, resetCurrentDevice, createWsTicket, connectWebSocket, listOpenSessions, createSession, getSession, updateSession, closeSession, renewSession, resolveCode, resolveLink, joinSession, approveParticipant, rejectParticipant, removeParticipant, blockParticipant, leaveSession, createTurnCredentials, listSessionFiles, listTransfers, getTransfer, reportTransfer, pauseTransfer, resumeTransfer, cancelTransfer, signUp, signIn, signOut, requestPasswordReset, confirmPasswordReset, getMe, updateMe, changePassword, addCurrentDevice, listAccountDevices, renameAccountDevice, revokeAccountDevice, getKeys, registerDeviceKey, setupKeys, getRecoveryBlob, rotateKeys, getKeyChain, ackPendingKey, createPairing, getPairingResult, lookupPairing, wrapPairing, listHistoryEntries, createHistoryEntry, deleteHistoryEntry, clearHistory, listClipboardEvents, createClipboardEvent, deleteClipboardEvent, getClipboardHistory, clearClipboardHistory, getClipboardSettings, putClipboardSettings)
+    val all: List<ApiOperation> = listOf(getHealth, getReady, getDeviceChallenge, createAnonymousDevice, refreshDeviceToken, getCurrentDevice, updateCurrentDevice, resetCurrentDevice, createWsTicket, connectWebSocket, listOpenSessions, createSession, getSession, updateSession, closeSession, renewSession, resolveCode, resolveLink, joinSession, approveParticipant, rejectParticipant, removeParticipant, blockParticipant, leaveSession, createTurnCredentials, listSessionFiles, listTransfers, getTransfer, reportTransfer, pauseTransfer, resumeTransfer, cancelTransfer, signUp, signIn, signOut, requestPasswordReset, confirmPasswordReset, getMe, updateMe, changePassword, addCurrentDevice, listAccountDevices, renameAccountDevice, revokeAccountDevice, getKeys, registerDeviceKey, setupKeys, getRecoveryBlob, rotateKeys, getKeyChain, ackPendingKey, createPairing, getPairingResult, lookupPairing, wrapPairing, listHistoryEntries, createHistoryEntry, deleteHistoryEntry, clearHistory, listClipboardEvents, createClipboardEvent, deleteClipboardEvent, getClipboardHistory, clearClipboardHistory, getClipboardSettings, putClipboardSettings, getCloudSettings, putCloudSettings, estimateCloud, distributeFile, getCloudPart, putCloudPart, sealCloudObject, getCloudObject, receivedCloudObject, listSessionCloudObjects)
 }
+
+@Serializable
+data class CloudSettings(
+    /** Cloud Distribution is configured on this server. */
+    @SerialName("available") val available: Boolean,
+    @SerialName("signed_in") val signedIn: Boolean,
+    @SerialName("enabled") val enabled: Boolean,
+    @SerialName("consented") val consented: Boolean,
+    /** Monthly budget (bytes uploaded plus downloaded). */
+    @SerialName("budget_bytes") val budgetBytes: Long,
+    /** Bytes used this calendar month (UTC). */
+    @SerialName("used_bytes") val usedBytes: Long,
+    @SerialName("max_budget_bytes") val maxBudgetBytes: Long,
+    /** How long an object is kept at most. */
+    @SerialName("ttl_hours") val ttlHours: Int,
+    @SerialName("pricing") val pricing: CloudPricing? = null,
+)
+
+@Serializable
+data class CloudPricing(
+    @SerialName("currency") val currency: String,
+    @SerialName("storage_gb_month") val storageGbMonth: Double? = null,
+    @SerialName("egress_gb") val egressGb: Double? = null,
+)
+
+@Serializable
+data class CloudSettingsInput(
+    @SerialName("enabled") val enabled: Boolean,
+    /** Required (true) the first time Cloud Distribution is turned on. */
+    @SerialName("consent") val consent: Boolean,
+    @SerialName("budget_bytes") val budgetBytes: Long? = null,
+)
+
+@Serializable
+data class CloudEstimate(
+    @SerialName("storage_bytes") val storageBytes: Long,
+    @SerialName("egress_bytes") val egressBytes: Long,
+    @SerialName("retention_hours") val retentionHours: Int,
+    /** null when no price is configured: clients show product.cost_unknown. */
+    @SerialName("cost") val cost: Double? = null,
+    @SerialName("currency") val currency: String? = null,
+    @SerialName("budget_bytes") val budgetBytes: Long,
+    @SerialName("used_bytes") val usedBytes: Long,
+    @SerialName("within_budget") val withinBudget: Boolean,
+)
+
+@Serializable
+data class CloudObject(
+    /** Format: uuid. */
+    @SerialName("id") val id: String,
+    /** Format: uuid. */
+    @SerialName("session_id") val sessionId: String,
+    /** Format: uuid. */
+    @SerialName("file_id") val fileId: String,
+    /** One of: UPLOADING, READY, DELETED. */
+    @SerialName("status") val status: String,
+    /** The sender's monthly budget is used up; uploads and downloads wait. */
+    @SerialName("paused") val paused: Boolean,
+    /** Plaintext file size. */
+    @SerialName("size") val size: Long,
+    /** Plaintext bytes per part (the last part holds the remainder). */
+    @SerialName("part_size") val partSize: Int,
+    @SerialName("part_count") val partCount: Int,
+    @SerialName("parts_uploaded") val partsUploaded: Int,
+    /** size + 28 × part_count. */
+    @SerialName("ciphertext_size") val ciphertextSize: Long,
+    /** Format: date-time. */
+    @SerialName("created_at") val createdAt: String,
+    /** Format: date-time. */
+    @SerialName("expires_at") val expiresAt: String,
+)
 
 @Serializable
 data class Error(

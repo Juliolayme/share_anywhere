@@ -45,6 +45,12 @@ services:
       SA_TURN_METRICS_URL: http://host.docker.internal:9641/metrics
       # Internal Prometheus listener, published on the runner's loopback only for the metrics scrape tests.
       SA_METRICS_ADDR: ":9090"
+      # Cloud Distribution on (off by default everywhere else) against the S3-compatible gateway below (ADR 0030).
+      SA_CLOUD_ENABLED: "true"
+      SA_S3_ENDPOINT: http://s3:7070
+      SA_S3_ACCESS_KEY: ci-s3-access
+      SA_S3_SECRET_KEY: ci-s3-secret-key
+      SA_S3_BUCKET: share-anywhere-cloud
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -52,6 +58,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      s3:
+        condition: service_started
     healthcheck:
       test: ["CMD", "/server", "-healthcheck"]
       interval: 2s
@@ -68,6 +76,15 @@ services:
   # Host network, loopback only (infra/coturn/turnserver.ci.conf, ADR 0029): browsers, the iOS Simulator and the
   # Android emulator (10.0.2.2) reach it, and relay-to-relay traffic stays on 127.0.0.1. TURN over TLS needs the
   # certificate from scripts/turn-test-cert.sh in .tools/turn-tls (generated before `compose up`, never committed).
+  # S3-compatible object store for Cloud Distribution (MinIO no longer publishes images; ADR 0030). Test-only keys;
+  # the gateway is reachable only on the compose network (the backend proxies every byte).
+  s3:
+    image: versity/versitygw:v1.9.0
+    command: ["posix", "/tmp"]
+    environment:
+      ROOT_ACCESS_KEY: ci-s3-access
+      ROOT_SECRET_KEY: ci-s3-secret-key
+
   coturn:
     image: coturn/coturn:4.6
     network_mode: host

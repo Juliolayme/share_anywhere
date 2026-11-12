@@ -28,6 +28,7 @@ func (h *HTTP) Register(r *access.Router) {
 	r.Handle(http.MethodPost, "/v1/transfers/{id}/pause", access.Participant, h.action("pause"))
 	r.Handle(http.MethodPost, "/v1/transfers/{id}/resume", access.Participant, h.action("resume"))
 	r.Handle(http.MethodPost, "/v1/transfers/{id}/cancel", access.Participant, h.action("cancel"))
+	h.registerCloud(r)
 }
 
 func device(r *http.Request) string {

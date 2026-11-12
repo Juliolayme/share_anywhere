@@ -36,6 +36,8 @@ type Config struct {
 	Metrics  *metrics.Registry
 	// ReportLimit bounds report calls per device (progress is throttled by clients; this stops floods).
 	ReportLimit *ratelimit.Limiter
+	// Cloud enables Cloud Distribution (nil: off, the default; docs/ADR/0030-cloud-distribution.md).
+	Cloud *CloudConfig
 }
 
 type counters struct {
@@ -46,6 +48,7 @@ type counters struct {
 type Service struct {
 	cfg Config
 	m   counters
+	cm  cloudCounters
 }
 
 // New returns the service.
@@ -54,7 +57,7 @@ func New(cfg Config) *Service {
 	if r == nil {
 		r = metrics.New()
 	}
-	return &Service{cfg: cfg, m: counters{
+	return &Service{cfg: cfg, cm: newCloudCounters(r), m: counters{
 		completed: r.Counter("sa_transfers_completed_total", "Transfers (file × receiver) completed and verified."),
 		failed:    r.Counter("sa_transfers_failed_total", "Transfers that failed."),
 		cancelled: r.Counter("sa_transfers_cancelled_total", "Transfers cancelled by a participant or by session end."),

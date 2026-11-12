@@ -67,6 +67,21 @@
       "$ref": "#/$defs/TransferUpdated"
     },
     {
+      "$ref": "#/$defs/CloudKeyRequestIn"
+    },
+    {
+      "$ref": "#/$defs/CloudKeyRequestOut"
+    },
+    {
+      "$ref": "#/$defs/CloudKeyIn"
+    },
+    {
+      "$ref": "#/$defs/CloudKeyOut"
+    },
+    {
+      "$ref": "#/$defs/CloudUpdated"
+    },
+    {
       "$ref": "#/$defs/ClipboardEventCreated"
     },
     {
@@ -820,6 +835,269 @@
         "device_id": {
           "type": "string",
           "format": "uuid"
+        }
+      }
+    },
+    "CloudKeyRequestIn": {
+      "x-sa-phase": 8,
+      "x-sa-direction": "client-to-server",
+      "description": "A JOINED receiver asks the sender for the keys of the session's cloud objects (Phase 8, docs/TRANSFER_PROTOCOL.md §9). Relayed like OFFER; opaque to the server.",
+      "type": "object",
+      "required": ["type", "session_id", "to", "payload"],
+      "properties": {
+        "type": {
+          "const": "CLOUD_KEY_REQUEST"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "to": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Target participant ID"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["public_key"],
+          "properties": {
+            "public_key": {
+              "type": "string",
+              "description": "The receiver's ephemeral X25519 public key, base64url without padding (32 bytes)"
+            }
+          }
+        }
+      }
+    },
+    "CloudKeyRequestOut": {
+      "x-sa-phase": 8,
+      "x-sa-direction": "server-to-client",
+      "description": "Delivered to the sender.",
+      "type": "object",
+      "required": ["type", "session_id", "from", "payload"],
+      "properties": {
+        "type": {
+          "const": "CLOUD_KEY_REQUEST"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "from": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Sending participant ID"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["public_key"],
+          "properties": {
+            "public_key": {
+              "type": "string",
+              "description": "The receiver's ephemeral X25519 public key, base64url without padding (32 bytes)"
+            }
+          }
+        }
+      }
+    },
+    "CloudKeyIn": {
+      "x-sa-phase": 8,
+      "x-sa-direction": "client-to-server",
+      "description": "The sender answers a CLOUD_KEY_REQUEST with every object key wrapped to the receiver's ephemeral key. Relayed like OFFER; the server cannot unwrap it.",
+      "type": "object",
+      "required": ["type", "session_id", "to", "payload"],
+      "properties": {
+        "type": {
+          "const": "CLOUD_KEY"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "to": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Target participant ID"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["public_key", "keys"],
+          "properties": {
+            "public_key": {
+              "type": "string",
+              "description": "The sender's ephemeral X25519 public key, base64url (32 bytes)"
+            },
+            "keys": {
+              "type": "array",
+              "maxItems": 1000,
+              "items": {
+                "type": "object",
+                "required": ["object_id", "file_id", "nonce", "wrapped"],
+                "properties": {
+                  "object_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "file_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "description": "12-byte AES-GCM nonce, base64url"
+                  },
+                  "wrapped": {
+                    "type": "string",
+                    "description": "AES-256-GCM of the 32-byte file key followed by the 32-byte SHA-256 of the plaintext file, base64url (docs/TRANSFER_PROTOCOL.md §9)"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "CloudKeyOut": {
+      "x-sa-phase": 8,
+      "x-sa-direction": "server-to-client",
+      "description": "Delivered to the receiver.",
+      "type": "object",
+      "required": ["type", "session_id", "from", "payload"],
+      "properties": {
+        "type": {
+          "const": "CLOUD_KEY"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "from": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Sending participant ID"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["public_key", "keys"],
+          "properties": {
+            "public_key": {
+              "type": "string",
+              "description": "The sender's ephemeral X25519 public key, base64url (32 bytes)"
+            },
+            "keys": {
+              "type": "array",
+              "maxItems": 1000,
+              "items": {
+                "type": "object",
+                "required": ["object_id", "file_id", "nonce", "wrapped"],
+                "properties": {
+                  "object_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "file_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "description": "12-byte AES-GCM nonce, base64url"
+                  },
+                  "wrapped": {
+                    "type": "string",
+                    "description": "AES-256-GCM of the 32-byte file key followed by the 32-byte SHA-256 of the plaintext file, base64url (docs/TRANSFER_PROTOCOL.md §9)"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "CloudUpdated": {
+      "x-sa-phase": 8,
+      "x-sa-direction": "server-to-client",
+      "description": "A cloud object was created, sealed, paused, unpaused or deleted (docs/API.md §2.6). To the sender and every JOINED receiver of the session. Metadata only.",
+      "type": "object",
+      "required": ["type", "session_id", "object"],
+      "properties": {
+        "type": {
+          "const": "CLOUD_UPDATED"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "object": {
+          "type": "object",
+          "required": [
+            "id",
+            "session_id",
+            "file_id",
+            "status",
+            "paused",
+            "size",
+            "part_size",
+            "part_count",
+            "parts_uploaded",
+            "ciphertext_size",
+            "created_at",
+            "expires_at"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "file_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "enum": ["UPLOADING", "READY", "DELETED"]
+            },
+            "paused": {
+              "type": "boolean"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "part_size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "part_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "parts_uploaded": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ciphertext_size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
         }
       }
     }

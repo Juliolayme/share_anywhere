@@ -43,9 +43,28 @@ services:
       # SA_MAIL_SINK=smtp in .env to deliver to mailpit instead (UI at http://localhost:8025).
       SA_MAIL_SINK: ${SA_MAIL_SINK:-console}
       SA_SMTP_ADDR: ${SA_SMTP_ADDR:-mailpit:1025}
+      # Cloud Distribution is off by default. To try it: SA_CLOUD_ENABLED=true and S3 keys in .env, then
+      # docker compose --profile cloud up (the s3 service below; docs/ADR/0030-cloud-distribution.md).
+      SA_CLOUD_ENABLED: ${SA_CLOUD_ENABLED:-false}
+      SA_S3_ENDPOINT: ${SA_S3_ENDPOINT:-http://s3:7070}
+      SA_S3_ACCESS_KEY: ${SA_S3_ACCESS_KEY:-}
+      SA_S3_SECRET_KEY: ${SA_S3_SECRET_KEY:-}
+      SA_CLOUD_PRICE_STORAGE_GB_MONTH: ${SA_CLOUD_PRICE_STORAGE_GB_MONTH:-}
+      SA_CLOUD_PRICE_EGRESS_GB: ${SA_CLOUD_PRICE_EGRESS_GB:-}
     depends_on:
       postgres:
         condition: service_healthy
+
+  # S3-compatible store for Cloud Distribution (optional): docker compose --profile cloud up
+  s3:
+    image: versity/versitygw:v1.9.0
+    profiles: ["cloud"]
+    command: ["posix", "/data"]
+    environment:
+      ROOT_ACCESS_KEY: ${SA_S3_ACCESS_KEY:-}
+      ROOT_SECRET_KEY: ${SA_S3_SECRET_KEY:-}
+    volumes:
+      - s3data:/data
 
   # Development mail catcher (optional): docker compose --profile mail up
   mailpit:
@@ -87,4 +106,5 @@ services:
 
 volumes:
   pgdata:
+  s3data:
   caddydata:

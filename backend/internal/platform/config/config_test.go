@@ -147,3 +147,35 @@ func TestMailSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestCloudSettings(t *testing.T) {
+	cfg, err := LoadFrom(lookupFrom(map[string]string{}))
+	if err != nil || cfg.CloudEnabled || cfg.CloudTTL != 24*time.Hour || cfg.CloudPriceEgressGB != nil {
+		t.Fatalf("Cloud is off by default with no prices: %+v %v", cfg.CloudEnabled, err)
+	}
+	cfg, err = LoadFrom(lookupFrom(map[string]string{"SA_CLOUD_ENABLED": "true", "SA_S3_ENDPOINT": "http://s3:7070/",
+		"SA_S3_ACCESS_KEY": "a", "SA_S3_SECRET_KEY": "b", "SA_CLOUD_PRICE_EGRESS_GB": "0.09", "SA_CLOUD_TTL": "2h"}))
+	if err != nil || !cfg.CloudEnabled || cfg.S3Endpoint != "http://s3:7070" || cfg.CloudPriceEgressGB == nil || *cfg.CloudPriceEgressGB != 0.09 ||
+		cfg.CloudPriceStorageGB != nil || cfg.CloudTTL != 2*time.Hour {
+		t.Fatalf("enabled: %+v %v", cfg, err)
+	}
+	for _, env := range []map[string]string{
+		{"SA_CLOUD_ENABLED": "yes"},
+		{"SA_CLOUD_ENABLED": "true"}, // no endpoint or keys
+		{"SA_CLOUD_ENABLED": "true", "SA_S3_ENDPOINT": "s3:7070", "SA_S3_ACCESS_KEY": "a", "SA_S3_SECRET_KEY": "b"},
+		{"SA_CLOUD_ENABLED": "true", "SA_CLOUD_STORE": "disk"},
+		{"SA_CLOUD_TTL": "10s"},
+		{"SA_CLOUD_PRICE_STORAGE_GB_MONTH": "-1"},
+		{"SA_CLOUD_DEFAULT_BUDGET_BYTES": "100", "SA_CLOUD_MAX_BUDGET_BYTES": "10"},
+		{"SA_ENV": "production", "SA_CLOUD_ENABLED": "true", "SA_CLOUD_STORE": "memory", "DATABASE_URL": "postgres://x",
+			"SA_ALLOWED_ORIGINS": "https://a.example", "SA_TOKEN_KEYS": "k:" + seed32, "SA_TOKEN_ACTIVE_KID": "k", "SA_SERVER_SECRET": seed32,
+			"SA_TURN_SECRET": "0123456789abcdef0123"},
+	} {
+		if _, err := LoadFrom(lookupFrom(env)); err == nil {
+			t.Errorf("%v should fail", env)
+		}
+	}
+	if _, err := LoadFrom(lookupFrom(map[string]string{"SA_CLOUD_ENABLED": "true", "SA_CLOUD_STORE": "memory"})); err != nil {
+		t.Fatalf("memory store in development: %v", err)
+	}
+}

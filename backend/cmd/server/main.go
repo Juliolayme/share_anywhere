@@ -28,6 +28,8 @@ import (
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/httpserver"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/logging"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/metrics"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/objectstore"
+	"github.com/juliolayme/share_anywhere/backend/internal/platform/ratelimit"
 	"github.com/juliolayme/share_anywhere/backend/internal/platform/ws"
 	"github.com/juliolayme/share_anywhere/backend/internal/sharing"
 	"github.com/juliolayme/share_anywhere/backend/internal/signaling"
@@ -131,6 +133,12 @@ func run() error {
 	go a.devices.RunPurger(ctx, time.Hour)
 	go a.sharing.Run(ctx, 5*time.Second)
 	go a.auth.Run(ctx, 5*time.Minute)
+	if a.s3 != nil {
+		if err := a.s3.EnsureBucket(ctx); err != nil {
+			return fmt.Errorf("cloud object store: %w", err)
+		}
+	}
+	go a.xfers.RunCloud(ctx, time.Minute)
 	if cfg.MetricsAddr != "" {
 		// Internal listener only (not routed through Caddy); aggregates, never per person.
 		mmux := http.NewServeMux()
@@ -187,6 +195,29 @@ type app struct {
 	sharing *sharing.Service
 	hub     *ws.Hub
 	metrics *metrics.Registry
+	xfers   *transfers.Service
+	// s3 is the Cloud Distribution object store when it is an S3 endpoint (its bucket is ensured at start).
+	s3 *objectstore.S3
+}
+
+// cloudConfig builds the Cloud Distribution settings (nil while SA_CLOUD_ENABLED is off, the default).
+func cloudConfig(cfg config.Config, clk clock.Clock, log *slog.Logger) (*transfers.CloudConfig, *objectstore.S3) {
+	if !cfg.CloudEnabled {
+		return nil, nil
+	}
+	c := &transfers.CloudConfig{
+		TTL: cfg.CloudTTL, PartSize: transfers.DefaultCloudPartSize, DefaultBudget: cfg.CloudDefaultBudget, MaxBudget: cfg.CloudMaxBudget,
+		PriceStorageGBMonth: cfg.CloudPriceStorageGB, PriceEgressGB: cfg.CloudPriceEgressGB, Currency: cfg.CloudCurrency,
+		PartLimit: ratelimit.New(ratelimit.Rule{Limit: 1200 * cfg.RateLimitMultiplier, Window: time.Minute}, clk), Log: log,
+	}
+	if cfg.CloudStore == "memory" {
+		c.Store = objectstore.NewMemory()
+		return c, nil
+	}
+	s3 := &objectstore.S3{Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket, AccessKey: cfg.S3AccessKey,
+		SecretKey: cfg.S3SecretKey, Clock: clk}
+	c.Store = s3
+	return c, s3
 }
 
 // newApp wires every module onto one router; the route-table test builds the server the same way (with a
@@ -245,7 +276,9 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 		turnCfg.Usage = &turncreds.CoturnUsage{URL: cfg.TURNMetricsURL, Clock: clk, MaxAge: 10 * time.Second}
 	}
 	turn := turncreds.New(turnCfg)
-	xfers := transfers.New(transfers.Config{Pool: pool, Clock: clk, Sessions: shareSvc, Notify: hub, Metrics: reg, ReportLimit: limits.TransferReport})
+	cloud, s3 := cloudConfig(cfg, clk, log)
+	xfers := transfers.New(transfers.Config{Pool: pool, Clock: clk, Sessions: shareSvc, Notify: hub, Metrics: reg,
+		ReportLimit: limits.TransferReport, Cloud: cloud})
 	modules := []func(*access.Router){
 		deviceHTTP.Register,
 		auth.NewHTTP(authSvc, ips, deviceHTTP).Register,
@@ -261,7 +294,8 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 		ClientIP: ips.FromRequest, LogKey: cfg.ServerSecret,
 		Modules: modules,
 	})
-	return &app{handler: h, router: router, devices: deviceSvc, tokens: tokens, auth: authSvc, sharing: shareSvc, hub: hub, metrics: reg}, nil
+	return &app{handler: h, router: router, devices: deviceSvc, tokens: tokens, auth: authSvc, sharing: shareSvc, hub: hub, metrics: reg,
+		xfers: xfers, s3: s3}, nil
 }
 
 // newMailer picks the password-reset mail sink (SA_MAIL_SINK). The console sink logs links only in

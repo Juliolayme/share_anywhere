@@ -189,8 +189,194 @@ public enum APIOperations {
     public static let getClipboardSettings = APIOperation(method: "GET", path: "/v1/clipboard/settings", access: "account+device")
     /// Replace the account's clipboard settings (all fields required). A new retention applies to events created afterwards.
     public static let putClipboardSettings = APIOperation(method: "PUT", path: "/v1/clipboard/settings", access: "account+device")
+    /// Whether Cloud Distribution is available, and the signed-in account's consent, budget and usage (docs/API.md §2.6).
+    public static let getCloudSettings = APIOperation(method: "GET", path: "/v1/cloud/settings", access: "device")
+    /// Turn Cloud Distribution on (explicit consent the first time) or off and set the monthly budget.
+    public static let putCloudSettings = APIOperation(method: "PUT", path: "/v1/cloud/settings", access: "account")
+    /// Temporary storage, receiver egress, retention and the cost from configured pricing (null when unknown) before consent.
+    public static let estimateCloud = APIOperation(method: "POST", path: "/v1/cloud/estimate", access: "account")
+    /// Start Cloud Distribution of a shared file. The session's sender, signed in, enabled and consented, within budget; idempotent per file.
+    public static let distributeFile = APIOperation(method: "POST", path: "/v1/files/{id}/distribute", access: "device")
+    /// Download one encrypted part of a READY object (sender or JOINED receiver), charged to the sender's budget.
+    public static let getCloudPart = APIOperation(method: "GET", path: "/v1/cloud/objects/{id}/parts/{n}", access: "participant")
+    /// Upload one encrypted part (exactly part_size + 28 bytes; the last part the remainder + 28) from the object's owner device.
+    public static let putCloudPart = APIOperation(method: "PUT", path: "/v1/cloud/objects/{id}/parts/{n}", access: "device")
+    /// Mark a fully uploaded object READY (owner device); participants get CLOUD_UPDATED.
+    public static let sealCloudObject = APIOperation(method: "POST", path: "/v1/cloud/objects/{id}/seal", access: "device")
+    /// One cloud object for the sender or a JOINED receiver of its session.
+    public static let getCloudObject = APIOperation(method: "GET", path: "/v1/cloud/objects/{id}", access: "participant")
+    /// A JOINED receiver has the whole file; once every joined receiver has, the object is deleted.
+    public static let receivedCloudObject = APIOperation(method: "POST", path: "/v1/cloud/objects/{id}/received", access: "participant")
+    /// The live cloud objects of a session for its sender and JOINED receivers.
+    public static let listSessionCloudObjects = APIOperation(method: "GET", path: "/v1/sessions/{id}/cloud", access: "participant")
 
-    public static let all: [APIOperation] = [getHealth, getReady, getDeviceChallenge, createAnonymousDevice, refreshDeviceToken, getCurrentDevice, updateCurrentDevice, resetCurrentDevice, createWsTicket, connectWebSocket, listOpenSessions, createSession, getSession, updateSession, closeSession, renewSession, resolveCode, resolveLink, joinSession, approveParticipant, rejectParticipant, removeParticipant, blockParticipant, leaveSession, createTurnCredentials, listSessionFiles, listTransfers, getTransfer, reportTransfer, pauseTransfer, resumeTransfer, cancelTransfer, signUp, signIn, signOut, requestPasswordReset, confirmPasswordReset, getMe, updateMe, changePassword, addCurrentDevice, listAccountDevices, renameAccountDevice, revokeAccountDevice, getKeys, registerDeviceKey, setupKeys, getRecoveryBlob, rotateKeys, getKeyChain, ackPendingKey, createPairing, getPairingResult, lookupPairing, wrapPairing, listHistoryEntries, createHistoryEntry, deleteHistoryEntry, clearHistory, listClipboardEvents, createClipboardEvent, deleteClipboardEvent, getClipboardHistory, clearClipboardHistory, getClipboardSettings, putClipboardSettings]
+    public static let all: [APIOperation] = [getHealth, getReady, getDeviceChallenge, createAnonymousDevice, refreshDeviceToken, getCurrentDevice, updateCurrentDevice, resetCurrentDevice, createWsTicket, connectWebSocket, listOpenSessions, createSession, getSession, updateSession, closeSession, renewSession, resolveCode, resolveLink, joinSession, approveParticipant, rejectParticipant, removeParticipant, blockParticipant, leaveSession, createTurnCredentials, listSessionFiles, listTransfers, getTransfer, reportTransfer, pauseTransfer, resumeTransfer, cancelTransfer, signUp, signIn, signOut, requestPasswordReset, confirmPasswordReset, getMe, updateMe, changePassword, addCurrentDevice, listAccountDevices, renameAccountDevice, revokeAccountDevice, getKeys, registerDeviceKey, setupKeys, getRecoveryBlob, rotateKeys, getKeyChain, ackPendingKey, createPairing, getPairingResult, lookupPairing, wrapPairing, listHistoryEntries, createHistoryEntry, deleteHistoryEntry, clearHistory, listClipboardEvents, createClipboardEvent, deleteClipboardEvent, getClipboardHistory, clearClipboardHistory, getClipboardSettings, putClipboardSettings, getCloudSettings, putCloudSettings, estimateCloud, distributeFile, getCloudPart, putCloudPart, sealCloudObject, getCloudObject, receivedCloudObject, listSessionCloudObjects]
+}
+
+public struct CloudSettings: Codable, Sendable, Equatable {
+    /// Cloud Distribution is configured on this server.
+    public var available: Bool
+    public var signedIn: Bool
+    public var enabled: Bool
+    public var consented: Bool
+    /// Monthly budget (bytes uploaded plus downloaded).
+    public var budgetBytes: Int64
+    /// Bytes used this calendar month (UTC).
+    public var usedBytes: Int64
+    public var maxBudgetBytes: Int64
+    /// How long an object is kept at most.
+    public var ttlHours: Int
+    public var pricing: CloudPricing?
+
+    public init(available: Bool, signedIn: Bool, enabled: Bool, consented: Bool, budgetBytes: Int64, usedBytes: Int64, maxBudgetBytes: Int64, ttlHours: Int, pricing: CloudPricing? = nil) {
+        self.available = available
+        self.signedIn = signedIn
+        self.enabled = enabled
+        self.consented = consented
+        self.budgetBytes = budgetBytes
+        self.usedBytes = usedBytes
+        self.maxBudgetBytes = maxBudgetBytes
+        self.ttlHours = ttlHours
+        self.pricing = pricing
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case available = "available"
+        case signedIn = "signed_in"
+        case enabled = "enabled"
+        case consented = "consented"
+        case budgetBytes = "budget_bytes"
+        case usedBytes = "used_bytes"
+        case maxBudgetBytes = "max_budget_bytes"
+        case ttlHours = "ttl_hours"
+        case pricing = "pricing"
+    }
+}
+
+public struct CloudPricing: Codable, Sendable, Equatable {
+    public var currency: String
+    public var storageGbMonth: Double?
+    public var egressGb: Double?
+
+    public init(currency: String, storageGbMonth: Double? = nil, egressGb: Double? = nil) {
+        self.currency = currency
+        self.storageGbMonth = storageGbMonth
+        self.egressGb = egressGb
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case currency = "currency"
+        case storageGbMonth = "storage_gb_month"
+        case egressGb = "egress_gb"
+    }
+}
+
+public struct CloudSettingsInput: Codable, Sendable, Equatable {
+    public var enabled: Bool
+    /// Required (true) the first time Cloud Distribution is turned on.
+    public var consent: Bool
+    public var budgetBytes: Int64?
+
+    public init(enabled: Bool, consent: Bool, budgetBytes: Int64? = nil) {
+        self.enabled = enabled
+        self.consent = consent
+        self.budgetBytes = budgetBytes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case enabled = "enabled"
+        case consent = "consent"
+        case budgetBytes = "budget_bytes"
+    }
+}
+
+public struct CloudEstimate: Codable, Sendable, Equatable {
+    public var storageBytes: Int64
+    public var egressBytes: Int64
+    public var retentionHours: Int
+    /// null when no price is configured: clients show product.cost_unknown.
+    public var cost: Double?
+    public var currency: String?
+    public var budgetBytes: Int64
+    public var usedBytes: Int64
+    public var withinBudget: Bool
+
+    public init(storageBytes: Int64, egressBytes: Int64, retentionHours: Int, cost: Double? = nil, currency: String? = nil, budgetBytes: Int64, usedBytes: Int64, withinBudget: Bool) {
+        self.storageBytes = storageBytes
+        self.egressBytes = egressBytes
+        self.retentionHours = retentionHours
+        self.cost = cost
+        self.currency = currency
+        self.budgetBytes = budgetBytes
+        self.usedBytes = usedBytes
+        self.withinBudget = withinBudget
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case storageBytes = "storage_bytes"
+        case egressBytes = "egress_bytes"
+        case retentionHours = "retention_hours"
+        case cost = "cost"
+        case currency = "currency"
+        case budgetBytes = "budget_bytes"
+        case usedBytes = "used_bytes"
+        case withinBudget = "within_budget"
+    }
+}
+
+public struct CloudObject: Codable, Sendable, Equatable {
+    /// Format: uuid.
+    public var id: String
+    /// Format: uuid.
+    public var sessionId: String
+    /// Format: uuid.
+    public var fileId: String
+    /// One of: UPLOADING, READY, DELETED.
+    public var status: String
+    /// The sender's monthly budget is used up; uploads and downloads wait.
+    public var paused: Bool
+    /// Plaintext file size.
+    public var size: Int64
+    /// Plaintext bytes per part (the last part holds the remainder).
+    public var partSize: Int
+    public var partCount: Int
+    public var partsUploaded: Int
+    /// size + 28 × part_count.
+    public var ciphertextSize: Int64
+    /// Format: date-time.
+    public var createdAt: String
+    /// Format: date-time.
+    public var expiresAt: String
+
+    public init(id: String, sessionId: String, fileId: String, status: String, paused: Bool, size: Int64, partSize: Int, partCount: Int, partsUploaded: Int, ciphertextSize: Int64, createdAt: String, expiresAt: String) {
+        self.id = id
+        self.sessionId = sessionId
+        self.fileId = fileId
+        self.status = status
+        self.paused = paused
+        self.size = size
+        self.partSize = partSize
+        self.partCount = partCount
+        self.partsUploaded = partsUploaded
+        self.ciphertextSize = ciphertextSize
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case sessionId = "session_id"
+        case fileId = "file_id"
+        case status = "status"
+        case paused = "paused"
+        case size = "size"
+        case partSize = "part_size"
+        case partCount = "part_count"
+        case partsUploaded = "parts_uploaded"
+        case ciphertextSize = "ciphertext_size"
+        case createdAt = "created_at"
+        case expiresAt = "expires_at"
+    }
 }
 
 public struct ErrorResponse: Codable, Sendable, Equatable {

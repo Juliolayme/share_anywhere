@@ -123,9 +123,24 @@ A backend test generated from `openapi.yaml` calls every operation with no token
 
 | Endpoint | Level | Notes |
 |---|---|---|
-| `POST /v1/files/{id}/distribute` | account (sender) | Guests get `403 cloud_requires_account`; no consent gives `403 cloud_consent_required` |
-| `GET /v1/cloud/settings`, `PUT /v1/cloud/settings` | account | Consent, budget cap |
-| `GET /v1/cloud/objects/{id}` | participant | Download URL for a `JOINED` receiver, guest or signed in |
+| `GET /v1/cloud/settings` | device | Availability for everyone; the account's consent, budget and usage when signed in |
+| `PUT /v1/cloud/settings` | account | Turn on (explicit consent once), turn off, budget cap |
+| `POST /v1/cloud/estimate` | account | Temporary storage, receiver egress, retention, cost or `null` (cost unknown) |
+| `POST /v1/files/{id}/distribute` | device | The signed-in sender only: guests get `403 cloud_requires_account`, no consent `403 cloud_consent_required` |
+| `PUT /v1/cloud/objects/{id}/parts/{n}`, `POST /v1/cloud/objects/{id}/seal` | device | The owner device of the object (signed in) uploads encrypted parts, then seals |
+| `GET /v1/sessions/{id}/cloud`, `GET /v1/cloud/objects/{id}` | participant | Live objects of a session for the sender and `JOINED` receivers, guest or signed in |
+| `GET /v1/cloud/objects/{id}/parts/{n}`, `POST /v1/cloud/objects/{id}/received` | participant | Download a part (charged to the sender's budget); a receiver records it has the file |
+
+**As built (Phase 8, `backend/internal/transfers/cloud.go`, `docs/ADR/0030-cloud-distribution.md`):** off unless `SA_CLOUD_ENABLED=true` (then every route but `GET /v1/cloud/settings` answers `404 cloud_unavailable` while off). Objects live in an S3-compatible store (`backend/internal/platform/objectstore`, SigV4) as one stored object per part; the server proxies every byte so the store is never exposed and the budget is metered exactly. File bytes are encrypted on the sender (`docs/TRANSFER_PROTOCOL.md` §9); the server sees ciphertext only.
+
+- **Settings.** `GET` → `{available, signed_in, enabled, consented, budget_bytes, used_bytes, max_budget_bytes, ttl_hours, pricing: {currency, storage_gb_month, egress_gb} | null}`; guests and a server with Cloud off get `available`/`signed_in` and zero values. `PUT {enabled, consent, budget_bytes?}`: turning on requires `consent: true` the first time (`403 cloud_consent_required`); `budget_bytes` 0..`max_budget_bytes` (`400 invalid_budget`); a raised budget lifts the pause on the account's objects. The budget counts bytes uploaded plus bytes downloaded per calendar month (UTC).
+- **Estimate.** `POST {bytes, receivers 1..5}` → `{storage_bytes, egress_bytes, retention_hours, cost, currency?, budget_bytes, used_bytes, within_budget}`; `cost` is `null` when no price is configured (`SA_CLOUD_PRICE_STORAGE_GB_MONTH`, `SA_CLOUD_PRICE_EGRESS_GB`), shown as `product.cost_unknown`.
+- **Distribute.** `POST /v1/files/{id}/distribute` (empty body) by the session's sender, signed in, enabled and consented, with the whole ciphertext within the remaining budget (`403 cloud_budget_exhausted`) → `201` the new object, or `200` the live object of that file (idempotent). Object: `{id, session_id, file_id, status UPLOADING|READY|DELETED, paused, size, part_size, part_count, parts_uploaded, ciphertext_size, created_at, expires_at}`; `expires_at` is creation plus `SA_CLOUD_TTL` (default 24 h).
+- **Upload.** `PUT …/parts/{n}` with `application/octet-stream`, exactly `part_size + 28` bytes (the last part: the remainder + 28; `400 invalid_part`), from the owner device; a part stored twice is charged once. `POST …/seal` once every part is stored (`409 parts_missing`) → `READY`.
+- **Download.** `GET …/parts/{n}` returns the stored part (`Cache-Control: no-store`) to the sender or a `JOINED` receiver of a live session, once `READY`. Past the budget, uploads and downloads answer `403 cloud_budget_exhausted` and the object is `paused` until the budget is raised or the month turns.
+- **Deletion.** `POST …/received` by a receiver; when every `JOINED` receiver has, the parts are deleted and the object becomes `DELETED`. A sweep every minute deletes objects past `expires_at` and objects of sessions that are no longer `WAITING` or `ACTIVE`.
+- **WebSocket.** `CLOUD_UPDATED {session_id, object}` to the sender and every `JOINED` receiver on create, seal, pause, unpause and delete. The per-file key travels peer to peer over signaling as `CLOUD_KEY_REQUEST` / `CLOUD_KEY` (§4), wrapped to the receiver's ephemeral X25519 key.
+- **Limits.** 1,200 part requests per minute per device (`429 rate_limited`); the monthly budget bounds storage and egress per account.
 
 ### 2.7 Session files after creation (backlog, not scheduled)
 
@@ -154,7 +169,10 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 403 | `rotation_unauthorized`, `device_key_unproven`, `recovery_key_unverified` | A key rotation not signed by the current ADK version (nothing stored); a device wrapping key whose proof does not verify for the caller, a rotation by a device whose own key is not proven at the current version, or a pairing wrap whose sender key is not the caller's registered key; a key setup whose recovery key signature does not verify with its verify key (nothing stored) |
 | 403 | `blocked` | Device or IP /64 blocked from this session |
 | 403 | `capability_required`, `receiver_only` | A receiver resumed a transfer without its transfer capability; the sender sent a transfer report |
-| 403 | `cloud_requires_account`, `cloud_consent_required` | Cloud Distribution preconditions |
+| 403 | `cloud_requires_account`, `cloud_consent_required`, `cloud_budget_exhausted` | Cloud Distribution preconditions: a guest sender, no consent, or the month's budget used up (the object is paused) |
+| 404 | `cloud_unavailable` | Cloud Distribution is off on this server |
+| 400 | `invalid_part`, `invalid_budget`, `invalid_estimate` | A cloud part with the wrong number or size; a budget out of range; an estimate without bytes or with 0 or more than 5 receivers |
+| 409 | `parts_missing` | Sealing a cloud object before every part is stored |
 | 403 | `relay_cap_reached` | `POST /v1/turn/credentials` once the session's relay traffic reaches its byte cap (`docs/SECURITY_MODEL.md` §5); clients keep direct connections only and say why |
 | 403 | `csrf_header_missing` | Cookie refresh without `X-SA-Refresh: 1` |
 | 403 | `origin_not_allowed` | WebSocket upgrade from an origin outside `SA_ALLOWED_ORIGINS` |
@@ -191,6 +209,8 @@ Connect to `/v1/ws?ticket=<one-time ticket>`. The server checks `Origin`, consum
 | `PARTICIPANT_JOINED`, `PARTICIPANT_REQUESTED`, `PARTICIPANT_APPROVED`, `PARTICIPANT_REJECTED`, `PARTICIPANT_REMOVED`, `PARTICIPANT_BLOCKED`, `PARTICIPANT_LEFT` | Sender; the affected receiver gets its own status changes |
 | `SESSION_UPDATED` (require approval; `join_window.state` and `join_window.ends_at`, including expiry and Create new code), `SESSION_CLOSED`, `SESSION_EXPIRED`, `PROTECTED_MODE` | All participants of the session |
 | `TRANSFER_UPDATED` (`transfer`: status, verified bytes, route) | The sender and that transfer's receiver, after a report or a pause, resume, or cancel (Phase 3) |
+| `CLOUD_KEY_REQUEST`, `CLOUD_KEY` | Relayed like `OFFER` between the sender and a `JOINED` receiver (Phase 8): the receiver asks with its ephemeral X25519 public key, the sender answers with each object's key wrapped to it (`docs/TRANSFER_PROTOCOL.md` §9); payloads are opaque to the server |
+| `CLOUD_UPDATED` (`object`) | The sender and every `JOINED` receiver when a cloud object is created, sealed, paused, unpaused or deleted (Phase 8, §2.6) |
 | `CLIPBOARD_EVENT_CREATED`, `CLIPBOARD_EVENT_DELETED`, `CLIPBOARD_HISTORY_CLEARED`, `CLIPBOARD_SETTINGS_UPDATED` | Every open socket of the account's devices that have a live added account session at send time, the origin device included (Phase 5B; payloads in §2.5) |
 | `DEVICE_CONNECTED`, `DEVICE_DISCONNECTED` (`device_id`) | The account's other added devices, when an added device opens its first socket or closes its last one (Phase 5B). Guests, not-added, and departed devices announce nothing. Sent asynchronously after the device's `WELCOME` (best effort; the handshake never waits for it) |
 | `HISTORY_ENTRY_CREATED`, `HISTORY_ENTRY_DELETED` | `account+device` sockets of that account (not built yet) |

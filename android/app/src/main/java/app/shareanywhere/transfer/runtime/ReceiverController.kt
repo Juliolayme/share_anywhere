@@ -497,8 +497,12 @@ class ReceiverController(private val d: ReceiverDeps) {
                         override fun onResumed(byPeer: Boolean) = update { it.copy(phase = RxPhase.Transferring) }
 
                         override fun onError(code: String, fatal: Boolean, message: String?) {
-                            // The error code only: messages can carry file paths or a peer's text.
-                            android.util.Log.w("SA-TRANSFER", "receiver error code=$code fatal=$fatal")
+                            // The error code only (messages can carry a peer's text); local storage errors carry the
+                            // exception class name, which is safe to log.
+                            val local = code == ErrorCodes.STORAGE_ERROR || code == ErrorCodes.STORAGE_FULL
+                            val cls = message?.takeIf { local && it.length <= 64 && it.all(Char::isLetterOrDigit) }
+                            val detail = if (cls != null) " class=$cls" else ""
+                            android.util.Log.w("SA-TRANSFER", "receiver error code=$code fatal=$fatal$detail")
                             scope.launch { connError(code, fatal) }
                         }
                     }
@@ -739,6 +743,8 @@ class ReceiverController(private val d: ReceiverDeps) {
                     doc = resumeDoc.toUri()
                     sink = existing
                 } else {
+                    // A new document: whatever an earlier attempt wrote is not in it, so the download starts over.
+                    agent.restart(f.fileId)
                     sinks.remove(f.index)?.close()
                     doc = withContext(Dispatchers.IO) { Folders.create(resolver, target.treeUri, f.name, f.mime) }
                     d.incoming.put(

@@ -321,6 +321,11 @@ class CloudReceive(
 
     /** Whether a download of this file stopped part-way and can resume (its parts so far are in the document). */
     suspend fun resumable(fileId: String): Boolean = lock.withLock { (cursors[fileId]?.next ?: 0) > 0 }
+
+    /** Forgets a stopped download's cursor: the caller starts a new partial file, so the next download starts at part 0. */
+    suspend fun restart(fileId: String) {
+        lock.withLock { cursors.remove(fileId) }
+    }
     private var socketJob: Job? = null
 
     fun start() {

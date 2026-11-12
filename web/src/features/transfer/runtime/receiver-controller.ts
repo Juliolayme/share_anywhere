@@ -580,7 +580,8 @@ export class ReceiverController extends Observable<RxState> {
     const mode = this.state_.target?.mode ?? 'opfs';
     const key = progressKey(this.capHash, f.transferId);
     if (mode === 'memory') {
-      const sink = memorySink(e.size);
+      // Keep the bytes a stopped cloud download wrote: a resumed download continues in this same sink.
+      const sink = this.sinks.get(f.index) ?? memorySink(e.size);
       this.sinks.set(f.index, sink);
       return { sink, bitmap: new Bitmap(e.block_count), persist: async () => undefined };
     }
@@ -764,7 +765,7 @@ export class ReceiverController extends Observable<RxState> {
     try {
       for (const f of this.open()) {
         current = f;
-        const sink = await this.cloudSink(f);
+        const sink = await this.cloudSink(f, c);
         await c.download(
           f.fileId,
           (off, data) => sink.write(off, data),
@@ -807,11 +808,13 @@ export class ReceiverController extends Observable<RxState> {
   }
 
   /** Where a cloud download writes: the same staging the P2P path uses for this save target. */
-  private async cloudSink(f: RxFile): Promise<Sink> {
+  private async cloudSink(f: RxFile, c: CloudReceive): Promise<Sink> {
     if ((this.state_.target?.mode ?? 'opfs') === 'memory') {
       // Resuming keeps the parts already written (an in-memory sink holds them only while this page lives).
       const existing = this.sinks.get(f.index);
       if (existing) return existing;
+      // A new sink holds nothing an earlier attempt wrote: the download starts over.
+      c.restart(f.fileId);
       const sink = memorySink(f.size);
       this.sinks.set(f.index, sink);
       return sink;

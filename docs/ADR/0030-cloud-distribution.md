@@ -36,7 +36,7 @@ pinned MinIO image is not available to compose or CI.
 - **End-to-end keys over signaling:** the per-file key is wrapped to the receiver's ephemeral X25519 key and relayed
   as `CLOUD_KEY_REQUEST` / `CLOUD_KEY` (docs/TRANSFER_PROTOCOL.md §9), so neither the store nor the server can read
   files or keys.
-- **Lifetime:** `SA_CLOUD_TTL` (24 h default); deleted once every joined receiver posts `received`, or by the
+- **Lifetime:** `SA_CLOUD_TTL` (24 h default); deleted once every joined receiver has the file (`received`, or a `COMPLETED` P2P transfer; at seal for an object still uploading), or by the
   minute sweep when expired or when the session is no longer live. Pricing is configuration
   (`SA_CLOUD_PRICE_*`); without it estimates carry `cost: null` and clients show `product.cost_unknown`.
 

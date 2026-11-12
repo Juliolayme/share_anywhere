@@ -255,6 +255,29 @@ final class ControllerTests: XCTestCase {
         await r.receiver.dispose()
     }
 
+    /// A cloud download that stops part way (a paused budget) goes back to P2P, which loads the cloud's partial file
+    /// and sidecar; the sidecar must carry FILE_META's block count (QA round 2: a file over 8 blocks failed here).
+    func testACloudDownloadThatStopsFallsBackToPeerToPeerForAFileOverEightBlocks() async throws {
+        let size = 9 * Wire.blockSize + 11
+        let r = try await rig(sizes: [size], fastClock: true, cloud: true)
+        r.backend.cloudRefuseFrom = 3
+        await r.sender.start()
+        try await until("uploaded to the cloud", timeout: 60) { r.sender.state.value.cloud?.ready == true }
+        await r.receiver.start()
+        try await until("the receiver holds the key", timeout: 30) { await r.receiver.cloudReadyCount() == 1 }
+        r.peers.refuse = true
+        await r.receiver.choose(SaveTarget(kind: .documents, label: "Share Anywhere"))
+        try await until("the cloud download stopped at the paused part", timeout: 60) {
+            r.backend.cloudPartsServed >= 3
+        }
+        r.peers.refuse = false
+        try await until("completed over P2P", timeout: 120) { r.receiver.state.value.phase == .completed }
+        XCTAssertNil(r.receiver.state.value.error)
+        XCTAssertEqual(try sha(XCTUnwrap(r.receiver.state.value.files[0].savedURL)), r.sums[0])
+        await r.sender.dispose()
+        await r.receiver.dispose()
+    }
+
     func testARefusedRelayCredentialShowsTheCapAndStillConnectsDirectly() async throws {
         let r = try await rig(sizes: [5000])
         r.backend.relayCapped = true

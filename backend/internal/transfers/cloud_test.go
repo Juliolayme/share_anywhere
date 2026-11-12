@@ -340,6 +340,53 @@ func TestCloudBudgetPausesAndResumes(t *testing.T) {
 	}
 }
 
+// A refused charge leaves less than a part of budget, so the minute sweep keeps the object paused (no pause and
+// unpause every minute); once the month turns the sweep lifts the pause.
+func TestCloudSweepKeepsExhaustedObjectsPausedUntilTheMonthTurns(t *testing.T) {
+	e := newCloudEnv(t, nil)
+	now := e.clk.Now()
+	e.clk.Advance(time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Hour).Sub(now))
+	sender, rx := e.device("Minh"), e.device("Lan")
+	s := e.session(sender, false)
+	e.join(rx, s.Code)
+	id := e.account(sender)
+	fid := fileOf(t, e.env, s.ID, 1000)
+	cipher := int64(1000 + 4*PartOverhead)
+	e.consent(id, cipher+600)
+	o, _, err := e.svc.Distribute(ctx, id, fid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.upload(id, o)
+	for n := 0; n < 2; n++ {
+		if _, err := e.svc.GetPart(ctx, rx.DeviceID, o.ID, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = e.svc.GetPart(ctx, rx.DeviceID, o.ID, 2)
+	wantCode(t, err, "cloud_budget_exhausted")
+	paused := len(e.cloudEvents(rx.DeviceID))
+	for i := 0; i < 3; i++ {
+		e.clk.Advance(time.Minute)
+		if _, err := e.svc.SweepCloud(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if evs := e.cloudEvents(rx.DeviceID); len(evs) != paused || !evs[len(evs)-1].Paused {
+		t.Fatalf("the sweep keeps an exhausted object paused: %d events after %d, %+v", len(evs), paused, evs[len(evs)-1])
+	}
+	e.clk.Advance(time.Hour) // the month turns
+	if _, err := e.svc.SweepCloud(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if evs := e.cloudEvents(rx.DeviceID); evs[len(evs)-1].Paused {
+		t.Fatal("the sweep lifts the pause once the month turned")
+	}
+	if _, err := e.svc.GetPart(ctx, rx.DeviceID, o.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCloudSweepDeletesExpiredAndEndedSessions(t *testing.T) {
 	e := newCloudEnv(t, nil)
 	sender, rx := e.device("Minh"), e.device("Lan")
@@ -508,6 +555,50 @@ func TestCloudObjectDeletedWhenReceiversFinishOverPeerToPeer(t *testing.T) {
 	gone, err := e.svc.Object(ctx, rx.DeviceID, o.ID)
 	if err != nil || gone.Status != CloudDeleted {
 		t.Fatalf("both receivers have the file: deleted, got %+v %v", gone, err)
+	}
+	if len(e.store.live) != 0 {
+		t.Fatalf("stored parts left: %v", e.store.live)
+	}
+}
+
+// A receiver that finishes over P2P while the sender is still uploading does not delete the object under the
+// sender: the rest of the parts store normally and the object goes at seal.
+func TestCloudObjectStillUploadingIsDeletedAtSealWhenEveryoneHasTheFile(t *testing.T) {
+	e := newCloudEnv(t, nil)
+	sender, rx := e.device("Minh"), e.device("Lan")
+	s := e.session(sender, false)
+	e.join(rx, s.Code)
+	id := e.account(sender)
+	e.consent(id, 1<<20)
+	o, _, err := e.svc.Distribute(ctx, id, fileOf(t, e.env, s.ID, 1000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.PutPart(ctx, id, o.ID, 0, cipherPart(o, 0)); err != nil {
+		t.Fatal(err)
+	}
+	l, err := e.svc.List(ctx, rx.DeviceID, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := byFile(l, 1000)
+	route := "direct"
+	for _, st := range []string{Connecting, Transferring} {
+		if _, err := e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: st}); err != nil {
+			t.Fatal(st, err)
+		}
+	}
+	if _, err := e.svc.Report(ctx, rx.DeviceID, tr.ID, Report{Status: Completed, VerifiedBytes: 1000, Route: &route}); err != nil {
+		t.Fatal(err)
+	}
+	for n := 1; n < o.PartCount; n++ {
+		if _, err := e.svc.PutPart(ctx, id, o.ID, n, cipherPart(o, n)); err != nil {
+			t.Fatalf("part %d after the receiver finished: %v", n, err)
+		}
+	}
+	sealed, err := e.svc.Seal(ctx, id, o.ID)
+	if err != nil || sealed.Status != CloudDeleted {
+		t.Fatalf("sealed with every receiver done: deleted, got %+v %v", sealed, err)
 	}
 	if len(e.store.live) != 0 {
 		t.Fatalf("stored parts left: %v", e.store.live)

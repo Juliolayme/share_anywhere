@@ -19,12 +19,13 @@ private func money(_ amount: Double, _ currency: String) -> String {
 /// asks for consent each time, turning Cloud on in the account (with consent) when needed.
 struct CloudSendOption: View {
     @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var account: AccountSession
     @Environment(\.palette) private var p
     @Binding var on: Bool
+    /// Loaded by the parent on a view that is always on screen: this view is empty until settings arrive, and SwiftUI
+    /// runs no `.task` on an empty view.
+    @Binding var settings: CloudSettings?
     let total: Int64
     let signIn: () -> Void
-    @State private var settings: CloudSettings?
     @State private var estimate: CloudEstimate?
     @State private var asking = false
     @State private var busy = false
@@ -42,7 +43,6 @@ struct CloudSendOption: View {
                 }
             }
         }
-        .task(id: account.state.signedIn) { settings = try? await model.hub.services.cloudSettings() }
         .sheet(isPresented: $asking) { consent.themed() }
     }
 

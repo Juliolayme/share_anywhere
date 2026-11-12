@@ -114,6 +114,11 @@ export class CloudReceive {
     return (this.cursors.get(fileId)?.next ?? 0) > 0;
   }
 
+  /** Forgets a stopped download's cursor: the caller starts a new sink, so the next download starts at part 0. */
+  restart(fileId: string): void {
+    this.cursors.delete(fileId);
+  }
+
   /**
    * Downloads and decrypts one file in order, writing each part at its offset; `progress` gets the plaintext bytes
    * written so far. A retry after a pause or a network error resumes at the next part (the caller keeps the same

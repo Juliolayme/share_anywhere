@@ -279,7 +279,7 @@ func (s *Service) PutCloudSettings(ctx context.Context, id access.Identity, in C
 		s.cm.consents.Inc()
 	}
 	if budget > cur.budget {
-		s.unpauseAll(ctx, id.AccountID)
+		s.unpauseCovered(ctx, id.AccountID)
 	}
 	return s.CloudSettings(ctx, id)
 }
@@ -510,21 +510,33 @@ func (s *Service) setPaused(ctx context.Context, o CloudObject, paused bool) {
 	}
 }
 
-func (s *Service) unpauseAll(ctx context.Context, userID string) {
-	rows, err := s.cfg.Pool.Query(ctx, `SELECT id::text FROM cloud_objects WHERE owner_user_id = $1::uuid AND paused AND status <> 'DELETED'`, userID)
+// unpauseCovered lifts the pause of the owner's objects whose next full part the remaining budget covers again (the
+// budget was raised or the month turned). A refused charge leaves less than one part, so an object paused by a
+// refusal stays paused until then (no pause and unpause every sweep).
+func (s *Service) unpauseCovered(ctx context.Context, userID string) {
+	row, err := s.settings(ctx, nil, userID)
 	if err != nil {
 		return
 	}
-	var ids []string
+	used, err := s.used(ctx, userID)
+	if err != nil {
+		return
+	}
+	rows, err := s.cfg.Pool.Query(ctx, `SELECT id::text, size, part_size, part_count FROM cloud_objects
+		WHERE owner_user_id = $1::uuid AND paused AND status <> 'DELETED'`, userID)
+	if err != nil {
+		return
+	}
+	var due []CloudObject
 	for rows.Next() {
-		var id string
-		if rows.Scan(&id) == nil {
-			ids = append(ids, id)
+		var o CloudObject
+		if rows.Scan(&o.ID, &o.Size, &o.PartSize, &o.PartCount) == nil && row.budget-used >= int64(o.partBytes(0)) {
+			due = append(due, o)
 		}
 	}
 	rows.Close()
-	for _, id := range ids {
-		s.setPaused(ctx, CloudObject{ID: id}, false)
+	for _, o := range due {
+		s.setPaused(ctx, o, false)
 	}
 }
 
@@ -611,10 +623,12 @@ func (s *Service) Seal(ctx context.Context, id access.Identity, objectID string)
 		return o, err
 	}
 	o, _, _, err = s.object(ctx, o.ID)
-	if err == nil {
-		s.notifyCloud(ctx, o)
+	if err != nil {
+		return o, err
 	}
-	return o, err
+	s.notifyCloud(ctx, o)
+	// Every receiver may already have the file (over P2P while the upload ran): then it goes right away.
+	return s.deleteIfDelivered(ctx, o)
 }
 
 // participant checks the caller is the session's sender or a JOINED receiver.
@@ -736,13 +750,25 @@ func (s *Service) receipt(ctx context.Context, o CloudObject, participantID stri
 		ON CONFLICT DO NOTHING`, o.ID, participantID, s.now()); err != nil {
 		return o, err
 	}
-	var waiting int
-	if err := s.cfg.Pool.QueryRow(ctx, `SELECT count(*) FROM session_participants p WHERE p.session_id = $1::uuid
-		AND p.role = 'receiver' AND p.status = 'JOINED'
-		AND NOT EXISTS (SELECT 1 FROM cloud_receipts r WHERE r.object_id = $2::uuid AND r.participant_id = p.id)`, o.SessionID, o.ID).Scan(&waiting); err != nil {
+	// An object still uploading is deleted at seal instead: deleting it now would fail the sender's next part and
+	// could orphan a part stored concurrently.
+	if o.Status != CloudReady {
+		return o, nil
+	}
+	return s.deleteIfDelivered(ctx, o)
+}
+
+// deleteIfDelivered deletes a READY object once some receiver has the file and every JOINED receiver has it (a session
+// nobody joined yet keeps its object).
+func (s *Service) deleteIfDelivered(ctx context.Context, o CloudObject) (CloudObject, error) {
+	var waiting, received int
+	if err := s.cfg.Pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM session_participants p WHERE p.session_id = $1::uuid AND p.role = 'receiver' AND p.status = 'JOINED'
+			AND NOT EXISTS (SELECT 1 FROM cloud_receipts r WHERE r.object_id = $2::uuid AND r.participant_id = p.id)),
+		(SELECT count(*) FROM cloud_receipts WHERE object_id = $2::uuid)`, o.SessionID, o.ID).Scan(&waiting, &received); err != nil {
 		return o, err
 	}
-	if waiting == 0 {
+	if waiting == 0 && received > 0 {
 		return s.deleteObject(ctx, o)
 	}
 	return o, nil
@@ -824,7 +850,7 @@ func (s *Service) SweepCloud(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// unpauseWithinBudget lifts the pause of objects whose owner is under budget again (the month turned).
+// unpauseWithinBudget runs unpauseCovered for every owner with a paused object (the month turned).
 func (s *Service) unpauseWithinBudget(ctx context.Context) {
 	rows, err := s.cfg.Pool.Query(ctx, `SELECT DISTINCT owner_user_id::text FROM cloud_objects WHERE paused AND status <> 'DELETED'`)
 	if err != nil {
@@ -839,13 +865,7 @@ func (s *Service) unpauseWithinBudget(ctx context.Context) {
 	}
 	rows.Close()
 	for _, u := range owners {
-		row, err := s.settings(ctx, nil, u)
-		if err != nil {
-			continue
-		}
-		if used, err := s.used(ctx, u); err == nil && used < row.budget {
-			s.unpauseAll(ctx, u)
-		}
+		s.unpauseCovered(ctx, u)
 	}
 }
 

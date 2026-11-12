@@ -64,6 +64,9 @@ final class FakeBackend: @unchecked Sendable {
     var cloudObjects: [String: CloudObject] = [:]
     var cloudParts: [String: [UInt8]] = [:]
     var cloudPartSize = 1 << 20
+    /// Parts from this index on answer 409 (a paused or deleted object) until cleared; parts served are counted.
+    var cloudRefuseFrom: Int?
+    var cloudPartsServed = 0
     struct Member {
         var participant: Participant
         var device: String
@@ -398,7 +401,13 @@ extension FakeBackend {
     }
 
     func cloudGet(_ id: String, _ n: Int) throws -> [UInt8] {
-        guard let b = lock.locked({ cloudObjects[id]?.status == "READY" ? cloudParts["\(id)/\(n)"] : nil }) else {
+        let b: [UInt8]? = lock.locked {
+            if let from = cloudRefuseFrom, n >= from { return nil }
+            guard cloudObjects[id]?.status == "READY", let b = cloudParts["\(id)/\(n)"] else { return nil }
+            cloudPartsServed += 1
+            return b
+        }
+        guard let b else {
             throw APIError(status: 409, code: "invalid_state", message: "", retryAfterSeconds: nil, body: nil)
         }
         return b

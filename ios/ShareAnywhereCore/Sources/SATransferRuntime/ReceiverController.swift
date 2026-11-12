@@ -698,8 +698,12 @@ public actor ReceiverController {
                 if await agent.resumable(f.fileId), let existing = sinks[f.index] {
                     sink = existing // resume: the parts so far are in this partial file
                 } else {
+                    // A new partial file: whatever an earlier attempt wrote is not in it, so the download starts over.
+                    await agent.restart(f.fileId)
                     sinks.removeValue(forKey: f.index)?.close()
-                    _ = try dir.create(k, name: f.name, size: f.size, blockSize: Wire.blockSize, blockCount: 1, now: d.clock())
+                    // The same block count as FILE_META, so a later P2P resume can load this sidecar.
+                    let blocks = Wire.blockCount(size: f.size, blockSize: Wire.blockSize)
+                    _ = try dir.create(k, name: f.name, size: f.size, blockSize: Wire.blockSize, blockCount: blocks, now: d.clock())
                     sink = PartialFileSink(url: dir.partialURL(k))
                     sinks[f.index] = sink
                 }

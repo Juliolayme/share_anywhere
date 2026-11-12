@@ -211,6 +211,9 @@ public actor CloudReceive {
 
     /// Whether a download of this file stopped part-way and can resume (its parts so far are in the partial file).
     public func resumable(_ fileId: String) -> Bool { (cursors[fileId]?.next ?? 0) > 0 }
+
+    /// Forgets a stopped download's cursor: the caller starts a new partial file, so the next download starts at part 0.
+    public func restart(_ fileId: String) { cursors[fileId] = nil }
     private var eventsTask: Task<Void, Never>?
 
     public init(

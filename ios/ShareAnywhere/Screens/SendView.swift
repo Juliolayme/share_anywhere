@@ -12,6 +12,7 @@ struct SendView: View {
     @EnvironmentObject private var account: AccountSession
     @State private var requireApproval = false
     @State private var cloud = false
+    @State private var cloudSettings: CloudSettings?
     @State private var accountSheet: AccountSheet.Step?
     @State private var picking = false
     @State private var creating = false
@@ -34,7 +35,7 @@ struct SendView: View {
                 } else {
                     fileList
                     approval
-                    CloudSendOption(on: $cloud, total: total) { accountSheet = .signIn }
+                    CloudSendOption(on: $cloud, settings: $cloudSettings, total: total) { accountSheet = .signIn }
                     if let error { Banner(kind: .danger, title: error).accessibilityIdentifier("send.error") }
                     if let openSessions { OpenSessionsPanel(list: openSessions) { self.openSessions = nil } }
                     PrimaryButton(title: L10n.t("ios.create"), enabled: !creating && total <= SendView.limit) { create() }
@@ -56,6 +57,7 @@ struct SendView: View {
             error = unreadable.isEmpty ? nil : L10n.t("product.file_unreadable", ["name": unreadable.joined(separator: ", ")])
         }
         .onAppear(perform: seedForTests)
+        .task(id: account.state.signedIn) { await loadCloudSettings() }
         .sheet(item: Binding(get: { accountSheet.map(AccountSheetItem.init) }, set: { accountSheet = $0?.step })) { item in
             AccountSheet(start: item.step).environmentObject(account).environmentObject(model)
         }
@@ -137,6 +139,17 @@ struct SendView: View {
 
     /// `-uiTesting -seedSendFiles N`: N generated files in the app's temporary folder, picked through the same path as
     /// the document picker (bookmarks), so XCUITests do not drive the system picker.
+    /// Cloud availability for the TR-3 option, retried a few times so one failed request does not hide it.
+    private func loadCloudSettings() async {
+        for attempt in 0 ..< 3 {
+            if let s = try? await model.hub.services.cloudSettings() {
+                cloudSettings = s
+                return
+            }
+            try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 2_000_000_000)
+        }
+    }
+
     private func seedForTests() {
         guard !seeded, model.config.uiTesting, model.config.seedSendFiles > 0, files.isEmpty else { return }
         seeded = true

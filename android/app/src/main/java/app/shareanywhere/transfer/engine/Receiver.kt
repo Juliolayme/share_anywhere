@@ -104,11 +104,12 @@ class ReceiverConnection(private val o: ReceiverOptions) {
                 } catch (e: IllegalArgumentException) {
                     fail(ErrorCodes.PROTOCOL, true, e.message)
                 } catch (e: StorageFullException) {
-                    fail(ErrorCodes.STORAGE_FULL, true, e.message)
+                    fail(ErrorCodes.STORAGE_FULL, true, e.javaClass.simpleName)
                 } catch (e: IOException) {
-                    fail(ErrorCodes.STORAGE_ERROR, true, e.message)
+                    // The exception class only: storage messages can carry local paths, and ERROR goes to the peer.
+                    fail(ErrorCodes.STORAGE_ERROR, true, e.javaClass.simpleName)
                 } catch (e: SecurityException) {
-                    fail(ErrorCodes.STORAGE_ERROR, true, e.message)
+                    fail(ErrorCodes.STORAGE_ERROR, true, e.javaClass.simpleName)
                 }
             }
         }

@@ -260,8 +260,8 @@ final class TransferUITests: XCTestCase {
 
     func testCancellingTheReceiveLetsTheScreenSleep() throws {
         let sender = try peer("Cancel Mac")
-        let (view, _, tx) = try blocking(120) { try await sender.share(name: "cancel.bin", size: 128 * 1024 * 1024) }
-        try blocking { await tx.start() }
+        // The sender never starts serving, so the receive stays connecting (screen on) until it is cancelled.
+        let (view, _, _) = try blocking(60) { try await sender.share(name: "cancel.bin", size: 1_000_000) }
         let app = UITest.app()
         app.launch()
         UITest.skipWelcome(app)
@@ -275,7 +275,7 @@ final class TransferUITests: XCTestCase {
         UITest.id(app, "preview.receive").tap()
         XCTAssertTrue(UITest.id(app, "rx.start").waitForExistence(timeout: 20))
         UITest.id(app, "rx.start").tap()
-        eventually("receiving keeps the screen on") { idle(app) == "true" }
+        eventually("connecting keeps the screen on") { idle(app) == "true" }
         UITest.id(app, "rx.cancel").tap()
         let confirm = app.alerts.buttons["Cancel"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))

@@ -107,7 +107,9 @@ When the channel closes without a fatal error (reconnect window: 2 minutes to ma
 
 The sender has the same 10-minute window per receiver: a receiver that is connecting or reconnecting with no open channel for 10 minutes shows **Offline** on TR-5 and TR-6 ("Lost contact. They can reconnect while this page stays open") and no longer holds the sender's screen on. The record keeps its state, and a new connection from that receiver resumes as above.
 
-The sender keeps its file handles and whole-file hash state across reconnects, but a sender page reload loses the file handles: the transfer then fails for that receiver and the sender must create a new session. Route migration (Phase 8) uses the same path.
+The sender keeps its file handles and whole-file hash state across reconnects, but a sender page reload loses the file handles: the transfer then fails for that receiver and the sender must create a new session.
+
+**Route migration (Phase 8, `docs/ARCHITECTURE.md` §6).** A migration is a reconnect the receiver starts on purpose: it reports `DISCONNECTED`, closes the current peer connection, and offers on a new connection ID with a stricter ICE policy step (relay-only, the step's TURN URIs); steps 1–3 above follow, so the bitmap exchange resumes from the last verified block and no verified block is sent again. The sender answers whatever route the receiver offers. The same path renews a relayed connection's TURN credential before it expires (same step, fresh credential). Losses of channels that never opened do not count towards migration; two such dials in a row on a stricter step return to the starting step. When P2P stays down and the sender uploaded the files to Cloud Distribution, the receiver switches to §9.
 
 ## 7. State reporting
 

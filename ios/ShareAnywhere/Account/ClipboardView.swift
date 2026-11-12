@@ -72,6 +72,7 @@ final class PasteboardAccess: ObservableObject {
     /// The fallback Sync button: a programmatic read, which iOS confirms with its paste prompt.
     func readString() -> String? {
         reads += 1
+        defer { trace += UIPasteboard.general.hasStrings ? " read" : " empty" }
         // Seen before iOS's prompt takes the app out of the active state, so coming back does not count as a change.
         if observer != nil { lastCount = UIPasteboard.general.changeCount }
         return UIPasteboard.general.string
@@ -86,20 +87,43 @@ final class PasteboardAccess: ObservableObject {
         if observer != nil { lastCount = UIPasteboard.general.changeCount }
     }
 
-    /// `detectPatterns` without reading the text: a bare number is a probable one-time code.
+    /// `detectPatterns` without reading the text: a bare number is a probable one-time code. Some runtimes never call
+    /// back, so the answer is "not flagged" after a second; the engine's own sensitive check still runs on the text.
     func probableSecret() async -> Bool {
-        await withCheckedContinuation { c in
+        let once = Once()
+        let flagged = await withCheckedContinuation { (c: CheckedContinuation<Bool?, Never>) in
             UIPasteboard.general.detectPatterns(for: [.number]) { result in
-                c.resume(returning: (try? result.get())?.contains(.number) == true)
+                if once.take() { c.resume(returning: (try? result.get())?.contains(.number) == true) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                if once.take() { c.resume(returning: nil) }
             }
         }
+        trace = flagged == nil ? "detect-timeout" : "detect:\(flagged!)"
+        return flagged ?? false
     }
+
+    /// `-uiTesting` probe: the last step of a pasteboard read (no content).
+    @Published private(set) var trace = ""
 
     func write(_ text: String) {
         UIPasteboard.general.string = text
         guard observer != nil else { return }
         lastCount = UIPasteboard.general.changeCount
         changedSinceSync = false
+    }
+}
+
+/// Resumes a continuation once, whichever callback comes first.
+private final class Once: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func take() -> Bool {
+        lock.locked {
+            if done { return false }
+            done = true
+            return true
+        }
     }
 }
 

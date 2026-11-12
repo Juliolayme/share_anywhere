@@ -121,6 +121,7 @@ struct TestProbes: View {
             IdleTimerProbe()
             probe("test.pasteboard-reads", "\(pasteboard.reads)")
             probe("test.pasteboard-observations", "\(pasteboard.observations)")
+            probe("test.pasteboard-trace", pasteboard.trace)
             probe("test.device-id", model.identityState.claims?.sub ?? "")
             probe("test.link-trace", model.linkTrace)
         }

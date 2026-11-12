@@ -58,6 +58,17 @@ enum UITest {
         if inApp.waitForExistence(timeout: 2) { inApp.tap() }
     }
 
+    /// Swipes up until a row of a lazy list exists (rows below the fold are not in the tree on small screens).
+    @discardableResult
+    static func scrollTo(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
+        let element = id(app, identifier)
+        for _ in 0 ..< 6 where !element.exists {
+            app.swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        }
+        return element
+    }
+
     /// Scrolls until `element` lies inside the window above the tab bar (coordinate taps do not scroll, and XCUITest's
     /// own scroll-to-visible fails next to iOS's secure Paste control).
     static func reveal(_ app: XCUIApplication, _ element: XCUIElement) {

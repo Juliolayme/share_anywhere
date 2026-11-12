@@ -91,7 +91,7 @@ final class AccountUITests: XCTestCase {
         XCTAssertGreaterThan(Int(UITest.id(app, "test.pasteboard-reads").value as? String ?? "") ?? 0, reads)
 
         UITest.tab(app, "Settings")
-        UITest.id(app, "settings.signout").tap()
+        UITest.scrollTo(app, "settings.signout").tap()
         XCTAssertTrue(UITest.id(app, "signout").waitForExistence(timeout: 10))
         UITest.id(app, "signout.confirm").tap()
         XCTAssertTrue(UITest.id(app, "settings.guest").waitForExistence(timeout: 30), "a guest again")

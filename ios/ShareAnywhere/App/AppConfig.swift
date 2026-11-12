@@ -11,6 +11,13 @@ struct AppConfig {
     let resetState: Bool
     /// `-seedHistory`: add sample local History entries (UI tests only).
     let seedHistory: Bool
+    /// The origin share links and QR codes use (`<origin>/j/<token>`); links to any other origin are refused.
+    let publicURL: URL
+    /// `-seedSendFiles N` (UI tests): Send starts with N generated files of `-seedFileBytes` bytes each.
+    let seedSendFiles: Int
+    let seedFileBytes: Int
+    /// Seconds a transfer keeps going after the app leaves the screen before it pauses (`-backgroundGrace`, UI tests).
+    let backgroundGrace: Double
     let accounts = false
     let clipboard = false
     let version: String
@@ -29,11 +36,17 @@ struct AppConfig {
         #else
             let requireHTTPS = true
         #endif
+        let publicRaw = value(after: "-publicURL") ?? (bundle.object(forInfoDictionaryKey: "SAPublicURL") as? String) ?? ""
+        let publicURL = URL(string: publicRaw).flatMap { $0.host == nil ? nil : $0 } ?? url
         let short = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
         return AppConfig(
             backendURL: url, requireHTTPS: requireHTTPS, uiTesting: uiTesting, resetState: arguments.contains("-resetState"),
-            seedHistory: uiTesting && arguments.contains("-seedHistory"), version: "\(short) (\(build))"
+            seedHistory: uiTesting && arguments.contains("-seedHistory"), publicURL: publicURL,
+            seedSendFiles: uiTesting ? Int(value(after: "-seedSendFiles") ?? "") ?? 0 : 0,
+            seedFileBytes: min(64 << 20, max(1, Int(value(after: "-seedFileBytes") ?? "") ?? 3_000_000)),
+            backgroundGrace: uiTesting ? Double(value(after: "-backgroundGrace") ?? "") ?? 20 : 20,
+            version: "\(short) (\(build))"
         )
     }
 }

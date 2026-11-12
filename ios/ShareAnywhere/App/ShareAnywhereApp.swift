@@ -9,6 +9,8 @@ struct ShareAnywhereApp: App {
             RootView()
                 .environmentObject(model)
                 .environmentObject(model.settings)
+                .environmentObject(model.keepAwake)
+                .environmentObject(model.hub)
         }
     }
 }
@@ -17,12 +19,23 @@ struct ShareAnywhereApp: App {
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var settings: SettingsStore
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView(selection: $model.tab) {
-            NavigationStack { HomeView() }
-                .tabItem { Label(L10n.t("ios.home"), systemImage: "arrow.up.arrow.down.circle") }
-                .tag(AppModel.Tab.home)
+            NavigationStack(path: $model.homePath) {
+                HomeView().navigationDestination(for: Route.self) { route in
+                    switch route {
+                    case .send: SendView()
+                    case let .session(id): SessionScreen(id: id)
+                    case .receive: ReceiveView()
+                    case let .preview(id): JoinPreviewView(sessionId: id)
+                    case let .receiving(id): ReceivingView(id: id)
+                    }
+                }
+            }
+            .tabItem { Label(L10n.t("ios.home"), systemImage: "arrow.up.arrow.down.circle") }
+            .tag(AppModel.Tab.home)
             NavigationStack { HistoryView() }
                 .tabItem { Label(L10n.t("ios.hist"), systemImage: "clock.arrow.circlepath") }
                 .tag(AppModel.Tab.history)
@@ -40,6 +53,9 @@ struct RootView: View {
             WelcomeView { settings.welcomed = true }.themed()
         }
         .overlay(alignment: .bottom) { ToastView() }
+        .overlay(alignment: .topLeading) { if model.config.uiTesting { IdleTimerProbe() } }
+        .onChange(of: scenePhase) { model.hub.scenePhase($0) }
+        .onChange(of: settings.keepScreenOn) { model.keepAwake.setEnabled($0) }
     }
 }
 

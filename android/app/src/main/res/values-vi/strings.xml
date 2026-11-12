@@ -760,6 +760,7 @@
     <string name="product_camera_allow">Cho phép camera</string>
     <string name="product_camera_denied_h">Quyền dùng camera đang tắt</string>
     <string name="product_camera_denied_p">Bật lại trong cài đặt Android, hoặc nhập mã 6 chữ số.</string>
+    <string name="product_camera_denied_p_ios">Bật trong Cài đặt iOS hoặc nhập mã 6 chữ số.</string>
     <string name="product_camera_needed_h">Cho phép dùng camera để quét mã QR</string>
     <string name="product_camera_needed_p">Camera chỉ được dùng khi màn hình này đang mở. Bạn cũng có thể nhập mã.</string>
     <string name="product_camera_unavailable">Thiết bị này không có camera. Hãy nhập mã.</string>
@@ -978,6 +979,7 @@
     <string name="product_identity_offline">Bạn đang ngoại tuyến. Thiết bị sẽ được thiết lập khi có mạng lại.</string>
     <string name="product_identity_replaced">Thông tin thiết bị này đã bị dùng hai lần, nên thiết bị được cấp danh tính ẩn danh mới để an toàn.</string>
     <string name="product_ios_cloud_signin">Đăng nhập để tệp lớn truyền xong ngay cả khi ứng dụng chạy nền</string>
+    <string name="product_ios_susp_p">Mở Share Anywhere để tiếp tục từ khối đã kiểm tra gần nhất.</string>
     <string name="product_join_within">Vào phiên trong {time}</string>
     <string name="product_joined_session">Bạn đã vào phiên của {name}</string>
     <string name="product_joining">Đang vào phiên…</string>
@@ -1159,16 +1161,20 @@
     <string name="product_rx_change">Đổi</string>
     <string name="product_rx_choose_folder">Chọn thư mục</string>
     <string name="product_rx_connecting">Đang kết nối với người gửi…</string>
+    <string name="product_rx_documents_h">Trên iPhone › Share Anywhere</string>
+    <string name="product_rx_documents_p">Tệp hiển thị trong ứng dụng Tệp, trong thư mục Share Anywhere.</string>
     <string name="product_rx_download">Tải xuống</string>
     <string name="product_rx_download_named">Tải xuống {name}</string>
     <string name="product_rx_failed_h">Nhận tệp thất bại</string>
     <string name="product_rx_folder_hint">Mở trình chọn thư mục của Android</string>
+    <string name="product_rx_folder_hint_ios">Mở trình chọn thư mục của Tệp</string>
     <string name="product_rx_from">Từ {name}</string>
     <string name="product_rx_incoming">Tệp đang gửi đến</string>
     <string name="product_rx_keep">Tiếp tục nhận</string>
     <string name="product_rx_kept">Tệp được giữ trong trình duyệt này 24 giờ để bạn có thể tải lại.</string>
     <string name="product_rx_no_app">Không có ứng dụng nào trên thiết bị mở được tệp này.</string>
     <string name="product_rx_open_file_named">Mở {name}</string>
+    <string name="product_rx_open_in_files">Mở trong Tệp</string>
     <string name="product_rx_partial_h">Đã nhận {done} / {count} tệp</string>
     <string name="product_rx_partial_p">Việc truyền kết thúc trước khi mọi tệp hoàn tất. Các tệp đã xong được giữ lại.</string>
     <string name="product_rx_reconnecting">Mất kết nối — tự động tiếp tục từ khối đã xác minh gần nhất.</string>
@@ -1201,6 +1207,7 @@
     <string name="product_see_all">Xem tất cả</string>
     <string name="product_send_empty_h">Chưa có tệp nào</string>
     <string name="product_send_empty_p">Chọn từ điện thoại, Drive hoặc thẻ SD.</string>
+    <string name="product_send_empty_p_ios">Chọn từ Tệp, iCloud Drive hoặc ứng dụng lưu trữ khác.</string>
     <string name="product_sender_words_named">Từ bảo mật với {name}</string>
     <string name="product_session_closed">Đã đóng phiên</string>
     <string name="product_session_ended_rx">Phiên này đã kết thúc. Hãy xin người gửi mã mới.</string>

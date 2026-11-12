@@ -2,8 +2,8 @@ import SAAPIClient
 import SAStore
 import SwiftUI
 
-/// TR-1 Transfer home (design `home`): identity notices (ON-2) and recent local transfers. Send and Receive arrive
-/// with the transfer screens (milestone 7.3); until then there is no button that does nothing.
+/// TR-1 Transfer home (design `home`): Send and Receive, identity notices (ON-2), the transfer in progress, and recent
+/// local transfers. Sending and receiving never need an account (PRD §2).
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.palette) private var p
@@ -17,6 +17,8 @@ struct HomeView: View {
                     Chip(text: L10n.t("ios.guest")).accessibilityIdentifier("home.guest")
                 }
                 IdentityNotice()
+                actions
+                ActiveTransfers()
                 recent
             }
             .padding(SATokens.Space.s4)
@@ -25,6 +27,19 @@ struct HomeView: View {
         .navigationTitle(L10n.t("ios.home"))
         .navigationBarTitleDisplayMode(.inline)
         .screenID("home")
+    }
+
+    private var actions: some View {
+        VStack(spacing: SATokens.Space.s3) {
+            HomeTile(title: L10n.t("ios.send"), subtitle: L10n.t("ios.send_sub"), icon: "arrow.up.circle.fill", tone: .send) {
+                model.homePath.append(.send)
+            }
+            .accessibilityIdentifier("home.send")
+            HomeTile(title: L10n.t("ios.receive"), subtitle: L10n.t("ios.receive_sub"), icon: "arrow.down.circle.fill", tone: .receive) {
+                model.homePath.append(.receive)
+            }
+            .accessibilityIdentifier("home.receive")
+        }
     }
 
     @ViewBuilder private var recent: some View {
@@ -115,5 +130,57 @@ struct RateLimitedNotice: View {
             )
         }
         .accessibilityIdentifier("home.identity-rate-limited")
+    }
+}
+
+/// A large Send / Receive action (Hero buttons).
+struct HomeTile: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let tone: PrimaryButton.Tone
+    let action: () -> Void
+    @Environment(\.palette) private var p
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: SATokens.Space.s3) {
+                Image(systemName: icon).font(.system(size: 30)).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).typeStyle(SATokens.TypeScale.title)
+                    Text(subtitle).typeStyle(SATokens.TypeScale.caption).opacity(0.9)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").accessibilityHidden(true)
+            }
+            .padding(SATokens.Space.s4)
+            .frame(maxWidth: .infinity, minHeight: 72)
+            .foregroundStyle(tone == .receive ? p.onReceive : p.onSend)
+            .background(tone == .receive ? p.receive : p.send, in: RoundedRectangle(cornerRadius: SATokens.Radius.lg))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// The transfers moving now, with a way back to their screen (TR-1 active transfer card).
+struct ActiveTransfers: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var hub: TransferHub
+
+    var body: some View {
+        let live = hub.active.filter(\.value).keys.sorted()
+        ForEach(live, id: \.self) { key in
+            let id = String(key.dropFirst(3))
+            Banner(
+                kind: .info,
+                title: key.hasPrefix("tx:") ? L10n.t("ios_yy.live") : L10n.t("ios.receiving"),
+                actionTitle: L10n.t("ios_yy.open")
+            ) {
+                model.homePath.append(key.hasPrefix("tx:") ? .session(id) : .receiving(id))
+            }
+            .accessibilityIdentifier("home.active")
+        }
     }
 }

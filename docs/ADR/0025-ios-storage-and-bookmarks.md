@@ -21,3 +21,10 @@ The phase file leaves local History storage to an ADR (Core Data or GRDB; SwiftD
 ## Consequences
 
 - Schema changes are explicit migrations keyed by `PRAGMA user_version` in `HistoryStore.migrate`.
+
+## Amendment (milestone 7.3, as built)
+
+- Received files go to the root of the app's Documents folder, not a `Share Anywhere/` subfolder: Files already shows that folder as On My iPhone › Share Anywhere, so a subfolder would read "Share Anywhere › Share Anywhere".
+- A partial download is a hidden file `.sa-<id>.part` in the save folder, and its sidecar is `.sa-<id>.part.json` (the bitmap, file size, block size and the transfer key it belongs to), where `<id>` is a hash of the transfer key. A resume uses the sidecar only when the partial file exists and size and block size match. When the file is verified it is renamed to the sender's file name, made unique in the folder (`name (1).ext`), and the sidecar is deleted. Cancelling, a fatal error, removal or the session ending deletes unfinished partial files with their sidecars. This logic lives in `SATransferRuntime.IncomingFolder` and is tested by `swift test`.
+- A picked folder that can no longer be reached (stale bookmark, no write access) returns the receive to the save step with "Couldn't write the file to the chosen folder" instead of silently switching folders, so files never end up somewhere the user did not choose.
+- Picked outgoing files are read in place through bookmarks (`fileImporter`, not copies), so a 20 GB file is not duplicated; the bookmarks are kept per session in Application Support (`transfers/outgoing.json`) so the session can serve receivers again after a relaunch.

@@ -29,3 +29,5 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0023](0023-ios-networking.md) | iOS networking and API models | Accepted |
 | [0024](0024-ios-crypto.md) | Cryptography for the account keys on iOS | Accepted |
 | [0025](0025-ios-storage-and-bookmarks.md) | iOS storage (SQLite History in Core) and security-scoped bookmarks | Accepted |
+| [0026](0026-ios-webrtc-dependency.md) | WebRTC on iOS (StreamWebRTC) | Accepted |
+| [0027](0027-ios-background-policy.md) | iOS background policy for transfers | Accepted |

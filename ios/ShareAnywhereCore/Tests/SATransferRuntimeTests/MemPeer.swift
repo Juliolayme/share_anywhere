@@ -11,6 +11,8 @@ final class MemDataChannel: DataChannelLink, @unchecked Sendable {
     private var buffered = 0
     private var listener: (any TransferChannelListener)?
     private var openActions: [@Sendable () -> Void] = []
+    /// Messages that arrived before a listener was attached (as the WebRTC adapter keeps them).
+    private var early: [[UInt8]] = []
     private var outbox: AsyncStream<[UInt8]?>.Continuation?
     /// Test hook: delay each delivery (a slow link).
     let delayMs: UInt64
@@ -23,7 +25,27 @@ final class MemDataChannel: DataChannelLink, @unchecked Sendable {
     var bufferedAmount: Int { lock.locked { buffered } }
     var isOpen: Bool { lock.locked { state == "open" } }
 
-    func setListener(_ listener: (any TransferChannelListener)?) { lock.locked { self.listener = listener } }
+    func setListener(_ listener: (any TransferChannelListener)?) {
+        let queued = lock.locked { () -> [[UInt8]] in
+            self.listener = listener
+            guard listener != nil else { return [] }
+            defer { early.removeAll() }
+            return early
+        }
+        for m in queued {
+            listener?.onMessage(m)
+        }
+    }
+
+    /// Delivers to the listener, or keeps the message until one is attached.
+    fileprivate func deliver(_ msg: [UInt8]) {
+        let l = lock.locked { () -> (any TransferChannelListener)? in
+            if listener == nil { early.append(msg) }
+            return listener
+        }
+        l?.onMessage(msg)
+    }
+
     private var currentListener: (any TransferChannelListener)? { lock.locked { listener } }
 
     func whenOpen(_ action: @escaping @Sendable () -> Void) {
@@ -99,7 +121,7 @@ final class MemDataChannel: DataChannelLink, @unchecked Sendable {
                 }
                 self.lock.locked { self.buffered -= msg.count }
                 self.currentListener?.onBufferedAmountChange()
-                if peer.lock.locked({ peer.state == "open" || peer.state == "closing" }) { peer.currentListener?.onMessage(msg) }
+                if peer.lock.locked({ peer.state == "open" || peer.state == "closing" }) { peer.deliver(msg) }
             }
         }
     }
@@ -112,6 +134,8 @@ final class MemPeerFactory: PeerFactory, @unchecked Sendable {
     private var offers: [String: MemPeer] = [:]
     private(set) var made: [MemPeer] = []
     var delayMs: UInt64 = 0
+    /// Test hook: the answering side learns about the channel this long after it opened (the HELLO race).
+    var announceDelayMs: UInt64 = 0
 
     func make(iceServers _: [ICEServer], callbacks: PeerCallbacks) async throws -> any PeerLink {
         let p = MemPeer(factory: self, callbacks: callbacks)
@@ -192,9 +216,20 @@ final class MemPeer: PeerLink, @unchecked Sendable {
         other.set(.connected)
         let (a, b) = lock.locked { (local, remote) }
         if let a, let b {
-            other.callbacks.onDataChannel(b)
-            a.open()
-            b.open()
+            let late = factory?.announceDelayMs ?? 0
+            if late == 0 {
+                other.callbacks.onDataChannel(b)
+                a.open()
+                b.open()
+            } else {
+                a.open()
+                b.open()
+                let callbacks = other.callbacks
+                Task {
+                    try? await Task.sleep(nanoseconds: late * 1_000_000)
+                    callbacks.onDataChannel(b)
+                }
+            }
         }
     }
 

@@ -42,4 +42,44 @@ final class AppUnitTests: XCTestCase {
         let cleared = try await store.read()
         XCTAssertNil(cleared)
     }
+
+    func testTransferLaunchHooksNeedUITesting() {
+        let c = AppConfig.load(arguments: ["app", "-uiTesting", "-seedSendFiles", "2", "-seedFileBytes", "500", "-backgroundGrace", "3"])
+        XCTAssertEqual(c.seedSendFiles, 2)
+        XCTAssertEqual(c.seedFileBytes, 500)
+        XCTAssertEqual(c.backgroundGrace, 3)
+        let plain = AppConfig.load(arguments: ["app", "-seedSendFiles", "2", "-backgroundGrace", "3"])
+        XCTAssertEqual(plain.seedSendFiles, 0)
+        XCTAssertEqual(plain.backgroundGrace, 20, "the real grace period outside UI tests")
+        XCTAssertEqual(plain.publicURL, plain.backendURL, "share links default to the backend's origin")
+    }
+
+    func testCodesAndShareLinksAreParsedStrictly() {
+        XCTAssertEqual(JoinInput.code(" 12a3-456 789"), "123456")
+        let origin = URL(string: "https://share.example")!
+        let token = String(repeating: "A", count: 43)
+        XCTAssertEqual(JoinInput.linkToken("https://share.example/j/\(token)", publicOrigin: origin), token)
+        XCTAssertNil(JoinInput.linkToken("https://evil.example/j/\(token)", publicOrigin: origin), "another origin")
+        XCTAssertNil(JoinInput.linkToken("http://share.example/j/\(token)", publicOrigin: origin), "another scheme")
+        XCTAssertNil(JoinInput.linkToken("https://share.example/j/short", publicOrigin: origin))
+        XCTAssertNil(JoinInput.linkToken("https://share.example/j/\(token)?x=1", publicOrigin: origin))
+        XCTAssertNil(JoinInput.linkToken("https://share.example/x/\(token)", publicOrigin: origin))
+    }
+
+    func testTransferTextFormats() {
+        L10n.override = "en"
+        XCTAssertEqual(TransferText.eta(nil), "Estimating time…")
+        XCTAssertEqual(TransferText.eta(42), "42 s left")
+        XCTAssertEqual(TransferText.eta(130), "2 min 10 s left")
+        XCTAssertEqual(TransferText.code("123456"), "123 456")
+        XCTAssertEqual(TransferText.clock(65), "1:05")
+        XCTAssertEqual(TransferText.files(1), "1 file")
+        L10n.override = nil
+    }
+
+    func testQRCodeImageIsGenerated() {
+        let image = QRCodeView.make("http://127.0.0.1:8080/j/" + String(repeating: "x", count: 43))
+        XCTAssertNotNil(image)
+        XCTAssertGreaterThan(image?.size.width ?? 0, 100)
+    }
 }

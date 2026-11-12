@@ -1,7 +1,17 @@
 import Foundation
 import SAAPIClient
 import SAStore
+import SATransferRuntime
 import SwiftUI
+
+/// Places on the Transfer tab's navigation stack (docs/UX_SCREEN_MAP.md destinations).
+enum Route: Hashable {
+    case send
+    case session(String)
+    case receive
+    case preview(String)
+    case receiving(String)
+}
 
 /// The app's long-lived services and the state the screens observe (one instance, created at launch).
 @MainActor
@@ -11,6 +21,8 @@ final class AppModel: ObservableObject {
     let api: APIClient
     let identity: IdentityManager
     let history: HistoryStore
+    let keepAwake: KeepAwake
+    let hub: TransferHub
 
     @Published private(set) var identityState = IdentityState()
     @Published private(set) var historyEntries: [HistoryEntry] = []
@@ -20,6 +32,10 @@ final class AppModel: ObservableObject {
     @Published var toast: String?
     /// Which tab is selected (TR-1 "See all" opens History).
     @Published var tab: Tab = .home
+    /// The Transfer tab's navigation path.
+    @Published var homePath: [Route] = []
+    /// Join previews by session id, from a resolved code or link (RX-4).
+    var previews: [String: JoinPreview] = [:]
 
     enum Tab: Hashable { case home, history, devices, settings }
 
@@ -45,6 +61,10 @@ final class AppModel: ObservableObject {
             preconditionFailure("SQLite could not open even an in-memory database")
         }
         history = store
+        let keepAwake = KeepAwake()
+        self.keepAwake = keepAwake
+        hub = TransferHub(api: client, identity: identity, history: store, keepAwake: keepAwake, graceSeconds: config.backgroundGrace)
+        keepAwake.setEnabled(settings.keepScreenOn)
         relay.model = self
         Task { await start() }
     }
@@ -111,6 +131,13 @@ final class AppModel: ObservableObject {
         if let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
         let base = databasePath()
         for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: base + suffix) }
+        let support = URL(fileURLWithPath: base).deletingLastPathComponent()
+        try? FileManager.default.removeItem(at: support.appendingPathComponent("transfers"))
+        if let docs = try? FileManager.default.contentsOfDirectory(at: SaveFolders.documents, includingPropertiesForKeys: nil) {
+            for f in docs {
+                try? FileManager.default.removeItem(at: f)
+            }
+        }
         let semaphore = DispatchSemaphore(value: 0)
         Task.detached {
             try? await KeychainSecretStore().clear()

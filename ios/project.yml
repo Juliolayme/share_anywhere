@@ -25,12 +25,19 @@ settings:
     Debug:
       # The simulator reaches the native CI backend on the host (docs/TESTING_AND_CI.md §2.3).
       SA_BACKEND_URL: http://127.0.0.1:8080
+      SA_PUBLIC_URL: ""
     Release:
       # Release builds need a real HTTPS origin: xcodebuild SA_BACKEND_URL=https://… (APIClient refuses http).
       SA_BACKEND_URL: ""
+      SA_PUBLIC_URL: ""
 packages:
   ShareAnywhereCore:
     path: ShareAnywhereCore
+  # WebRTC DataChannel transport (docs/ADR/0026-ios-webrtc-dependency.md): a binary xcframework, pinned exactly;
+  # SwiftPM verifies its checksum from the package manifest.
+  StreamWebRTC:
+    url: https://github.com/GetStream/stream-video-swift-webrtc.git
+    exactVersion: 145.25.0
 targets:
   ShareAnywhere:
     type: application
@@ -48,6 +55,10 @@ targets:
         product: APIClient
       - package: ShareAnywhereCore
         product: Store
+      - package: ShareAnywhereCore
+        product: TransferRuntime
+      - package: StreamWebRTC
+        product: StreamWebRTC
     info:
       path: ShareAnywhere/Info.plist
       properties:
@@ -61,6 +72,11 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         SABackendURL: $(SA_BACKEND_URL)
+        SAPublicURL: $(SA_PUBLIC_URL)
+        # Received files land in Documents, which Files shows as On My iPhone › Share Anywhere.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        NSCameraUsageDescription: Scan the sender’s QR code to receive files. The camera is used only while the scanner is open.
         ITSAppUsesNonExemptEncryption: false
         # Plain HTTP only to the local CI backend (127.0.0.1); every other origin must be HTTPS.
         NSAppTransportSecurity:
@@ -87,8 +103,14 @@ targets:
     platform: iOS
     sources:
       - path: Tests/ShareAnywhereUITests
+      # The test runner acts as the other device (a receiver or sender) with the same runtime and WebRTC adapter.
+      - path: ShareAnywhere/Transfer/WebRTCPeer.swift
     dependencies:
       - target: ShareAnywhere
+      - package: ShareAnywhereCore
+        product: TransferRuntime
+      - package: StreamWebRTC
+        product: StreamWebRTC
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

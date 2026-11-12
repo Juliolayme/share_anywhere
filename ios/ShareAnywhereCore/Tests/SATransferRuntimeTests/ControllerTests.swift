@@ -146,6 +146,17 @@ final class ControllerTests: XCTestCase {
         await r.receiver.dispose()
     }
 
+    func testAHelloThatArrivesBeforeTheSenderIsReadyIsNotLost() async throws {
+        let r = try await rig(sizes: [5000])
+        r.peers.announceDelayMs = 150
+        await r.sender.start()
+        await r.receiver.start()
+        await r.receiver.choose(SaveTarget(kind: .documents, label: "Share Anywhere"))
+        try await until("completed although the receiver spoke first", timeout: 15) { r.receiver.state.value.phase == .completed }
+        await r.sender.dispose()
+        await r.receiver.dispose()
+    }
+
     func testPauseAndResumeFromTheReceiver() async throws {
         let r = try await rig(sizes: [24 * 1024 * 1024], delayMs: 2)
         await r.sender.start()
@@ -224,7 +235,14 @@ final class ControllerTests: XCTestCase {
         XCTAssertFalse(r.sender.state.value.hasFiles)
         await r.receiver.start()
         await r.receiver.choose(SaveTarget(kind: .documents, label: "Share Anywhere"))
-        try await until("receiver failed") { r.receiver.state.value.phase == .failed }
+        do {
+            try await until("receiver failed") { r.receiver.state.value.phase == .failed }
+        } catch {
+            print(
+                "DEBUG phase=\(r.receiver.state.value.phase) error=\(String(describing: r.receiver.state.value.error)) log=\(r.backend.log)"
+            )
+            throw error
+        }
         XCTAssertEqual(r.receiver.state.value.error, "product.tx_err_sender_files")
         await r.sender.dispose()
         await r.receiver.dispose()

@@ -760,6 +760,7 @@
     <string name="product_camera_allow">Allow camera</string>
     <string name="product_camera_denied_h">Camera access is off</string>
     <string name="product_camera_denied_p">Turn it on in Android settings, or enter the 6-digit code.</string>
+    <string name="product_camera_denied_p_ios">Turn it on in iOS Settings, or enter the 6-digit code.</string>
     <string name="product_camera_needed_h">Allow the camera to scan the QR code</string>
     <string name="product_camera_needed_p">The camera is used only while this screen is open. You can enter the code instead.</string>
     <string name="product_camera_unavailable">No camera is available on this device. Enter the code instead.</string>
@@ -978,6 +979,7 @@
     <string name="product_identity_offline">You’re offline. This device will be set up when you reconnect.</string>
     <string name="product_identity_replaced">These device credentials were used twice, so this device got a new anonymous identity for safety.</string>
     <string name="product_ios_cloud_signin">Sign in to let large transfers finish in the background</string>
+    <string name="product_ios_susp_p">Open Share Anywhere to continue from the last verified block.</string>
     <string name="product_join_within">Join within {time}</string>
     <string name="product_joined_session">You joined {name}’s session</string>
     <string name="product_joining">Joining…</string>
@@ -1159,16 +1161,20 @@
     <string name="product_rx_change">Change</string>
     <string name="product_rx_choose_folder">Choose folder</string>
     <string name="product_rx_connecting">Connecting to the sender…</string>
+    <string name="product_rx_documents_h">On My iPhone › Share Anywhere</string>
+    <string name="product_rx_documents_p">Files appear in the Files app, in the Share Anywhere folder.</string>
     <string name="product_rx_download">Download</string>
     <string name="product_rx_download_named">Download {name}</string>
     <string name="product_rx_failed_h">Receiving failed</string>
     <string name="product_rx_folder_hint">Opens Android’s folder picker</string>
+    <string name="product_rx_folder_hint_ios">Opens the Files folder picker</string>
     <string name="product_rx_from">From {name}</string>
     <string name="product_rx_incoming">Incoming files</string>
     <string name="product_rx_keep">Keep receiving</string>
     <string name="product_rx_kept">Files are kept in this browser for 24 hours so you can download them again.</string>
     <string name="product_rx_no_app">No app on this device can open this file.</string>
     <string name="product_rx_open_file_named">Open {name}</string>
+    <string name="product_rx_open_in_files">Open in Files</string>
     <string name="product_rx_partial_h">{done} of {count} files received</string>
     <string name="product_rx_partial_p">The transfer ended before every file finished. Files that finished are kept.</string>
     <string name="product_rx_reconnecting">Connection lost — resuming automatically from the last verified block.</string>
@@ -1201,6 +1207,7 @@
     <string name="product_see_all">See all</string>
     <string name="product_send_empty_h">No files yet</string>
     <string name="product_send_empty_p">Pick from your phone, Drive or SD card.</string>
+    <string name="product_send_empty_p_ios">Pick from Files, iCloud Drive or another storage app.</string>
     <string name="product_sender_words_named">Security words with {name}</string>
     <string name="product_session_closed">Session closed</string>
     <string name="product_session_ended_rx">This session has ended. Ask the sender for a new code.</string>

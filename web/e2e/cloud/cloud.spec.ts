@@ -56,7 +56,8 @@ test('cloud: a signed-in sender consents and uploads; a guest receiver finishes 
     deleted: await metric('sa_cloud_objects_deleted_total'),
   };
   const sender = track(await senderPage());
-  await signUp(sender, uniqueEmail('cloud'), { add: false });
+  // Cloud needs the device added to the account (a not-added device is read-only, docs/SECURITY_MODEL.md §7).
+  await signUp(sender, uniqueEmail('cloud'));
 
   // TR-3: choose Cloud transfer; the consent dialog shows the estimate first.
   await open(sender, '/send');

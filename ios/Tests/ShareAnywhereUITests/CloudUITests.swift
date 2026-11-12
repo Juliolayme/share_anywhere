@@ -42,7 +42,7 @@ final class CloudUITests: XCTestCase {
         UITest.skipWelcome(app)
         XCTAssertTrue(UITest.id(app, "home").waitForExistence(timeout: 15))
 
-        // Sign up without adding the device (Cloud needs the account only).
+        // Sign up and add this device (Cloud needs an added device: a not-added one is read-only, docs/SECURITY_MODEL.md §7).
         UITest.tab(app, "Settings")
         UITest.id(app, "settings.signin").tap()
         XCTAssertTrue(UITest.id(app, "signin").waitForExistence(timeout: 10))
@@ -56,9 +56,14 @@ final class CloudUITests: XCTestCase {
         pw.typeText(password)
         UITest.id(app, "signup.submit").tap()
         guard UITest.expect(app, UITest.id(app, "trust"), timeout: 30, "after sign-up") else { return }
-        UITest.flip(app, "trust.add", to: false)
         UITest.id(app, "trust.continue").tap()
-        XCTAssertTrue(UITest.id(app, "trust").gone(timeout: 15), "the account sheet closes")
+        XCTAssertTrue(UITest.id(app, "key-setup").waitForExistence(timeout: 30))
+        XCTAssertTrue(UITest.id(app, "key-setup.phrase").waitForExistence(timeout: 60))
+        UITest.flip(app, "key-setup.saved", to: true)
+        UITest.id(app, "key-setup.continue").tap()
+        XCTAssertTrue(UITest.id(app, "checklist").waitForExistence(timeout: 30))
+        UITest.id(app, "checklist.clipboard").tap()
+        XCTAssertTrue(UITest.id(app, "checklist").gone(timeout: 10), "the account sheet closes")
 
         // TR-3: Cloud transfer asks for consent with the estimate and the background line.
         UITest.tab(app, "Transfer")

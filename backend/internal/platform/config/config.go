@@ -44,6 +44,11 @@ type Config struct {
 	// TURNSecret is coturn's static-auth-secret; TURNURIs are the ICE server URIs given to clients.
 	TURNSecret []byte
 	TURNURIs   []string
+	// TURNMetricsURL is coturn's Prometheus exporter (with username labels), read for the relay byte cap per
+	// session; empty disables the cap. GuestRelayCap and AccountRelayCap are the caps in bytes.
+	TURNMetricsURL  string
+	GuestRelayCap   int64
+	AccountRelayCap int64
 	// PublicURL is the Web origin used in join links and QR codes (defaults to the first allowed origin).
 	PublicURL string
 	// MetricsAddr serves Prometheus metrics on a separate internal listener; empty disables it.
@@ -182,6 +187,22 @@ func LoadFrom(lookup Lookup) (Config, error) {
 			continue
 		}
 		cfg.TURNURIs = append(cfg.TURNURIs, u)
+	}
+	cfg.TURNMetricsURL = get("SA_TURN_METRICS_URL", "")
+	if cfg.TURNMetricsURL != "" && !strings.HasPrefix(cfg.TURNMetricsURL, "http://") && !strings.HasPrefix(cfg.TURNMetricsURL, "https://") {
+		errs = append(errs, errors.New("SA_TURN_METRICS_URL must start with http:// or https://"))
+	}
+	for _, c := range []struct {
+		key string
+		def int64
+		dst *int64
+	}{{"SA_GUEST_RELAY_BYTES_CAP", 25_000_000_000, &cfg.GuestRelayCap}, {"SA_ACCOUNT_RELAY_BYTES_CAP", 100_000_000_000, &cfg.AccountRelayCap}} {
+		v, err := strconv.ParseInt(get(c.key, strconv.FormatInt(c.def, 10)), 10, 64)
+		if err != nil || v < 1 {
+			errs = append(errs, fmt.Errorf("%s must be a positive number of bytes", c.key))
+			continue
+		}
+		*c.dst = v
 	}
 	cfg.PublicURL = strings.TrimRight(get("SA_PUBLIC_URL", ""), "/")
 	if cfg.PublicURL == "" && len(cfg.AllowedOrigins) > 0 {

@@ -445,6 +445,16 @@ jobs:
           curl -fsS http://localhost:8080/healthz
           curl -fsS http://localhost:8080/readyz | grep '"database":"ok"'
           curl -fsS http://localhost:8080/ | grep '<title>Share Anywhere</title>'
+      - name: Metrics endpoint is scraped (internal listener, Prometheus text)
+        run: |
+          body=$(curl -fsS http://127.0.0.1:9090/metrics)
+          for m in sa_turn_credentials_issued_total sa_turn_relay_cap_refused_total sa_transfer_route_relay_total sa_transfers_completed_total; do
+            echo "$body" | grep -E "^$m [0-9]" || { echo "missing $m"; exit 1; }
+          done
+          # coturn's exporter, read by the backend for the relay byte cap
+          curl -fsS http://127.0.0.1:9641/metrics | grep -q '^# TYPE turn_'
+          # The metrics listener is not published through the edge proxy.
+          ! curl -fsS http://localhost:8080/metrics | grep -q '^sa_'
       - name: Logs on failure
         if: failure()
         run: docker compose -f docker-compose.ci.yml logs

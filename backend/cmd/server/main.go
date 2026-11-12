@@ -231,11 +231,20 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 		d, err := deviceSvc.Get(ctx, id)
 		return d.DisplayName, d.Platform, err
 	}
-	turn := turncreds.New(turncreds.Config{
+	turnCfg := turncreds.Config{
 		Secret: cfg.TURNSecret, URIs: cfg.TURNURIs, Clock: clk, Auth: shareSvc,
 		GuestLimit: limits.TurnGuest, AcctLimit: limits.TurnAccount, Log: log,
 		IPLimit: limits.TurnIP, IPKey: func(r *http.Request) string { return clientip.Key(ips.FromRequest(r)) },
-	})
+		GuestCap: cfg.GuestRelayCap, AccountCap: cfg.AccountRelayCap,
+		Issued:           reg.Counter("sa_turn_credentials_issued_total", "TURN credentials issued."),
+		CapRefused:       reg.Counter("sa_turn_relay_cap_refused_total", "TURN credentials refused at the session relay byte cap."),
+		UsageUnavailable: reg.Counter("sa_turn_usage_unavailable_total", "Relay cap checks skipped because coturn usage could not be read."),
+	}
+	if cfg.TURNMetricsURL != "" {
+		turnCfg.Scope = shareSvc
+		turnCfg.Usage = &turncreds.CoturnUsage{URL: cfg.TURNMetricsURL, Clock: clk, MaxAge: 10 * time.Second}
+	}
+	turn := turncreds.New(turnCfg)
 	xfers := transfers.New(transfers.Config{Pool: pool, Clock: clk, Sessions: shareSvc, Notify: hub, Metrics: reg, ReportLimit: limits.TransferReport})
 	modules := []func(*access.Router){
 		deviceHTTP.Register,

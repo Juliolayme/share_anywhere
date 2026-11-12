@@ -289,3 +289,29 @@ func (s *Service) TurnParticipant(ctx context.Context, deviceID, sessionID strin
 	}
 	return p.ID, nil
 }
+
+// RelayScope lists every participant of a session, whatever its status now (relay used before a removal still
+// counts toward the session's relay byte cap), and whether its sender is signed in (docs/SECURITY_MODEL.md §5).
+func (s *Service) RelayScope(ctx context.Context, sessionID string) ([]string, bool, error) {
+	if !ValidID(sessionID) {
+		return nil, false, ErrNotFound
+	}
+	var account bool
+	if err := s.cfg.Pool.QueryRow(ctx, `SELECT owner_user_id IS NOT NULL FROM share_sessions WHERE id = $1::uuid`, sessionID).Scan(&account); err != nil {
+		return nil, false, ErrNotFound
+	}
+	rows, err := s.cfg.Pool.Query(ctx, `SELECT id::text FROM session_participants WHERE session_id = $1::uuid`, sessionID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, false, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, account, rows.Err()
+}

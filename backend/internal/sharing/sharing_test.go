@@ -231,6 +231,14 @@ func TestOpenJoinByCodeAndLinkAndSignalingScope(t *testing.T) {
 	if _, err := e.svc.ResolveCode(ctx, sender, s.Code); err == nil {
 		t.Fatal("the sender cannot join its own session")
 	}
+	// The relay byte cap counts every participant of the session (sender and both receivers); a guest sender.
+	ids, account, err := e.svc.RelayScope(ctx, s.ID)
+	if err != nil || account || len(ids) != 3 {
+		t.Fatalf("relay scope %v %v %v", ids, account, err)
+	}
+	if _, _, err := e.svc.RelayScope(ctx, "not-a-uuid"); err == nil {
+		t.Fatal("unknown session")
+	}
 }
 
 func TestApprovalFlowAndToggleAffectsOnlyLaterJoins(t *testing.T) {

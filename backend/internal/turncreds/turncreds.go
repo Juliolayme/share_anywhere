@@ -40,6 +40,15 @@ type Config struct {
 	IPLimit    *ratelimit.Limiter // optional, keyed by address key
 	IPKey      func(*http.Request) string
 	Log        interface{ Error(string, ...any) }
+	// Relay byte cap per session (optional; both Scope and Usage are needed). GuestCap applies when the sender is
+	// a guest, AccountCap when signed in; zero falls back to the defaults.
+	Scope      Scoper
+	Usage      Usage
+	GuestCap   int64
+	AccountCap int64
+	// Counters (optional): credentials issued, refused at the relay cap, and cap checks skipped because coturn's
+	// usage could not be read (the cap fails open: coturn's own quotas still apply).
+	Issued, CapRefused, UsageUnavailable interface{ Inc() }
 }
 
 // Issuer issues credentials.
@@ -99,7 +108,50 @@ func (i *Issuer) issue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if refused := i.overCap(r.Context(), in.SessionID); refused {
+		if i.cfg.CapRefused != nil {
+			i.cfg.CapRefused.Inc()
+		}
+		httpx.Error(w, http.StatusForbidden, "relay_cap_reached", "This session used its relay allowance; only direct connections remain.")
+		return
+	}
 	exp := i.cfg.Clock.Now().Add(ttl)
 	user, cred := Sign(i.cfg.Secret, pid, exp)
+	if i.cfg.Issued != nil {
+		i.cfg.Issued.Inc()
+	}
 	httpx.JSON(w, http.StatusOK, Credentials{Username: user, Credential: cred, URIs: i.cfg.URIs, TTL: int(ttl.Seconds()), ExpiresAt: exp.UTC()})
+}
+
+// overCap reports whether the session's relay traffic has reached its cap. When usage cannot be read the check is
+// skipped (logged and counted): the cap is an abuse guard on top of coturn's quotas, not a gate for every relay.
+func (i *Issuer) overCap(ctx context.Context, sessionID string) bool {
+	if i.cfg.Scope == nil || i.cfg.Usage == nil {
+		return false
+	}
+	ids, account, err := i.cfg.Scope.RelayScope(ctx, sessionID)
+	if err != nil {
+		return false
+	}
+	used, err := i.cfg.Usage.RelayBytes(ctx, ids)
+	if err != nil {
+		if i.cfg.UsageUnavailable != nil {
+			i.cfg.UsageUnavailable.Inc()
+		}
+		if i.cfg.Log != nil {
+			i.cfg.Log.Error("turn usage unavailable", "err", err)
+		}
+		return false
+	}
+	limit := i.cfg.GuestCap
+	if limit <= 0 {
+		limit = DefaultGuestRelayCap
+	}
+	if account {
+		limit = i.cfg.AccountCap
+		if limit <= 0 {
+			limit = DefaultAccountRelayCap
+		}
+	}
+	return used >= limit
 }

@@ -41,6 +41,14 @@ services:
       SA_MAIL_SINK: memory
       # UDP, TCP and TLS on the host-network coturn below (infra/coturn/turnserver.ci.conf, ADR 0029).
       SA_TURN_URIS: turn:127.0.0.1:3478?transport=udp,turn:127.0.0.1:3478?transport=tcp,turns:127.0.0.1:5349?transport=tcp
+      # Relay byte cap per session reads coturn's exporter on the host (docs/SECURITY_MODEL.md section 5).
+      SA_TURN_METRICS_URL: http://host.docker.internal:9641/metrics
+      # Internal Prometheus listener, published on the runner's loopback only for the metrics scrape tests.
+      SA_METRICS_ADDR: ":9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:9090:9090"
     depends_on:
       postgres:
         condition: service_healthy

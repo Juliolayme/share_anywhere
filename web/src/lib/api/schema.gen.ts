@@ -1016,7 +1016,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Time-limited coturn credentials for the sender or a JOINED receiver of an ACTIVE session (guest 30 min, account 60 min). */
+        /**
+         * Time-limited coturn credentials for the sender or a JOINED receiver of an ACTIVE session (guest 30 min, account 60 min).
+         * @description Refused with 403 relay_cap_reached once the session's relay traffic, read from coturn's usage per participant, reaches the cap for its sender (25 GB guest, 100 GB signed in; docs/SECURITY_MODEL.md section 5). Clients then keep only direct connections and tell the user why.
+         */
         post: operations["createTurnCredentials"];
         delete?: never;
         options?: never;
@@ -3599,6 +3602,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             429: components["responses"]["RateLimited"];

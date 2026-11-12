@@ -38,6 +38,13 @@ async function forceRelay(page: Page, step?: 'relay-udp' | 'relay-tls') {
   }, step);
 }
 
+/** A counter from the backend's internal metrics listener (Prometheus text). */
+async function metric(name: string): Promise<number> {
+  const text = await (await fetch(process.env.E2E_METRICS_URL ?? 'http://127.0.0.1:9090/metrics')).text();
+  const line = text.split('\n').find((l) => l.startsWith(`${name} `));
+  return line ? Number(line.split(' ')[1]) : -1;
+}
+
 /** The sender's view of its (only) receiver's route kind. */
 function senderRouteKind(sender: Page, sessionId: string): Promise<string | null> {
   return sender.evaluate((id) => {
@@ -94,6 +101,11 @@ for (const step of ['relay-udp', 'relay-tls'] as const) {
     await expect.poll(() => senderRouteKind(sender, s.id), { timeout: 30_000 }).toMatch(/^relay/);
     await pace(rx, s.id, 0);
     expect(await downloadAndHash(rx, name)).toBe(f.sha256);
+    // The backend's metrics listener (docker-compose.ci.yml) counts the issued credentials and the relayed transfer.
+    await expect.poll(() => metric('sa_transfer_route_relay_total'), { timeout: 30_000 }).toBeGreaterThan(0);
+    expect(await metric('sa_turn_credentials_issued_total')).toBeGreaterThan(0);
+    // The relay byte cap read coturn's per-participant usage for every credential (it fails open otherwise).
+    expect(await metric('sa_turn_usage_unavailable_total')).toBe(0);
   });
 }
 

@@ -155,6 +155,7 @@ All errors use `{"error": "<code>", "message": "<human text>", "retry_after_s": 
 | 403 | `blocked` | Device or IP /64 blocked from this session |
 | 403 | `capability_required`, `receiver_only` | A receiver resumed a transfer without its transfer capability; the sender sent a transfer report |
 | 403 | `cloud_requires_account`, `cloud_consent_required` | Cloud Distribution preconditions |
+| 403 | `relay_cap_reached` | `POST /v1/turn/credentials` once the session's relay traffic reaches its byte cap (`docs/SECURITY_MODEL.md` §5); clients keep direct connections only and say why |
 | 403 | `csrf_header_missing` | Cookie refresh without `X-SA-Refresh: 1` |
 | 403 | `origin_not_allowed` | WebSocket upgrade from an origin outside `SA_ALLOWED_ORIGINS` |
 | 403 | `forbidden` | Only the sender may take this action |

@@ -489,8 +489,23 @@ func TestPresenceDropWhenFull(t *testing.T) {
 
 // TestPresenceCloseStopsWorkers: Close waits for a running hook, stops every worker (no goroutine left
 // behind), discards queued events, makes later socket changes announce nothing, and can be called twice.
+// settledGoroutines waits until goroutines left by earlier tests have exited (the count holds still for 100 ms),
+// so a baseline taken now is not overcounted by one that exits a moment later.
+func settledGoroutines() int {
+	n, stable := runtime.NumGoroutine(), 0
+	for i := 0; i < 100 && stable < 5; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if m := runtime.NumGoroutine(); m == n {
+			stable++
+		} else {
+			n, stable = m, 0
+		}
+	}
+	return n
+}
+
 func TestPresenceCloseStopsWorkers(t *testing.T) {
-	base := runtime.NumGoroutine()
+	base := settledGoroutines()
 	hub := bareHub(io.Discard, nil)
 	started := make(chan struct{})
 	release := make(chan struct{})

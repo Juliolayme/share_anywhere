@@ -79,6 +79,12 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         NSCameraUsageDescription: Scan the sender’s QR code to receive files. The camera is used only while the scanner is open.
+        # Share links: Universal Links on signed device builds (associated domain applinks:<host>, served by Caddy as
+        # apple-app-site-association; real-device checklist) and this scheme for simulator tests. Both only open the
+        # join preview.
+        CFBundleURLTypes:
+          - CFBundleURLName: app.shareanywhere.join
+            CFBundleURLSchemes: [shareanywhere]
         # Home Screen quick action that opens the Clipboard tab (docs/phases/PHASE_7_IOS.md).
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: app.shareanywhere.clipboard

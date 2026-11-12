@@ -26,6 +26,17 @@ https://localhost:8443 {
 		respond `[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"app.shareanywhere","sha256_cert_fingerprints":["{$SA_ANDROID_CERT_SHA256}"]}}]` 200
 	}
 
+	# iOS Universal Links (RX-3): the app ID `<Team ID>.app.shareanywhere` from SA_APPLE_APP_ID
+	# (docs/runbooks/ios-real-device-checklist.md). Unset, the file is not served and links open in the browser.
+	@aasa {
+		path /.well-known/apple-app-site-association
+		expression {env.SA_APPLE_APP_ID} != ""
+	}
+	handle @aasa {
+		header Content-Type application/json
+		respond `{"applinks":{"details":[{"appIDs":["{$SA_APPLE_APP_ID}"],"components":[{"/":"/j/*","comment":"Share links"}]}]}}` 200
+	}
+
 	@api path /v1/* /healthz /readyz
 	handle @api {
 		reverse_proxy backend:8080

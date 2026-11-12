@@ -5,8 +5,9 @@ import { PASSWORD, typeInto, uniqueEmail } from '../account/helpers';
 import { clipboardPage, signUpFromClipboard, syncByPaste } from '../clipboard/helpers';
 import { closeContexts } from '../pairing/helpers';
 
-// Nightly only (nightly.yml clipboard-cross-client, scripts/android-clipboard-interop.sh): encrypted Clipboard Sync
-// between the Web app and the Android app on the emulator (docs/CLIPBOARD_PROTOCOL.md). The Web creates the account and
+// Nightly only: encrypted Clipboard Sync between the Web app and a native app (docs/CLIPBOARD_PROTOCOL.md) — Android on
+// the emulator (clipboard-cross-client, scripts/android-clipboard-interop.sh) or iOS on the simulator (ios-web-interop,
+// scripts/ios-clipboard-interop.sh, which writes the same android-*.txt files). The Web creates the account and
 // its key and syncs an item; Android signs in, adds itself and shows a pairing code (the script writes it to
 // android-pairing.txt); the Web sends the key; Android decrypts the Web's item and syncs one of its own, which the Web
 // decrypts (android-marker.txt).

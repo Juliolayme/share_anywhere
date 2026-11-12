@@ -139,6 +139,21 @@ final class TransferUITests: XCTestCase {
         XCTAssertTrue(UITest.id(again, "history.row.rx:\(view.id)").waitForExistence(timeout: 15))
     }
 
+    func testAShareLinkOpensTheJoinPreview() throws {
+        let sender = try peer("Link Sender")
+        let (view, _, _) = try blocking { try await sender.share(name: "linked.txt", size: 1000) }
+        let token = try XCTUnwrap(view.linkToken)
+        let app = UITest.app()
+        app.launch()
+        UITest.skipWelcome(app)
+        XCTAssertTrue(UITest.id(app, "home").waitForExistence(timeout: 15))
+        guard #available(iOS 16.4, *) else { throw XCTSkip("opening a URL from a UI test needs iOS 16.4") }
+        app.open(URL(string: "shareanywhere://j/\(token)")!)
+        XCTAssertTrue(UITest.id(app, "preview.receive").waitForExistence(timeout: 20), "the link opens the join preview")
+        XCTAssertTrue(app.staticTexts["linked.txt"].exists)
+        XCTAssertTrue(UITest.id(app, "rx-preview").exists, "nothing is joined until Receive is tapped")
+    }
+
     func testTheCodeExpiresCreateNewCodeKeepsTheJoinedReceiver() throws {
         let app = UITest.app(extra: ["-seedSendFiles", "1", "-seedFileBytes", "1000"])
         app.launch()

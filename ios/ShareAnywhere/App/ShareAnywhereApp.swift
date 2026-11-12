@@ -65,6 +65,10 @@ struct RootView: View {
         .overlay(alignment: .topLeading) { if model.config.uiTesting { TestProbes() } }
         .onChange(of: scenePhase) { model.hub.scenePhase($0) }
         .onChange(of: settings.keepScreenOn) { model.keepAwake.setEnabled($0) }
+        .onOpenURL { model.openLink($0) }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { model.openLink(url) }
+        }
         .onChange(of: quick.pending) { action in
             guard action == QuickActions.clipboard, model.config.clipboard else { return }
             settings.welcomed = true

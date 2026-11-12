@@ -88,6 +88,31 @@ final class AppModel: ObservableObject {
 
     func retryIdentity() { Task { await identity.bootstrap() } }
 
+    /// A share link (RX-3): a Universal Link `<public origin>/j/<token>` on devices, or `shareanywhere://j/<token>`
+    /// (simulator tests). Opens the join preview; joining stays a tap away, never automatic.
+    func openLink(_ url: URL) {
+        var text = url.absoluteString
+        if url.scheme?.lowercased() == "shareanywhere" {
+            let parts = ([url.host ?? ""] + url.pathComponents.filter { $0 != "/" }).filter { !$0.isEmpty }
+            guard parts.count == 2, parts[0] == "j" else { return toast = L10n.t("product.link_invalid") }
+            let origin = config.publicURL.absoluteString.hasSuffix("/") ? String(config.publicURL.absoluteString.dropLast()) : config
+                .publicURL.absoluteString
+            text = origin + "/j/" + parts[1]
+        }
+        guard let token = JoinInput.linkToken(text, publicOrigin: config.publicURL) else { return toast = L10n.t("product.link_invalid") }
+        settings.welcomed = true
+        tab = .home
+        Task {
+            do {
+                let preview = try await hub.services.resolveLink(token)
+                previews[preview.sessionId] = preview
+                homePath = [.preview(preview.sessionId)]
+            } catch {
+                toast = JoinErrors.message(error)
+            }
+        }
+    }
+
     func dismissReplaced() { Task { await identity.dismissReplaced() } }
 
     func rename(_ name: String) async -> Bool {

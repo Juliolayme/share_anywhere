@@ -3,7 +3,9 @@ import XCTest
 /// iOS ↔ Web interop (nightly `ios-web-interop`, scripts/ios-interop.sh, docs/TESTING_AND_CI.md §2.4): a 64 MB file
 /// each way between the app on the simulator and the Web app in Playwright Chromium, with SHA-256 checks on both ends.
 /// The script passes values through `TEST_RUNNER_INTEROP_*` (Web → iOS) and the "SA-INTEROP" line this test prints
-/// (iOS → Web). The ios-simulator job leaves this class out (`-skip-testing`); only the interop job runs it.
+/// (iOS → Web). `testExchangesClipboardItemsWithTheWeb` is the iOS half of clipboard-cross-client
+/// (scripts/ios-clipboard-interop.sh). The ios-simulator job leaves this class out (`-skip-testing`); only the interop
+/// job runs it.
 final class InteropUITests: XCTestCase {
     private var env: [String: String] { ProcessInfo.processInfo.environment }
 
@@ -50,5 +52,48 @@ final class InteropUITests: XCTestCase {
         print("SA-INTEROP code=\(code) sha256=\(sha) name=sa-seed-1.bin")
         XCTAssertTrue(UITest.id(app, "dashboard-done").waitForExistence(timeout: 14 * 60), "the Web receiver got the file")
         shot(app, "interop-dashboard-done")
+    }
+
+    /// Encrypted Clipboard Sync with the Web (docs/CLIPBOARD_PROTOCOL.md): the Web created the account, its key and an
+    /// item; the app signs in, adds itself, prints its pairing code for the Web, decrypts the Web's item, and syncs one
+    /// of its own, which the Web decrypts.
+    func testExchangesClipboardItemsWithTheWeb() throws {
+        let email = try XCTUnwrap(env["INTEROP_EMAIL"])
+        let password = try XCTUnwrap(env["INTEROP_PASSWORD"])
+        let webMarker = try XCTUnwrap(env["INTEROP_WEB_MARKER"])
+        let app = UITest.app()
+        app.launch()
+        UITest.skipWelcome(app)
+        UITest.tab(app, "Settings")
+        UITest.id(app, "settings.signin").tap()
+        let field = UITest.id(app, "signin.email")
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        field.tap()
+        field.typeText(email)
+        let pw = UITest.id(app, "signin.password")
+        pw.tap()
+        pw.typeText(password)
+        UITest.id(app, "signin.submit").tap()
+        XCTAssertTrue(UITest.id(app, "trust").waitForExistence(timeout: 30))
+        UITest.id(app, "trust.continue").tap()
+        let code = UITest.id(app, "key-pair.code")
+        XCTAssertTrue(code.waitForExistence(timeout: 60))
+        // scripts/ios-clipboard-interop.sh hands this to the Web, which sends its key.
+        print("SA-CLIP pair=\(code.value as? String ?? "")")
+        XCTAssertTrue(UITest.id(app, "checklist").waitForExistence(timeout: 5 * 60), "the Web's key arrived and verified")
+        UITest.id(app, "checklist.clipboard").tap()
+        let webRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", webMarker)).firstMatch
+        XCTAssertTrue(webRow.waitForExistence(timeout: 120), "the Web's item decrypts on iOS")
+        let mine = "from-ios-\(Int(Date().timeIntervalSince1970))"
+        UIPasteboard.general.string = mine
+        let paste = app.buttons["Paste"].firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: 10))
+        paste.tap()
+        let myRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", mine)).firstMatch
+        XCTAssertTrue(myRow.waitForExistence(timeout: 60))
+        print("SA-CLIP marker=\(mine)")
+        shot(app, "interop-clipboard")
+        // Give the Web time to read it before the app goes away.
+        RunLoop.current.run(until: Date().addingTimeInterval(20))
     }
 }

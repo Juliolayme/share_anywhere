@@ -13,6 +13,7 @@ on:
       - 'scripts/android-interop.sh'
       - 'scripts/android-clipboard-interop.sh'
       - 'scripts/ios-interop.sh'
+      - 'scripts/ios-clipboard-interop.sh'
       - 'ios/Tests/ShareAnywhereUITests/**'
       - '.github/workflows/ios-simulator.yml'
       # The API 29 / 35 matrix re-checks instrumentation test changes made on a branch.
@@ -427,6 +428,12 @@ jobs:
           E2E_FIXTURE_DIR: ${{ runner.temp }}/fixtures
           INTEROP_DIR: ${{ runner.temp }}/interop
         run: bash scripts/ios-interop.sh
+      - name: Clipboard both ways (iOS half of clipboard-cross-client)
+        if: always()
+        env:
+          SIM_UDID: ${{ steps.sim.outputs.udid }}
+          CLIP_INTEROP_DIR: ${{ runner.temp }}/clipboard-interop
+        run: bash scripts/ios-clipboard-interop.sh
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
@@ -437,6 +444,7 @@ jobs:
             web/playwright-report
             web/test-results
             ${{ runner.temp }}/interop
+            ${{ runner.temp }}/clipboard-interop
             backend.log
             caddy.log
           retention-days: 7

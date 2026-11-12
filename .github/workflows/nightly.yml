@@ -121,6 +121,47 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
 
+  abuse-soak:
+    # docs/SECURITY_MODEL.md §3.2 and §5, docs/ADR/0031-abuse-soak.md: the in-process load generator
+    # (backend/cmd/server/soak_test.go) at production limits and five times the default number of open sessions:
+    # Sybil device creation, CGNAT, a distributed burst until protected mode trips, a slow attack just under the
+    # alarm for one join window, a lone address; legitimate guests on other addresses during the attack.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: shareanywhere
+          POSTGRES_USER: shareanywhere
+          POSTGRES_PASSWORD: ci-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U shareanywhere -d shareanywhere"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://shareanywhere:ci-password@localhost:5432/shareanywhere?sslmode=disable
+      SOAK_SCALE: '5'
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Abuse soak
+        run: SOAK_REPORT="$RUNNER_TEMP/abuse-soak.json" go test -count=1 -v -run 'TestAbuseSoak|TestIDORSweep' ./cmd/server/
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: abuse-soak
+          path: ${{ runner.temp }}/abuse-soak.json
+          if-no-files-found: ignore
+          retention-days: 30
+
   mobile-snapshots:
     # Generates the mobile visual baselines on the runner (fonts must match CI) and uploads them to commit.
     runs-on: ubuntu-latest

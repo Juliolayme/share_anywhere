@@ -34,3 +34,4 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0028](0028-ios-paste-control-testing.md) | Testing iOS's Paste control and pasteboard reads | Accepted |
 | [0029](0029-turn-tls-and-test-relay.md) | TURN over TLS, and a loopback relay for tests | Accepted |
 | [0030](0030-cloud-distribution.md) | Cloud Distribution through a server-proxied, S3-compatible store | Accepted |
+| [0031](0031-abuse-soak.md) | Abuse soak, and the code-guessing alarm | Accepted |

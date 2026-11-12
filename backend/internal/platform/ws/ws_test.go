@@ -377,19 +377,29 @@ func TestPresenceOrderAcrossSockets(t *testing.T) {
 		}
 	}
 	wg.Wait()
-	// One device left connected at the end: its last event must say so.
+	// One device left connected at the end: its last event must say so. Events are delivered asynchronously,
+	// so wait until every device's final state has arrived (dev-a connected, dev-b and dev-c disconnected) before
+	// checking the order; waiting for dev-a alone raced with the delivery of the others' last events.
 	last := bareConn("dev-a")
 	hub.add(last)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	settled := func() bool {
 		mu.Lock()
-		evs := append([]bool(nil), seen["dev-a"]...)
-		mu.Unlock()
-		if len(evs) > 0 && evs[len(evs)-1] {
-			break
+		defer mu.Unlock()
+		for _, d := range devices {
+			evs := seen[d]
+			if len(evs) == 0 || evs[len(evs)-1] != (d == "dev-a") {
+				return false
+			}
 		}
+		return true
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !settled() {
 		if time.Now().After(deadline) {
-			t.Fatalf("dev-a never announced its final connection (%d events)", len(evs))
+			mu.Lock()
+			n := len(seen["dev-a"])
+			mu.Unlock()
+			t.Fatalf("final presence never settled (dev-a has %d events)", n)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

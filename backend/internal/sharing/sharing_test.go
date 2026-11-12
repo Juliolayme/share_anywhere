@@ -530,22 +530,29 @@ func TestLookupLimitsAndLockouts(t *testing.T) {
 	// Per address: 10 failed lookups per hour from many devices, then a 30-minute lockout.
 	ip := "203.0.113.9"
 	var err error
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 10; i++ { // exactly the allowance: each one is an ordinary miss
 		c := e.device(fmt.Sprintf("d%d", i))
 		c.IPKey = ip
 		e.clk.Advance(7 * time.Second) // stay under the per-minute lookup limit
 		_, err = e.svc.ResolveCode(ctx, c, "999999")
+		wantCode(t, err, "code_not_found")
 	}
+	c11 := e.device("d10")
+	c11.IPKey = ip
+	_, err = e.svc.ResolveCode(ctx, c11, "999999") // the 11th is refused before it is looked up
 	var se *Error
 	if !errors.As(err, &se) || se.Code != "locked_out" || se.Wait <= 0 {
-		t.Fatalf("address lockout: %v", err)
+		t.Fatalf("address lockout after 10 failures: %v", err)
 	}
-	// Per device: 5 failures in 10 minutes.
+	// Per device: 5 failures in 10 minutes, then locked out.
 	d := e.device("solo")
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 5; i++ {
 		e.clk.Advance(13 * time.Second)
 		_, err = e.svc.ResolveCode(ctx, d, "999998")
+		wantCode(t, err, "code_not_found")
 	}
+	e.clk.Advance(13 * time.Second)
+	_, err = e.svc.ResolveCode(ctx, d, "999998")
 	wantCode(t, err, "locked_out")
 	e.clk.Advance(LockoutDuration + time.Minute)
 	_, err = e.svc.ResolveCode(ctx, d, "999998")

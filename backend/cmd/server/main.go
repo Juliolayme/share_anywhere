@@ -198,6 +198,8 @@ type app struct {
 	xfers   *transfers.Service
 	// s3 is the Cloud Distribution object store when it is an S3 endpoint (its bucket is ensured at start).
 	s3 *objectstore.S3
+	// protected is the code-guessing circuit breaker (docs/SECURITY_MODEL.md §3.1); the abuse soak reads it.
+	protected *sharing.ProtectedMode
 }
 
 // cloudConfig builds the Cloud Distribution settings (nil while SA_CLOUD_ENABLED is off, the default).
@@ -295,7 +297,7 @@ func newApp(cfg config.Config, pool *pgxpool.Pool, store devices.Store, clk cloc
 		Modules: modules,
 	})
 	return &app{handler: h, router: router, devices: deviceSvc, tokens: tokens, auth: authSvc, sharing: shareSvc, hub: hub, metrics: reg,
-		xfers: xfers, s3: s3}, nil
+		xfers: xfers, s3: s3, protected: protected}, nil
 }
 
 // newMailer picks the password-reset mail sink (SA_MAIL_SINK). The console sink logs links only in

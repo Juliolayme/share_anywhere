@@ -35,13 +35,15 @@ func (s *Service) failedLookup(c Caller) {
 	now := s.cfg.Clock.Now()
 	s.m.lookupsFailed.Inc()
 	s.mu.Lock()
-	if ok, _ := s.cfg.Limits.FailedIP.Allow(c.IPKey); !ok {
+	// The failure that uses up the allowance starts the lockout, so at most the documented number of failures get
+	// through (10 per hour per address, 5 per 10 minutes per device), never one more.
+	if ok, _ := s.cfg.Limits.FailedIP.Allow(c.IPKey); !ok || !s.cfg.Limits.FailedIP.Peek(c.IPKey) {
 		if _, locked := s.lockout["ip:"+c.IPKey]; !locked {
 			s.m.lockouts.Inc()
 		}
 		s.lockout["ip:"+c.IPKey] = now.Add(LockoutDuration)
 	}
-	if ok, _ := s.cfg.Limits.FailedDevice.Allow(c.DeviceID); !ok {
+	if ok, _ := s.cfg.Limits.FailedDevice.Allow(c.DeviceID); !ok || !s.cfg.Limits.FailedDevice.Peek(c.DeviceID) {
 		if _, locked := s.lockout["dev:"+c.DeviceID]; !locked {
 			s.m.lockouts.Inc()
 		}

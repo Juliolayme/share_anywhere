@@ -16,6 +16,8 @@
 //
 // The Android app's slice (android, android_*, common, phrases, product, handoff) is also written as string resources:
 //   android/app/src/main/res/values/strings.xml and values-vi/strings.xml ("ns.key" -> ns_key).
+// The iOS app's slice (ios, ios_*, common, phrases, product, handoff) is written as one String Catalog:
+//   ios/ShareAnywhere/Resources/Localizable.xcstrings (keys "ns.key").
 //
 //   node scripts/gen-i18n.mjs           write shared/i18n/en.json, vi.json and the Android string resources
 //   node scripts/gen-i18n.mjs --check   fail if any of them is out of date or EN/VI keys differ
@@ -363,12 +365,45 @@ export function renderAndroidStrings(catalog) {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// iOS: the iOS slice (ios, ios_*, common, phrases, product, handoff) as one String Catalog,
+// ios/ShareAnywhere/Resources/Localizable.xcstrings, keys "ns.key" as in the catalogs. {placeholders} stay text; the
+// app fills them (ios/ShareAnywhere/Design/L10n.swift), as Android does, so no value is a printf format.
+
+const IOS_STRINGS = join(ROOT, 'ios/ShareAnywhere/Resources/Localizable.xcstrings');
+
+export function isIosNamespace(ns) {
+  return ns === 'ios' || ns.startsWith('ios_') || ['common', 'phrases', 'product', 'handoff'].includes(ns);
+}
+
+/** The iOS slice of one locale's catalog as {flatKey: text}. */
+export function iosStrings(catalog) {
+  const out = {};
+  for (const [ns, table] of Object.entries(catalog)) {
+    if (!isIosNamespace(ns) || typeof table !== 'object') continue;
+    Object.assign(out, flatten(table, ns));
+  }
+  return out;
+}
+
+export function renderXcstrings(catalogs) {
+  const en = iosStrings(catalogs.en);
+  const vi = iosStrings(catalogs.vi);
+  const strings = {};
+  for (const key of Object.keys(en).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const unit = (value) => ({ stringUnit: { state: 'translated', value } });
+    strings[key] = { comment: HEADER, extractionState: 'manual', localizations: { en: unit(en[key]), vi: unit(vi[key] ?? en[key]) } };
+  }
+  return JSON.stringify({ sourceLanguage: 'en', strings, version: '1.0' }, null, 2) + '\n';
+}
+
 /** Every generated file with its expected content. */
 export function generatedFiles(catalogs) {
   return [
     ...['en', 'vi'].map((locale) => [join(OUT, `${locale}.json`), render(locale, catalogs[locale])]),
     [join(ANDROID_RES, 'values/strings.xml'), renderAndroidStrings(catalogs.en)],
     [join(ANDROID_RES, 'values-vi/strings.xml'), renderAndroidStrings(catalogs.vi)],
+    [IOS_STRINGS, renderXcstrings(catalogs)],
   ];
 }
 
@@ -400,7 +435,7 @@ function main(argv) {
     }
   }
   if (stale) process.exit(1);
-  if (check) console.log(`i18n: EN/VI catalogs current, ${Object.keys(flatten(catalogs.en)).length} keys each, placeholders match; Android string resources current.`);
+  if (check) console.log(`i18n: EN/VI catalogs current, ${Object.keys(flatten(catalogs.en)).length} keys each, placeholders match; Android string resources and the iOS String Catalog current.`);
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : '';

@@ -59,6 +59,8 @@ jobs:
               - 'android/app/src/main/java/app/shareanywhere/ui/theme/Tokens.kt'
               - 'android/app/src/main/java/app/shareanywhere/data/api/Api.gen.kt'
               - 'ios/ShareAnywhereCore/Sources/SAAPIClient/API.gen.swift'
+              - 'ios/ShareAnywhere/Design/Tokens.gen.swift'
+              - 'ios/ShareAnywhere/Resources/Localizable.xcstrings'
             android:
               - *common
               - 'android/**'
@@ -72,6 +74,9 @@ jobs:
               - 'shared/**'
               - 'scripts/protocol.mjs'
               - 'scripts/ios-tools.sh'
+              - 'scripts/gen-tokens.mjs'
+              - 'scripts/gen-i18n.mjs'
+              - 'design/**'
               - 'web/src/lib/crypto/bip39-english.txt'
             docs:
               - *common

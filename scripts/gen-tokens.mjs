@@ -3,12 +3,12 @@
 //
 //   node scripts/gen-tokens.mjs            write generated files
 //   node scripts/gen-tokens.mjs --check    fail if generated files are out of date (CI)
-//   node scripts/gen-tokens.mjs --target css|kotlin|swift   (default: css and kotlin)
+//   node scripts/gen-tokens.mjs --target css|kotlin|swift   (default: all three)
 //
 // Targets:
 //   css     web/src/styles/tokens.css and web/src/styles/tokens.ts (implemented, Phase 0)
 //   kotlin  android/app/src/main/java/app/shareanywhere/ui/theme/Tokens.kt (implemented, Phase 6)
-//   swift   ios/ShareAnywhereCore/Sources/DesignTokens/Tokens.swift (hook, implemented in Phase 7)
+//   swift   ios/ShareAnywhere/Design/Tokens.gen.swift (implemented, Phase 7; SwiftUI, so in the app target, not Core)
 import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { dirname, join, relative } from 'node:path';
@@ -250,21 +250,122 @@ export function renderKotlin(t) {
   return L.join('\n');
 }
 
+/** "#0A6FD6" or "rgba(16, 42, 86, 0.32)" -> "Color(.sRGB, red: …, green: …, blue: …, opacity: …)". */
+export function swiftColor(value) {
+  const f = (n) => num(Math.round((n / 255) * 10000) / 10000);
+  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+  if (hex) {
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16));
+    return `Color(.sRGB, red: ${f(r)}, green: ${f(g)}, blue: ${f(b)}, opacity: 1)`;
+  }
+  const rgba = /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\s*\)$/.exec(value);
+  if (rgba) return `Color(.sRGB, red: ${f(Number(rgba[1]))}, green: ${f(Number(rgba[2]))}, blue: ${f(Number(rgba[3]))}, opacity: ${num(Number(rgba[4]))})`;
+  throw new Error(`Unsupported color value for Swift: ${value}`);
+}
+
+const swiftWeight = (w) => ({ 100: '.ultraLight', 200: '.thin', 300: '.light', 400: '.regular', 500: '.medium', 600: '.semibold', 700: '.bold', 800: '.heavy', 900: '.black' })[Number(w)] ?? '.regular';
+
+export function renderSwift(t) {
+  const colorNames = Object.keys(t.color.light);
+  const L = [];
+  L.push(`// ${HEADER}`);
+  L.push('// swiftlint:disable all');
+  L.push('// swiftformat:disable all');
+  L.push('');
+  L.push('import SwiftUI');
+  L.push('');
+  L.push('/// One theme of the design-token colour roles (docs/DESIGN_SYSTEM.md); names follow tokens.json in camelCase.');
+  L.push('struct SAPalette: Sendable {');
+  for (const k of colorNames) L.push(`    let ${kotlinName(k)}: Color`);
+  L.push('');
+  L.push('    /// Every colour keyed by its tokens.json name, for consistency tests.');
+  L.push('    var byToken: [String: Color] {');
+  L.push('        [');
+  for (const k of colorNames) L.push(`            "${k}": ${kotlinName(k)},`);
+  L.push('        ]');
+  L.push('    }');
+  L.push('}');
+  L.push('');
+  L.push('/// A type-scale step: size and line height in points, weight, and the font family role (sans or mono).');
+  L.push('struct SATypeStyle: Sendable {');
+  L.push('    let size: CGFloat');
+  L.push('    let line: CGFloat');
+  L.push('    let weight: Font.Weight');
+  L.push('    let mono: Bool');
+  L.push('}');
+  L.push('');
+  L.push('enum SATokens {');
+  L.push(`    static let version = ${t.version}`);
+  for (const theme of ['light', 'dark']) {
+    L.push('');
+    L.push(`    static let ${theme} = SAPalette(`);
+    colorNames.forEach((k, i) => L.push(`        ${kotlinName(k)}: ${swiftColor(t.color[theme][k])}${i < colorNames.length - 1 ? ',' : ''}`));
+    L.push('    )');
+  }
+  L.push('');
+  L.push('    enum Brand {');
+  for (const [k, v] of Object.entries(t.brand)) L.push(`        static let ${kotlinName(k)} = ${swiftColor(v)}`);
+  L.push('    }');
+  L.push('');
+  L.push('    enum TypeScale {');
+  for (const [k, ty] of Object.entries(t.font.type)) {
+    L.push(`        static let ${kotlinName(k)} = SATypeStyle(size: ${num(px(ty.size))}, line: ${num(px(ty.line))}, weight: ${swiftWeight(ty.weight)}, mono: ${ty.family === 'mono'})`);
+  }
+  L.push('    }');
+  L.push('');
+  L.push('    /// Spacing scale: s1 = space "1" (4 pt), s4 = space "4" (16 pt), and so on.');
+  L.push('    enum Space {');
+  for (const [k, v] of Object.entries(t.space)) L.push(`        static let s${k}: CGFloat = ${num(px(v))}`);
+  L.push('    }');
+  L.push('');
+  L.push('    enum Radius {');
+  for (const [k, v] of Object.entries(t.radius)) L.push(`        static let ${kotlinName(k)}: CGFloat = ${num(px(v))}`);
+  L.push('    }');
+  L.push('');
+  L.push('    enum Border {');
+  for (const [k, v] of Object.entries(t.border)) L.push(`        static let ${kotlinName(k)}: CGFloat = ${num(px(v))}`);
+  L.push('    }');
+  L.push('');
+  L.push('    /// Control heights.');
+  L.push('    enum Control {');
+  for (const [k, v] of Object.entries(t.control)) L.push(`        static let ${kotlinName(k)}: CGFloat = ${num(px(v))}`);
+  L.push('    }');
+  L.push('');
+  const tt = /^([0-9.]+)pt$/.exec(t.touchTarget.ios);
+  if (!tt) throw new Error(`touchTarget.ios must be in pt, got ${t.touchTarget.ios}`);
+  L.push('    /// Minimum touch target on iOS (touchTarget.ios).');
+  L.push(`    static let touchTarget: CGFloat = ${num(Number(tt[1]))}`);
+  L.push('');
+  L.push('    /// Shadow radius per elevation level, from the y offset of each CSS shadow (none = 0).');
+  for (const theme of ['light', 'dark']) {
+    if (theme === 'dark') L.push('');
+    L.push(`    enum Elevation${pascal(theme)} {`);
+    for (const [k, v] of Object.entries(t.elevation[theme])) L.push(`        static let ${kotlinName(k)}: CGFloat = ${num(shadowElevation(v))}`);
+    L.push('    }');
+  }
+  L.push('');
+  L.push('    /// Motion durations in seconds (use none when Reduce Motion is on).');
+  L.push('    enum Motion {');
+  for (const [k, v] of Object.entries(t.motion.duration)) L.push(`        static let ${kotlinName(k)}: Double = ${num(ms(v) / 1000)}`);
+  L.push('    }');
+  L.push('}');
+  L.push('');
+  return L.join('\n');
+}
+
 const TARGETS = {
   css: (t) => [
     [join(ROOT, 'web/src/styles/tokens.css'), renderCss(t)],
     [join(ROOT, 'web/src/styles/tokens.ts'), renderTs(t)],
   ],
   kotlin: (t) => [[join(ROOT, 'android/app/src/main/java/app/shareanywhere/ui/theme/Tokens.kt'), renderKotlin(t)]],
-  swift: () => {
-    throw new Error('Swift token generation is implemented in Phase 7 (iOS). See docs/phases/PHASE_7_IOS.md.');
-  },
+  swift: (t) => [[join(ROOT, 'ios/ShareAnywhere/Design/Tokens.gen.swift'), renderSwift(t)]],
 };
 
 function main(argv) {
   const check = argv.includes('--check');
   const ti = argv.indexOf('--target');
-  const targets = ti >= 0 ? [argv[ti + 1]] : ['css', 'kotlin'];
+  const targets = ti >= 0 ? [argv[ti + 1]] : ['css', 'kotlin', 'swift'];
   const tokens = loadTokens();
 
   const schemaErrors = validateTokens(tokens);

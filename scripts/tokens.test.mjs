@@ -66,3 +66,18 @@ test('Kotlin tokens carry every colour in both themes, ARGB with alpha for rgba 
   assert.ok(kt.includes('val TouchTarget: Dp = 48.dp'));
   assert.ok(kt.includes('val S4: Dp = 16.dp'));
 });
+
+test('generated Swift declares both palettes with every colour role and the iOS touch target', async () => {
+  const { renderSwift, swiftColor } = await import('./gen-tokens.mjs');
+  const t = loadTokens();
+  const sw = renderSwift(t);
+  for (const k of Object.keys(t.color.light)) {
+    const name = k.replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase());
+    assert.ok(sw.includes(`    let ${name}: Color`), `SAPalette has ${name}`);
+    assert.ok(sw.includes(`            "${k}": ${name},`), `byToken maps ${k}`);
+  }
+  assert.ok(sw.includes('static let light = SAPalette(') && sw.includes('static let dark = SAPalette('));
+  assert.ok(sw.includes('static let touchTarget: CGFloat = 44'));
+  assert.equal(swiftColor('#FF0000'), 'Color(.sRGB, red: 1, green: 0, blue: 0, opacity: 1)');
+  assert.equal(swiftColor('rgba(0, 0, 255, 0.5)'), 'Color(.sRGB, red: 0, green: 0, blue: 1, opacity: 0.5)');
+});

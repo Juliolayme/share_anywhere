@@ -125,3 +125,17 @@ test('the Android slice holds the guest shell strings in both languages', async 
   assert.equal(en.android_yy_s_wake, 'Keep screen on during transfers');
   assert.ok(en.product_welcome_android_p.startsWith('Send 4–20 GB'));
 });
+
+test('the iOS String Catalog carries the iOS slice in EN and VI with placeholders as text', async () => {
+  const { buildCatalogs, renderXcstrings, isIosNamespace } = await import('./gen-i18n.mjs');
+  const catalogs = buildCatalogs();
+  const doc = JSON.parse(renderXcstrings(catalogs));
+  assert.equal(doc.sourceLanguage, 'en');
+  const keys = Object.keys(doc.strings);
+  assert.ok(keys.length > 500);
+  assert.ok(keys.every((k) => isIosNamespace(k.split('.')[0])), 'only the iOS slice');
+  assert.ok(!keys.some((k) => k.startsWith('android')), 'no Android strings');
+  const sample = doc.strings[keys.find((k) => k.startsWith('ios.'))];
+  assert.equal(sample.extractionState, 'manual');
+  assert.ok(sample.localizations.en.stringUnit.value && sample.localizations.vi.stringUnit.value);
+});

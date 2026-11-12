@@ -12,7 +12,8 @@ let package = Package(
         .library(name: "Protocol", targets: ["SAProtocol"]),
         .library(name: "TransferEngine", targets: ["SATransferEngine"]),
         .library(name: "ClipboardCrypto", targets: ["SAClipboardCrypto"]),
-        .library(name: "APIClient", targets: ["SAAPIClient"])
+        .library(name: "APIClient", targets: ["SAAPIClient"]),
+        .library(name: "Store", targets: ["SAStore"])
     ],
     dependencies: [
         // CryptoKit on Apple platforms (swift-crypto re-exports it there), BoringSSL-backed elsewhere.
@@ -39,10 +40,14 @@ let package = Package(
             resources: [.copy("Resources/bip39-english.txt")]
         ),
         .target(name: "SAAPIClient", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),
+        .systemLibrary(name: "CSQLite", path: "Sources/CSQLite", providers: [.apt(["libsqlite3-dev"])]),
+        // Apple platforms use the SDK's SQLite3 module; Linux (tests in the cloud session) the system library.
+        .target(name: "SAStore", dependencies: [.target(name: "CSQLite", condition: .when(platforms: [.linux]))]),
         .testTarget(name: "SAProtocolTests", dependencies: ["SAProtocol"]),
         .testTarget(name: "SATransferEngineTests", dependencies: ["SATransferEngine"]),
         .testTarget(name: "SAClipboardCryptoTests", dependencies: ["SAClipboardCrypto"]),
-        .testTarget(name: "SAAPIClientTests", dependencies: ["SAAPIClient"])
+        .testTarget(name: "SAAPIClientTests", dependencies: ["SAAPIClient"]),
+        .testTarget(name: "SAStoreTests", dependencies: ["SAStore"])
     ],
     swiftLanguageModes: [.v6]
 )

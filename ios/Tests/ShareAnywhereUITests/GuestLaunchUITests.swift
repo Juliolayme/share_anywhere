@@ -39,7 +39,8 @@ final class GuestLaunchUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         // Put the cursor at the end, delete the current name, type the new one.
         let current = field.value as? String ?? ""
-        field.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
+        field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5) || field.hasFocus)
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
         field.typeText("Kitchen iPhone")
         UITest.id(app, "rename.save").tap()

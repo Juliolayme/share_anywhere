@@ -23,6 +23,7 @@ final class HistorySettingsUITests: XCTestCase {
         UITest.id(app, "history.chip.All").tap()
 
         received.tap()
+        if !UITest.id(app, "history-detail").waitForExistence(timeout: 5) { received.tap() }
         XCTAssertTrue(UITest.id(app, "history-detail").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["holiday-photos.zip"].exists)
         shot(app, "history-detail")
@@ -35,9 +36,14 @@ final class HistorySettingsUITests: XCTestCase {
         UITest.tab(again, "History")
         XCTAssertTrue(UITest.id(again, "history.row.rx:ui-1").waitForExistence(timeout: 10))
 
-        // Delete one from its detail sheet.
-        UITest.id(again, "history.row.tx:ui-2").tap()
-        UITest.id(again, "history-detail.delete").tap()
+        // Delete one from its detail sheet (the first tap can land while the list is still loading: tap again).
+        let row = UITest.id(again, "history.row.tx:ui-2")
+        row.tap()
+        if !UITest.id(again, "history-detail").waitForExistence(timeout: 5) { row.tap() }
+        let delete = UITest.id(again, "history-detail.delete")
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        shot(again, "history-detail-failed")
+        delete.tap()
         XCTAssertTrue(UITest.id(again, "history.row.tx:ui-2").gone(timeout: 5))
     }
 

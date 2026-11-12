@@ -72,7 +72,7 @@ final class PasteboardAccess: ObservableObject {
     /// The fallback Sync button: a programmatic read, which iOS confirms with its paste prompt.
     func readString() -> String? {
         reads += 1
-        defer { trace += UIPasteboard.general.hasStrings ? " read" : " empty" }
+        defer { lastRead = UIPasteboard.general.hasStrings ? "read" : "empty" }
         // Seen before iOS's prompt takes the app out of the active state, so coming back does not count as a change.
         if observer != nil { lastCount = UIPasteboard.general.changeCount }
         return UIPasteboard.general.string
@@ -103,8 +103,9 @@ final class PasteboardAccess: ObservableObject {
         return flagged ?? false
     }
 
-    /// `-uiTesting` probe: the last step of a pasteboard read (no content).
+    /// `-uiTesting` probe: the last `detectPatterns` answer and the last read (no content).
     @Published private(set) var trace = ""
+    @Published private(set) var lastRead = ""
 
     func write(_ text: String) {
         UIPasteboard.general.string = text

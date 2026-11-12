@@ -69,6 +69,8 @@ build and result next to each item. Nothing here has been run yet (Phase 7).
 - [ ] Copy text in another app, return to Share Anywhere: iOS asks to allow the paste; Allow syncs the item, Don't
       Allow leaves the "You copied something new" hint.
 - [ ] Copy a join code with Copy code, switch apps and come back: nothing is synced and no hint is shown.
+- [ ] Copy a six-digit number in another app with Skip sensitive content on and return: it is skipped without a
+      paste prompt (`detectPatterns` answered within one second, ADR 0028).
 - [ ] Copy text on a Mac signed in to the same Apple ID (Universal Clipboard) while the app is open, then switch away
       and back: record whether it is captured.
 

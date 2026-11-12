@@ -31,3 +31,4 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0025](0025-ios-storage-and-bookmarks.md) | iOS storage (SQLite History in Core) and security-scoped bookmarks | Accepted |
 | [0026](0026-ios-webrtc-dependency.md) | WebRTC on iOS (StreamWebRTC) | Accepted |
 | [0027](0027-ios-background-policy.md) | iOS background policy for transfers | Accepted |
+| [0028](0028-ios-paste-control-testing.md) | Testing iOS's Paste control and pasteboard reads | Accepted |

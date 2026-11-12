@@ -217,6 +217,31 @@ final class ReporterTests: XCTestCase {
         await r.dispose()
     }
 
+    /// Progress that arrives inside the interval is not lost: it goes out when the interval ends, with the latest bytes.
+    func testProgressInsideTheIntervalIsSentWhenItEnds() async throws {
+        let sink = BytesSink()
+        let r = Reporter(sink: sink, intervalMs: 200)
+        await r.seed("t", "TRANSFERRING", 0)
+        await r.progress("t", 1)
+        try await Task.sleep(nanoseconds: 60_000_000)
+        await r.progress("t", 4)
+        await r.progress("t", 5)
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(sink.all, [1, 5])
+        await r.dispose()
+    }
+
+    final class BytesSink: ReportSink, @unchecked Sendable {
+        let lock = NSLock()
+        var sent: [Int64] = []
+        func report(transferId _: String, status: String, verifiedBytes: Int64, route _: String?) async throws -> String {
+            lock.locked { sent.append(verifiedBytes) }
+            return status
+        }
+
+        var all: [Int64] { lock.locked { sent } }
+    }
+
     final class SlowSink: ReportSink, @unchecked Sendable {
         let lock = NSLock()
         var sent: [String] = []

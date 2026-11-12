@@ -50,7 +50,6 @@ func nextStep(for status: KeyStatus) -> AccountSheet.Step {
     }
 }
 
-/// A labelled text field in the account forms.
 /// Closes the whole account sheet from any screen pushed inside it (`dismiss` there only pops that screen).
 struct CloseAccountSheet {
     let action: () -> Void
@@ -68,6 +67,7 @@ extension EnvironmentValues {
     }
 }
 
+/// A labelled text field in the account forms.
 struct FormField: View {
     let label: String
     @Binding var text: String

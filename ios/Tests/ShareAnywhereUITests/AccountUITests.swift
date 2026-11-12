@@ -74,7 +74,8 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "checklist").waitForExistence(timeout: 30))
         shot(app, "checklist")
         UITest.id(app, "checklist.clipboard").tap()
-        XCTAssertTrue(UITest.id(app, "account.close").gone(timeout: 10), "Go to Clipboard closes the account sheet")
+        XCTAssertTrue(UITest.id(app, "checklist").gone(timeout: 10), "Go to Clipboard closes the account sheet")
+        XCTAssertFalse(UITest.id(app, "key-setup").exists || UITest.id(app, "key-pair").exists, "no account screen is left over Clipboard")
 
         XCTAssertTrue(UITest.id(app, "clipboard").waitForExistence(timeout: 10))
         XCTAssertTrue(UITest.id(app, "clipboard.empty").waitForExistence(timeout: 30), "an empty timeline once synced")
@@ -131,7 +132,8 @@ final class AccountUITests: XCTestCase {
         try blocking(60) { try await other.sendKey(to: payload) }
         XCTAssertTrue(UITest.id(app, "checklist").waitForExistence(timeout: 30), "the key arrived and verified")
         UITest.id(app, "checklist.clipboard").tap()
-        XCTAssertTrue(UITest.id(app, "account.close").gone(timeout: 10), "Go to Clipboard closes the account sheet")
+        XCTAssertTrue(UITest.id(app, "checklist").gone(timeout: 10), "Go to Clipboard closes the account sheet")
+        XCTAssertFalse(UITest.id(app, "key-setup").exists || UITest.id(app, "key-pair").exists, "no account screen is left over Clipboard")
 
         let fromPeer = "From the other device \(UUID().uuidString.prefix(6))"
         try blocking(60) { try await other.capture(fromPeer) }

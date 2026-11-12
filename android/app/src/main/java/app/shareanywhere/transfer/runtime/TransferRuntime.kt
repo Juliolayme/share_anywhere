@@ -93,8 +93,8 @@ class TransferRuntime(
      * joined receiver, reconnects and resumes from its persisted bitmap; a session that ended meanwhile settles on
      * its final state.
      */
-    suspend fun resumeUnfinished(): List<String> {
-        val ids = runCatching { incoming.unfinishedSessions() }.getOrDefault(emptyList())
+    suspend fun resumeUnfinished(since: Long = System.currentTimeMillis() - RESUME_WINDOW_MS): List<String> {
+        val ids = runCatching { incoming.unfinishedSessions(since) }.getOrDefault(emptyList())
         for (id in ids) if (receivers[id] == null) receiver(id)
         return ids
     }
@@ -185,3 +185,6 @@ class TransferRuntime(
         receiving || b.receiving
     )
 }
+
+/** Receives untouched for longer than this are the start-up sweep's to forget, not to resume. */
+private const val RESUME_WINDOW_MS = 24L * 60 * 60 * 1000

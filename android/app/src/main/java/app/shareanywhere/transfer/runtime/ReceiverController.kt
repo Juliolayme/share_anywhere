@@ -277,11 +277,18 @@ class ReceiverController(private val d: ReceiverDeps) {
                 }.also { it.start() }
         }
         val statuses = list.transfers.map { it.status }
-        if (statuses.isNotEmpty() && statuses.all { it == "COMPLETED" }) return finish(RxPhase.Completed)
-        if (statuses.isNotEmpty() &&
-            statuses.all { Transitions.terminal(it) }
-        ) {
-            return finish(if ("COMPLETED" in statuses) RxPhase.Partial else RxPhase.Cancelled)
+        if (statuses.isNotEmpty() && statuses.all { Transitions.terminal(it) }) {
+            // Ended while this process was not running (or before this screen loaded): keep the finished files and
+            // drop partial documents and their bitmaps, so nothing half-written stays under the real name and the
+            // receive is not offered for resume again.
+            cleanup(keepDone = true)
+            return finish(
+                when {
+                    statuses.all { it == "COMPLETED" } -> RxPhase.Completed
+                    "COMPLETED" in statuses -> RxPhase.Partial
+                    else -> RxPhase.Cancelled
+                }
+            )
         }
         val target = d.incoming.target(d.sessionId) ?: return update { it.copy(phase = RxPhase.Choose) }
         update { it.copy(target = target) }

@@ -135,8 +135,18 @@ final class TransferHub: ObservableObject {
         }
     }
 
+    /// A new device identity (reset, or the server replaced a revoked one): receives recorded for the old device
+    /// cannot be resumed by the new one, so they are forgotten.
+    func forgetPending() async {
+        for (id, _) in await pending.all() {
+            try? await pending.put(id, nil)
+        }
+    }
+
     /// Ends a session's controllers (session closed and left, or a new identity).
     func release(_ id: String) {
+        let pending = pending
+        Task { try? await pending.put(id, nil) }
         for key in ["tx:\(id)", "rx:\(id)"] {
             watchers.removeValue(forKey: key)?.cancel()
             keepAwake.set(key, false)

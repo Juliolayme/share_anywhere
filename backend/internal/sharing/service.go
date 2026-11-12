@@ -110,6 +110,7 @@ type Service struct {
 
 	mu             sync.Mutex
 	lockout        map[string]time.Time // "ip:<key>" / "dev:<id>" → locked until
+	gates          map[string]*gate     // in-flight code lookups per "ip:<key>" / "dev:<id>" (lookupGate)
 	protectedWasOn bool
 	lastTick       time.Time
 	m              counters
@@ -117,7 +118,7 @@ type Service struct {
 
 // NewService returns the sharing service.
 func NewService(cfg Config) *Service {
-	return &Service{cfg: cfg, keys: deriveKeys(cfg.Secret), lockout: map[string]time.Time{}, m: newCounters(cfg.Metrics, cfg.Protected)}
+	return &Service{cfg: cfg, keys: deriveKeys(cfg.Secret), lockout: map[string]time.Time{}, gates: map[string]*gate{}, m: newCounters(cfg.Metrics, cfg.Protected)}
 }
 
 func (s *Service) now() time.Time { return s.cfg.Clock.Now().UTC() }

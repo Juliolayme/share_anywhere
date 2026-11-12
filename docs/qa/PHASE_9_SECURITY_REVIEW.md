@@ -10,6 +10,7 @@ Review of the built system against `docs/SECURITY_MODEL.md` (every abuse case in
 | 2 | Shared IPv4 addresses (CGNAT) share every per-address budget: 3 free new identities (10 with proof of work) and 30 new sessions per hour for everyone behind the address | Product limitation | Accepted (ADR 0031); listed in `KNOWN_LIMITATIONS.md` |
 | 3 | govulncheck reports GO-2026-5932 (`golang.org/x/crypto/openpgp`, unmaintained) in a required module | Informational | Not reachable: no package imports `openpgp`; govulncheck reports 0 vulnerabilities in called code. No released fix yet; take the next `x/crypto` release |
 | 4 | `TestPresenceOrderAcrossSockets` failed once in about 30 runs | Test defect | Fixed: the test waited for one device's final presence event only |
+| 5 | Concurrent code lookups from one address all passed the lockout check while one failure was left (about 19 failures instead of 10 across a burst; QA round 1) | Low | Fixed: lookups are serialized per address and per device (`sharing.lookupGate`); `TestConcurrentLookupsStopAtTheAllowance` fails without it. The documented ceiling is now 10 in a row and at most 15 in the first hour (bucket refill during the lockout) |
 
 No finding needed a change to an access level, a limit value or a token lifetime.
 
@@ -17,7 +18,7 @@ No finding needed a change to an access level, a limit value or a token lifetime
 
 | Abuse case | Evidence |
 |---|---|
-| Guessing a code to receive files (open join) | `TestAbuseSoak` (protected mode trips at exactly 300 failed lookups; code joins then `REQUESTED`; slow attack under the alarm: 2,900 guesses per window, 0.29 % per session; one address: at most 10 failures); `TestLookupLimitsAndLockouts`; e2e `pairing/window.spec.ts` (protected mode makes a code join wait, with the explanation) and `pairing/join.spec.ts` (lockout message) |
+| Guessing a code to receive files (open join) | `TestAbuseSoak` (protected mode trips at exactly 300 failed lookups; code joins then `REQUESTED`; slow attack under the alarm: 2,900 guesses per window, 0.29 % per session; one address: 10 failures in a row, then locked out); `TestConcurrentLookupsStopAtTheAllowance` (concurrent bursts); `TestLookupLimitsAndLockouts`; e2e `pairing/window.spec.ts` (protected mode makes a code join wait, with the explanation) and `pairing/join.spec.ts` (lockout message) |
 | Guessing a code to read the preview | Same limits; the preview carries only the documented fields (OpenAPI `JoinPreview`; e2e `pairing/join.spec.ts`) |
 | Shoulder-surfing, leaked link or QR | Join window of at most 10 minutes, Create new code invalidates the old code and token, Stop accepting: `sharing` window tests, e2e `pairing/window.spec.ts`, Android `ReceiverJoinTest`, iOS `TransferUITests.testTheCodeExpiresCreateNewCodeKeepsTheJoinedReceiver` |
 | Removed or blocked receiver keeps receiving | `TestRemoveRevokesAndRejoinRestarts`, `TestRemoveFreesSlotAndBlockCoversDeviceAndAddress`, `TestCloudRefusesNotAddedDevicesRemovedReceiversAndEndedSessions`; e2e `pairing/join.spec.ts` (Remove and Block; a blocked receiver cannot rejoin); iOS `testRemoveAndBlockReceivers` |

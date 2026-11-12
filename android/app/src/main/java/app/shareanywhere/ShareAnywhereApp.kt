@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Creates (or restores) the anonymous device identity in the background whenever the app comes to the
@@ -59,20 +60,21 @@ class ShareAnywhereApp : Application() {
         if (config.flags.accounts) account.get().start()
         if (config.flags.clipboard) clipboard.get().start()
         scope.launch { runCatching { history.sweep(settings.settings.first().retention) } }
-        // A receive the process ended in the middle of resumes once the device identity is ready (PRD §6).
         scope.launch {
-            identity.state.first { it.status == app.shareanywhere.identity.IdentityStatus.Ready }
-            transfers.get().resumeUnfinished()
-        }
-        // Receive progress and save folders untouched for a day, and picked files of sessions past their maximum
-        // lifetime, are forgotten (as the Web's storage sweep; docs/TRANSFER_PROTOCOL.md §4).
-        scope.launch(Dispatchers.IO) {
-            runCatching {
-                val now = System.currentTimeMillis()
-                incoming.removeOlderThan(now - DAY_MS)
-                incoming.removeTargetsOlderThan(now - DAY_MS)
-                outgoing.deleteOlderThan(now - 2 * DAY_MS)
+            // Receive progress and save folders untouched for a day, and picked files of sessions past their maximum
+            // lifetime, are forgotten (as the Web's storage sweep; docs/TRANSFER_PROTOCOL.md §4). First, so a stale
+            // receive is never resumed and then deleted under it.
+            val now = System.currentTimeMillis()
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    incoming.removeOlderThan(now - DAY_MS)
+                    incoming.removeTargetsOlderThan(now - DAY_MS)
+                    outgoing.deleteOlderThan(now - 2 * DAY_MS)
+                }
             }
+            // Then a receive the process ended in the middle of resumes once the device identity is ready (PRD §6).
+            identity.state.first { it.status == app.shareanywhere.identity.IdentityStatus.Ready }
+            transfers.get().resumeUnfinished(since = now - DAY_MS)
         }
     }
 

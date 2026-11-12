@@ -27,7 +27,7 @@ tune the alarm.
     (sender approval) and link joins on other addresses still succeed (20 of 20).
   - A slow attack at 290 guesses per minute for a whole join window: 2,900 guesses without tripping protected
     mode, a 0.29 % chance per session per window, matching the model's bound of `alarm × 10`.
-  - One address guessing alone: at most 10 failed lookups, then locked out.
+  - One address guessing alone: 10 failed lookups, then locked out (at most 15 in the first hour as the bucket refills during the lockout; concurrent lookups are serialized per address since QA round 1).
 - **Lockout off-by-one fixed.** The soak found that the failure which exhausted the allowance did not lock the
   address or device until one more failure: 11 failed lookups per address (and 6 per device) got through instead
   of 10 (and 5). The failure that uses up the allowance now starts the lockout (`sharing.failedLookup`), and the

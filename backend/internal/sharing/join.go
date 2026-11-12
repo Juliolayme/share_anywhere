@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -67,12 +68,51 @@ func (s *Service) isBlocked(ctx context.Context, q querier, sessionID string, c 
 	return n > 0, err
 }
 
+// gate serializes the code lookups of one address or one device; refs counts holders and waiters so the entry
+// is dropped when the last one leaves.
+type gate struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lookupGate holds the caller's address and device gates until the returned release runs. With one lookup in
+// flight per address and per device, the lockout check, the lookup and the failure count happen in order, so
+// concurrent guesses cannot all pass the check while one failure is left. Always address first, then device, so
+// two callers never wait on each other in opposite order.
+func (s *Service) lookupGate(c Caller) (release func()) {
+	keys := []string{"ip:" + c.IPKey, "dev:" + c.DeviceID}
+	held := make([]*gate, 0, len(keys))
+	for _, k := range keys {
+		s.mu.Lock()
+		g := s.gates[k]
+		if g == nil {
+			g = &gate{}
+			s.gates[k] = g
+		}
+		g.refs++
+		s.mu.Unlock()
+		g.mu.Lock()
+		held = append(held, g)
+	}
+	return func() {
+		for i := len(held) - 1; i >= 0; i-- {
+			held[i].mu.Unlock()
+			s.mu.Lock()
+			if held[i].refs--; held[i].refs == 0 {
+				delete(s.gates, keys[i])
+			}
+			s.mu.Unlock()
+		}
+	}
+}
+
 // ResolveCode looks up a six-digit code and returns the preview with a join ticket.
 func (s *Service) ResolveCode(ctx context.Context, c Caller, code string) (Preview, error) {
 	code = strings.TrimSpace(code)
 	if !ValidCode(code) {
 		return Preview{}, ErrInvalid
 	}
+	defer s.lookupGate(c)()
 	if wait, locked := s.lockedFor(c); locked {
 		return Preview{}, rateLimited("locked_out", wait)
 	}

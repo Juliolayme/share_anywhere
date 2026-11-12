@@ -28,6 +28,8 @@ final class AppModel: ObservableObject {
     let pasteboard = PasteboardAccess()
 
     @Published private(set) var identityState = IdentityState()
+    /// Whether this launch already resumed the receives the last process left unfinished.
+    private var resumedUnfinished = false
     @Published private(set) var historyEntries: [HistoryEntry] = []
     @Published private(set) var historyLoaded = false
     @Published var historyError: String?
@@ -91,8 +93,6 @@ final class AppModel: ObservableObject {
             }
         }
         await identity.bootstrap()
-        // A receive the process ended in the middle of (iOS terminated the suspended app) resumes now.
-        await hub.resumeUnfinished()
     }
 
     func retryIdentity() { Task { await identity.bootstrap() } }
@@ -168,8 +168,19 @@ final class AppModel: ObservableObject {
 
     fileprivate func apply(_ s: IdentityState) {
         let claimsChanged = s.claims != identityState.claims || s.device?.id != identityState.device?.id
+        let previousDevice = identityState.device?.id
         identityState = s
         if claimsChanged { account.identityChanged(s.claims) }
+        if let before = previousDevice, let now = s.device?.id, before != now {
+            // A new identity: the old device's unfinished receives cannot resume.
+            Task { await hub.forgetPending() }
+        }
+        if s.status == .ready, !resumedUnfinished {
+            // A receive the process ended in the middle of (iOS terminated the suspended app) resumes once the
+            // identity is ready: at launch, or after Retry when the first bootstrap failed.
+            resumedUnfinished = true
+            Task { await hub.resumeUnfinished() }
+        }
     }
 
     static func databasePath() -> String {

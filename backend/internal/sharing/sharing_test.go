@@ -562,6 +562,54 @@ func TestLookupLimitsAndLockouts(t *testing.T) {
 	wantCode(t, err, "invalid_request")
 }
 
+// Concurrent guesses from one address cannot all pass the lockout check while one failure is left (QA round 1,
+// Phase 9): after 9 failures, a burst of 10 lookups (the per-minute lookup allowance) lets exactly one more failure
+// through and the rest see the lockout. Without per-address serialization all 10 were looked up (19 failures).
+func TestConcurrentLookupsStopAtTheAllowance(t *testing.T) {
+	e := newEnv(t)
+	ip := "198.51.100.77"
+	failed := 0
+	for i := 0; i < 9; i++ {
+		c := e.device(fmt.Sprintf("slow%d", i))
+		c.IPKey = ip
+		e.clk.Advance(7 * time.Second)
+		_, err := e.svc.ResolveCode(ctx, c, "999997")
+		wantCode(t, err, "code_not_found")
+		failed++
+	}
+	e.clk.Advance(time.Minute) // the per-minute lookup allowance is full again; one failure is left this hour
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	codes := map[string]int{}
+	for i := 0; i < 10; i++ {
+		c := e.device(fmt.Sprintf("burst%d", i))
+		c.IPKey = ip
+		wg.Add(1)
+		go func(c Caller) {
+			defer wg.Done()
+			_, err := e.svc.ResolveCode(ctx, c, "999997")
+			code := "ok"
+			var se *Error
+			if errors.As(err, &se) {
+				code = se.Code
+			}
+			mu.Lock()
+			codes[code]++
+			mu.Unlock()
+		}(c)
+	}
+	wg.Wait()
+	if got := failed + codes["code_not_found"]; got != 10 || codes["locked_out"] != 9 {
+		t.Fatalf("burst after 9 failures: %v; %d failed lookups in total, want exactly 10 and 9 locked out", codes, got)
+	}
+	e.svc.mu.Lock()
+	left := len(e.svc.gates)
+	e.svc.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("%d lookup gates left after every lookup returned", left)
+	}
+}
+
 func TestCreationLimitsAndOpenSessionCap(t *testing.T) {
 	e := newEnv(t)
 	sender := e.device("S")

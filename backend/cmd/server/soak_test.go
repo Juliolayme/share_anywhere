@@ -83,10 +83,9 @@ func (s *soak) guess(codes map[string]sessionOut) (status int, joined bool) {
 	if err != nil {
 		s.t.Fatal(err)
 	}
+	// Uniform over the whole code space, blind to which codes are live (as an attacker is); `codes` is only used to
+	// count hits afterwards.
 	code := fmt.Sprintf("%06d", s.rng.IntN(1_000_000))
-	if _, live := codes[code]; !live && s.rng.IntN(1_000_000) == 0 {
-		code = "000000" // keep the generator honest: never steer guesses toward live codes
-	}
 	st, raw := s.do(att, "POST", "/v1/sessions/resolve-code", map[string]any{"code": code})
 	if st != http.StatusOK {
 		return st, false
@@ -155,13 +154,16 @@ func TestAbuseSoak(t *testing.T) {
 		for i := 0; i < 200; i++ {
 			d, err := s.device("cgnat", ip)
 			var pe *devices.PoWRequiredError
+			var re *devices.RateLimitedError
 			switch {
 			case err == nil:
 				members = append(members, d)
 			case errors.As(err, &pe):
 				pow++
-			default:
+			case errors.As(err, &re):
 				refused++
+			default:
+				t.Fatal(err) // only the documented refusals count; anything else is a bug in the run
 			}
 		}
 		// Identities created earlier (before the hour) behind the same address: model them with distinct device

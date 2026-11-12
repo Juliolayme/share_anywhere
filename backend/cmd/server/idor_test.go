@@ -118,6 +118,20 @@ func (e *idorEnv) do(who actor, method, path string, body any) (int, []byte) {
 	return rec.Code, rec.Body.Bytes()
 }
 
+// signedIn signs `who` up as a new account and adds the device, so routes behind the account gate (Cloud) are
+// reached and their ownership checks are what refuses.
+func (e *idorEnv) signedIn(who actor, email string) actor {
+	e.t.Helper()
+	var r struct {
+		AccessToken string `json:"access_token"`
+	}
+	e.ok(who, "POST", "/v1/auth/signup", map[string]any{"email": email, "password": "Granite-Lantern-Orbit-7", "add_device": false}, &r)
+	who.token = r.AccessToken
+	e.ok(who, "POST", "/v1/devices/current/add", map[string]any{"copy_history": false}, &r)
+	who.token = r.AccessToken
+	return who
+}
+
 func (e *idorEnv) ok(who actor, method, path string, body, out any) {
 	e.t.Helper()
 	code, raw := e.do(who, method, path, body)
@@ -189,6 +203,8 @@ func TestIDORSweep(t *testing.T) {
 	a, pool := dbApp(t)
 	e := &idorEnv{t: t, a: a}
 	alice, bob, carol, mallory := e.actor("alice", 1), e.actor("bob", 2), e.actor("carol", 3), e.actor("mallory", 4)
+	// Sam is a signed-in stranger with an added device: past the account gate, only ownership can refuse him.
+	sam := e.signedIn(e.actor("sam", 5), "sam-idor@example.com")
 	sa := e.session(alice)
 	_ = e.session(mallory) // Mallory is a sender elsewhere: a valid participant token, just not for Alice's session.
 	bobPid, carolPid := e.join(bob, sa), e.join(carol, sa)
@@ -252,21 +268,34 @@ func TestIDORSweep(t *testing.T) {
 		{"POST", "/v1/transfers/" + carolTx + "/resume", nil},
 		{"POST", "/v1/transfers/" + carolTx + "/cancel", nil},
 	}
-	denied := func(who actor, calls []call) {
+	// A refusal must be an authorization answer (403 forbidden or 404 not found), never a validation or state
+	// error that would hide whether the caller could have acted.
+	gates := map[string]bool{"cloud_requires_account": true, "account_required": true, "device_not_added": true, "cloud_consent_required": true}
+	denied := func(who actor, calls []call, pastGates bool) {
 		for _, c := range calls {
 			code, raw := e.do(who, c.method, c.path, c.body)
-			if code < 400 || code >= 500 {
-				t.Errorf("%s %s %s: got %d %s, want a 4xx refusal", who.name, c.method, c.path, code, raw)
+			var body struct {
+				Error string `json:"error"`
+			}
+			_ = json.Unmarshal(raw, &body)
+			if code != 403 && code != 404 {
+				t.Errorf("%s %s %s: got %d %s, want 403 or 404", who.name, c.method, c.path, code, raw)
+			} else if pastGates && gates[body.Error] {
+				t.Errorf("%s %s %s: refused by the account gate (%s), not by ownership", who.name, c.method, c.path, body.Error)
 			}
 		}
 	}
-	denied(mallory, memberOnly)
-	denied(mallory, senderOnly)
-	denied(mallory, carolOnly)
-	denied(bob, senderOnly)
-	denied(bob, carolOnly)
+	denied(mallory, memberOnly, false)
+	denied(mallory, senderOnly, false)
+	denied(mallory, carolOnly, false)
+	denied(bob, senderOnly, false)
+	denied(bob, carolOnly, false)
 	// Bob's own transfer stays out of Mallory's reach too.
-	denied(mallory, []call{{"GET", "/v1/transfers/" + bobTx, nil}, {"POST", "/v1/transfers/" + bobTx + "/cancel", nil}})
+	denied(mallory, []call{{"GET", "/v1/transfers/" + bobTx, nil}, {"POST", "/v1/transfers/" + bobTx + "/cancel", nil}}, false)
+	// The signed-in stranger: every route, and Cloud's sender routes refuse him by ownership.
+	denied(sam, memberOnly, true)
+	denied(sam, senderOnly, true)
+	denied(sam, carolOnly, true)
 
 	// Nothing changed: the session is open and accepting, Carol is still joined, no transfer moved.
 	var view struct {
@@ -303,5 +332,9 @@ func TestIDORSweep(t *testing.T) {
 	e.ok(bob, "GET", "/v1/transfers/"+bobTx, nil, nil)
 	e.ok(carol, "GET", "/v1/transfers/"+carolTx, nil, nil)
 	e.ok(bob, "GET", "/v1/cloud/objects/"+obj, nil, nil)
+	// The sender's routes work for the sender (after the checks above, since they change the session).
+	e.ok(alice, "PATCH", "/v1/sessions/"+sa.ID, map[string]any{"accepting_receivers": false}, nil)
+	e.ok(alice, "DELETE", "/v1/participants/"+carolPid, nil, nil)
+	e.ok(carol, "GET", "/v1/sessions/"+sa.ID, nil, nil) // a removed receiver still sees the outcome
 
 }

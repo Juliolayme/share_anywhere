@@ -78,7 +78,9 @@ jobs:
           target: ${{ inputs.target }}
           arch: ${{ inputs.arch }}
           force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # API 29 cold-boots: loading its cached snapshot intermittently leaves system services unpublished
+          # ("No service published for: input"), with the v1 and the fresh v2 cache alike.
+          emulator-options: ${{ inputs.api-level < 30 && '-no-snapshot' || '-no-snapshot-save' }} -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: android
           script: ./gradlew ${{ inputs.gradle-task }} -Pbackend=http://10.0.2.2:8080 --stacktrace

@@ -10,7 +10,12 @@ import { downloadAndHash, fixture, joinToSave, receiverPage, startInBrowser } fr
 // between this spec and the native test through INTEROP_DIR (Web → app) and env (app → Web).
 const DIR = process.env.INTEROP_DIR ?? '';
 test.skip(!DIR, 'native interop jobs only (INTEROP_DIR)');
-test.afterAll(closeSenderBrowser);
+test.afterAll(async () => {
+  // Closing a browser that held a 64 MB WebRTC session can take longer than the default hook time on the macOS
+  // runner (ios-web-interop timed out here once after both transfers had passed).
+  test.setTimeout(120_000);
+  await closeSenderBrowser();
+});
 test.afterEach(closeContexts);
 
 test('web sends a 64 MB file to the native app', async () => {

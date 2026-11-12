@@ -229,3 +229,10 @@ The design shows the finished product with sample data. These elements are left 
 2. **Save to Files is a choice, not a system sheet.** The design shows `rx-preview` with "Save to" opening the Files picker. The app offers On My iPhone › Share Anywhere (the app's Documents, recommended) or Choose folder (Files folder picker, kept as a bookmark), then Start receiving, so the common case needs no picker.
 3. **Camera scanning is real-device only.** The simulator has no camera; Receive opens on code entry there and the scan tab says no camera is available. Universal Links (`/j/<token>`) are not handled yet (they need the `apple-app-site-association` file and a signed device build; real-device checklist).
 4. **Strings the design does not have** come from `shared/i18n/product.json` with `_ios` variants where the shared text named Android (camera settings, folder picker, empty send state) and new keys for On My iPhone, Open in Files and the paused-in-background notification body (`DESIGN_DEVIATIONS.md` section E rules).
+
+## N. iOS accounts and Clipboard Sync: differences from the design (Phase 7, milestone 7.4)
+
+1. **No Sign in with Apple and no email verification step.** `iOS App.dc.html` shows Sign in with Apple and a `verify` code step; the backend has neither (Phase 5A, deviation A1), so the sheet offers email and password only.
+2. **Key setup and pairing screens on iOS.** The design has no iOS screens for the account key; the app follows the Web's AC-5 and AC-6 (recovery phrase with "I wrote down my recovery phrase", pairing code and QR, recovery phrase entry) inside the account sheet, as Android does.
+3. **Sync Clipboard is iOS's Paste control.** The design shows a filled Sync Clipboard button; iOS only shares the clipboard without a prompt through its own Paste control, so that control is the primary action, with "Read the clipboard instead" (which iOS confirms with its paste prompt) as the fallback and a hint when something new was copied.
+4. **Two-step verification, Change password and Cloud rows are not in Settings.** Two-step verification has no backend (A1); Change password stays on the Web for now; Cloud arrives with Phase 8.

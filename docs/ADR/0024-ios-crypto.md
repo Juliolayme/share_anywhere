@@ -21,3 +21,9 @@ The account-key protocol (`docs/CLIPBOARD_PROTOCOL.md` §1) uses SHA-256, HMAC, 
 ## Consequences
 
 - Ed25519 signatures made on iOS differ from the deterministic vector bytes (CryptoKit randomizes them); verification is what the protocol relies on, and it is tested both ways.
+
+## Amendment (milestone 7.4, as built)
+
+- The key flows, account keys, history sync and Clipboard Sync engine live in the `SAAccount` module of ShareAnywhereCore (product `Account`), ported from Android with the same rules and tested in `swift test` against simulated servers; they were also run once against the local Go backend end to end (sign-up, setup, pairing, an encrypted clipboard item across two devices, history sync, revoke with rotation to version 2, sign-out with the keys erased).
+- **The account key vault** (`AccountKeyVault`) is one JSON file in Application Support holding each ADK version and the device wrapping key, each sealed with AES-256-GCM and an AAD naming what it is and the account (as Android's `AccountKeyStore`). The sealing key (`KeychainSealer`) is derived from a Secure Enclave P-256 key (ECDH with a stored public key, then HKDF-SHA256 with info `sa-vault-v1`) on hardware with an Enclave, and is a random 32-byte key otherwise (the simulator). Every Keychain item is `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` and not synchronizable. Sign-out deletes the file and the Keychain items, so a later account gets fresh keys.
+- The Secure Enclave path is untested (simulators have no Enclave): it is on the real-device checklist.

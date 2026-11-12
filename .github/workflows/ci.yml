@@ -418,7 +418,7 @@ jobs:
     if: needs.changes.outputs.ios == 'true' || needs.changes.outputs.backend == 'true'
     uses: ./.github/workflows/ios-simulator.yml
     with:
-      device: iPhone 15
+      device: iPhone 16
       runtime: latest
       artifact: iphone15
 

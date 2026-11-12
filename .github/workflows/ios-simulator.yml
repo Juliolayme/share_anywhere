@@ -8,7 +8,7 @@ on:
       device:
         description: Simulator device name (falls back to the first available iPhone when missing)
         type: string
-        default: iPhone 15
+        default: iPhone 16
       runtime:
         description: iOS runtime version (e.g. 18.5), or "latest"
         type: string

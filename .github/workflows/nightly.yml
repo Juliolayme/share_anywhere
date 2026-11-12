@@ -327,17 +327,17 @@ jobs:
           TXT
 
   ios-matrix:
-    # docs/TESTING_AND_CI.md §2.2: the simulator suite on iPhone SE (3rd gen) and iPhone 15 Pro Max (latest runtime),
-    # iPhone 15 on the oldest runtime at or above iOS 16, and an accessibility XXXL Dynamic Type run (ci.yml runs
-    # iPhone 15 on the latest runtime).
+    # docs/TESTING_AND_CI.md §2.2: the simulator suite on iPhone SE (3rd gen) and iPhone 16 Pro Max (latest runtime),
+    # iPhone 16 on the oldest runtime at or above iOS 16, and an accessibility XXXL Dynamic Type run (ci.yml runs
+    # iPhone 16 on the latest runtime). The macOS 15 image with Xcode 16.4 has no iPhone 15 simulators.
     strategy:
       fail-fast: false
       matrix:
         include:
           - { device: 'iPhone SE (3rd generation)', runtime: latest, dynamic: '', artifact: matrix-se }
-          - { device: 'iPhone 15 Pro Max', runtime: latest, dynamic: '', artifact: matrix-pro-max }
-          - { device: 'iPhone 15', runtime: oldest, dynamic: '', artifact: matrix-oldest }
-          - { device: 'iPhone 15', runtime: latest, dynamic: UICTContentSizeCategoryAccessibilityXXXL, artifact: matrix-xxxl }
+          - { device: 'iPhone 16 Pro Max', runtime: latest, dynamic: '', artifact: matrix-pro-max }
+          - { device: 'iPhone 16', runtime: oldest, dynamic: '', artifact: matrix-oldest }
+          - { device: 'iPhone 16', runtime: latest, dynamic: UICTContentSizeCategoryAccessibilityXXXL, artifact: matrix-xxxl }
     uses: ./.github/workflows/ios-simulator.yml
     with:
       device: ${{ matrix.device }}
@@ -349,6 +349,7 @@ jobs:
     # ADR 0027: a receive paused by leaving the app (after the background-task grace period) resumes on return.
     uses: ./.github/workflows/ios-simulator.yml
     with:
+      device: iPhone 16
       only-testing: ShareAnywhereUITests/TransferUITests/testLeavingTheAppPausesTheReceiveWhichResumesOnReturn
       artifact: background-suspend
 
@@ -410,7 +411,7 @@ jobs:
       - name: Boot the simulator
         id: sim
         run: |
-          UDID=$(python3 scripts/ios-pick-simulator.py "iPhone 15" latest)
+          UDID=$(python3 scripts/ios-pick-simulator.py "iPhone 16" latest)
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b

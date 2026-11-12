@@ -76,12 +76,21 @@ final class AccountSession: ObservableObject {
     /// Foreground capture: the pasteboard changed while the app was away. Likely secrets (`detectPatterns`, no read)
     /// are left for the user to paste on purpose; otherwise the text is read, which iOS confirms with its paste prompt.
     private func captureOnReturn() async {
-        guard let engine, let pasteboard = app?.pasteboard, clip.settings?.paused != true else { return }
+        guard let engine, let pasteboard = app?.pasteboard, clip.settings?.paused != true, pasteboard.hasText else { return }
         if clip.settings?.sensitiveSkip ?? true, await pasteboard.probableSecret() { return }
         guard let text = pasteboard.readString() else { return }
-        let r = await engine.capture(text, source: .auto)
-        pasteboard.synced()
-        if case .synced = r { app?.toast = L10n.t("product.cb_synced") }
+        // The "new text copied" hint stays unless the text is synced, queued or already in the timeline.
+        switch await engine.capture(text, source: .auto) {
+        case .synced:
+            pasteboard.synced()
+            app?.toast = L10n.t("product.cb_synced")
+        case .queued, .duplicate:
+            pasteboard.synced()
+        case .tooLarge:
+            app?.toast = L10n.t("product.cb_too_large")
+        default:
+            break
+        }
     }
 
     func identityChanged(_ claims: TokenClaims?) { Task { await manager.identityChanged(claims) } }
@@ -90,7 +99,7 @@ final class AccountSession: ObservableObject {
         let changedDevice = s.deviceId != state.deviceId || s.accountId != state.accountId
         state = s
         let wantsEngine = s.signedIn && s.added && s.keys == .ready && s.accountId != nil && s.deviceId != nil
-        if wantsEngine, engine == nil || changedDevice { startEngine(account: s.accountId!, device: s.deviceId!) }
+        if wantsEngine, (engine == nil && engineTask == nil) || changedDevice { startEngine(account: s.accountId!, device: s.deviceId!) }
         if !wantsEngine, engine != nil || engineTask != nil, s.keys != .checking { stopEngine() }
     }
 
@@ -101,13 +110,21 @@ final class AccountSession: ObservableObject {
         let api = api
         let store = clipStore
         engineTask = Task { [weak self] in
-            guard let keys = await manager.keyStore() else { return }
+            guard let keys = await manager.keyStore() else {
+                // No key yet: let the next state change try again.
+                if !Task.isCancelled {
+                    self?.engineTask = nil
+                    self?.app?.pasteboard.observe(false)
+                }
+                return
+            }
             let e = ClipboardEngine(
                 api: api, keys: .of(keys), store: store, userId: account, deviceId: device,
                 onKeyConflict: { _ = await manager.checkKeys() }
             )
             guard let self, !Task.isCancelled else { return }
             engine = e
+            app?.pasteboard.captureReady = true
             let snaps = e.state.values()
             snapshotTask = Task { [weak self] in
                 for await s in snaps {

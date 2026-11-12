@@ -13,6 +13,9 @@ final class AccountUITests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
+    /// A random tag without digits: `detectPatterns(.number)` would mark text with a number as a probable code.
+    private func letters() -> String { String((0 ..< 8).map { _ in "abcdefghijklmnopqrstuvwxyz".randomElement()! }) }
+
     private func email() -> String { "ios-ui-\(UUID().uuidString.prefix(10).lowercased())@example.com" }
     private let password = "correct horse battery staple 42"
 
@@ -61,7 +64,11 @@ final class AccountUITests: XCTestCase {
         let firstDevice = before.value as? String
 
         signUpInApp(app, email())
-        XCTAssertTrue(UITest.id(app, "trust").waitForExistence(timeout: 20), "after sign-up: add this device")
+        if !UITest.id(app, "trust").waitForExistence(timeout: 30) {
+            let error = UITest.id(app, "signup.error")
+            XCTFail("after sign-up: add this device (error banner: \(error.exists ? error.label : "none"))")
+            return
+        }
         shot(app, "trust")
         UITest.id(app, "trust.continue").tap()
         XCTAssertTrue(UITest.id(app, "key-setup").waitForExistence(timeout: 30))
@@ -84,7 +91,7 @@ final class AccountUITests: XCTestCase {
 
         // The fallback button reads the pasteboard itself (iOS confirms with its paste prompt).
         let reads = Int(UITest.id(app, "test.pasteboard-reads").value as? String ?? "") ?? 0
-        let viaFallback = "Through the fallback button \(UUID().uuidString.prefix(6))"
+        let viaFallback = "Through the fallback button \(letters())"
         UIPasteboard.general.string = viaFallback
         UITest.id(app, "clipboard.sync-fallback").tap()
         allowPaste(app)
@@ -142,7 +149,7 @@ final class AccountUITests: XCTestCase {
 
         // Foreground capture: text copied while the app is in the background is not read there; coming back captures
         // it (after iOS's paste prompt) and the other device decrypts it.
-        let copied = "Copied in another app \(UUID().uuidString.prefix(6))"
+        let copied = "Copied in another app \(letters())"
         XCUIDevice.shared.press(.home)
         UIPasteboard.general.string = copied
         RunLoop.current.run(until: Date().addingTimeInterval(5))

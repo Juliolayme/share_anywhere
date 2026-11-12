@@ -68,8 +68,13 @@ final class HistorySettingsUITests: XCTestCase {
         app.terminate()
         let again = UITest.app(reset: false)
         again.launch()
-        again.tabBars.buttons.element(boundBy: 3).tap()
-        XCTAssertEqual(UITest.id(again, "settings.keep-screen-on").value as? String, "0", "the setting persists")
+        // Settings is the last tab (its label is Vietnamese now).
+        let tabs = again.tabBars.buttons
+        XCTAssertTrue(tabs.firstMatch.waitForExistence(timeout: 10))
+        tabs.element(boundBy: tabs.count - 1).tap()
+        let wakeAgain = UITest.id(again, "settings.keep-screen-on")
+        XCTAssertTrue(wakeAgain.waitForExistence(timeout: 10))
+        XCTAssertEqual(wakeAgain.value as? String, "0", "the setting persists")
     }
 }
 

@@ -63,7 +63,8 @@ struct FormField: View {
             Group {
                 if secure { SecureField(label, text: $text) } else { TextField(label, text: $text) }
             }
-            .textContentType(content)
+            // The simulator's automatic Strong Password takes over a new-password field under UI tests.
+            .textContentType(content == .newPassword && AppConfig.uiTestingProcess ? .password : content)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .keyboardType(content == .emailAddress ? .emailAddress : .default)

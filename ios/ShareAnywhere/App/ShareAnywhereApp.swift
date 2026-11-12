@@ -24,6 +24,7 @@ struct RootView: View {
     @EnvironmentObject private var settings: SettingsStore
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var quick = QuickActions.shared
+    @ObservedObject private var links = LinkInbox.shared
 
     var body: some View {
         TabView(selection: $model.tab) {
@@ -68,9 +69,12 @@ struct RootView: View {
             if phase == .active { model.pasteboard.checkOnActive() }
         }
         .onChange(of: settings.keepScreenOn) { model.keepAwake.setEnabled($0) }
-        .onOpenURL { model.openLink($0) }
-        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-            if let url = activity.webpageURL { model.openLink(url) }
+        .onOpenURL { links.receive($0) }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { links.receive($0.webpageURL) }
+        .onChange(of: links.pending) { url in
+            guard let url else { return }
+            links.pending = nil
+            model.openLink(url)
         }
         .onChange(of: quick.pending) { action in
             guard action == QuickActions.clipboard, model.config.clipboard else { return }

@@ -22,6 +22,15 @@ struct AppConfig {
     let clipboard = true
     let version: String
 
+    /// Whether this process runs under UI tests (Debug only), for views that cannot reach the model.
+    static var uiTestingProcess: Bool {
+        #if DEBUG
+            ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        #else
+            false
+        #endif
+    }
+
     static func load(arguments: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) -> AppConfig {
         func value(after flag: String) -> String? {
             guard let i = arguments.firstIndex(of: flag), i + 1 < arguments.count else { return nil }

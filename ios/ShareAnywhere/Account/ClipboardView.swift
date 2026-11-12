@@ -28,11 +28,14 @@ final class PasteboardAccess: ObservableObject {
             NotificationCenter.default.removeObserver(o)
             observer = nil
             changedSinceSync = false
+            captureReady = false
         }
     }
 
     /// Foreground capture (PRD §2 "Clipboard iOS"): set by the account session while Clipboard Sync is ready.
     var onReturn: (@MainActor () async -> Void)?
+    /// The engine is running; until then a change is left unseen so the next return can capture it.
+    var captureReady = false
 
     /// Back in front: a copy made in another app while this one was away is captured (after iOS's paste prompt) and
     /// shows the "new text copied" hint until it syncs. Nothing is read while the app is in the background.
@@ -40,9 +43,10 @@ final class PasteboardAccess: ObservableObject {
         guard observer != nil else { return }
         let c = UIPasteboard.general.changeCount
         guard c != lastCount else { return }
-        lastCount = c
         changedSinceSync = true
-        if let onReturn { Task { await onReturn() } }
+        guard captureReady, let onReturn else { return }
+        lastCount = c
+        Task { await onReturn() }
     }
 
     private func changed() {
@@ -66,6 +70,9 @@ final class PasteboardAccess: ObservableObject {
         if observer != nil { lastCount = UIPasteboard.general.changeCount }
         return UIPasteboard.general.string
     }
+
+    /// Whether the pasteboard holds text, without reading it (no prompt).
+    var hasText: Bool { UIPasteboard.general.hasStrings }
 
     /// Text received through `PasteButton` (no prompt).
     func received() {

@@ -21,6 +21,8 @@ struct AccountSheet: View {
                     }
                 }
         }
+        // Pushed screens (Not now on Add this device, Go to Clipboard) close the sheet, not just themselves.
+        .environment(\.closeAccountSheet, CloseAccountSheet { dismiss() })
         .themed()
     }
 
@@ -49,6 +51,23 @@ func nextStep(for status: KeyStatus) -> AccountSheet.Step {
 }
 
 /// A labelled text field in the account forms.
+/// Closes the whole account sheet from any screen pushed inside it (`dismiss` there only pops that screen).
+struct CloseAccountSheet {
+    let action: () -> Void
+    func callAsFunction() { action() }
+}
+
+private struct CloseAccountSheetKey: EnvironmentKey {
+    static let defaultValue = CloseAccountSheet {}
+}
+
+extension EnvironmentValues {
+    var closeAccountSheet: CloseAccountSheet {
+        get { self[CloseAccountSheetKey.self] }
+        set { self[CloseAccountSheetKey.self] = newValue }
+    }
+}
+
 struct FormField: View {
     let label: String
     @Binding var text: String
@@ -211,7 +230,7 @@ struct ForgotView: View {
 struct TrustView: View {
     @Binding var path: [AccountSheet.Step]
     @EnvironmentObject private var account: AccountSession
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeAccountSheet) private var closeSheet
     @Environment(\.palette) private var p
     @State private var add = true
     @State private var copyHistory = false
@@ -254,7 +273,7 @@ struct TrustView: View {
     }
 
     private func submit() {
-        guard add else { return dismiss() }
+        guard add else { return closeSheet() }
         busy = true
         error = nil
         Task {
@@ -490,7 +509,7 @@ struct PhraseView: View {
 struct ChecklistView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var account: AccountSession
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeAccountSheet) private var closeSheet
     @Environment(\.palette) private var p
 
     var body: some View {
@@ -502,7 +521,7 @@ struct ChecklistView: View {
                 row(L10n.t("ios_yy.ck_3"), account.state.added && account.state.keys == .ready)
                 PrimaryButton(title: L10n.t("ios_yy.ck_btn")) {
                     model.tab = .clipboard
-                    dismiss()
+                    closeSheet()
                 }
                 .accessibilityIdentifier("checklist.clipboard")
             }

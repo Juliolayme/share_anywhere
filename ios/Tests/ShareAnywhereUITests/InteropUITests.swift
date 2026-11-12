@@ -82,6 +82,7 @@ final class InteropUITests: XCTestCase {
         print("SA-CLIP pair=\(code.value as? String ?? "")")
         XCTAssertTrue(UITest.id(app, "checklist").waitForExistence(timeout: 5 * 60), "the Web's key arrived and verified")
         UITest.id(app, "checklist.clipboard").tap()
+        XCTAssertTrue(UITest.id(app, "account.close").gone(timeout: 10), "Go to Clipboard closes the account sheet")
         let webRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", webMarker)).firstMatch
         XCTAssertTrue(webRow.waitForExistence(timeout: 120), "the Web's item decrypts on iOS")
         let mine = "from-ios-\(Int(Date().timeIntervalSince1970))"

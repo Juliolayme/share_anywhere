@@ -88,7 +88,7 @@ final class InteropUITests: XCTestCase {
         UIPasteboard.general.string = mine
         let paste = app.buttons["Paste"].firstMatch
         XCTAssertTrue(paste.waitForExistence(timeout: 10))
-        paste.tap()
+        UITest.tapPasteControl(paste)
         let myRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", mine)).firstMatch
         XCTAssertTrue(myRow.waitForExistence(timeout: 60))
         print("SA-CLIP marker=\(mine)")

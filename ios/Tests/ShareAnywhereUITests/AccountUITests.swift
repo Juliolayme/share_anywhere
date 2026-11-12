@@ -21,7 +21,7 @@ final class AccountUITests: XCTestCase {
         UIPasteboard.general.string = text
         let control = app.buttons["Paste"].firstMatch
         if control.waitForExistence(timeout: 5) {
-            control.tap()
+            UITest.tapPasteControl(control)
         } else {
             UITest.id(app, "clipboard.sync-fallback").tap()
             allowPaste(app)

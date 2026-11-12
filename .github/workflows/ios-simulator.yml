@@ -62,7 +62,8 @@ jobs:
         run: |
           scripts/ios-tools.sh
           echo "$PWD/.tools/bin" >> "$GITHUB_PATH"
-          (cd ios && "$PWD/../.tools/bin/xcodegen" generate)
+          (cd ios && "$GITHUB_WORKSPACE/.tools/xcodegen/bin/xcodegen" generate > ../xcodegen.log 2>&1); cat xcodegen.log
+          if grep -q 'No "base" settings found' xcodegen.log; then echo "XcodeGen setting presets not found"; exit 1; fi
       - name: Boot the simulator
         id: sim
         run: |

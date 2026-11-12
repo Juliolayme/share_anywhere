@@ -25,7 +25,9 @@ install -m 755 "$TMP/swiftformat/swiftformat" "$BIN/swiftformat"
 fetch xcodegen https://github.com/yonaskolb/XcodeGen/releases/download/2.42.0/xcodegen.zip \
   a760b4bf97460341316a2c00d8c87b2946c6c2729eb57e9a72abb3ef7bc0ef82
 rm -rf .tools/xcodegen && mkdir -p .tools && cp -R "$TMP/xcodegen/xcodegen" .tools/xcodegen
-ln -sf ../xcodegen/bin/xcodegen "$BIN/xcodegen"
+# XcodeGen finds its SettingPresets (share/xcodegen) next to its real path, so call it through a wrapper, not a symlink.
+printf '#!/usr/bin/env bash\nexec "%s/.tools/xcodegen/bin/xcodegen" "$@"\n' "$PWD" > "$BIN/xcodegen"
+chmod 755 "$BIN/xcodegen"
 
 "$BIN/swiftlint" version
 "$BIN/swiftformat" --version

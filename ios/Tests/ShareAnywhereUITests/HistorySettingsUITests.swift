@@ -51,7 +51,8 @@ final class HistorySettingsUITests: XCTestCase {
         XCTAssertTrue(wake.waitForExistence(timeout: 5))
         XCTAssertEqual(wake.value as? String, "1", "Keep screen on is on by default")
         shot(app, "settings")
-        wake.tap()
+        // The switch sits at the trailing edge of the row; a tap in the middle of the row only selects it.
+        wake.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
         XCTAssertEqual(wake.value as? String, "0")
 
         UITest.id(app, "settings.language").tap()

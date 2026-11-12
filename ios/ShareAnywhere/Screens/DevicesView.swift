@@ -32,7 +32,7 @@ struct DevicesView: View {
                         }
                     }
                 }
-                .accessibilityIdentifier("devices.this-device")
+                .screenID("devices.this-device")
             }
             .padding(SATokens.Space.s4)
         }

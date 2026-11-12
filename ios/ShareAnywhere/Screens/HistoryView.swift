@@ -195,15 +195,18 @@ struct HistoryDetailView: View {
                         ForEach(Array(files.enumerated()), id: \.offset) { _, f in row(f.name, formatBytes(f.size)) }
                     }
                 }
-                Section {
-                    Button(role: .destructive) {
-                        Task {
-                            await model.deleteHistory(entry.id)
-                            dismiss()
-                        }
-                    } label: { Text(L10n.t("ios_xx.h_del")) }
-                        .accessibilityIdentifier("history-detail.delete")
+            }
+            // Always on screen (a List does not render rows below the fold, and the action must stay reachable).
+            .safeAreaInset(edge: .bottom) {
+                PrimaryButton(title: L10n.t("ios_xx.h_del"), tone: .danger) {
+                    Task {
+                        await model.deleteHistory(entry.id)
+                        dismiss()
+                    }
                 }
+                .padding(SATokens.Space.s4)
+                .background(p.bg)
+                .accessibilityIdentifier("history-detail.delete")
             }
             .navigationTitle(L10n.t("ios_xx.h_detail"))
             .navigationBarTitleDisplayMode(.inline)

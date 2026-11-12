@@ -62,8 +62,10 @@ class TransferService : Service() {
         try {
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
             ServiceCompat.startForeground(this, NOTIFICATION_ID, build(a), type)
-        } catch (_: Exception) {
-            // Not allowed now (started from the background on Android 12+): transfers continue while the app is open.
+        } catch (e: Exception) {
+            // Not allowed now (started from the background on Android 12+, or the Android 15 dataSync budget is spent):
+            // transfers continue while the app is open.
+            android.util.Log.w("SA-TRANSFER", "foreground service not started: ${e::class.java.simpleName}")
             running = false
             stopSelf()
             return START_NOT_STICKY

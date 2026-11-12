@@ -87,8 +87,9 @@ class SendFlowTest {
                             device.wait(Until.findObject(By.desc(Pattern.compile("Search", Pattern.CASE_INSENSITIVE))), 10_000)
                                 ?: dump("Search not found")
                         search.click()
+                        // DocumentsUI's search box is a SearchView (an AutoCompleteTextView): take the focused field.
                         val field =
-                            device.wait(Until.findObject(By.clazz("android.widget.EditText")), 10_000) ?: dump("search field not found")
+                            device.wait(Until.findObject(By.focused(true)), 10_000) ?: dump("search field not found")
                         field.text = name
                         device.pressEnter()
                         row = device.wait(Until.findObject(file), 15_000) ?: dump("$name not found")

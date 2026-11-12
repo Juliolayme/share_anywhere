@@ -64,11 +64,23 @@ class ClipboardInteropTest {
                 withTimeout(30_000) { while (account.state.value.keys != KeyStatus.Ready) delay(200) }
 
                 // The Web's item decrypts here.
-                withTimeout(60_000) {
-                    while (runtime.ui.value.snapshot.items.none { it.text == fromWeb }) {
-                        runtime.refresh()
-                        delay(1_000)
+                try {
+                    withTimeout(120_000) {
+                        while (runtime.ui.value.snapshot.items.none { it.text == fromWeb }) {
+                            runtime.refresh()
+                            delay(1_000)
+                        }
                     }
+                } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                    // State only (no clipboard text) for the nightly log.
+                    val ui = runtime.ui.value
+                    val snap = ui.snapshot
+                    Log.e(
+                        "SA-CLIP",
+                        "web item not seen: active=${ui.active} keys=${account.state.value.keys} v=${account.state.value.keyVersion} " +
+                            "items=${snap.items.size} locked=${snap.unreadable} synced=${snap.synced} loadError=${snap.loadError}"
+                    )
+                    throw AssertionError("the Web's item never decrypted here", e)
                 }
                 // This device's item, for the Web to decrypt.
                 // Ordinary words: a single token-like string would be skipped as possibly sensitive (as it should).

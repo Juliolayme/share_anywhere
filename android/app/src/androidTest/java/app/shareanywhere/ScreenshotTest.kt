@@ -305,7 +305,11 @@ class ScreenshotTest {
 
     private fun save(variant: String, name: String) {
         compose.waitForIdle()
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        // Sheets and dialogs live in their own window, where the Compose root capture fails: take the whole screen then.
+        val bitmap =
+            runCatching { compose.onRoot().captureToImage().asAndroidBitmap() }.getOrNull()
+                ?: InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                ?: throw AssertionError("no screenshot of $name")
         TestStorage().openOutputFile("screenshots/$variant/$name.png").use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 

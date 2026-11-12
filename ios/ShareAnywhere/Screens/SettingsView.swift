@@ -80,7 +80,7 @@ struct SettingsView: View {
             Text(L10n.t("ios_yy.hc_p"))
         }
         .task { await refreshNotifications() }
-        .accessibilityIdentifier("settings")
+        .screenID("settings")
     }
 
     /// Notifications: the system permission state with Allow (asked here, just in time) or a way to System Settings.

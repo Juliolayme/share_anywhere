@@ -27,6 +27,6 @@ struct WelcomeView: View {
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(p.bg.ignoresSafeArea())
-        .accessibilityIdentifier("welcome")
+        .screenID("welcome")
     }
 }

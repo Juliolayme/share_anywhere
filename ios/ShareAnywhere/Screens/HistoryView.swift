@@ -95,7 +95,7 @@ struct HistoryView: View {
             Text(L10n.t("ios_yy.hc_p"))
         }
         .sheet(item: $selected) { e in HistoryDetailView(entry: e).themed() }
-        .accessibilityIdentifier("history")
+        .screenID("history")
     }
 
     private var chips: some View {
@@ -209,7 +209,7 @@ struct HistoryDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.t("ios_yy.close")) { dismiss() } } }
         }
-        .accessibilityIdentifier("history-detail")
+        .screenID("history-detail")
     }
 
     private func row(_ k: String, _ v: String) -> some View {

@@ -88,7 +88,7 @@ jobs:
           set -o pipefail
           xcodebuild build -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
             -destination "id=${{ steps.sim.outputs.udid }}" -clonedSourcePackagesDirPath ios/build/SourcePackages \
-            -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/build/app-build.log \
+            -derivedDataPath ios/build/DerivedData 2>&1 | tee ios/build/app-build.log \
             | grep -E "error:|warning: .*ShareAnywhere/|\*\* BUILD" || true
           grep -q "\*\* BUILD SUCCEEDED \*\*" ios/build/app-build.log
       - name: xcodebuild build-for-testing
@@ -97,7 +97,7 @@ jobs:
           set -o pipefail
           xcodebuild build-for-testing -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
             -destination "id=${{ steps.sim.outputs.udid }}" -clonedSourcePackagesDirPath ios/build/SourcePackages \
-            -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/build/build.log \
+            -derivedDataPath ios/build/DerivedData 2>&1 | tee ios/build/build.log \
             | grep -E "error:|warning: .*ShareAnywhere/|\*\* (TEST )?BUILD" || true
           grep -qE "\*\* TEST BUILD SUCCEEDED \*\*" ios/build/build.log
       - name: xcodebuild test-without-building

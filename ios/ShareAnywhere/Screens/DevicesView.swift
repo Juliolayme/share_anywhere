@@ -51,7 +51,7 @@ struct DevicesView: View {
         } message: {
             Text(L10n.t("product.reset_identity_p"))
         }
-        .accessibilityIdentifier("devices")
+        .screenID("devices")
     }
 
     private func anonSince(_ iso: String) -> String {

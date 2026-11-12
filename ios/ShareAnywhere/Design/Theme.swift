@@ -25,6 +25,10 @@ struct Themed: ViewModifier {
 extension View {
     func themed() -> some View { modifier(Themed()) }
 
+    /// The design screen ID (docs/UX_SCREEN_MAP.md §12) on a container that keeps its children accessible, so tests
+    /// find both the screen and the controls in it.
+    func screenID(_ id: String) -> some View { accessibilityElement(children: .contain).accessibilityIdentifier(id) }
+
     /// A type step from the tokens, scaled with Dynamic Type.
     func typeStyle(_ s: SATypeStyle) -> some View { modifier(TypeStyleModifier(style: s)) }
 }

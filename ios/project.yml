@@ -1,5 +1,5 @@
 # XcodeGen project (CLAUDE.md §5, docs/ADR/0022): `xcodegen generate` in ios/ writes ShareAnywhere.xcodeproj, which
-# is not committed. iOS 16 minimum, SwiftPM only, no signing material (CI builds with CODE_SIGNING_ALLOWED=NO).
+# is not committed. iOS 16 minimum, SwiftPM only, no signing material (simulator builds are signed ad hoc).
 name: ShareAnywhere
 options:
   bundleIdPrefix: app.shareanywhere
@@ -14,7 +14,10 @@ settings:
     MARKETING_VERSION: "0.7.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
-    CODE_SIGN_STYLE: Automatic
+    # Simulator builds are signed ad hoc ("Sign to Run Locally": no certificate, no team), which gives the app its
+    # Keychain entitlement on the simulator. Device builds need a team and are out of scope in CI (docs/ADR/0022).
+    CODE_SIGN_STYLE: Manual
+    "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     SWIFT_EMIT_LOC_STRINGS: NO

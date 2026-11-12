@@ -24,7 +24,7 @@ struct HomeView: View {
         .background(p.bg.ignoresSafeArea())
         .navigationTitle(L10n.t("ios.home"))
         .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("home")
+        .screenID("home")
     }
 
     @ViewBuilder private var recent: some View {

@@ -62,6 +62,16 @@ build and result next to each item. Nothing here has been run yet (Phase 7).
       in place; a 4 GB file does not double the used storage.
 - [ ] Storage full during a receive shows "This device ran out of storage space." and keeps finished files.
 
+## Clipboard Sync (CB-2, CB-3)
+
+- [ ] Signed in with this device added and the key set up: copy text in Safari, open the Clipboard tab and tap iOS's
+      Paste control: the item syncs with no paste prompt (XCUITest cannot operate this control).
+- [ ] Copy text in another app, return to Share Anywhere: iOS asks to allow the paste; Allow syncs the item, Don't
+      Allow leaves the "You copied something new" hint.
+- [ ] Copy a join code with Copy code, switch apps and come back: nothing is synced and no hint is shown.
+- [ ] Copy text on a Mac signed in to the same Apple ID (Universal Clipboard) while the app is open, then switch away
+      and back: record whether it is captured.
+
 ## VoiceOver walkthrough
 
 - [ ] Transfer home: Send files and Receive files are announced as buttons with their subtitles.

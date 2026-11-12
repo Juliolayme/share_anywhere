@@ -33,6 +33,8 @@ final class AppModel: ObservableObject {
     @Published var historyError: String?
     /// One-time toast text (rename done, history cleared…).
     @Published var toast: String?
+    /// `-uiTesting` probe: the last share link's progress through `openLink` (no token, only the stage).
+    @Published private(set) var linkTrace = ""
     /// Which tab is selected (TR-1 "See all" opens History).
     @Published var tab: Tab = .home
     /// The Transfer tab's navigation path.
@@ -94,6 +96,7 @@ final class AppModel: ObservableObject {
     /// (simulator tests). Opens the join preview; joining stays a tap away, never automatic.
     func openLink(_ url: URL) {
         var text = url.absoluteString
+        linkTrace = "received:\(url.scheme ?? "")"
         if url.scheme?.lowercased() == "shareanywhere" {
             // The custom scheme exists for simulator tests (`-uiTesting`, Debug only); otherwise it is ignored and
             // share links open only as Universal Links.
@@ -104,7 +107,10 @@ final class AppModel: ObservableObject {
                 .publicURL.absoluteString
             text = origin + "/j/" + parts[1]
         }
-        guard let token = JoinInput.linkToken(text, publicOrigin: config.publicURL) else { return toast = L10n.t("product.link_invalid") }
+        guard let token = JoinInput.linkToken(text, publicOrigin: config.publicURL) else {
+            linkTrace = "invalid"
+            return toast = L10n.t("product.link_invalid")
+        }
         settings.welcomed = true
         tab = .home
         Task {
@@ -112,7 +118,9 @@ final class AppModel: ObservableObject {
                 let preview = try await hub.services.resolveLink(token)
                 previews[preview.sessionId] = preview
                 homePath = [.preview(preview.sessionId)]
+                linkTrace = "preview"
             } catch {
+                linkTrace = "error:\(error)"
                 toast = JoinErrors.message(error)
             }
         }

@@ -44,26 +44,6 @@ enum UITest {
         XCTAssertEqual(toggle.value as? String, want, "switch \(identifier)", file: file, line: line)
     }
 
-    /// iOS's Paste control is a secure system control: XCUITest cannot run its scroll-to-visible accessibility action on
-    /// it, so it is tapped where it is drawn once it settles on screen.
-    static func tapPasteControl(_ control: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        let deadline = Date().addingTimeInterval(10)
-        var last = CGRect.null
-        while Date() < deadline {
-            let f = control.frame
-            if !f.isEmpty, f == last { break }
-            last = f
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        }
-        let window = XCUIApplication().windows.firstMatch.frame
-        for _ in 0 ..< 3 where !window.contains(control.frame) {
-            XCUIApplication().swipeUp()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        }
-        XCTAssertTrue(window.contains(control.frame), "the Paste control is on screen: \(control.frame)", file: file, line: line)
-        control.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-    }
-
     /// Waits for `element`; on a timeout prints the app's accessibility tree into the test log (the CI job log is the
     /// only place a failure can be read without the result bundle) and fails with `message`.
     @discardableResult

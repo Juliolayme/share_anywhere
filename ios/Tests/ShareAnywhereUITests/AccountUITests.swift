@@ -19,16 +19,13 @@ final class AccountUITests: XCTestCase {
     private func email() -> String { "ios-ui-\(UUID().uuidString.prefix(10).lowercased())@example.com" }
     private let password = "correct horse battery staple 42"
 
-    /// Paste control first; the fallback button and iOS's Allow Paste prompt otherwise.
+    /// Syncs `text` through the fallback button and iOS's Allow Paste prompt. iOS's Paste control is shown (asserted
+    /// by the callers) but XCUITest cannot operate it: a tap on the secure system control has no effect under test, so
+    /// tapping it is on the real-device checklist.
     private func paste(_ app: XCUIApplication, _ text: String) {
         UIPasteboard.general.string = text
-        let control = app.buttons["Paste"].firstMatch
-        if control.waitForExistence(timeout: 5) {
-            UITest.tapPasteControl(control)
-        } else {
-            UITest.id(app, "clipboard.sync-fallback").tap()
-            allowPaste(app)
-        }
+        UITest.id(app, "clipboard.sync-fallback").tap()
+        allowPaste(app)
     }
 
     /// iOS's paste prompt for a programmatic read (in the app or from SpringBoard, depending on the runtime). Simulator

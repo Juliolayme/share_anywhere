@@ -86,9 +86,12 @@ final class InteropUITests: XCTestCase {
         XCTAssertTrue(webRow.waitForExistence(timeout: 120), "the Web's item decrypts on iOS")
         let mine = "from-ios-\(Int(Date().timeIntervalSince1970))"
         UIPasteboard.general.string = mine
-        let paste = app.buttons["Paste"].firstMatch
-        XCTAssertTrue(paste.waitForExistence(timeout: 10))
-        UITest.tapPasteControl(paste)
+        XCTAssertTrue(app.buttons["Paste"].firstMatch.waitForExistence(timeout: 10), "iOS's Paste control is shown")
+        // XCUITest cannot operate the secure Paste control; the fallback read syncs (iOS asks to allow the paste).
+        UITest.id(app, "clipboard.sync-fallback").tap()
+        let allow = app.alerts.buttons["Allow Paste"].firstMatch
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"].firstMatch
+        if allow.waitForExistence(timeout: 8) { allow.tap() } else if springboard.waitForExistence(timeout: 2) { springboard.tap() }
         let myRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", mine)).firstMatch
         UITest.expect(app, myRow, timeout: 60, "the pasted item is in the timeline")
         print("SA-CLIP marker=\(mine)")

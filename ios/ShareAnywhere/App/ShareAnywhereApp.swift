@@ -122,6 +122,7 @@ struct TestProbes: View {
             probe("test.pasteboard-reads", "\(pasteboard.reads)")
             probe("test.pasteboard-observations", "\(pasteboard.observations)")
             probe("test.device-id", model.identityState.claims?.sub ?? "")
+            probe("test.link-trace", model.linkTrace)
         }
     }
 

@@ -60,11 +60,13 @@ struct FormField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SATokens.Space.s1) {
             Text(label).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
+            // Under UI tests a new-password field is a plain field: iOS password AutoFill takes over a secure field on a
+            // sign-up form on the simulator and swallows the typed text.
+            let testEntry = content == .newPassword && AppConfig.uiTestingProcess
             Group {
-                if secure { SecureField(label, text: $text) } else { TextField(label, text: $text) }
+                if secure, !testEntry { SecureField(label, text: $text) } else { TextField(label, text: $text) }
             }
-            // The simulator's automatic Strong Password takes over a new-password field under UI tests.
-            .textContentType(content == .newPassword && AppConfig.uiTestingProcess ? .password : content)
+            .textContentType(testEntry ? nil : content)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .keyboardType(content == .emailAddress ? .emailAddress : .default)

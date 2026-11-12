@@ -215,3 +215,11 @@ The design shows the finished product with sample data. These elements are left 
 | K10 | Item detail drawer | Bottom sheet (CB-5) with origin, date and time, full selectable text, character count, Copy, Delete | Material bottom sheet on Android |
 | K11 | Clipboard settings are rows in ST-1 (`s_clipkeep`, `s_skip`) | A Clipboard settings link in ST-1 opens `clipboard-settings` (CB-6: automatic capture, skip sensitive with the disclaimer, pause, keep 7/3/1 days, clear) | The Web's CB-6; settings that apply to every device sit together with their explanation |
 | K12 | `devices` rows with Rename and Revoke for every device | Rename for an added device, Revoke for other devices once this one holds the key, "Not paired yet", Pair a new device (scan the new device's QR with CameraX, or paste its code) | The Web's DV-1 rules: revoking rotates the key, which needs it |
+
+## L. iOS shell: differences from the design (Phase 7, milestone 7.2)
+
+1. **History detail is a pushed screen, not a sheet.** `iOS App.dc.html` shows Transfer details over the list; the app pushes `history-detail` with a back button. In the simulator the detail sheet stopped presenting after a relaunch, and a pushed detail is the platform pattern for list rows. Content and the Delete from history action match the design; Delete stays on screen above the home indicator.
+2. **No Send and Receive tiles on Transfer home until milestone 7.3**, and no Sign in on Welcome, Settings or Devices until 7.4 (`accounts` flag off, `CLAUDE.md` §8b): no control is shown before it works.
+3. **Transfer strategy, Data & battery and Cloud rows are not in Settings yet.** They have no effect before Phase 8 (route strategy, Cloud Distribution) and transfers (7.3); they are added with the features.
+4. **The header logo uses the token geometry** (`SATokens.Logo`, drawn with `Canvas`) rather than an exported image, so it follows light and dark from the tokens.
+

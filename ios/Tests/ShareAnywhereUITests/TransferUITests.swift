@@ -146,7 +146,7 @@ final class TransferUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "home").waitForExistence(timeout: 15))
         guard #available(iOS 16.4, *) else { throw XCTSkip("opening a URL from a UI test needs iOS 16.4") }
         app.open(URL(string: "shareanywhere://j/\(token)")!)
-        XCTAssertTrue(UITest.id(app, "preview.receive").waitForExistence(timeout: 20), "the link opens the join preview")
+        guard UITest.expect(app, UITest.id(app, "preview.receive"), timeout: 20, "the link opens the join preview") else { return }
         XCTAssertTrue(app.staticTexts["linked.txt"].exists)
         XCTAssertTrue(UITest.id(app, "rx-preview").exists, "nothing is joined until Receive is tapped")
     }

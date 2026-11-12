@@ -90,7 +90,7 @@ final class InteropUITests: XCTestCase {
         XCTAssertTrue(paste.waitForExistence(timeout: 10))
         UITest.tapPasteControl(paste)
         let myRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", mine)).firstMatch
-        XCTAssertTrue(myRow.waitForExistence(timeout: 60))
+        UITest.expect(app, myRow, timeout: 60, "the pasted item is in the timeline")
         print("SA-CLIP marker=\(mine)")
         shot(app, "interop-clipboard")
         // Give the Web time to read it before the app goes away.

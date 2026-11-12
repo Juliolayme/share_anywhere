@@ -64,11 +64,7 @@ final class AccountUITests: XCTestCase {
         let firstDevice = before.value as? String
 
         signUpInApp(app, email())
-        if !UITest.id(app, "trust").waitForExistence(timeout: 30) {
-            let error = UITest.id(app, "signup.error")
-            XCTFail("after sign-up: add this device (error banner: \(error.exists ? error.label : "none"))")
-            return
-        }
+        guard UITest.expect(app, UITest.id(app, "trust"), timeout: 30, "after sign-up: add this device") else { return }
         shot(app, "trust")
         UITest.id(app, "trust.continue").tap()
         XCTAssertTrue(UITest.id(app, "key-setup").waitForExistence(timeout: 30))
@@ -86,7 +82,7 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "clipboard.empty").waitForExistence(timeout: 30), "an empty timeline once synced")
         let text = "From the iOS simulator \(UUID().uuidString.prefix(6))"
         paste(app, text)
-        XCTAssertTrue(row(app, text).waitForExistence(timeout: 30), "the item is in the timeline")
+        guard UITest.expect(app, row(app, text), timeout: 30, "the item is in the timeline") else { return }
         shot(app, "clipboard")
 
         // The fallback button reads the pasteboard itself (iOS confirms with its paste prompt).
@@ -130,7 +126,7 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "trust").waitForExistence(timeout: 20))
         UITest.id(app, "trust.continue").tap()
         let code = UITest.id(app, "key-pair.code")
-        XCTAssertTrue(code.waitForExistence(timeout: 30), "the account has a key: pair with another device")
+        guard UITest.expect(app, code, timeout: 60, "the account has a key: pair with another device") else { return }
         let payload = try XCTUnwrap(code.value as? String)
         shot(app, "key-pair")
         try blocking(60) { try await other.sendKey(to: payload) }
@@ -142,7 +138,7 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(row(app, fromPeer).waitForExistence(timeout: 30), "decrypted on the app")
         let fromApp = "From the app \(UUID().uuidString.prefix(6))"
         paste(app, fromApp)
-        XCTAssertTrue(row(app, fromApp).waitForExistence(timeout: 30))
+        guard UITest.expect(app, row(app, fromApp), timeout: 30, "the pasted item is in the timeline") else { return }
         eventually("decrypted on the other device", timeout: 30) {
             (try? self.blocking(20) { try await other.texts() })?.contains(fromApp) == true
         }

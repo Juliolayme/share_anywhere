@@ -59,6 +59,21 @@ enum UITest {
         control.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
+    /// Waits for `element`; on a timeout prints the app's accessibility tree into the test log (the CI job log is the
+    /// only place a failure can be read without the result bundle) and fails with `message`.
+    @discardableResult
+    static func expect(
+        _ app: XCUIApplication, _ element: XCUIElement, timeout: TimeInterval, _ message: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) -> Bool {
+        if element.waitForExistence(timeout: timeout) { return true }
+        print("SA-UI-TREE begin: \(message)\n\(app.debugDescription)\nSA-UI-TREE end")
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        if springboard.alerts.count > 0 { print("SA-UI-TREE springboard alerts:\n\(springboard.alerts.debugDescription)") }
+        XCTFail(message, file: file, line: line)
+        return false
+    }
+
     static func tab(_ app: XCUIApplication, _ label: String) {
         app.tabBars.buttons[label].tap()
     }

@@ -13,7 +13,8 @@ let package = Package(
         .library(name: "TransferEngine", targets: ["SATransferEngine"]),
         .library(name: "ClipboardCrypto", targets: ["SAClipboardCrypto"]),
         .library(name: "APIClient", targets: ["SAAPIClient"]),
-        .library(name: "Store", targets: ["SAStore"])
+        .library(name: "Store", targets: ["SAStore"]),
+        .library(name: "TransferRuntime", targets: ["SATransferRuntime"])
     ],
     dependencies: [
         // CryptoKit on Apple platforms (swift-crypto re-exports it there), BoringSSL-backed elsewhere.
@@ -43,11 +44,18 @@ let package = Package(
         .systemLibrary(name: "CSQLite", path: "Sources/CSQLite", providers: [.apt(["libsqlite3-dev"])]),
         // Apple platforms use the SDK's SQLite3 module; Linux (tests in the cloud session) the system library.
         .target(name: "SAStore", dependencies: [.target(name: "CSQLite", condition: .when(platforms: [.linux]))]),
+        // Sessions, signaling, peer links, storage and the sender / receiver controllers, behind protocols so the
+        // whole receive and send logic runs in `swift test` with in-memory peers (the app plugs in StreamWebRTC).
+        .target(
+            name: "SATransferRuntime",
+            dependencies: ["SATransferEngine", "SAAPIClient", "SAStore", .product(name: "Crypto", package: "swift-crypto")]
+        ),
         .testTarget(name: "SAProtocolTests", dependencies: ["SAProtocol"]),
         .testTarget(name: "SATransferEngineTests", dependencies: ["SATransferEngine"]),
         .testTarget(name: "SAClipboardCryptoTests", dependencies: ["SAClipboardCrypto"]),
         .testTarget(name: "SAAPIClientTests", dependencies: ["SAAPIClient"]),
-        .testTarget(name: "SAStoreTests", dependencies: ["SAStore"])
+        .testTarget(name: "SAStoreTests", dependencies: ["SAStore"]),
+        .testTarget(name: "SATransferRuntimeTests", dependencies: ["SATransferRuntime"])
     ],
     swiftLanguageModes: [.v6]
 )

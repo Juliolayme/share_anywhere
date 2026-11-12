@@ -94,7 +94,8 @@ final class AccountUITests: XCTestCase {
         UITest.scrollTo(app, "settings.signout").tap()
         XCTAssertTrue(UITest.id(app, "signout").waitForExistence(timeout: 10))
         UITest.id(app, "signout.confirm").tap()
-        XCTAssertTrue(UITest.id(app, "settings.guest").waitForExistence(timeout: 30), "a guest again")
+        // Sign out was scrolled to; the guest header is back at the top of the list.
+        XCTAssertTrue(UITest.scrollTo(app, "settings.guest", up: true, timeout: 20).exists, "a guest again")
         eventually("a new anonymous device") {
             let now = UITest.id(app, "test.device-id").value as? String
             return now?.isEmpty == false && now != firstDevice

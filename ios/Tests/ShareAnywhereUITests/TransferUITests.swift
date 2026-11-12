@@ -282,7 +282,8 @@ final class TransferUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "rx.start").waitForExistence(timeout: 20))
         UITest.id(app, "rx.start").tap()
         eventually("connecting keeps the screen on") { idle(app) == "true" }
-        UITest.id(app, "rx.cancel").tap()
+        // On small screens Cancel sits under the tab bar until scrolled up.
+        UITest.tapRevealed(app, UITest.id(app, "rx.cancel"))
         let confirm = app.alerts.buttons["Cancel"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()

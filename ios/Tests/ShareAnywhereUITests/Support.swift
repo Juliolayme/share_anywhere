@@ -60,10 +60,11 @@ enum UITest {
 
     /// Swipes up until a row of a lazy list exists (rows below the fold are not in the tree on small screens).
     @discardableResult
-    static func scrollTo(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
+    static func scrollTo(_ app: XCUIApplication, _ identifier: String, up: Bool = false, timeout: TimeInterval = 0) -> XCUIElement {
         let element = id(app, identifier)
+        if timeout > 0, element.waitForExistence(timeout: timeout) { return element }
         for _ in 0 ..< 6 where !element.exists {
-            app.swipeUp()
+            if up { app.swipeDown() } else { app.swipeUp() }
             RunLoop.current.run(until: Date().addingTimeInterval(0.4))
         }
         return element

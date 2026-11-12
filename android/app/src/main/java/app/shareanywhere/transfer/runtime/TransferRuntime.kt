@@ -58,19 +58,23 @@ class TransferRuntime(
     val activity: StateFlow<TransferActivity> = _activity.asStateFlow()
     private var watcher: Job? = null
 
-    fun sender(sessionId: String): SenderController = senders.getOrPut(sessionId) {
-        SenderController(SenderDeps(context, sessionId, sessions, transfers, socket, outgoing, history, json)).also {
+    // The controller is in the map before rewatch() runs: rewatch() reads the maps, and a controller added after it
+    // would not drive the activity (foreground service, notification) until some other session came or went.
+    @Synchronized
+    fun sender(sessionId: String): SenderController = senders[sessionId]
+        ?: SenderController(SenderDeps(context, sessionId, sessions, transfers, socket, outgoing, history, json)).also {
             it.init()
+            senders[sessionId] = it
             rewatch()
         }
-    }
 
-    fun receiver(sessionId: String): ReceiverController = receivers.getOrPut(sessionId) {
-        ReceiverController(ReceiverDeps(context, sessionId, sessions, transfers, socket, incoming, history, json)).also {
+    @Synchronized
+    fun receiver(sessionId: String): ReceiverController = receivers[sessionId]
+        ?: ReceiverController(ReceiverDeps(context, sessionId, sessions, transfers, socket, incoming, history, json)).also {
             it.init()
+            receivers[sessionId] = it
             rewatch()
         }
-    }
 
     fun existingReceiver(sessionId: String): ReceiverController? = receivers[sessionId]
 
@@ -81,6 +85,7 @@ class TransferRuntime(
     }
 
     /** Forgets a finished session's controller (after its result was shown). */
+    @Synchronized
     fun release(sessionId: String) {
         senders.remove(sessionId)?.dispose()
         receivers.remove(sessionId)?.dispose()

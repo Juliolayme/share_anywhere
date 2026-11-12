@@ -17,6 +17,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import app.shareanywhere.ui.nav.ScreenIds
 import java.io.ByteArrayOutputStream
@@ -79,10 +80,23 @@ class SendFlowTest {
                     compose.waitForTag(ScreenIds.SEND)
                     compose.onNodeWithTag("send.choose").tap()
 
-                    // DocumentsUI: the file may be listed (Recent or Downloads); otherwise search for it by name.
+                    // DocumentsUI: the file may be listed (Recent or Downloads); otherwise search for it by name. The search
+                    // box then holds the same text, so a match must be a list row, not the editable field.
                     val file = By.text(Pattern.compile("^${Pattern.quote(name)}$"))
-                    var row = device.wait(Until.findObject(file), 8_000)
-                    if (row == null) {
+                    val editable = Regex("EditText|AutoComplete|SearchView")
+                    fun row(): UiObject2? {
+                        val rows = device.findObjects(file).filter { !it.isFocused && !editable.containsMatchIn(it.className.orEmpty()) }
+                        return rows.firstOrNull { it.resourceName.orEmpty().endsWith(":id/title") } ?: rows.firstOrNull()
+                    }
+                    fun waitRow(ms: Long): UiObject2? {
+                        val end = System.currentTimeMillis() + ms
+                        while (System.currentTimeMillis() < end) {
+                            row()?.let { return it }
+                            Thread.sleep(250)
+                        }
+                        return null
+                    }
+                    if (waitRow(8_000) == null) {
                         val search =
                             device.wait(Until.findObject(By.desc(Pattern.compile("Search", Pattern.CASE_INSENSITIVE))), 10_000)
                                 ?: dump("Search not found")
@@ -92,14 +106,14 @@ class SendFlowTest {
                             device.wait(Until.findObject(By.focused(true)), 10_000) ?: dump("search field not found")
                         field.text = name
                         device.pressEnter()
-                        row = device.wait(Until.findObject(file), 15_000) ?: dump("$name not found")
+                        waitRow(15_000) ?: dump("$name not found")
                     }
-                    row.click()
-                    // In search results the first tap can only select the row: press Select (or tap again) until the app is back.
-                    repeat(3) {
-                        if (device.wait(Until.hasObject(By.res("send.total")), 5_000)) return@repeat
+                    // In search results the first tap can only select the row: press Select (or tap the row again) until
+                    // the app is back.
+                    for (attempt in 0 until 4) {
+                        if (attempt > 0 && device.wait(Until.hasObject(By.pkg(context.packageName)), 5_000)) break
                         val select = device.findObject(By.text(Pattern.compile("^Select$", Pattern.CASE_INSENSITIVE)))
-                        if (select != null) select.click() else device.findObject(file)?.click()
+                        if (attempt > 0 && select != null) select.click() else row()?.click()
                     }
 
                     // Back in the app: the file is listed; Require approval is off by default.

@@ -95,6 +95,9 @@ class KeepScreenOnTest {
                 compose.waitForTag("rx.pause", 60_000)
                 compose.waitUntil(10_000) { entry.keepAwake().screenOn.value }
                 compose.waitUntil(5_000) { windowKeepsOn(scenario) == true }
+                // The first transfer of the process drives the runtime's activity and so the foreground service.
+                compose.waitUntil(10_000) { entry.transferRuntime().activity.value.receiving }
+                compose.waitUntil(10_000) { app.shareanywhere.transfer.TransferService.running }
 
                 compose.onNodeWithTag("rx.pause").tap()
                 compose.waitUntil(10_000) { !entry.keepAwake().screenOn.value }

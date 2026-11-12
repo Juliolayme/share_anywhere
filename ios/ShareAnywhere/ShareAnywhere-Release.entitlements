@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Release (signed device) builds: Universal Links for share links on the host in SA_APPLINKS_HOST, which serves
+     apple-app-site-association (infra/caddy/Caddyfile, SA_APPLE_APP_ID). Debug and simulator builds use no entitlements. -->
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:$(SA_APPLINKS_HOST)</string>
+	</array>
+</dict>
+</plist>

@@ -246,7 +246,7 @@ struct SessionScreen: View {
         if !s.ended {
             share(v)
             if v.protectedMode { Banner(kind: .warning, title: L10n.t("product.protected_mode_sender")) }
-            KeepOpenBanner(paused: s.tx.receivers.contains { $0.status == .paused } && !s.tx.isActive)
+            KeepOpenBanner(paused: s.tx.receivers.contains { $0.status == .paused } && !s.tx.isActive, context: id)
         }
         if s.tx.loaded, !s.tx.hasFiles, !s.tx.files.isEmpty {
             Banner(kind: .danger, title: L10n.t("product.tx_err_files_gone_app")).accessibilityIdentifier("session.files-gone")
@@ -443,7 +443,7 @@ struct ParticipantCard: View {
     }
 
     private var meta: String {
-        var parts = [participant.platform.capitalized, L10n.t(participant.signedIn ? "product.badge_signed_in" : "product.badge_guest")]
+        var parts = [platformName(participant.platform), L10n.t(participant.signedIn ? "product.badge_signed_in" : "product.badge_guest")]
         if let via = participant.joinedVia { parts.append(L10n.t(via == "link" ? "product.via_link" : "product.via_code")) }
         return parts.joined(separator: " · ")
     }

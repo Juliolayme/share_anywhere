@@ -172,3 +172,13 @@ enum JoinInput {
         return ok ? String(token) : nil
     }
 }
+
+/// A device platform as people write it ("iOS", not "Ios").
+func platformName(_ p: String) -> String {
+    switch p.lowercased() {
+    case "ios": "iOS"
+    case "android": "Android"
+    case "web": "Web"
+    default: p.capitalized
+    }
+}

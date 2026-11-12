@@ -269,9 +269,12 @@ public struct IncomingFolder: Sendable {
         }
         s = s.trimmingCharacters(in: .whitespaces)
         if s.count > 200 {
-            let ext = (s as NSString).pathExtension
+            // Keep a short extension (up to 16 characters); a longer one is not an extension worth keeping.
+            var ext = (s as NSString).pathExtension
+            if ext.count > 16 { ext = "" }
+            let stem = ext.isEmpty ? s : String(s.dropLast(ext.count + 1))
             let keep = 200 - (ext.isEmpty ? 0 : ext.count + 1)
-            s = String(s.prefix(keep)) + (ext.isEmpty ? "" : "." + ext)
+            s = String(stem.prefix(keep)) + (ext.isEmpty ? "" : "." + ext)
         }
         return s.isEmpty ? "file" : s
     }

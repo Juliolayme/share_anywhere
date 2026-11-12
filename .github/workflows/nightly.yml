@@ -320,10 +320,9 @@ jobs:
         run: |
           cat <<'TXT'
           Jobs still to be added by later phases (docs/TESTING_AND_CI.md section 2.2):
-            Phase 7  clipboard-cross-client for iOS (Web <-> Android runs above)
-            Phase 7  ios-matrix, ios-web-interop, ios-background-suspend
             Phase 8  turn-forced         relay-only transfers over UDP and TCP/TLS
-            Phase 7  android-ios-interop best-effort, two half-tests against a shared ephemeral backend
+          Not built (best effort in Phase 7, see docs/phases/reports/PHASE_7_REPORT.md):
+            android-ios-interop  two half-tests against a shared ephemeral backend
           TXT
 
   ios-matrix:
@@ -337,13 +336,16 @@ jobs:
           - { device: 'iPhone SE (3rd generation)', runtime: latest, dynamic: '', artifact: matrix-se }
           - { device: 'iPhone 16 Pro Max', runtime: latest, dynamic: '', artifact: matrix-pro-max }
           - { device: 'iPhone 16', runtime: oldest, dynamic: '', artifact: matrix-oldest }
-          - { device: 'iPhone 16', runtime: latest, dynamic: UICTContentSizeCategoryAccessibilityXXXL, artifact: matrix-xxxl }
+          # XXXL: the screenshot suite only (light and dark at that size); the flows run in the other entries, and at XXXL
+          # rows of the lazy lists sit off screen where XCUITest cannot tap them.
+          - { device: 'iPhone 16', runtime: latest, dynamic: UICTContentSizeCategoryAccessibilityXXXL, artifact: matrix-xxxl, only: ShareAnywhereUITests/ScreenshotUITests }
     uses: ./.github/workflows/ios-simulator.yml
     with:
       device: ${{ matrix.device }}
       runtime: ${{ matrix.runtime }}
       dynamic-type: ${{ matrix.dynamic }}
       artifact: ${{ matrix.artifact }}
+      only-testing: ${{ matrix.only || '' }}
 
   ios-background-suspend:
     # ADR 0027: a receive paused by leaving the app (after the background-task grace period) resumes on return.

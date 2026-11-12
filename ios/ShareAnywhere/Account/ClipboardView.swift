@@ -7,13 +7,17 @@ import UIKit
 @MainActor
 final class PasteboardAccess: ObservableObject {
     @Published private(set) var reads = 0
+    /// Times change observation started (a guest must never get one).
+    @Published private(set) var observations = 0
     @Published private(set) var changedSinceSync = false
     private var observer: NSObjectProtocol?
-    private var lastCount = UIPasteboard.general.changeCount
+    /// Read only once observation starts, never for a guest.
+    private var lastCount = 0
 
     /// Watches `changeCount` (no content is read, so iOS shows no paste prompt) while the app is in front.
     func observe(_ on: Bool) {
         if on, observer == nil {
+            observations += 1
             lastCount = UIPasteboard.general.changeCount
             observer = NotificationCenter.default
                 .addObserver(forName: UIPasteboard.changedNotification, object: nil, queue: .main) { [weak self] _ in
@@ -41,6 +45,7 @@ final class PasteboardAccess: ObservableObject {
     }
 
     func synced() {
+        guard observer != nil else { return }
         lastCount = UIPasteboard.general.changeCount
         changedSinceSync = false
     }
@@ -65,7 +70,7 @@ final class PasteboardAccess: ObservableObject {
 
     func write(_ text: String) {
         UIPasteboard.general.string = text
-        lastCount = UIPasteboard.general.changeCount
+        if observer != nil { lastCount = UIPasteboard.general.changeCount }
     }
 }
 

@@ -41,7 +41,7 @@ struct AccountDevicesSection: View {
                             Text(d.name).typeStyle(SATokens.TypeScale.labelLg).foregroundStyle(p.fg)
                             Text(
                                 [
-                                    d.platform.capitalized,
+                                    platformName(d.platform),
                                     d.current ? L10n.t("ios_yy.dv_this") : nil,
                                     d.hasKey ? L10n.t("ios_yy.trusted") : L10n.t("product.device_no_key")
                                 ]

@@ -68,6 +68,8 @@ final class AppModel: ObservableObject {
         self.keepAwake = keepAwake
         hub = TransferHub(api: client, identity: identity, history: store, keepAwake: keepAwake, graceSeconds: config.backgroundGrace)
         keepAwake.setEnabled(settings.keepScreenOn)
+        let settingsRef = settings
+        keepAwake.enableSetting = { settingsRef.keepScreenOn = true }
         account = AccountSession(client: client, identity: identity, history: store, socket: hub.socket)
         relay.model = self
         account.attach(self)
@@ -93,6 +95,10 @@ final class AppModel: ObservableObject {
     func openLink(_ url: URL) {
         var text = url.absoluteString
         if url.scheme?.lowercased() == "shareanywhere" {
+            #if !DEBUG
+                // The custom scheme exists for simulator tests; Release builds take share links as Universal Links only.
+                return toast = L10n.t("product.link_invalid")
+            #endif
             let parts = ([url.host ?? ""] + url.pathComponents.filter { $0 != "/" }).filter { !$0.isEmpty }
             guard parts.count == 2, parts[0] == "j" else { return toast = L10n.t("product.link_invalid") }
             let origin = config.publicURL.absoluteString.hasSuffix("/") ? String(config.publicURL.absoluteString.dropLast()) : config

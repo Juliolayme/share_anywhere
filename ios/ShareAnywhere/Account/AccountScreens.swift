@@ -383,6 +383,8 @@ struct KeyPairView: View {
         .navigationTitle(L10n.t("product.pair_h"))
         .navigationBarBackButtonHidden(true)
         .task { if start == nil { begin() } }
+        // Back from the recovery phrase screen: watch the same code again.
+        .onAppear { if let start, status == "waiting", poll == nil || poll?.isCancelled == true { watch(start) } }
         .onDisappear { poll?.cancel() }
         .screenID("key-pair")
     }

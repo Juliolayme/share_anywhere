@@ -8,10 +8,22 @@ import UIKit
 @MainActor
 final class KeepAwake: ObservableObject {
     @Published private(set) var reasons: Set<String> = []
+    /// Sessions whose screen-on the user turned off with the pill ("off for this transfer").
+    @Published private(set) var userOff: Set<String> = []
     /// The value last applied to `UIApplication.shared.isIdleTimerDisabled`.
     @Published private(set) var screenOn = false
-    private(set) var enabled = true
+    @Published private(set) var enabled = true
     private var sceneActive = true
+    /// Turns the setting back on from the pill ("Screen-on is off in Settings").
+    var enableSetting: () -> Void = {}
+
+    /// Whether a session has an active reason (bytes moving or waiting) right now.
+    func wanted(_ context: String) -> Bool { reasons.contains { $0.hasSuffix(context) } }
+
+    func setUserOff(_ context: String, _ off: Bool) {
+        if off { userOff.insert(context) } else { userOff.remove(context) }
+        apply()
+    }
 
     func set(_ reason: String, _ on: Bool) {
         if on, !reasons.contains(reason) {
@@ -35,7 +47,8 @@ final class KeepAwake: ObservableObject {
     }
 
     private func apply() {
-        let want = enabled && sceneActive && !reasons.isEmpty
+        let effective = reasons.filter { r in !userOff.contains { r.hasSuffix($0) } }
+        let want = enabled && sceneActive && !effective.isEmpty
         if UIApplication.shared.isIdleTimerDisabled != want { UIApplication.shared.isIdleTimerDisabled = want }
         if screenOn != want { screenOn = want }
     }
@@ -45,6 +58,8 @@ final class KeepAwake: ObservableObject {
 /// waits for a peer. `paused` shows "Screen can sleep — paused" while this screen's transfer is paused.
 struct KeepOpenBanner: View {
     var paused = false
+    /// The session the pill toggles for ("off for this transfer").
+    let context: String
     @EnvironmentObject private var keepAwake: KeepAwake
     @Environment(\.palette) private var p
 
@@ -58,7 +73,7 @@ struct KeepOpenBanner: View {
                         .accessibilityIdentifier("keepopen.lock-hint")
                 }
             }
-            ScreenOnPill(paused: paused)
+            ScreenOnPill(paused: paused, context: context)
         }
         .padding(SATokens.Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -68,28 +83,53 @@ struct KeepOpenBanner: View {
     }
 }
 
+/// The screen-on pill (docs/ARCHITECTURE.md §7.3): "Screen stays on" (tap: off for this transfer), "Screen can sleep"
+/// after that (tap: on again), "Screen can sleep — paused" while nothing moves, and "Screen-on is off in Settings"
+/// (tap: turn the setting on).
 struct ScreenOnPill: View {
     var paused = false
+    let context: String
     @EnvironmentObject private var keepAwake: KeepAwake
     @Environment(\.palette) private var p
 
+    private enum Mode { case setOff, on, userOff, paused }
+
+    private var mode: Mode {
+        if !keepAwake.enabled { return .setOff }
+        if keepAwake.userOff.contains(context) { return .userOff }
+        if keepAwake.screenOn, keepAwake.wanted(context) { return .on }
+        return .paused
+    }
+
     var body: some View {
-        let (text, icon, on): (String, String, Bool) = if !keepAwake.enabled {
-            (L10n.t("ios_xx.wake_setoff"), "moon", false)
-        } else if keepAwake.screenOn {
-            (L10n.t("ios_xx.wake_on"), "sun.max.fill", true)
-        } else if paused {
-            (L10n.t("ios_xx.wake_paused"), "pause.circle", false)
-        } else {
-            (L10n.t("ios_xx.wake_off"), "moon", false)
+        let m = mode
+        let (text, icon): (String, String) = switch m {
+        case .setOff: (L10n.t("ios_xx.wake_setoff"), "moon")
+        case .on: (L10n.t("ios_xx.wake_on"), "sun.max.fill")
+        case .userOff: (L10n.t("ios_xx.wake_off"), "moon")
+        case .paused: (L10n.t("ios_xx.wake_paused"), "pause.circle")
         }
-        Label(text, systemImage: icon)
-            .typeStyle(SATokens.TypeScale.caption)
-            .padding(.horizontal, SATokens.Space.s2)
-            .padding(.vertical, SATokens.Space.s1)
-            .foregroundStyle(on ? p.receiveInk : p.fg2)
-            .background((on ? p.receive : p.fg2).opacity(0.14), in: Capsule())
-            .accessibilityIdentifier("screen-on-pill")
+        Button {
+            switch m {
+            case .setOff: keepAwake.enableSetting()
+            case .on: keepAwake.setUserOff(context, true)
+            case .userOff: keepAwake.setUserOff(context, false)
+            case .paused: break
+            }
+        } label: {
+            Label(text, systemImage: icon)
+                .typeStyle(SATokens.TypeScale.caption)
+                .padding(.horizontal, SATokens.Space.s2)
+                .padding(.vertical, SATokens.Space.s1)
+                .foregroundStyle(m == .on ? p.receiveInk : p.fg2)
+                .background((m == .on ? p.receive : p.fg2).opacity(0.14), in: Capsule())
+                .frame(minHeight: SATokens.touchTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(m == .paused)
+        .accessibilityHint(L10n.t("ios_xx.wake_set_p"))
+        .accessibilityIdentifier("screen-on-pill")
     }
 }
 
@@ -98,7 +138,8 @@ struct IdleTimerProbe: View {
     @EnvironmentObject private var keepAwake: KeepAwake
 
     var body: some View {
-        let value = keepAwake.screenOn && UIApplication.shared.isIdleTimerDisabled
+        // The raw flag, re-read whenever the controller publishes, so a stuck value would show.
+        let value = UIApplication.shared.isIdleTimerDisabled
         Text(value ? "true" : "false")
             .font(.system(size: 1))
             .opacity(0.02)

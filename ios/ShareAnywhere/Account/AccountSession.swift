@@ -21,13 +21,19 @@ final class AccountSession: ObservableObject {
     private let socket: SessionSocket
     private var engine: ClipboardEngine?
     private var engineTask: Task<Void, Never>?
+    private var snapshotTask: Task<Void, Never>?
     private var tasks: [Task<Void, Never>] = []
     private weak var app: AppModel?
 
     init(client: APIClient, identity: IdentityManager, history: HistoryStore, socket: SessionSocket) {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
             ?? FileManager.default.temporaryDirectory
-        let account = dir.appendingPathComponent("account", isDirectory: true)
+        var account = dir.appendingPathComponent("account", isDirectory: true)
+        // The sealed key vault and clipboard cache cannot be opened on another device: keep them out of backups.
+        try? FileManager.default.createDirectory(at: account, withIntermediateDirectories: true)
+        var noBackup = URLResourceValues()
+        noBackup.isExcludedFromBackup = true
+        try? account.setResourceValues(noBackup)
         let api = LiveAccountAPI(client: client, identity: identity)
         self.api = api
         self.socket = socket
@@ -88,8 +94,9 @@ final class AccountSession: ObservableObject {
             guard let self, !Task.isCancelled else { return }
             engine = e
             let snaps = e.state.values()
-            Task { [weak self] in
+            snapshotTask = Task { [weak self] in
                 for await s in snaps {
+                    guard !Task.isCancelled else { return }
                     self?.clip = s
                 }
             }
@@ -100,6 +107,8 @@ final class AccountSession: ObservableObject {
     private func stopEngine() {
         engineTask?.cancel()
         engineTask = nil
+        snapshotTask?.cancel()
+        snapshotTask = nil
         if let e = engine { Task { await e.stop() } }
         engine = nil
         clip = ClipboardSnapshot()

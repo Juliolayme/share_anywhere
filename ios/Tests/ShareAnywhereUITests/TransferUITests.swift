@@ -156,7 +156,7 @@ final class TransferUITests: XCTestCase {
         app.launch()
         let code = createSession(app)
         let receiver = try peer("Joined Early")
-        _ = try blocking { try await receiver.join(code: code) }
+        let joined = try blocking { try await receiver.join(code: code) }
         XCTAssertTrue(card(app, "Joined Early").waitForExistence(timeout: 20))
 
         try blocking { try await TestPeer.advanceClock(seconds: 601) }
@@ -172,6 +172,13 @@ final class TransferUITests: XCTestCase {
         XCTAssertTrue(fresh.waitForExistence(timeout: 20))
         XCTAssertNotEqual(fresh.value as? String, code, "Create new code issues a different code")
         XCTAssertTrue(card(app, "Joined Early").exists, "the receiver who already joined is not affected")
+
+        // The early receiver still gets the files after the expiry and the new code.
+        let rx = try blocking(60) { await receiver.receive(joined.sessionId) }
+        eventually("the joined receiver finishes", timeout: 120) { rx.state.value.phase.isFinal }
+        XCTAssertEqual(rx.state.value.phase, .completed)
+        let saved = try XCTUnwrap(rx.state.value.files.first?.savedURL)
+        XCTAssertEqual(TestPeer.sha256(file: saved), TestPeer.sha256(TestPeer.seededContent(index: 0, size: 1000)))
     }
 
     func testRemoveAndBlockReceivers() throws {
@@ -225,7 +232,9 @@ final class TransferUITests: XCTestCase {
         UITest.flip(app, "settings.keep-screen-on", to: false)
         UITest.tab(app, "Transfer")
         _ = createSession(app)
-        XCTAssertTrue(app.staticTexts["Screen-on is off in Settings"].waitForExistence(timeout: 5))
+        let pill = UITest.id(app, "screen-on-pill")
+        XCTAssertTrue(pill.waitForExistence(timeout: 5))
+        XCTAssertTrue(pill.label.contains("Screen-on is off in Settings"), pill.label)
         eventually("setting off: never kept on") { idle(app) == "false" }
 
         UITest.tab(app, "Settings")
@@ -233,10 +242,43 @@ final class TransferUITests: XCTestCase {
         UITest.tab(app, "Transfer")
         eventually("setting on: waiting keeps the screen on") { idle(app) == "true" }
 
+        // The pill turns screen-on off for this session and back on.
+        pill.tap()
+        eventually("pill: off for this transfer") { idle(app) == "false" }
+        eventually("pill says the screen can sleep") { pill.label.contains("Screen can sleep") }
+        pill.tap()
+        eventually("pill: on again") { idle(app) == "true" }
+
         XCUIDevice.shared.press(.home)
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         app.activate()
         eventually("on again after returning") { idle(app) == "true" }
+    }
+
+    func testCancellingTheReceiveLetsTheScreenSleep() throws {
+        let sender = try peer("Cancel Mac")
+        let (view, _, tx) = try blocking(120) { try await sender.share(name: "cancel.bin", size: 128 * 1024 * 1024) }
+        try blocking { await tx.start() }
+        let app = UITest.app()
+        app.launch()
+        UITest.skipWelcome(app)
+        UITest.id(app, "home.receive").tap()
+        let field = UITest.id(app, "receive.code-input")
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        try field.typeText(XCTUnwrap(view.code))
+        UITest.id(app, "receive.continue").tap()
+        XCTAssertTrue(UITest.id(app, "preview.receive").waitForExistence(timeout: 15))
+        UITest.id(app, "preview.receive").tap()
+        XCTAssertTrue(UITest.id(app, "rx.start").waitForExistence(timeout: 20))
+        UITest.id(app, "rx.start").tap()
+        eventually("receiving keeps the screen on") { idle(app) == "true" }
+        UITest.id(app, "rx.cancel").tap()
+        let confirm = app.alerts.buttons["Cancel"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(UITest.id(app, "rx-done").waitForExistence(timeout: 30), "the result shows the cancelled receive")
+        eventually("cancelled: the screen may sleep") { idle(app) == "false" }
     }
 
     func testLeavingTheAppPausesTheReceiveWhichResumesOnReturn() throws {

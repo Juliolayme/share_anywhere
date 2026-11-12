@@ -27,9 +27,14 @@ struct AppConfig {
             guard let i = arguments.firstIndex(of: flag), i + 1 < arguments.count else { return nil }
             return arguments[i + 1]
         }
-        let uiTesting = arguments.contains("-uiTesting")
+        // Test hooks exist only in Debug builds: a Release build ignores every launch argument below.
+        #if DEBUG
+            let uiTesting = arguments.contains("-uiTesting")
+        #else
+            let uiTesting = false
+        #endif
         let plist = (bundle.object(forInfoDictionaryKey: "SABackendURL") as? String) ?? ""
-        let raw = (uiTesting ? value(after: "-backendURL") : nil) ?? value(after: "-backendURL") ?? plist
+        let raw = (uiTesting ? value(after: "-backendURL") : nil) ?? plist
         let url = URL(string: raw.isEmpty ? "http://127.0.0.1:8080" : raw) ?? URL(string: "http://127.0.0.1:8080")!
         #if DEBUG
             let requireHTTPS = false
@@ -41,7 +46,7 @@ struct AppConfig {
         let short = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
         return AppConfig(
-            backendURL: url, requireHTTPS: requireHTTPS, uiTesting: uiTesting, resetState: arguments.contains("-resetState"),
+            backendURL: url, requireHTTPS: requireHTTPS, uiTesting: uiTesting, resetState: uiTesting && arguments.contains("-resetState"),
             seedHistory: uiTesting && arguments.contains("-seedHistory"), publicURL: publicURL,
             seedSendFiles: uiTesting ? Int(value(after: "-seedSendFiles") ?? "") ?? 0 : 0,
             seedFileBytes: min(64 << 20, max(1, Int(value(after: "-seedFileBytes") ?? "") ?? 3_000_000)),

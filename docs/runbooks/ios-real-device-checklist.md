@@ -28,8 +28,9 @@ build and result next to each item. Nothing here has been run yet (Phase 7).
       and lists the app's Team ID and bundle ID for `/j/*`.
 - [ ] Tapping a share link in Messages or Mail opens the app's join preview, not Safari.
 - [ ] A link whose join window ended shows "Code expired — ask the sender for a new code".
-- Note: Universal Link handling is not implemented in milestone 7.3 (DESIGN_DEVIATIONS.md section M3); this item
-  stays open until it is.
+- Build: a Release build signed with the team's profile, `SA_APPLINKS_HOST` set to the public host (it fills the
+  `applinks:` associated domain in `ShareAnywhere-Release.entitlements`) and `SA_APPLE_APP_ID` set on Caddy. The
+  `shareanywhere://` scheme opens nothing in Release builds; only Universal Links do.
 
 ## Background suspension timing (ADR 0027)
 

@@ -471,11 +471,16 @@ public actor ReceiverController {
             return
         }
         sinks.removeValue(forKey: f.index)?.close()
-        var url: URL?
-        if let folder {
-            url = try? IncomingFolder(directory: folder.url).finish(key(f.transferId), name: f.name)
-            if let url { try? await d.saved.put(key(f.transferId), url.path) }
+        // The verified file must land under its name; when it cannot (the folder went away), it is not delivered.
+        guard let folder, let url = try? IncomingFolder(directory: folder.url).finish(key(f.transferId), name: f.name) else {
+            update { st in
+                if let i = st.files.firstIndex(where: { $0.index == file }) { st.files[i].failed = true }
+                st.error = "product.tx_err_storage_app"
+            }
+            await reporter.state(f.transferId, "FAILED", bytes: f.verified)
+            return
         }
+        try? await d.saved.put(key(f.transferId), url.path)
         update { st in
             if let i = st.files.firstIndex(where: { $0.index == file }) {
                 st.files[i].done = true

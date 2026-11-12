@@ -7,6 +7,8 @@ final class AppUnitTests: XCTestCase {
         let c = AppConfig.load(arguments: ["app", "-uiTesting", "-resetState", "-seedHistory", "-backendURL", "http://127.0.0.1:9999"])
         XCTAssertEqual(c.backendURL.absoluteString, "http://127.0.0.1:9999")
         XCTAssertTrue(c.uiTesting && c.resetState && c.seedHistory)
+        XCTAssertFalse(AppConfig.load(arguments: ["app", "-resetState"]).resetState, "wiping data needs -uiTesting")
+        XCTAssertNotEqual(AppConfig.load(arguments: ["app", "-backendURL", "http://127.0.0.1:9999"]).backendURL.port, 9999)
         XCTAssertTrue(c.accounts, "accounts are on since milestone 7.4 (CLAUDE.md §8b)")
         XCTAssertTrue(c.clipboard)
         let plain = AppConfig.load(arguments: ["app", "-seedHistory"])

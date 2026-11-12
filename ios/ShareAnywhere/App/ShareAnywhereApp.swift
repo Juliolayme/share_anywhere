@@ -111,6 +111,7 @@ struct TestProbes: View {
         VStack(spacing: 0) {
             IdleTimerProbe()
             probe("test.pasteboard-reads", "\(pasteboard.reads)")
+            probe("test.pasteboard-observations", "\(pasteboard.observations)")
             probe("test.device-id", model.identityState.claims?.sub ?? "")
         }
     }

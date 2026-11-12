@@ -15,11 +15,13 @@ struct ReceiveView: View {
     @State private var resolving = false
     @State private var error: String?
     @FocusState private var focused: Bool
+    /// The camera runs only while this screen is on top (a pushed preview stops it).
+    @State private var visible = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SATokens.Space.s4) {
-                Picker("", selection: $mode) {
+                Picker(L10n.t("ios.receive"), selection: $mode) {
                     Text(L10n.t("ios.scan")).tag(Mode.scan)
                     Text(L10n.t("ios.entercode")).tag(Mode.code)
                 }
@@ -32,11 +34,13 @@ struct ReceiveView: View {
         .background(p.bg.ignoresSafeArea())
         .navigationTitle(L10n.t("ios.receive"))
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
         .screenID(mode == .scan ? "receive" : "receive-code")
     }
 
     @ViewBuilder private var scan: some View {
-        ScannerPanel { text in
+        ScannerPanel(active: visible && !resolving) { text in
             if let token = JoinInput.linkToken(text, publicOrigin: model.config.publicURL) {
                 resolve { try await model.hub.services.resolveLink(token) }
             } else {
@@ -96,6 +100,7 @@ enum ScannerSupport {
 
 /// The camera states (RX-1): ask, denied with a link to Settings, unavailable, scanning.
 struct ScannerPanel: View {
+    var active = true
     let onCode: (String) -> Void
     let enterCode: () -> Void
     @Environment(\.palette) private var p
@@ -113,12 +118,14 @@ struct ScannerPanel: View {
             .accessibilityIdentifier("receive.camera-unavailable")
         } else {
             switch status {
-            case .authorized:
+            case .authorized where active:
                 QRScanner(onCode: onCode)
                     .aspectRatio(1, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: SATokens.Radius.lg))
                     .accessibilityLabel(L10n.t("product.scan_viewfinder"))
                 Text(L10n.t("product.scan_point")).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
+            case .authorized:
+                ProgressView().frame(maxWidth: .infinity)
             case .notDetermined:
                 Card {
                     Text(L10n.t("product.camera_needed_h")).typeStyle(SATokens.TypeScale.title)

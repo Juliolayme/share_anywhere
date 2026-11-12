@@ -210,7 +210,7 @@ struct ReceivingView: View {
                 .typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
             SecurityWords(caption: L10n.t("ios_xx.secw_r"), words: me.securityWords ?? [])
         }
-        KeepOpenBanner()
+        KeepOpenBanner(context: id)
         SecondaryButton(title: L10n.t("product.leave"), enabled: !m.leaving) {
             Task { if await m.leave() { model.homePath.removeAll() } }
         }
@@ -287,7 +287,7 @@ struct ReceivingView: View {
             Banner(kind: .danger, title: L10n.t("product.tx_err_unreachable"), actionTitle: L10n.t("ios_yy.retry")) { m.retry() }
         }
         if suspended { Banner(kind: .warning, title: L10n.t("ios.susp_h"), message: L10n.t("product.ios_susp_p")) }
-        KeepOpenBanner(paused: rx.phase == .paused)
+        KeepOpenBanner(paused: rx.phase == .paused, context: id)
         fileList
         HStack(spacing: SATokens.Space.s3) {
             if rx.phase == .paused {

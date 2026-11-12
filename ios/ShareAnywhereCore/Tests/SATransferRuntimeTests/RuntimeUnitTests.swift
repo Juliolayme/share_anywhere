@@ -100,6 +100,14 @@ final class RuntimeUnitTests: XCTestCase {
         XCTAssertEqual(IncomingFolder.safeName("a:b\u{0}c.txt"), "a_b_c.txt")
         XCTAssertLessThanOrEqual(IncomingFolder.safeName(String(repeating: "x", count: 300) + ".pdf").count, 200)
         XCTAssertTrue(IncomingFolder.safeName(String(repeating: "x", count: 300) + ".pdf").hasSuffix(".pdf"))
+        // A sender-chosen name with an extension longer than the limit (the server allows 255 characters).
+        let longExt = IncomingFolder.safeName("a." + String(repeating: "x", count: 253))
+        XCTAssertLessThanOrEqual(longExt.count, 200)
+        XCTAssertTrue(longExt.hasPrefix("a."))
+        XCTAssertLessThanOrEqual(
+            IncomingFolder.safeName(String(repeating: "y", count: 180) + "." + String(repeating: "z", count: 40)).count,
+            200
+        )
     }
 
     func testIncomingFolderSidecarLifecycle() throws {

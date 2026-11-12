@@ -20,7 +20,8 @@ final class GuestLaunchUITests: XCTestCase {
         UITest.tab(app, "Clipboard")
         XCTAssertTrue(UITest.id(app, "clipboard.intro").waitForExistence(timeout: 10))
         XCTAssertFalse(UITest.id(app, "clipboard.sync").exists)
-        XCTAssertEqual(UITest.id(app, "test.pasteboard-reads").value as? String, "0", "no pasteboard access as a guest")
+        XCTAssertEqual(UITest.id(app, "test.pasteboard-reads").value as? String, "0", "no pasteboard reads as a guest")
+        XCTAssertEqual(UITest.id(app, "test.pasteboard-observations").value as? String, "0", "no change observation as a guest")
         shot(app, "clipboard-guest")
 
         // Later launches start on Transfer directly.

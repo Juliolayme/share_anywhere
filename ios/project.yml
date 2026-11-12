@@ -30,6 +30,9 @@ settings:
       # Release builds need a real HTTPS origin: xcodebuild SA_BACKEND_URL=https://… (APIClient refuses http).
       SA_BACKEND_URL: ""
       SA_PUBLIC_URL: ""
+      # Universal Links: the share-link host for the associated domain (docs/runbooks/ios-real-device-checklist.md).
+      SA_APPLINKS_HOST: ""
+      CODE_SIGN_ENTITLEMENTS: ShareAnywhere/ShareAnywhere-Release.entitlements
 packages:
   ShareAnywhereCore:
     path: ShareAnywhereCore

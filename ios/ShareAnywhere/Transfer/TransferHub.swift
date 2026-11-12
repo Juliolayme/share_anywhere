@@ -25,6 +25,8 @@ final class TransferHub: ObservableObject {
     private var watchers: [String: Task<Void, Never>] = [:]
     /// Sessions paused because the app left the screen; resumed when it is active again.
     @Published private(set) var suspended: Set<String> = []
+    /// Receivers of a sending session that the background policy paused (only these resume on return).
+    private var suspendedReceivers: [String: [String]] = [:]
     /// Sessions with bytes moving now (Transfer home's active card).
     @Published private(set) var active: [String: Bool] = [:]
     private(set) var isForeground = true
@@ -148,9 +150,12 @@ final class TransferHub: ObservableObject {
     private func enterBackground() {
         guard anyActive, graceTask == nil else { return }
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "transfer-grace") { [weak self] in
-            Task { @MainActor in
-                await self?.suspendAll()
+            // iOS needs the task ended before this handler returns; the pause follows as far as time allows.
+            MainActor.assumeIsolated {
+                self?.graceTask?.cancel()
+                self?.graceTask = nil
                 self?.endBackgroundTask()
+                Task { await self?.suspendAll(force: true) }
             }
         }
         let grace = graceSeconds
@@ -170,13 +175,17 @@ final class TransferHub: ObservableObject {
     }
 
     /// Pauses every active transfer (the bitmap is persisted with each verified block) and posts `ios.susp_h`.
-    private func suspendAll() async {
-        graceTask = nil
+    private func suspendAll(force: Bool = false) async {
+        if !force { graceTask = nil }
         guard !isForeground else { return }
         var any = false
         for (id, c) in senders where c.state.value.isActive {
             suspended.insert("tx:\(id)")
-            await c.pauseAll()
+            let active = c.state.value.receivers.filter(\.status.isActive).map(\.participantId)
+            suspendedReceivers[id] = active
+            for pid in active {
+                await c.pause(pid)
+            }
             any = true
         }
         for (id, c) in receivers where c.state.value.phase.isActive {
@@ -194,9 +203,10 @@ final class TransferHub: ObservableObject {
         for key in keys {
             let id = String(key.dropFirst(3))
             if key.hasPrefix("tx:"), let c = senders[id] {
+                let pids = suspendedReceivers.removeValue(forKey: id) ?? []
                 Task {
-                    for r in c.state.value.receivers where r.status == .paused {
-                        await c.resume(r.participantId)
+                    for pid in pids {
+                        await c.resume(pid)
                     }
                 }
             } else if key.hasPrefix("rx:"), let c = receivers[id] {

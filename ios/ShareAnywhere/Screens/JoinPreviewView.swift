@@ -26,6 +26,10 @@ struct JoinPreviewView: View {
         .background(p.bg.ignoresSafeArea())
         .navigationTitle(L10n.t("product.rx_incoming"))
         .navigationBarTitleDisplayMode(.inline)
+        // Server time minus device time, measured once when the preview arrives, so the countdown follows the server.
+        .onAppear {
+            if let p = model.previews[sessionId], let server = ISO8601.parse(p.serverTime) { offset = server.timeIntervalSinceNow }
+        }
         .screenID("rx-preview")
     }
 
@@ -40,8 +44,11 @@ struct JoinPreviewView: View {
             .accessibilityIdentifier("preview.title")
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 let left = secondsLeft(preview, ctx.date)
-                Text(L10n.t("product.rx_sender_line", ["platform": preview.sender.platform.capitalized, "time": TransferText.clock(left)]))
-                    .typeStyle(SATokens.TypeScale.caption).foregroundStyle(left < 60 ? p.warningInk : p.fg2)
+                Text(L10n.t(
+                    "product.rx_sender_line",
+                    ["platform": platformName(preview.sender.platform), "time": TransferText.clock(left)]
+                ))
+                .typeStyle(SATokens.TypeScale.caption).foregroundStyle(left < 60 ? p.warningInk : p.fg2)
             }
         }
         Card {
@@ -75,8 +82,7 @@ struct JoinPreviewView: View {
 
     private func secondsLeft(_ preview: JoinPreview, _ now: Date) -> Int {
         guard let ends = ISO8601.parse(preview.joinWindowEndsAt) else { return 0 }
-        let server = ISO8601.parse(preview.serverTime).map { $0.timeIntervalSinceNow } ?? 0
-        return Int(ends.timeIntervalSince(now.addingTimeInterval(server)).rounded(.up))
+        return Int(ends.timeIntervalSince(now.addingTimeInterval(offset)).rounded(.up))
     }
 
     private func join(_ preview: JoinPreview) {

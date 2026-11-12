@@ -190,7 +190,7 @@ final class AccountPeer: @unchecked Sendable {
     }
 
     func capture(_ text: String) async throws {
-        let r = await clipboard().capture(text, source: .manual)
+        let r = try await clipboard().capture(text, source: .manual)
         guard case .synced = r else { throw CryptoError("capture", "\(r)") }
     }
 

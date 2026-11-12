@@ -1,0 +1,11 @@
+# SwiftFormat (CI: `swiftformat --lint ios`). Generated and vendored code is excluded.
+--swiftversion 6.0
+--exclude ShareAnywhereCore/.build,ShareAnywhereCore/Sources/CArgon2,ShareAnywhereCore/Sources/SAAPIClient/API.gen.swift,**/*.gen.swift,build,DerivedData
+--maxwidth 140
+--indent 4
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--commas inline
+--semicolons inline
+--disable wrapMultilineStatementBraces,redundantSelf,andOperator,preferKeyPath,blankLinesAtStartOfScope,blankLinesAtEndOfScope,redundantReturn,wrapSwitchCases,preferForLoop

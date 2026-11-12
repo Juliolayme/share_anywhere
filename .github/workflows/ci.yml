@@ -20,6 +20,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       shared: ${{ steps.filter.outputs.shared }}
       android: ${{ steps.filter.outputs.android }}
+      ios: ${{ steps.filter.outputs.ios }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v5
@@ -57,6 +58,7 @@ jobs:
               - 'web/src/lib/api/**'
               - 'android/app/src/main/java/app/shareanywhere/ui/theme/Tokens.kt'
               - 'android/app/src/main/java/app/shareanywhere/data/api/Api.gen.kt'
+              - 'ios/ShareAnywhereCore/Sources/SAAPIClient/API.gen.swift'
             android:
               - *common
               - 'android/**'
@@ -64,6 +66,13 @@ jobs:
               - 'scripts/**'
               - 'design/**'
               - '.editorconfig'
+            ios:
+              - *common
+              - 'ios/**'
+              - 'shared/**'
+              - 'scripts/protocol.mjs'
+              - 'scripts/ios-tools.sh'
+              - 'web/src/lib/crypto/bip39-english.txt'
             docs:
               - *common
               - '**/*.md'
@@ -358,6 +367,45 @@ jobs:
       target: google_apis
       arch: x86_64
       gradle-task: connectedDebugAndroidTest
+
+  ios:
+    # docs/TESTING_AND_CI.md §2.1: ShareAnywhereCore unit tests (CryptoKit, shared vectors), SwiftLint, SwiftFormat.
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcodebuild -version | head -1 | grep -E '^Xcode 16\.' # CLAUDE.md §5: Xcode 16.x
+      - name: Pinned lint and project tools (checksum-verified)
+        run: |
+          scripts/ios-tools.sh
+          echo "$PWD/.tools/bin" >> "$GITHUB_PATH"
+      - name: SwiftFormat --lint
+        working-directory: ios
+        run: swiftformat --lint .
+      - name: SwiftLint --strict
+        working-directory: ios
+        run: swiftlint lint --strict
+      - uses: actions/cache@v4
+        with:
+          path: ios/ShareAnywhereCore/.build
+          key: spm-core-${{ runner.os }}-${{ hashFiles('ios/ShareAnywhereCore/Package.resolved', 'ios/ShareAnywhereCore/Package.swift') }}
+      - name: ShareAnywhereCore unit tests (swift test)
+        working-directory: ios/ShareAnywhereCore
+        run: swift test --xunit-output core-tests.xml
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-core-tests
+          if-no-files-found: ignore
+          path: ios/ShareAnywhereCore/core-tests*.xml
+          retention-days: 7
 
   compose:
     needs: changes

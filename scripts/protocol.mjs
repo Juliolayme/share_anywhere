@@ -4,7 +4,7 @@
 //                                      (android/app/src/main/java/app/shareanywhere/data/api/Api.gen.kt)
 //   node scripts/protocol.mjs --check  validate openapi.yaml, x-sa-access on every operation,
 //                                      agreement with docs/API.md, the WebSocket schema, and that
-//                                      generated clients (TypeScript, Kotlin) are current.
+//                                      generated clients (TypeScript, Kotlin, Swift) are current.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -19,6 +19,7 @@ const WS_SCHEMA = path.join(root, 'shared/protocol/websocket-events.json');
 const API_MD = path.join(root, 'docs/API.md');
 const TS_OUT = path.join(root, 'web/src/lib/api/schema.gen.ts');
 const KT_OUT = path.join(root, 'android/app/src/main/java/app/shareanywhere/data/api/Api.gen.kt');
+const SWIFT_OUT = path.join(root, 'ios/ShareAnywhereCore/Sources/SAAPIClient/API.gen.swift');
 
 export const LEVELS = ['public', 'device', 'participant', 'account', 'account+device'];
 const METHODS = ['get', 'put', 'post', 'patch', 'delete'];
@@ -239,6 +240,185 @@ export function renderKotlinModels(doc) {
   return `${header.join('\n')}${opLines.join('\n')}\n\n${out.join('\n\n')}\n`;
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// Swift models for the iOS client (docs/ADR/0023-ios-networking.md): one Codable struct per object schema,
+// typealiases for primitive schemas, and APIOperations with every operation's method, path and access level.
+// Enums stay String (allowed values in the doc comment) so a new server value never breaks decoding, as on Android.
+
+const SWIFT_KEYWORDS = new Set(['associatedtype', 'class', 'deinit', 'enum', 'extension', 'fileprivate', 'func', 'import', 'init', 'inout', 'internal', 'let', 'open', 'operator', 'private', 'protocol', 'public', 'rethrows', 'static', 'struct', 'subscript', 'typealias', 'var', 'break', 'case', 'continue', 'default', 'defer', 'do', 'else', 'fallthrough', 'for', 'guard', 'if', 'in', 'repeat', 'return', 'switch', 'where', 'while', 'as', 'catch', 'false', 'is', 'nil', 'super', 'self', 'Self', 'throw', 'throws', 'true', 'try', 'Type', 'Protocol']);
+/** Schema names that would shadow Swift standard library types. */
+const SWIFT_RENAMES = { Error: 'ErrorResponse' };
+const swName = (n) => SWIFT_RENAMES[n] ?? n;
+const swProp = (name) => {
+  const c = camel(name);
+  return SWIFT_KEYWORDS.has(c) ? `\`${c}\`` : c;
+};
+const swDoc = (text, indent) => {
+  if (!text) return [];
+  return [`${indent}/// ${String(text).replace(/\s+/g, ' ').trim()}`];
+};
+
+function swType(schema, hint, extra, schemas) {
+  if (!schema) return 'JSONValue';
+  if (schema.$ref) return swName(refName(schema.$ref));
+  if (schema.allOf && schema.allOf.length === 1) return swType(schema.allOf[0], hint, extra, schemas);
+  if (schema.allOf || schema.oneOf || schema.anyOf) {
+    if (schema.allOf) {
+      extra.push([hint, schema]);
+      return hint;
+    }
+    return 'JSONValue';
+  }
+  switch (schema.type) {
+    case 'string':
+      return 'String';
+    case 'integer':
+      return schema.format === 'int64' ? 'Int64' : 'Int';
+    case 'number':
+      return 'Double';
+    case 'boolean':
+      return 'Bool';
+    case 'array':
+      return `[${swType(schema.items, `${hint}Item`, extra, schemas)}]`;
+    case 'object':
+      if (schema.properties) {
+        extra.push([hint, schema]);
+        return hint;
+      }
+      if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+        return `[String: ${swType(schema.additionalProperties, `${hint}Value`, extra, schemas)}]`;
+      }
+      return '[String: JSONValue]';
+    default:
+      return 'JSONValue';
+  }
+}
+
+function renderStruct(name, schema, schemas, out, description) {
+  const extra = [];
+  const { props, required } = objectShape(schema, schemas);
+  const lines = [...swDoc(description ?? schema.description, '')];
+  const entries = Object.entries(props);
+  lines.push(`public struct ${name}: Codable, Sendable, Equatable {`);
+  const fields = [];
+  for (const [prop, ps] of entries) {
+    const type = swType(ps, `${name}${pascalCase(prop)}`, extra, schemas);
+    const optional = !required.has(prop) || ps.nullable === true;
+    const doc = [ps.description, ps.enum ? `One of: ${ps.enum.join(', ')}.` : null, ps.format && !['int64'].includes(ps.format) ? `Format: ${ps.format}.` : null]
+      .filter(Boolean)
+      .join(' ');
+    lines.push(...swDoc(doc, '    '));
+    lines.push(`    public var ${swProp(prop)}: ${type}${optional ? '?' : ''}`);
+    fields.push({ prop, name: swProp(prop), plain: camel(prop), type: `${type}${optional ? '?' : ''}`, optional });
+  }
+  if (fields.length) {
+    lines.push('', `    public init(${fields.map((f) => `${f.plain}: ${f.type}${f.optional ? ' = nil' : ''}`).join(', ')}) {`);
+    for (const f of fields) lines.push(`        self.${f.plain} = ${f.plain}`);
+    lines.push('    }');
+    lines.push('', '    enum CodingKeys: String, CodingKey {');
+    for (const f of fields) lines.push(`        case ${f.name} = "${f.prop}"`);
+    lines.push('    }');
+  } else {
+    lines.push('    public init() {}');
+  }
+  lines.push('}');
+  out.push(lines.join('\n'));
+  for (const [n, s] of extra) renderStruct(n, s, schemas, out);
+}
+
+export function renderSwiftModels(doc) {
+  const schemas = doc.components?.schemas ?? {};
+  const out = [];
+  for (const [rawName, schema] of Object.entries(schemas)) {
+    const name = swName(rawName);
+    const isObject = schema.type === 'object' || schema.allOf || schema.properties;
+    if (isObject) renderStruct(name, schema, schemas, out);
+    else {
+      const extra = [];
+      const type = swType(schema, `${name}Value`, extra, schemas);
+      out.push([...swDoc(schema.description, ''), `public typealias ${name} = ${type}`].join('\n'));
+      for (const [n, s] of extra) renderStruct(n, s, schemas, out);
+    }
+  }
+  const ops = openapiOperations(doc).map((o) => {
+    const [method, p] = o.key.split(' ');
+    return { id: o.op.operationId, method, path: p, access: o.access, summary: o.op.summary };
+  });
+  const opLines = ['/// Every operation in openapi.yaml: method, path template and x-sa-access level.', 'public enum APIOperations {'];
+  for (const o of ops) {
+    opLines.push(...swDoc(o.summary, '    '));
+    opLines.push(`    public static let ${swProp(o.id)} = APIOperation(method: "${o.method}", path: "${o.path}", access: "${o.access}")`);
+  }
+  opLines.push('', `    public static let all: [APIOperation] = [${ops.map((o) => swProp(o.id)).join(', ')}]`, '}');
+  const header = [
+    '// Generated by scripts/protocol.mjs from shared/protocol/openapi.yaml. Do not edit; run pnpm protocol.',
+    '// swiftlint:disable all',
+    '// swiftformat:disable all',
+    '',
+    'import Foundation',
+    '',
+    '/// openapi.yaml info.version this file was generated from.',
+    `public let apiVersion = "${doc.info?.version ?? ''}"`,
+    '',
+    '/// One API operation. `path` keeps its {placeholders}; `access` is the x-sa-access level (docs/API.md §1).',
+    'public struct APIOperation: Sendable, Equatable {',
+    '    public let method: String',
+    '    public let path: String',
+    '    public let access: String',
+    '',
+    '    /// The path with each {name} replaced, in order, by the given values (percent-encoded here).',
+    '    public func path(_ values: String...) -> String {',
+    '        var out = ""',
+    '        var i = 0',
+    '        var rest = Substring(path)',
+    '        while let open = rest.firstIndex(of: "{"), let close = rest[open...].firstIndex(of: "}") {',
+    '            out += rest[..<open]',
+    '            precondition(i < values.count, "missing value for \\(rest[open...close])")',
+    '            out += values[i].addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? values[i]',
+    '            i += 1',
+    '            rest = rest[rest.index(after: close)...]',
+    '        }',
+    '        return out + rest',
+    '    }',
+    '}',
+    '',
+    '/// Any JSON value, for schemas the generator does not model (free-form objects, oneOf).',
+    'public enum JSONValue: Codable, Sendable, Equatable {',
+    '    case null',
+    '    case bool(Bool)',
+    '    case number(Double)',
+    '    case string(String)',
+    '    case array([JSONValue])',
+    '    case object([String: JSONValue])',
+    '',
+    '    public init(from decoder: any Decoder) throws {',
+    '        let c = try decoder.singleValueContainer()',
+    '        if c.decodeNil() { self = .null }',
+    '        else if let b = try? c.decode(Bool.self) { self = .bool(b) }',
+    '        else if let n = try? c.decode(Double.self) { self = .number(n) }',
+    '        else if let s = try? c.decode(String.self) { self = .string(s) }',
+    '        else if let a = try? c.decode([JSONValue].self) { self = .array(a) }',
+    '        else { self = .object(try c.decode([String: JSONValue].self)) }',
+    '    }',
+    '',
+    '    public func encode(to encoder: any Encoder) throws {',
+    '        var c = encoder.singleValueContainer()',
+    '        switch self {',
+    '        case .null: try c.encodeNil()',
+    '        case let .bool(b): try c.encode(b)',
+    '        case let .number(n): try c.encode(n)',
+    '        case let .string(s): try c.encode(s)',
+    '        case let .array(a): try c.encode(a)',
+    '        case let .object(o): try c.encode(o)',
+    '        }',
+    '    }',
+    '}',
+    '',
+    '',
+  ];
+  return `${header.join('\n')}${opLines.join('\n')}\n\n${out.join('\n\n')}\n`;
+}
+
 async function generateTypes() {
   const ast = await openapiTS(new URL(`file://${OPENAPI}`), { alphabetize: true });
   return `// Generated by scripts/protocol.mjs from shared/protocol/openapi.yaml. Do not edit.\n/* eslint-disable */\n${astToString(ast)}`;
@@ -266,12 +446,16 @@ async function main() {
   const check = process.argv.includes('--check');
   const generated = await generateTypes();
   const kotlin = renderKotlinModels(YAML.parse(readFileSync(OPENAPI, 'utf8')));
+  const swift = renderSwiftModels(YAML.parse(readFileSync(OPENAPI, 'utf8')));
   if (!check) {
     writeFileSync(TS_OUT, generated);
     console.log(`wrote ${path.relative(root, TS_OUT)}`);
     mkdirSync(path.dirname(KT_OUT), { recursive: true });
     writeFileSync(KT_OUT, kotlin);
     console.log(`wrote ${path.relative(root, KT_OUT)}`);
+    mkdirSync(path.dirname(SWIFT_OUT), { recursive: true });
+    writeFileSync(SWIFT_OUT, swift);
+    console.log(`wrote ${path.relative(root, SWIFT_OUT)}`);
     return;
   }
   const problems = [];
@@ -300,11 +484,18 @@ async function main() {
     /* missing */
   }
   if (currentKt !== kotlin) problems.push(`${path.relative(root, KT_OUT)} is stale; run pnpm protocol`);
+  let currentSwift = '';
+  try {
+    currentSwift = readFileSync(SWIFT_OUT, 'utf8');
+  } catch {
+    /* missing */
+  }
+  if (currentSwift !== swift) problems.push(`${path.relative(root, SWIFT_OUT)} is stale; run pnpm protocol`);
   if (problems.length) {
     console.error(`protocol: ${problems.length} problem(s)\n- ${problems.join('\n- ')}`);
     process.exit(1);
   }
-  console.log(`protocol: ${openapiOperations(raw).length} operations valid and in agreement with docs/API.md; generated TypeScript and Kotlin clients current.`);
+  console.log(`protocol: ${openapiOperations(raw).length} operations valid and in agreement with docs/API.md; generated TypeScript, Kotlin and Swift clients current.`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

@@ -1,0 +1,29 @@
+# SwiftLint (CI: `swiftlint lint --strict` in ios/). Generated and vendored code is excluded.
+excluded:
+  - ShareAnywhereCore/.build
+  - ShareAnywhereCore/Sources/CArgon2
+  - ShareAnywhereCore/Sources/SAAPIClient/API.gen.swift
+  - build
+  - DerivedData
+disabled_rules:
+  - identifier_name        # protocol field names (v, o, a) mirror the Web and Android engines
+  - type_body_length
+  - file_length
+  - function_body_length
+  - cyclomatic_complexity
+  - nesting
+  - large_tuple
+  - todo
+  - force_unwrapping
+  - function_parameter_count
+  - statement_position      # SwiftFormat owns layout
+  - opening_brace
+  - trailing_comma
+  - optional_data_string_conversion  # String(decoding:as:) is used on ASCII produced in-process (hex, base64url)
+line_length:
+  warning: 160
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+force_cast: warning
+force_try: error

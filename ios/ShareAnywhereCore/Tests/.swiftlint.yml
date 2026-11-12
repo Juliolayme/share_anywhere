@@ -1,0 +1,3 @@
+# Tests read decoded vector files with force casts: a wrong shape should fail the test loudly.
+disabled_rules:
+  - force_cast

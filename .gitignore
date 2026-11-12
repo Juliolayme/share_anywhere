@@ -36,3 +36,9 @@ DerivedData/
 .idea/
 .vscode/
 web/moz-log/
+
+# iOS (Phase 7): SwiftPM build output, generated Xcode project, pinned tools
+ios/ShareAnywhereCore/.build/
+ios/build/
+.tools/
+*.xcresult

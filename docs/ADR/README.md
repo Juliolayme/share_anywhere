@@ -25,3 +25,6 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0019](0019-android-qr.md) | QR codes on Android (generation and scanning) | Accepted |
 | [0020](0020-android-background-transfers.md) | Android background transfers (foreground service, not user-initiated data transfer jobs) | Accepted |
 | [0021](0021-android-crypto.md) | Cryptography for the account keys on Android | Accepted |
+| [0022](0022-ios-project-and-core-package.md) | iOS project layout, ShareAnywhereCore package, and toolchain | Accepted |
+| [0023](0023-ios-networking.md) | iOS networking and API models | Accepted |
+| [0024](0024-ios-crypto.md) | Cryptography for the account keys on iOS | Accepted |

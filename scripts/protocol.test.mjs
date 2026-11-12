@@ -103,3 +103,44 @@ test('Kotlin models: required, optional and nullable fields, allOf merges, alias
   assert.ok(kt.includes('val all: List<ApiOperation> = listOf(makeThing)'));
   assert.ok(!kt.includes('import kotlinx.serialization.json.JsonElement'));
 });
+
+test('renderSwiftModels writes Codable structs, typealiases and the operation table for the iOS client', async () => {
+  const { renderSwiftModels } = await import('./protocol.mjs');
+  const doc = {
+    info: { version: '9.9.9' },
+    paths: { '/v1/things/{id}': { post: { operationId: 'makeThing', 'x-sa-access': 'device', summary: 'Make it.' } } },
+    components: {
+      schemas: {
+        Base64Url: { type: 'string' },
+        Error: { type: 'object', required: ['error'], properties: { error: { type: 'string' }, retry_after_s: { type: 'integer' } } },
+        Thing: {
+          type: 'object',
+          required: ['id', 'size', 'tags'],
+          properties: {
+            id: { type: 'string' },
+            size: { type: 'integer', format: 'int64' },
+            tags: { type: 'array', items: { type: 'string' } },
+            default: { type: 'boolean' },
+            checks: { type: 'object', additionalProperties: { type: 'string' } },
+            err: { $ref: '#/components/schemas/Error' },
+            inner: { type: 'object', properties: { ok: { type: 'boolean' } } },
+          },
+        },
+      },
+    },
+  };
+  const sw = renderSwiftModels(doc);
+  assert.ok(sw.includes('public let apiVersion = "9.9.9"'));
+  assert.ok(sw.includes('public typealias Base64Url = String'));
+  assert.ok(sw.includes('public struct ErrorResponse: Codable, Sendable, Equatable {'), 'Error is renamed so it does not shadow Swift.Error');
+  assert.ok(sw.includes('    public var size: Int64\n'));
+  assert.ok(sw.includes('    public var tags: [String]\n'));
+  assert.ok(sw.includes('    public var `default`: Bool?\n'));
+  assert.ok(sw.includes('        case `default` = "default"'));
+  assert.ok(sw.includes('    public var checks: [String: String]?\n'));
+  assert.ok(sw.includes('    public var err: ErrorResponse?\n'));
+  assert.ok(sw.includes('public struct ThingInner: Codable, Sendable, Equatable {'));
+  assert.ok(sw.includes('        case retryAfterS = "retry_after_s"'));
+  assert.ok(sw.includes('public static let makeThing = APIOperation(method: "POST", path: "/v1/things/{id}", access: "device")'));
+  assert.ok(sw.includes('public static let all: [APIOperation] = [makeThing]'));
+});

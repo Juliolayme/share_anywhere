@@ -191,7 +191,7 @@ final class ReporterTests: XCTestCase {
 
     func testProgressIsThrottled() async throws {
         let sink = Sink()
-        // The first report goes at once; the interval is long enough that a slow runner cannot reach the next one.
+        // The first report goes at once; calls made while it is being sent wait for the next interval (10 s).
         let r = Reporter(sink: sink, intervalMs: 10000)
         await r.seed("t", "TRANSFERRING", 0)
         for i in 0 ..< 20 {
@@ -200,6 +200,33 @@ final class ReporterTests: XCTestCase {
         try await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(sink.all.count, 1)
         await r.dispose()
+    }
+
+    /// Regression: progress arriving while a report is in flight (the actor suspended in `send`) waited for nothing
+    /// and sent a second report at once.
+    func testProgressDuringASlowReportWaitsForTheInterval() async throws {
+        let sink = SlowSink()
+        let r = Reporter(sink: sink, intervalMs: 10000)
+        await r.seed("t", "TRANSFERRING", 0)
+        await r.progress("t", 1)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        await r.progress("t", 2)
+        await r.progress("t", 3)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(sink.all.count, 1)
+        await r.dispose()
+    }
+
+    final class SlowSink: ReportSink, @unchecked Sendable {
+        let lock = NSLock()
+        var sent: [String] = []
+        func report(transferId _: String, status: String, verifiedBytes _: Int64, route _: String?) async throws -> String {
+            try await Task.sleep(nanoseconds: 250_000_000)
+            lock.locked { sent.append(status) }
+            return status
+        }
+
+        var all: [String] { lock.locked { sent } }
     }
 }
 

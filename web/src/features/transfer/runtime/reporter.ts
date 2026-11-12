@@ -60,6 +60,8 @@ export class Reporter {
       transferId,
       setTimeout(() => {
         this.timers.delete(transferId);
+        // Stamped before the report goes out: progress arriving while it is in flight waits for the next interval.
+        this.lastSent.set(transferId, this.now());
         void this.enqueue(transferId, async () => {
           const s = this.status.get(transferId);
           if (s && !terminal(s)) await this.send(transferId, s);

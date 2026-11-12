@@ -34,6 +34,7 @@ enum UITest {
         let toggle = app.switches.matching(identifier: identifier).firstMatch
         XCTAssertTrue(toggle.waitForExistence(timeout: 10), "switch \(identifier)", file: file, line: line)
         let want = on ? "1" : "0"
+        reveal(app, toggle)
         for _ in 0 ..< 4 where toggle.value as? String != want {
             toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
             _ = XCTWaiter().wait(
@@ -42,6 +43,23 @@ enum UITest {
             )
         }
         XCTAssertEqual(toggle.value as? String, want, "switch \(identifier)", file: file, line: line)
+    }
+
+    /// Scrolls until `element` lies inside the window above the tab bar (coordinate taps do not scroll, and XCUITest's
+    /// own scroll-to-visible fails next to iOS's secure Paste control).
+    static func reveal(_ app: XCUIApplication, _ element: XCUIElement) {
+        let window = app.windows.firstMatch.frame
+        let visible = CGRect(x: window.minX, y: window.minY + 44, width: window.width, height: window.height - 44 - 100)
+        for _ in 0 ..< 5 where !visible.contains(element.frame) {
+            if element.frame.minY < visible.minY { app.swipeDown() } else { app.swipeUp() }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+    }
+
+    /// Taps `element` where it is drawn, after revealing it.
+    static func tapRevealed(_ app: XCUIApplication, _ element: XCUIElement) {
+        reveal(app, element)
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     /// Waits for `element`; on a timeout prints the app's accessibility tree into the test log (the CI job log is the

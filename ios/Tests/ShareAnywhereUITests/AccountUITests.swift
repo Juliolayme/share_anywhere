@@ -24,7 +24,7 @@ final class AccountUITests: XCTestCase {
     /// tapping it is on the real-device checklist.
     private func paste(_ app: XCUIApplication, _ text: String) {
         UIPasteboard.general.string = text
-        UITest.id(app, "clipboard.sync-fallback").tap()
+        UITest.tapRevealed(app, UITest.id(app, "clipboard.sync-fallback"))
         allowPaste(app)
     }
 
@@ -87,7 +87,7 @@ final class AccountUITests: XCTestCase {
         let reads = Int(UITest.id(app, "test.pasteboard-reads").value as? String ?? "") ?? 0
         let viaFallback = "Through the fallback button \(letters())"
         UIPasteboard.general.string = viaFallback
-        UITest.id(app, "clipboard.sync-fallback").tap()
+        UITest.tapRevealed(app, UITest.id(app, "clipboard.sync-fallback"))
         allowPaste(app)
         XCTAssertTrue(row(app, viaFallback).waitForExistence(timeout: 30), "the fallback read syncs the text")
         XCTAssertGreaterThan(Int(UITest.id(app, "test.pasteboard-reads").value as? String ?? "") ?? 0, reads)

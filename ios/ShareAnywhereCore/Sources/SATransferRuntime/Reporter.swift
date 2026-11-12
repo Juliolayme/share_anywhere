@@ -99,6 +99,9 @@ public actor Reporter {
     private func flushProgress(_ id: String) async {
         timers[id] = nil
         if Task.isCancelled { return }
+        // Stamped before the report is sent: the actor suspends while sending, and a progress call in that window
+        // must wait for the next interval instead of sending again at once.
+        lastSent[id] = now()
         await serial(id) {
             guard let s = await self.current(id), !Transitions.terminal(s) else { return }
             await self.send(id, s)

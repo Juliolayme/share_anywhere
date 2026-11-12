@@ -312,7 +312,8 @@ struct KeySetupView: View {
                         spacing: SATokens.Space.s2
                     ) {
                         ForEach(Array(words.enumerated()), id: \.offset) { i, w in
-                            Text("\(i + 1). \(w)").typeStyle(SATokens.TypeScale.code).frame(maxWidth: .infinity, alignment: .leading)
+                            Text("\(i + 1). \(w)").typeStyle(SATokens.TypeScale.code).foregroundStyle(p.fg)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(SATokens.Space.s2)
                                 .background(p.surface2, in: RoundedRectangle(cornerRadius: SATokens.Radius.sm))
                         }

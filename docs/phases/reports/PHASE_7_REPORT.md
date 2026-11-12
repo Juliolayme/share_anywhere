@@ -1,6 +1,6 @@
 # Phase 7 report: iOS app
 
-Status: in progress (QA pending). File sharing is guest-first on iOS: Welcome leads to Transfer, send and receive never ask for an account, and the account sheet opens only from account entry points (Settings Sign in, Clipboard, Devices).
+Status: exit gate met. QA round 7 PASS (`docs/qa/PHASE_7_QA.md`); CI [43215838875](https://github.com/Juliolayme/share_anywhere/actions/runs/43215838875) on 2f0aa95 green in every job including `ios-simulator` (iPhone 16, iOS 18.5) and `android-emulator (API 34)`; nightly [43215838879](https://github.com/Juliolayme/share_anywhere/actions/runs/43215838879) on 2f0aa95 green in every job including the iOS matrix (SE, 16 Pro Max, oldest runtime, XXXL), `ios-background-suspend` and `ios-web-interop` (64 MB each way and the encrypted clipboard exchange). The `UIPasteControl` item is met as narrowed by ADR 0028 (the control's tap is on the real-device checklist). File sharing is guest-first on iOS: Welcome leads to Transfer, send and receive never ask for an account, and the account sheet opens only from account entry points (Settings Sign in, Clipboard, Devices).
 
 Every "tested" claim below was executed in GitHub Actions on the macOS 15 runner (Xcode 16.4, iOS 18.5 simulator SDK) against the Go backend run natively (`testhooks` build, Homebrew PostgreSQL 16). The simulator device is named per run; the runner image offers only iOS 18.x runtimes for Xcode 16.4, so the nightly "oldest runtime" entry also ran on iOS 18.5.
 
@@ -33,11 +33,31 @@ Welcome, Transfer home, Send, Session (`session`, `session-expired`, `dashboard-
 
 ## 3. End-to-end workflows executed
 
-To be completed with the final CI and nightly runs.
+On the iOS Simulator in GitHub Actions (macOS 15 runner, Xcode 16.4, iOS 18.5 runtime; iPhone 16 in `ci.yml`, iPhone SE (3rd generation), iPhone 16 Pro Max, iPhone 16 on the oldest runtime at or above iOS 16 (18.5 on this image) and iPhone 16 at accessibility XXXL in the nightly), against the Go backend run natively with PostgreSQL 16. The other device is a `TestPeer` (or `AccountPeer`) in the test runner over real WebRTC and the real API, or the Web app in Playwright Chromium:
+
+- **As a guest** (no sign-in anywhere): fresh install, Welcome, then Transfer home (`GuestLaunchUITests`); the Clipboard tab as a guest with zero pasteboard reads and zero change observations; anonymous identity and rename.
+- **As a guest, sending:** seeded files, Create share session, six-digit code, open join by a second device (no approval step), the receiver gets the file with a matching SHA-256 and the sender sees `dashboard-done`; Require approval and Approve; Remove and Block (a blocked device cannot rejoin); the join window expires on the backend test clock into Code expired, an expired code admits nobody, Create new code issues a different code and the receiver who already joined still completes its transfer.
+- **As a guest, receiving:** wrong code refused, join by code, join preview, where to save, receive into Documents with a matching SHA-256, local History after relaunch; pause and resume; a share link opened through the system shows the join preview (nothing joined until Receive); a receive paused by leaving the app (2 s grace) resumes on return with no block verified twice (`ios-background-suspend`).
+- **Keep screen on:** `isIdleTimerDisabled` true while waiting and receiving, false after completion, pause and cancel and with the setting off, the pill turning it off and on for the session, false as applied when the app left the screen, true again on return.
+- **Signed in:** sign up from Settings, add this device, set up the key (12-word recovery phrase), Go to Clipboard closes the account sheet, the Paste control is shown and text syncs through the fallback read, sign out gives a new anonymous device identity; a second account device pairs the app by the pasted code, items cross both ways encrypted, text copied while the app is in the background is not captured there and is captured on return (seen by the other device).
+- **iOS ↔ Web** (`ios-web-interop`, all guests for files): Web → iOS 64 MB and iOS → Web 64 MB with SHA-256 checked on both ends; signed in, the Web's encrypted clipboard item decrypts on iOS and the iOS item decrypts on the Web (`clipboard-cross-client`, iOS half).
+- **Screenshots** in light, dark and XXXL (`ScreenshotUITests`), plus flow screenshots; a selection is in `docs/phases/reports/assets/phase7-ios-*.png` (iPhone 16, iOS 18.5):
+
+  ![Home, light](assets/phase7-ios-light-home.png) ![Session, dark](assets/phase7-ios-dark-session.png) ![Code expired](assets/phase7-ios-session-expired.png) ![Receiving](assets/phase7-ios-rx-progress.png) ![Received](assets/phase7-ios-rx-done.png) ![Pair this device](assets/phase7-ios-key-pair.png)
+
+  Also committed: `phase7-ios-dark-home`, `light-send`, `session-approval`, `dashboard-done`, `rx-preview`, `rx-save`, `light-settings`, `dark-signin`, `light-clipboard-guest`, `light-history`, `dark-devices`.
 
 ## 4. Commands and results
 
-To be completed.
+- `cd ios/ShareAnywhereCore && swift test` (Linux, Swift 6): 96 tests, 0 failures; the same suite on macOS in the `ios` job.
+- `swiftformat --lint .` and `swiftlint lint --strict` over `ios/` (pinned tools): clean.
+- `pnpm -s i18n:check`: EN/VI catalogs current (2111 keys), the iOS String Catalog current.
+- `cd web && pnpm -s lint && pnpm -s typecheck && pnpm -s test`: clean, 461 tests (the reporter fix and its test).
+- `go test -race ./internal/clipboard` against PostgreSQL 16: pass (the fan-out test fix, 5 repeated runs).
+- `npx markdownlint-cli2 "docs/**/*.md"`: 0 errors.
+- CI [43215838875](https://github.com/Juliolayme/share_anywhere/actions/runs/43215838875) on 2f0aa95: all 16 jobs green (`backend`, `web`, `protocol`, `security`, `docs`, `compose`, five `e2e-web` projects, `android`, `android-emulator (API 34)`, `ios`, `ios-simulator`). Earlier: [43209011319](https://github.com/Juliolayme/share_anywhere/actions/runs/43209011319) on 620519f also green in every job.
+- Nightly [43215838879](https://github.com/Juliolayme/share_anywhere/actions/runs/43215838879) on 2f0aa95: all 14 jobs green (`ios-matrix` × 4, `ios-background-suspend`, `ios-web-interop`, `android-matrix` 29 and 35, `android-web-interop`, `clipboard-cross-client`, `five-receivers`, `large-file`, `mobile-snapshots`, `plan`).
+- The app and UI-test targets build only on macOS; this session has no Xcode, so every app and XCUITest result above comes from CI.
 
 ## 5. Environment variables and external services
 
@@ -56,8 +76,8 @@ To be completed.
 - **No pinned CI certificate.** The phase file asks Debug builds to pin the CI self-signed Caddy certificate for the interop job. Instead, the interop job serves Caddy over plain HTTP on localhost (`infra/caddy/Caddyfile.macos`), which only Debug builds accept; Release requires HTTPS and uses the system trust store. No certificate is bundled in any build.
 - **TURN** credentials are fetched and passed to WebRTC, but forced-relay transfers are not tested until Phase 8 (`turn-forced`).
 - **Not built:** `android-ios-interop` (best effort in the phase file); Android and iOS each interoperate with the Web, which shares the protocol vectors with both.
-- **iOS's Paste control** (`UIPasteControl` through SwiftUI `PasteButton`) is shown and asserted in UI tests, but XCUITest cannot operate it, so syncing it by tap is untested (real-device checklist); the automated clipboard tests sync through the fallback button and iOS's Allow Paste prompt.
-- **Foreground capture limits:** a copy made before the app launched or before the account key loaded is not captured automatically (the Paste control syncs it); copies made inside the app are never captured automatically (Paste control or fallback only); Universal Clipboard text arriving while the app is in front is expected at the next return (untested). Untested on a real device: the paste prompt as users see it, Universal Clipboard.
+- **iOS's Paste control** (`UIPasteControl` through SwiftUI `PasteButton`) is shown and asserted in UI tests, but XCUITest cannot operate it, so syncing it by tap is untested (real-device checklist, ADR 0028); the automated clipboard tests sync through the fallback button and iOS's Allow Paste prompt. Under UI tests the sign-up password field is a plain field (the simulator's password AutoFill swallows typing), so the `SecureField` with `.newPassword` is untested by automation.
+- **Foreground capture limits:** a copy made before the app launched or before Clipboard Sync was ready (signed in, this device added, key set up) is not captured automatically (the Paste control syncs it); Universal Clipboard text that iOS reports while the app is in front is treated like an in-app copy and not captured (a recorded departure from PRD §7.3b, deviation N.3); `detectPatterns` gets one second before the text is read and checked by the engine instead (ADR 0028); copies made inside the app are never captured automatically (Paste control or fallback only); Universal Clipboard text arriving while the app is in front is expected at the next return (untested). Untested on a real device: the paste prompt as users see it, Universal Clipboard.
 - Change password and two-step verification stay off iOS (`docs/design/DESIGN_DEVIATIONS.md` section N).
 
 ## 7. Backlog
@@ -80,4 +100,4 @@ Run the `ShareAnywhere` scheme on an iOS Simulator; the Debug build talks to `ht
 
 ## 9. Commits
 
-To be completed.
+On `claude/practical-lovelace-avlb5g`: bca342a, 61581d8, 907ddb5, 4913d15, 0565fb7, b52b1b8 (7.1); d5ac37a, ef2facf, 0f50151, 26b73ca, 0c75984, 38b124c, fd86d09, 4559340, c340a6b, 7aeca93, 2564d30, 36df2e2 (7.2); a88aabd, da2de0b, dcf5933 (7.3); 44b08be, f190986, 37acafc, d28ebdf, 5ec4b94, 436c65e, b99aead (7.4); QA and CI: a5a9dda, fb4bbf6, 01583c4, cf5f03a, c5b1716, c44dd26, aa9a8a0, 206a6b6, 8565ad4, 1e54e62, a102d5f, 622df03, 4f2ce54, 5c92bf4, 9d7af09, e96e372, 6908ed2, 620519f, 2f0aa95; report and QA record: the commit that adds this report (`docs: Phase 7 report and QA record`).

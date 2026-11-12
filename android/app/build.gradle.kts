@@ -47,7 +47,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "app.shareanywhere.SettledMediaRunner"
         // Each instrumentation test starts from a fresh install (docs/TESTING_AND_CI.md §5).
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
         testInstrumentationRunnerArguments["useTestStorageService"] = "true"

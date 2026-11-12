@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export CLIP_INTEROP_DIR="${CLIP_INTEROP_DIR:-$PWD/web/test-results/clipboard-interop}"
 rm -rf "$CLIP_INTEROP_DIR" && mkdir -p "$CLIP_INTEROP_DIR"
-RUNNER=app.shareanywhere.test/androidx.test.runner.AndroidJUnitRunner
+RUNNER=app.shareanywhere.test/app.shareanywhere.SettledMediaRunner  # waits for MediaProvider to finish the pm clear
 adb install -r -g android/app/build/outputs/apk/debug/app-debug.apk >/dev/null
 adb install -r -g android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk >/dev/null
 adb shell pm clear app.shareanywhere >/dev/null

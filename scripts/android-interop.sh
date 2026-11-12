@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export INTEROP_DIR="${INTEROP_DIR:-$PWD/web/test-results/interop}"
 rm -rf "$INTEROP_DIR" && mkdir -p "$INTEROP_DIR"
-RUNNER=app.shareanywhere.test/androidx.test.runner.AndroidJUnitRunner
+RUNNER=app.shareanywhere.test/app.shareanywhere.SettledMediaRunner  # waits for MediaProvider to finish the pm clear
 APP=android/app/build/outputs/apk/debug/app-debug.apk
 TEST_APK=android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb install -r -g "$APP" >/dev/null

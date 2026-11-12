@@ -180,7 +180,7 @@ class KeepScreenOnTest {
     private fun heldWakeLocks(): String {
         val dump = device.executeShellCommand("dumpsys power")
         val start = dump.indexOf("Wake Locks: size=")
-        if (start < 0) return ""
+        check(start >= 0) { "dumpsys power has no \"Wake Locks:\" section; the check would prove nothing" }
         val end = dump.indexOf("\n\n", start).let { if (it < 0) dump.length else it }
         return dump.substring(start, end)
     }

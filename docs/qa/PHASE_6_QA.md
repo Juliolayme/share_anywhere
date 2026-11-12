@@ -34,6 +34,12 @@ Fixed in 0d2625c and bce6c05: Back through the Activity dispatcher and the sessi
 
 Fixed in 1f665e7 and the report commit: the default target is recognised (TransferTest asserts the label); the Sync action carries a per-process token and an external `ACTION_SYNC` only opens the tab; the wake lock check reads only held locks and the loop breaks; the budget test disables DeviceConfig sync and asserts the value; screenshots committed under `docs/phases/reports/assets/`, the report's tested/untested split and commits corrected. CI 43131693432 green and nightly API 35 green (above). The remaining P2s are in the backlog.
 
+## Round 4 — commit 57a0e1e — PASS
+
+0 P0, 0 P1, 6 P2. Every round-3 finding is fixed and every exit-gate item is met by runs the reviewer read: CI [43133792368](https://github.com/Juliolayme/share_anywhere/actions/runs/43133792368) on 57a0e1e green including `android-emulator (API 34)` (32 tests, 3 nightly-only skipped, 0 failed); nightly [43133792458](https://github.com/Juliolayme/share_anywhere/actions/runs/43133792458) on 57a0e1e green in every job: `android-matrix (35)` including `FgsBudgetTest`, `android-matrix (29)` (cold boot), `android-web-interop`, `clipboard-cross-client`, `large-file`, `five-receivers`, `mobile-snapshots`. Local: 143 JVM tests, lint 0 errors, ktlint clean, i18n catalogs current.
+
+The P2 "the wake lock check passes silently if `dumpsys` loses its section" is fixed after the round (the test now fails without the section). The others are in the backlog below.
+
 ## Backlog (P2, not blocking)
 
 - Regression tests for the one-shot notification sync, the cold-start wipe and the CB-6 snackbar.
@@ -44,6 +50,8 @@ Fixed in 1f665e7 and the report commit: the default target is recognised (Transf
 - History sync bookkeeping read-modify-write races between a sync pass and a deletion (same structure as the Web).
 - Intermittent "performMeasureAndLayout called during measure layout" in instrumentation runs (API 29 and 35 so far, never API 34). Compose's own measure callers are all main-thread; the working theory is that `createEmptyComposeRule` runs the app's effects on an unconfined test dispatcher, so an effect resumed by a background thread can measure. Mitigation to try: a main-thread `effectContext` or `createAndroidComposeRule`.
 - No user notice when Android refuses or ends the foreground service outside the budget path.
+- The notification's Sync token is per process: after the process dies, the action only opens the Clipboard tab (safe; a non-exported trampoline Activity would keep it working). No test taps the Sync action itself.
+- API 29 cold boot has one green run so far; watch the next nightlies.
 - A JVM test for `TransferRuntime` registration (covered on the emulator by `KeepScreenOnTest`).
 - Root cause of the clipboard interop needing more than 60 s once (the timeout is 120 s with state diagnostics).
 - Sentences assembled from fragments (`SessionScreen`, `SendScreen`, `HomeScreen`, `ReceiveTransfer`, `DashboardScreen`) should use catalog placeholders.

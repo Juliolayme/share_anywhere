@@ -1,6 +1,6 @@
 # Phase 6 report: Android app
 
-Status: see `docs/qa/PHASE_6_QA.md` for the QA rounds and the exit-gate runs. File sharing stays guest-first on Android: Welcome leads to Transfer home, send and receive never ask for an account, and the account screens are reached only from account entry points (Settings, Devices, History banner, Clipboard intro).
+Status: exit gate met. QA round 4 PASS on 57a0e1e (`docs/qa/PHASE_6_QA.md`); CI [43133792368](https://github.com/Juliolayme/share_anywhere/actions/runs/43133792368) green including the API 34 emulator, nightly [43133792458](https://github.com/Juliolayme/share_anywhere/actions/runs/43133792458) green including API 29 and 35, Android ↔ Web interop and clipboard-cross-client. File sharing stays guest-first on Android: Welcome leads to Transfer home, send and receive never ask for an account, and the account screens are reached only from account entry points (Settings, Devices, History banner, Clipboard intro).
 
 ## 1. What was implemented
 
@@ -75,7 +75,7 @@ Run links are listed in `docs/qa/PHASE_6_QA.md`.
 
 ## 7. Backlog
 
-- P0: none known (see the QA log for the final state).
+- P0: none (QA round 4).
 - P1: TURN fallback and route strategy (Phase 8); real-device verification of App Links, QR scanning and clipboard behaviour.
 - P2: screenshots of the live-transfer screens; WorkManager-based deferred sync if it becomes needed; the QA P2 items listed in `docs/qa/PHASE_6_QA.md`.
 
@@ -92,4 +92,4 @@ The emulator reaches the local backend at `10.0.2.2:8080`.
 
 ## 9. Commits
 
-On `claude/practical-lovelace-avlb5g`: 0d264d9, e0ce23f (6.1); 45ae141, 0f4e481, 7f44559, d53afa5, 5c762e6 (6.2); 2649c1d, 8a2ab0c, 9f7a7c4 (6.3); 12bbc4d, 0eb9831, 0268055, c194412 (6.4); 646fe39, 414e89a, 50cdd00, e7e8a50, 82d0f25, 9cc5d4f, 932e14e, 0d2625c, 437f742, bce6c05, 3d536d3, 00ea75d, 6119074, 32ce925, 1f665e7 (6.5, tests, CI and QA fixes), plus the commit that adds this report's screenshots.
+On `claude/practical-lovelace-avlb5g`: 0d264d9, e0ce23f (6.1); 45ae141, 0f4e481, 7f44559, d53afa5, 5c762e6 (6.2); 2649c1d, 8a2ab0c, 9f7a7c4 (6.3); 12bbc4d, 0eb9831, 0268055, c194412 (6.4); 646fe39, 414e89a, 50cdd00, e7e8a50, 82d0f25, 9cc5d4f, 932e14e, 0d2625c, 437f742, bce6c05, 3d536d3, 00ea75d, 6119074, 32ce925, 1f665e7, af64434, 57a0e1e (6.5, tests, CI, QA fixes, screenshots and this report), and the commit recording QA round 4.

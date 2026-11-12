@@ -91,6 +91,8 @@ final class AppModel: ObservableObject {
             }
         }
         await identity.bootstrap()
+        // A receive the process ended in the middle of (iOS terminated the suspended app) resumes now.
+        await hub.resumeUnfinished()
     }
 
     func retryIdentity() { Task { await identity.bootstrap() } }

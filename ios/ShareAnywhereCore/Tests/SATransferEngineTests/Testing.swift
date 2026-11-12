@@ -186,3 +186,48 @@ actor RxStore {
     func bitmap(_ file: Int) -> Bitmap? { persisted[file] }
     func persist(_ file: Int, _ b: Bitmap) { persisted[file] = b }
 }
+
+/// A disk that fills up after `okWrites` writes (ENOSPC, mapped to StorageFullError by PartialFileSink).
+actor FullDisk: Sink {
+    let inner: MemorySink
+    let okWrites: Int
+    private var writes = 0
+
+    init(inner: MemorySink, okWrites: Int) {
+        self.inner = inner
+        self.okWrites = okWrites
+    }
+
+    func write(offset: Int64, _ data: [UInt8]) async throws {
+        writes += 1
+        if writes > okWrites { throw StorageFullError("No space left on device") }
+        try await inner.write(offset: offset, data)
+    }
+
+    func read(offset: Int64, length: Int) async throws -> [UInt8] { try await inner.read(offset: offset, length: length) }
+    func flush() async throws { try await inner.flush() }
+}
+
+/// A picked file that becomes unreadable after `okReads` reads (its security-scoped bookmark went stale, or it moved).
+final class RevokedSource: FileSource, @unchecked Sendable {
+    let data: [UInt8]
+    let okReads: Int
+    private let lock = NSLock()
+    private var reads = 0
+
+    init(_ data: [UInt8], okReads: Int) {
+        self.data = data
+        self.okReads = okReads
+    }
+
+    var size: Int64 { Int64(data.count) }
+
+    func read(offset: Int64, length: Int) async throws -> [UInt8] {
+        let n = lock.withLock { () -> Int in
+            reads += 1
+            return reads
+        }
+        if n > okReads { throw TransferIOError("The file is no longer accessible") }
+        return Array(data[Int(offset) ..< min(data.count, Int(offset) + length)])
+    }
+}

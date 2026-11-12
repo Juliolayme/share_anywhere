@@ -157,6 +157,29 @@ final class TransferUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "rx-preview").exists, "nothing is joined until Receive is tapped")
     }
 
+    /// Phase 9 lifecycle: a share link opened while the app is not running cold-starts it straight into the join
+    /// preview (the system launches it with the link; Universal Links on devices, the custom scheme here).
+    func testAShareLinkColdStartsTheAppIntoTheJoinPreview() throws {
+        let sender = try peer("Cold Link Sender")
+        let (view, _, _) = try blocking { try await sender.share(name: "cold.txt", size: 1000) }
+        let token = try XCTUnwrap(view.linkToken)
+        let app = UITest.app()
+        app.launch()
+        UITest.skipWelcome(app)
+        XCTAssertTrue(UITest.id(app, "home").waitForExistence(timeout: 15))
+        app.terminate()
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 10))
+        guard #available(iOS 16.4, *) else { throw XCTSkip("opening a URL from a UI test needs iOS 16.4") }
+        XCUIDevice.shared.system.open(URL(string: "shareanywhere://j/\(token)")!)
+        let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"].firstMatch
+        if open.waitForExistence(timeout: 3) { open.tap() }
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20), "the link launched the app")
+        guard UITest.expect(app, UITest.id(app, "preview.receive"), timeout: 30, "the cold start opens the join preview") else {
+            return
+        }
+        XCTAssertTrue(app.staticTexts["cold.txt"].exists)
+    }
+
     func testTheCodeExpiresCreateNewCodeKeepsTheJoinedReceiver() throws {
         let app = UITest.app(extra: ["-seedSendFiles", "1", "-seedFileBytes", "1000"])
         app.launch()
@@ -321,5 +344,47 @@ final class TransferUITests: XCTestCase {
         eventually("hash computed", timeout: 60) { (hashes.value as? String)?.isEmpty == false }
         XCTAssertEqual(hashes.value as? String, "big.bin=\(sum)")
         XCTAssertEqual(UITest.id(app, "test.rx-duplicates").value as? String, "0", "resumed from the bitmap: no verified block again")
+    }
+
+    /// Phase 9 lifecycle: iOS ends the suspended app mid-receive. The next launch finds the unfinished receive
+    /// (TransferHub.resumeUnfinished), resumes it from the persisted bitmap, and it finishes with a matching SHA-256 and
+    /// no verified block sent twice.
+    func testTerminatingTheSuspendedAppResumesTheReceiveOnTheNextLaunch() throws {
+        let sender = try peer("Terminate Mac")
+        let (view, sum, tx) = try blocking(120) { try await sender.share(name: "big.bin", size: 256 * 1024 * 1024) }
+        try blocking { await tx.start() }
+        let app = UITest.app(extra: ["-backgroundGrace", "2"])
+        app.launch()
+        UITest.skipWelcome(app)
+        UITest.id(app, "home.receive").tap()
+        let field = UITest.id(app, "receive.code-input")
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        try field.typeText(XCTUnwrap(view.code))
+        UITest.id(app, "receive.continue").tap()
+        XCTAssertTrue(UITest.id(app, "preview.receive").waitForExistence(timeout: 15))
+        UITest.id(app, "preview.receive").tap()
+        XCTAssertTrue(UITest.id(app, "rx.start").waitForExistence(timeout: 20))
+        UITest.id(app, "rx.start").tap()
+        eventually("bytes moving", timeout: 60) { tx.state.value.receivers.first.map { $0.verified > 0 } ?? false }
+
+        XCUIDevice.shared.press(.home)
+        eventually("the receive pauses after the grace period", timeout: 30) {
+            tx.state.value.receivers.first?.status == .paused || tx.state.value.final == .completed
+        }
+        XCTAssertNotEqual(tx.state.value.final, .completed, "the file is large enough to still be moving")
+        app.terminate()
+
+        // Next launch, same installation (no reset): the receive comes back on its own.
+        let relaunched = UITest.app(reset: false, extra: ["-backgroundGrace", "2"])
+        relaunched.launch()
+        let banner = UITest.id(relaunched, "home.active")
+        XCTAssertTrue(banner.waitForExistence(timeout: 60), "the unfinished receive is running again")
+        relaunched.buttons["Open"].firstMatch.tap()
+        XCTAssertTrue(UITest.id(relaunched, "rx-done").waitForExistence(timeout: 300), "resumed after the relaunch and finished")
+        let hashes = UITest.id(relaunched, "test.rx-sha256")
+        eventually("hash computed", timeout: 60) { (hashes.value as? String)?.isEmpty == false }
+        XCTAssertEqual(hashes.value as? String, "big.bin=\(sum)")
+        XCTAssertEqual(UITest.id(relaunched, "test.rx-duplicates").value as? String, "0", "resumed from the bitmap")
     }
 }

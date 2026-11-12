@@ -47,7 +47,8 @@ class EngineTest {
         corrupt: Int = 0,
         sourceOverride: List<FileSource>? = null,
         max: Int? = 65536,
-        senderScope: CoroutineScope? = null
+        senderScope: CoroutineScope? = null,
+        failWritesAfter: Int? = null
     ) {
         // A session's sender connections share one confined dispatcher (and with it the block cache).
         val s = senderScope ?: scope()
@@ -93,7 +94,8 @@ class EngineTest {
                     scope = r,
                     hello = HelloReceiver(sessionId = "s1", participantId = "p1", capability = "cap"),
                     prepare = { e ->
-                        val sink = rx.sinks.getOrPut(e.file) { MemorySink(e.size) }
+                        val mem = rx.sinks.getOrPut(e.file) { MemorySink(e.size) }
+                        val sink: Sink = failWritesAfter?.let { FullDisk(mem, it) } ?: mem
                         val bm = rx.persisted[e.file]?.copy() ?: Bitmap(e.blockCount)
                         PreparedFile(sink, bm, { b -> rx.persisted[e.file] = b.copy() })
                     },
@@ -128,6 +130,49 @@ class EngineTest {
         assertEquals(0, l.receiver.counters.duplicates)
         assertEquals(listOf(0 to true, 1 to true, 2 to true), l.rx.doneFiles.sortedBy { it.first })
         assertTrue(l.rx.errors.isEmpty() && l.tx.errors.isEmpty())
+    }
+
+    /** A disk that fills up after [okWrites] writes (ENOSPC, mapped to StorageFullException by SafSink). */
+    private class FullDisk(val inner: MemorySink, val okWrites: Int) : Sink {
+        private var writes = 0
+
+        override suspend fun write(offset: Long, data: ByteArray) {
+            if (++writes > okWrites) throw StorageFullException("No space left on device")
+            inner.write(offset, data)
+        }
+
+        override suspend fun read(offset: Long, length: Int) = inner.read(offset, length)
+
+        override suspend fun flush() = inner.flush()
+    }
+
+    /** A picked file that becomes unreadable after [okReads] reads (moved, deleted, or the grant revoked). */
+    private class RevokedSource(val data: ByteArray, val okReads: Int) : FileSource {
+        private var reads = 0
+        override val size: Long get() = data.size.toLong()
+
+        override suspend fun read(offset: Long, length: Int): ByteArray {
+            if (++reads > okReads) throw java.io.IOException("Permission denied")
+            return data.copyOfRange(offset.toInt(), minOf(data.size, offset.toInt() + length))
+        }
+    }
+
+    @Test
+    fun storageFullOnTheReceiverEndsBothSidesWithStorageFull() = runBlocking {
+        val l = Link(listOf(bytesOf(bs * 8, 21)), failWritesAfter = 2)
+        l.start()
+        until { ErrorCodes.STORAGE_FULL in l.rx.errors && ErrorCodes.STORAGE_FULL in l.tx.errors }
+        assertTrue("never completes", !l.rx.complete)
+    }
+
+    @Test
+    fun aSourceThatBecomesUnreadableMidSendEndsBothSidesWithFileUnreadable() = runBlocking {
+        val data = bytesOf(bs * 8, 22)
+        val s = scope()
+        val hashes = mapOf(0 to FileHash(MemorySource(data), s))
+        val l = Link(listOf(data), sourceOverride = listOf(RevokedSource(data, 3)), sharedHashes = hashes, senderScope = s)
+        l.start()
+        until { ErrorCodes.FILE_UNREADABLE in l.tx.errors && ErrorCodes.FILE_UNREADABLE in l.rx.errors }
     }
 
     @Test

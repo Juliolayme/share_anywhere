@@ -42,6 +42,8 @@ class ShareAnywhereApp : Application() {
 
     @Inject lateinit var clipboard: dagger.Lazy<app.shareanywhere.clipboard.ClipboardRuntime>
 
+    @Inject lateinit var transfers: dagger.Lazy<app.shareanywhere.transfer.runtime.TransferRuntime>
+
     @Inject @AppScope
     lateinit var scope: CoroutineScope
 
@@ -57,6 +59,11 @@ class ShareAnywhereApp : Application() {
         if (config.flags.accounts) account.get().start()
         if (config.flags.clipboard) clipboard.get().start()
         scope.launch { runCatching { history.sweep(settings.settings.first().retention) } }
+        // A receive the process ended in the middle of resumes once the device identity is ready (PRD §6).
+        scope.launch {
+            identity.state.first { it.status == app.shareanywhere.identity.IdentityStatus.Ready }
+            transfers.get().resumeUnfinished()
+        }
         // Receive progress and save folders untouched for a day, and picked files of sessions past their maximum
         // lifetime, are forgotten (as the Web's storage sweep; docs/TRANSFER_PROTOCOL.md §4).
         scope.launch(Dispatchers.IO) {

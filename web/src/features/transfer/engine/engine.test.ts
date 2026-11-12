@@ -154,6 +154,49 @@ describe('transfer engine over an in-memory channel', () => {
     expect(c.log).toContain('receiver:error:checksum_retries:true');
   });
 
+  it('storage full on the receiver ends both sides with storage_full (Phase 9 lifecycle)', async () => {
+    const f = files([BS * 8]);
+    const disk = new Disk();
+    const prepare = disk.prepare;
+    disk.prepare = async (e) => {
+      const p = await prepare(e);
+      let writes = 0;
+      const inner = p.sink;
+      p.sink = {
+        read: (o, n) => inner.read(o, n),
+        flush: () => inner.flush(),
+        write: async (o, d) => {
+          if (++writes > 2) throw new DOMException('No space left on device', 'QuotaExceededError');
+          return inner.write(o, d);
+        },
+      };
+      return p;
+    };
+    const c = connect(f, disk);
+    await until(() => c.log.includes('receiver:error:storage_full:true'));
+    await until(() => c.log.includes('sender:error:storage_full:true'));
+    expect(c.log).not.toContain('receiver:complete');
+  });
+
+  it('a source that becomes unreadable mid-send (file moved, permission revoked) ends both sides with file_unreadable', async () => {
+    const f = files([BS * 8]);
+    const file = f.files[0];
+    if (!file) throw new Error('no file');
+    const data = dataOf(f, 0);
+    let reads = 0;
+    file.source = {
+      size: data.byteLength,
+      read: async (o, n) => {
+        if (++reads > 3) throw new DOMException('The requested file could not be read', 'NotReadableError');
+        return data.slice(o, o + n);
+      },
+    };
+    f.hashes.set(0, new FileHash({ size: data.byteLength, read: async (o, n) => data.slice(o, o + n) }));
+    const c = connect(f, new Disk());
+    await until(() => c.log.includes('sender:error:file_unreadable:true'));
+    await until(() => c.log.includes('receiver:error:file_unreadable:true'));
+  });
+
   it('refuses a receiver whose capability does not match', async () => {
     const f = files([BS]);
     const c = connect(f, new Disk(), { capability: 'forged' });

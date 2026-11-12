@@ -100,6 +100,13 @@ interface IncomingDao {
     @Query("SELECT * FROM save_targets WHERE session_id = :sessionId")
     suspend fun target(sessionId: String): SaveTarget?
 
+    /** Receives that were running when the process ended: a save folder was chosen and a file is not verified yet. */
+    @Query(
+        "SELECT DISTINCT p.session_id FROM incoming_progress p JOIN save_targets t ON t.session_id = p.session_id " +
+            "WHERE p.verified = 0"
+    )
+    suspend fun unfinishedSessions(): List<String>
+
     @androidx.room.Upsert
     suspend fun putTarget(t: SaveTarget)
 

@@ -87,6 +87,18 @@ class TransferRuntime(
 
     fun existingReceiver(sessionId: String): ReceiverController? = receivers[sessionId]
 
+    /**
+     * Next launch after the process ended mid-receive (PRD §6 "resume on next launch"): recreates the receiver of
+     * every unfinished receive with a saved folder. Each reloads its session and, while this device is still a
+     * joined receiver, reconnects and resumes from its persisted bitmap; a session that ended meanwhile settles on
+     * its final state.
+     */
+    suspend fun resumeUnfinished(): List<String> {
+        val ids = runCatching { incoming.unfinishedSessions() }.getOrDefault(emptyList())
+        for (id in ids) if (receivers[id] == null) receiver(id)
+        return ids
+    }
+
     /** The service's time budget ran out: pause every transfer (bitmaps are persisted; resume picks up). */
     fun pauseAll() {
         for (r in receivers.values) r.pause()

@@ -18,7 +18,8 @@ final class EngineTests: XCTestCase {
 
     func link(
         _ data: [[UInt8]], store: RxStore = RxStore(), capabilityOk: Bool = true, cache: BlockCache? = nil,
-        hashes: [Int: FileHash]? = nil, corrupt: Int = 0, sources: [any FileSource]? = nil, max: Int? = 65536
+        hashes: [Int: FileHash]? = nil, corrupt: Int = 0, sources: [any FileSource]? = nil, max: Int? = 65536,
+        failWritesAfter: Int? = nil
     ) -> Link {
         let pair = MemChannel.pair(max: max)
         let tx = Recorder(), rx = Recorder()
@@ -44,7 +45,8 @@ final class EngineTests: XCTestCase {
         let ro = ReceiverOptions(
             channel: pair.1, hello: HelloReceiver(sessionId: "s1", participantId: "p1", capability: "cap"),
             prepare: { e in
-                let sink = await store.sink(e.file, size: e.size)
+                let mem = await store.sink(e.file, size: e.size)
+                let sink: any Sink = failWritesAfter.map { FullDisk(inner: mem, okWrites: $0) } ?? mem
                 let bm = await store.bitmap(e.file) ?? Bitmap(size: e.blockCount)
                 return PreparedFile(sink: sink, bitmap: bm, persist: { b in await store.persist(e.file, b) })
             },
@@ -116,6 +118,23 @@ final class EngineTests: XCTestCase {
         await l.receiver.start()
         try await until { l.tx.errors.contains(ErrorCode.checksumRetries) && l.rx.errors.contains(ErrorCode.checksumRetries) }
         XCTAssertFalse(l.rx.complete)
+    }
+
+    /// Phase 9 lifecycle: the device fills up while receiving; both sides end with storage_full.
+    func testStorageFullOnTheReceiverEndsBothSidesWithStorageFull() async throws {
+        let l = link([bytesOf(bs * 8, seed: 21)], failWritesAfter: 2)
+        await l.receiver.start()
+        try await until { l.rx.errors.contains(ErrorCode.storageFull) && l.tx.errors.contains(ErrorCode.storageFull) }
+        XCTAssertFalse(l.rx.complete)
+    }
+
+    /// Phase 9 lifecycle: the picked file becomes unreadable mid-send (security-scoped bookmark invalidated, file
+    /// moved or deleted); both sides end with file_unreadable.
+    func testASourceThatBecomesUnreadableMidSendEndsBothSidesWithFileUnreadable() async throws {
+        let data = bytesOf(bs * 8, seed: 22)
+        let l = link([data], hashes: [0: FileHash(source: MemorySource(data))], sources: [RevokedSource(data, okReads: 3)])
+        await l.receiver.start()
+        try await until { l.tx.errors.contains(ErrorCode.fileUnreadable) && l.rx.errors.contains(ErrorCode.fileUnreadable) }
     }
 
     func testAReceiverWithoutTheCapabilityIsRefused() async throws {

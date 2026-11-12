@@ -163,6 +163,8 @@ Conventions:
 
 - Accessibility (**Phase 9**): `AccessibilitySemanticsTest` walks Welcome, Transfer home, every tab, Send and code entry, and fails when a control with a click action in the merged semantics tree has no spoken name or a touch target under 48 × 48 dp (`touchBoundsInRoot`). It uses only the existing Compose test APIs: the Compose accessibility-check artifact would need a lockfile change the development container cannot produce, and contrast plus a spoken TalkBack walkthrough with Accessibility Scanner stay on the real-device checklist.
 
+- Lifecycle (**Phase 9**): `ProcessDeathRestoreTest` starts a 192 MB receive, drops every in-memory controller as if the process had ended, then runs the launch path (`TransferRuntime.resumeUnfinished`, which the Application calls once the identity is ready): the receive resumes from its persisted bitmap and completes with a matching SHA-256, `resumedBytes > 0` and zero duplicate blocks (the instrumentation shares the app's process, so the process itself cannot be killed from the test). Engine JVM tests cover storage full (`storage_full` on both sides) and a source that becomes unreadable mid-send (`file_unreadable` on both sides).
+
 ## 5b. iOS test conventions
 
 - `ShareAnywhereCore` is an SPM package with no UIKit dependency: transfer engine (block scheduler, bitmap, hasher, frame codec), clipboard crypto, API client. Its tests run with `swift test` on macOS without a simulator and consume the same vector files as Web and Android (`shared/protocol/schemas/transfer-vectors.json`, `clipboard-vectors.json`).
@@ -176,6 +178,7 @@ Conventions:
 - Nothing in `ios/` is signed with a certificate in CI: simulator builds use manual signing with the ad-hoc identity (`CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = -`, `ios/project.yml`), which the app needs for its Keychain items.
 
 - Accessibility (**Phase 9**): `AccessibilityAuditUITests` runs XCTest's `performAccessibilityAudit()` (iOS 17 and later) on Welcome, Transfer home, Send, Session, code entry, Clipboard, History, Devices, Settings and Sign in; every issue fails the test with the element it names. VoiceOver use is on the real-device checklist.
+- Lifecycle (**Phase 9**): `testTerminatingTheSuspendedAppResumesTheReceiveOnTheNextLaunch` (the suspended app is terminated mid-receive; the relaunch resumes it from the bitmap through `TransferHub.resumeUnfinished` and `pending-receives.json`, zero duplicate blocks), `testAShareLinkColdStartsTheAppIntoTheJoinPreview` (a link opened while the app is not running), and core engine tests for storage full and a source that becomes unreadable mid-send (a stale security-scoped bookmark).
 
 ## 6. Fixtures
 

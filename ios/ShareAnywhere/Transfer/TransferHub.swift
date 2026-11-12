@@ -16,6 +16,8 @@ final class TransferHub: ObservableObject {
     let outgoing: JSONMap<[OutgoingFile]>
     let targets: JSONMap<SaveTarget>
     let saved: JSONMap<String>
+    /// Receives running (or paused by the background policy) when the process ended: resumed on the next launch.
+    let pending: JSONMap<PendingReceive>
     let keepAwake: KeepAwake
     private let history: HistoryStore
     private let peers: any PeerFactory
@@ -57,6 +59,7 @@ final class TransferHub: ObservableObject {
         outgoing = JSONMap(url: dir.appendingPathComponent("transfers/outgoing.json"))
         targets = JSONMap(url: dir.appendingPathComponent("transfers/targets.json"))
         saved = JSONMap(url: dir.appendingPathComponent("transfers/saved.json"))
+        pending = JSONMap(url: dir.appendingPathComponent("transfers/pending-receives.json"))
     }
 
     // MARK: Controllers
@@ -92,12 +95,44 @@ final class TransferHub: ObservableObject {
         receivers[id] = c
         Task { await c.start() }
         let states = c.state.values()
+        let pending = pending
         watch("rx:\(id)") { mark in
+            var last = RxPhase.loading
             for await s in states {
                 await mark(s.phase.isActive)
+                // Remembered while it runs, forgotten when it ends (a failure while loading, e.g. offline at launch, is
+                // kept so the next launch tries again).
+                if s.phase.isActive, await pending.get(id) == nil {
+                    try? await pending.put(id, PendingReceive(since: Int64(Date().timeIntervalSince1970 * 1000), suspended: false))
+                } else if s.phase.isFinal, !(s.phase == .failed && last == .loading) {
+                    try? await pending.put(id, nil)
+                }
+                last = s.phase
             }
         }
         return c
+    }
+
+    /// The next launch after the process ended mid-receive (ADR 0027, Phase 9): recreates every receive that was
+    /// running or paused by the background policy in the last day. Each reloads its session and resumes from its
+    /// persisted bitmap; one the background policy paused is resumed once loaded, as a return to the app would.
+    func resumeUnfinished() async {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        for (id, p) in await pending.all() {
+            guard now - p.since < 24 * 3_600_000, receivers[id] == nil else {
+                if now - p.since >= 24 * 3_600_000 { try? await pending.put(id, nil) }
+                continue
+            }
+            let c = receiver(id)
+            guard p.suspended else { continue }
+            Task {
+                for await s in c.state.values() where s.phase != .loading {
+                    if s.phase == .paused { await c.resume() }
+                    break
+                }
+                try? await pending.put(id, PendingReceive(since: p.since, suspended: false))
+            }
+        }
     }
 
     /// Ends a session's controllers (session closed and left, or a new identity).
@@ -210,6 +245,9 @@ final class TransferHub: ObservableObject {
         for (id, c) in receivers where c.state.value.phase.isActive {
             suspended.insert("rx:\(id)")
             await c.pause()
+            // If iOS ends the suspended app, the next launch resumes this receive (resumeUnfinished).
+            let since = await pending.get(id)?.since ?? Int64(Date().timeIntervalSince1970 * 1000)
+            try? await pending.put(id, PendingReceive(since: since, suspended: true))
             any = true
         }
         if any { Notifications.post(id: "suspended", title: L10n.t("ios.susp_h"), body: L10n.t("product.ios_susp_p")) }
@@ -229,7 +267,11 @@ final class TransferHub: ObservableObject {
                     }
                 }
             } else if key.hasPrefix("rx:"), let c = receivers[id] {
-                Task { await c.resume() }
+                let pending = pending
+                Task {
+                    await c.resume()
+                    if let p = await pending.get(id) { try? await pending.put(id, PendingReceive(since: p.since, suspended: false)) }
+                }
             }
         }
     }
@@ -249,4 +291,10 @@ enum Notifications {
             center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
         }
     }
+}
+
+/// A receive to resume on the next launch: when it started, and whether the background policy paused it.
+struct PendingReceive: Codable, Sendable {
+    var since: Int64
+    var suspended: Bool
 }

@@ -1,4 +1,5 @@
 import Foundation
+import SAAccount
 import SAAPIClient
 import SAStore
 import SATransferRuntime
@@ -23,6 +24,8 @@ final class AppModel: ObservableObject {
     let history: HistoryStore
     let keepAwake: KeepAwake
     let hub: TransferHub
+    let account: AccountSession
+    let pasteboard = PasteboardAccess()
 
     @Published private(set) var identityState = IdentityState()
     @Published private(set) var historyEntries: [HistoryEntry] = []
@@ -37,7 +40,7 @@ final class AppModel: ObservableObject {
     /// Join previews by session id, from a resolved code or link (RX-4).
     var previews: [String: JoinPreview] = [:]
 
-    enum Tab: Hashable { case home, history, devices, settings }
+    enum Tab: Hashable { case home, clipboard, history, devices, settings }
 
     init(config: AppConfig = .load()) {
         self.config = config
@@ -65,7 +68,9 @@ final class AppModel: ObservableObject {
         self.keepAwake = keepAwake
         hub = TransferHub(api: client, identity: identity, history: store, keepAwake: keepAwake, graceSeconds: config.backgroundGrace)
         keepAwake.setEnabled(settings.keepScreenOn)
+        account = AccountSession(client: client, identity: identity, history: store, socket: hub.socket)
         relay.model = self
+        account.attach(self)
         Task { await start() }
     }
 
@@ -118,7 +123,11 @@ final class AppModel: ObservableObject {
         Task { try? await history.sweep(r) }
     }
 
-    fileprivate func apply(_ s: IdentityState) { identityState = s }
+    fileprivate func apply(_ s: IdentityState) {
+        let claimsChanged = s.claims != identityState.claims || s.device?.id != identityState.device?.id
+        identityState = s
+        if claimsChanged { account.identityChanged(s.claims) }
+    }
 
     static func databasePath() -> String {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
@@ -133,6 +142,8 @@ final class AppModel: ObservableObject {
         for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: base + suffix) }
         let support = URL(fileURLWithPath: base).deletingLastPathComponent()
         try? FileManager.default.removeItem(at: support.appendingPathComponent("transfers"))
+        try? FileManager.default.removeItem(at: support.appendingPathComponent("account"))
+        KeychainSealer().destroy()
         if let docs = try? FileManager.default.contentsOfDirectory(at: SaveFolders.documents, includingPropertiesForKeys: nil) {
             for f in docs {
                 try? FileManager.default.removeItem(at: f)

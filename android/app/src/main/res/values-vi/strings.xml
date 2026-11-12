@@ -796,6 +796,7 @@
     <string name="product_cb_f_mine">Từ trình duyệt này</string>
     <string name="product_cb_f_mine_device">Từ thiết bị này</string>
     <string name="product_cb_f_others">Từ thiết bị khác</string>
+    <string name="product_cb_fallback_p">Nếu không có nút Dán, nút này đọc bộ nhớ tạm; iOS sẽ hỏi bạn cho phép trước.</string>
     <string name="product_cb_filter">Lọc mục clipboard</string>
     <string name="product_cb_flagged_row">Đã bỏ qua — ứng dụng bạn sao chép đã đánh dấu là nhạy cảm. Không đồng bộ.</string>
     <string name="product_cb_https_h">Cần HTTPS</string>
@@ -811,6 +812,7 @@
     <string name="product_cb_locked">Bị khoá trên thiết bị này — cần khoá mà trình duyệt này chưa có. Hãy ghép nối lại thiết bị.</string>
     <string name="product_cb_locked_device">Bị khoá trên thiết bị này — cần một khoá mà thiết bị này chưa có. Hãy ghép nối lại thiết bị này.</string>
     <string name="product_cb_new">Mới</string>
+    <string name="product_cb_new_copy_ios">Bạn vừa sao chép nội dung mới — chạm Dán để đồng bộ.</string>
     <string name="product_cb_notif_channel">Clipboard</string>
     <string name="product_cb_notif_channel_p">Mục clipboard mới từ các thiết bị khác của bạn</string>
     <string name="product_cb_offline_1">Bạn đang ngoại tuyến — 1 mục chờ gửi</string>
@@ -820,6 +822,7 @@
     <string name="product_cb_other_device">Thiết bị khác</string>
     <string name="product_cb_pair_h">Ghép nối thiết bị này để dùng Đồng bộ Clipboard</string>
     <string name="product_cb_pair_p">Clipboard được mã hoá bằng khoá tài khoản mà trình duyệt này chưa có. Hãy nhận khoá từ một thiết bị của bạn hoặc dùng cụm từ khôi phục.</string>
+    <string name="product_cb_paste_fallback">Đọc bộ nhớ tạm</string>
     <string name="product_cb_paste_h">Dán để đồng bộ</string>
     <string name="product_cb_paste_label">Văn bản cần đồng bộ</string>
     <string name="product_cb_paste_p">Trình duyệt không chia sẻ clipboard. Dán văn bản vào đây (Ctrl+V, ⌘V hoặc nhấn giữ → Dán) rồi đồng bộ.</string>
@@ -856,6 +859,8 @@
     <string name="product_cb_sync_anyway">Vẫn đồng bộ</string>
     <string name="product_cb_sync_p">Đọc clipboard hiện tại của trình duyệt này và gửi đi, có mã hoá.</string>
     <string name="product_cb_sync_p_android">Đọc nội dung bạn đã sao chép và gửi đi ở dạng mã hoá.</string>
+    <string name="product_cb_sync_p_ios">Chạm Dán để đồng bộ nội dung bạn đã sao chép. iOS chỉ chia sẻ bộ nhớ tạm với Share Anywhere khi bạn chạm.</string>
+    <string name="product_cb_synced">Đã đồng bộ, mã hoá đầu cuối</string>
     <string name="product_cb_text_only">Chỉ văn bản</string>
     <string name="product_cb_this_browser">Trình duyệt này</string>
     <string name="product_cb_this_device">Thiết bị này</string>

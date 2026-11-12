@@ -15,8 +15,13 @@ final class GuestLaunchUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "home").waitForExistence(timeout: 10))
         XCTAssertFalse(UITest.id(app, "signin").exists)
         XCTAssertTrue(UITest.id(app, "home.guest").exists)
-        XCTAssertFalse(app.tabBars.buttons["Clipboard"].exists, "Clipboard stays hidden until milestone 7.4")
         shot(app, "home")
+        // Clipboard is account-only: a guest sees the intro, and the app never reads the pasteboard.
+        UITest.tab(app, "Clipboard")
+        XCTAssertTrue(UITest.id(app, "clipboard.intro").waitForExistence(timeout: 10))
+        XCTAssertFalse(UITest.id(app, "clipboard.sync").exists)
+        XCTAssertEqual(UITest.id(app, "test.pasteboard-reads").value as? String, "0", "no pasteboard access as a guest")
+        shot(app, "clipboard-guest")
 
         // Later launches start on Transfer directly.
         app.terminate()

@@ -796,6 +796,7 @@
     <string name="product_cb_f_mine">From this browser</string>
     <string name="product_cb_f_mine_device">From this device</string>
     <string name="product_cb_f_others">From other devices</string>
+    <string name="product_cb_fallback_p">If Paste is not available, this reads the clipboard; iOS asks you to allow it first.</string>
     <string name="product_cb_filter">Filter clipboard items</string>
     <string name="product_cb_flagged_row">Skipped — the app you copied from marked it as sensitive. Not synced.</string>
     <string name="product_cb_https_h">HTTPS required</string>
@@ -811,6 +812,7 @@
     <string name="product_cb_locked">Locked on this device — it needs a key this browser doesn’t hold. Pair this device again.</string>
     <string name="product_cb_locked_device">Locked on this device — it needs a key this device doesn’t hold. Pair this device again.</string>
     <string name="product_cb_new">New</string>
+    <string name="product_cb_new_copy_ios">You copied something new — tap Paste to sync it.</string>
     <string name="product_cb_notif_channel">Clipboard</string>
     <string name="product_cb_notif_channel_p">New clipboard items from your other devices</string>
     <string name="product_cb_offline_1">You’re offline — 1 item waiting to send</string>
@@ -820,6 +822,7 @@
     <string name="product_cb_other_device">Another device</string>
     <string name="product_cb_pair_h">Pair this device to use Clipboard Sync</string>
     <string name="product_cb_pair_p">Your clipboard is encrypted with your account key, which this browser doesn’t hold yet. Get it from one of your devices, or use your recovery phrase.</string>
+    <string name="product_cb_paste_fallback">Read the clipboard instead</string>
     <string name="product_cb_paste_h">Paste to sync</string>
     <string name="product_cb_paste_label">Text to sync</string>
     <string name="product_cb_paste_p">This browser didn’t share the clipboard. Paste the text here (Ctrl+V, ⌘V, or long-press → Paste), then sync it.</string>
@@ -856,6 +859,8 @@
     <string name="product_cb_sync_anyway">Sync anyway</string>
     <string name="product_cb_sync_p">Reads the current clipboard of this browser and sends it, encrypted.</string>
     <string name="product_cb_sync_p_android">Reads what you copied and sends it, encrypted.</string>
+    <string name="product_cb_sync_p_ios">Tap Paste to sync what you copied. iOS shares the clipboard with Share Anywhere only when you tap.</string>
+    <string name="product_cb_synced">Synced, encrypted end-to-end</string>
     <string name="product_cb_text_only">Text only</string>
     <string name="product_cb_this_browser">This browser</string>
     <string name="product_cb_this_device">This device</string>

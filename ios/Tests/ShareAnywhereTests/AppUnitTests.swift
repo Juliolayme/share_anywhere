@@ -7,8 +7,8 @@ final class AppUnitTests: XCTestCase {
         let c = AppConfig.load(arguments: ["app", "-uiTesting", "-resetState", "-seedHistory", "-backendURL", "http://127.0.0.1:9999"])
         XCTAssertEqual(c.backendURL.absoluteString, "http://127.0.0.1:9999")
         XCTAssertTrue(c.uiTesting && c.resetState && c.seedHistory)
-        XCTAssertFalse(c.accounts, "accounts stay off until milestone 7.4 (CLAUDE.md §8b)")
-        XCTAssertFalse(c.clipboard)
+        XCTAssertTrue(c.accounts, "accounts are on since milestone 7.4 (CLAUDE.md §8b)")
+        XCTAssertTrue(c.clipboard)
         let plain = AppConfig.load(arguments: ["app", "-seedHistory"])
         XCTAssertFalse(plain.seedHistory, "seeding needs -uiTesting")
     }

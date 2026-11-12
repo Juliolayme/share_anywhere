@@ -1,13 +1,15 @@
 import SAAPIClient
 import SwiftUI
 
-/// DV-1 Devices (design `devices`), guest: the "This device" card with Rename and Reset device identity. The account
-/// device list arrives with accounts (milestone 7.4; `accounts` flag off until then, CLAUDE.md §8b).
+/// DV-1 / DV-2 Devices (design `devices`): the "This device" card with Rename and Reset device identity; signed in and
+/// added, the account's devices (DV-2); a guest sees why signing in shows the device list.
 struct DevicesView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var account: AccountSession
     @Environment(\.palette) private var p
     @State private var renaming = false
     @State private var confirmReset = false
+    @State private var accountSheet: AccountSheet.Step?
 
     var body: some View {
         ScrollView {
@@ -33,6 +35,18 @@ struct DevicesView: View {
                     }
                 }
                 .screenID("devices.this-device")
+                if account.state.signedIn, account.state.added {
+                    AccountDevicesSection()
+                } else if model.config.accounts {
+                    Card {
+                        Text(L10n.t("ios_yy.dv_sync_h")).typeStyle(SATokens.TypeScale.title).foregroundStyle(p.fg)
+                        Text(L10n.t("ios_yy.dv_sync_p")).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
+                        PrimaryButton(title: L10n.t(account.state.signedIn ? "product.add_device_btn" : "ios_yy.signin")) {
+                            accountSheet = account.state.signedIn ? .trust : .signIn
+                        }
+                        .accessibilityIdentifier("devices.signin")
+                    }
+                }
             }
             .padding(SATokens.Space.s4)
         }
@@ -40,6 +54,9 @@ struct DevicesView: View {
         .navigationTitle(L10n.t("ios.dev"))
         .sheet(isPresented: $renaming) {
             RenameSheet(current: model.identityState.device?.displayName ?? "").themed()
+        }
+        .sheet(item: Binding(get: { accountSheet.map(AccountSheetItem.init) }, set: { accountSheet = $0?.step })) { item in
+            AccountSheet(start: item.step).environmentObject(account).environmentObject(model)
         }
         .confirmationDialog(L10n.t("product.reset_identity"), isPresented: $confirmReset, titleVisibility: .visible) {
             Button(L10n.t("product.reset_identity"), role: .destructive) {

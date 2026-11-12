@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct ShareAnywhereApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
@@ -11,6 +12,8 @@ struct ShareAnywhereApp: App {
                 .environmentObject(model.settings)
                 .environmentObject(model.keepAwake)
                 .environmentObject(model.hub)
+                .environmentObject(model.account)
+                .environmentObject(model.pasteboard)
         }
     }
 }
@@ -20,6 +23,7 @@ struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var settings: SettingsStore
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var quick = QuickActions.shared
 
     var body: some View {
         TabView(selection: $model.tab) {
@@ -36,6 +40,11 @@ struct RootView: View {
             }
             .tabItem { Label(L10n.t("ios.home"), systemImage: "arrow.up.arrow.down.circle") }
             .tag(AppModel.Tab.home)
+            if model.config.clipboard {
+                NavigationStack { ClipboardView() }
+                    .tabItem { Label(L10n.t("ios.clip"), systemImage: "doc.on.clipboard") }
+                    .tag(AppModel.Tab.clipboard)
+            }
             NavigationStack { HistoryView() }
                 .tabItem { Label(L10n.t("ios.hist"), systemImage: "clock.arrow.circlepath") }
                 .tag(AppModel.Tab.history)
@@ -53,9 +62,15 @@ struct RootView: View {
             WelcomeView { settings.welcomed = true }.themed()
         }
         .overlay(alignment: .bottom) { ToastView() }
-        .overlay(alignment: .topLeading) { if model.config.uiTesting { IdleTimerProbe() } }
+        .overlay(alignment: .topLeading) { if model.config.uiTesting { TestProbes() } }
         .onChange(of: scenePhase) { model.hub.scenePhase($0) }
         .onChange(of: settings.keepScreenOn) { model.keepAwake.setEnabled($0) }
+        .onChange(of: quick.pending) { action in
+            guard action == QuickActions.clipboard, model.config.clipboard else { return }
+            settings.welcomed = true
+            model.tab = .clipboard
+            quick.pending = nil
+        }
     }
 }
 
@@ -80,5 +95,24 @@ struct ToastView: View {
                     if model.toast == text { model.toast = nil }
                 }
         }
+    }
+}
+
+/// `-uiTesting` only: values tests read without touching the UI (idle timer, pasteboard reads, device id).
+struct TestProbes: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var pasteboard: PasteboardAccess
+
+    var body: some View {
+        VStack(spacing: 0) {
+            IdleTimerProbe()
+            probe("test.pasteboard-reads", "\(pasteboard.reads)")
+            probe("test.device-id", model.identityState.claims?.sub ?? "")
+        }
+    }
+
+    private func probe(_ id: String, _ value: String) -> some View {
+        Text(value).font(.system(size: 1)).opacity(0.02).frame(width: 1, height: 1)
+            .accessibilityIdentifier(id).accessibilityValue(value)
     }
 }

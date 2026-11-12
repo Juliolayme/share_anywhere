@@ -1,7 +1,7 @@
 import Foundation
 
-/// Build and launch configuration. Feature flags follow CLAUDE.md §8b: `accounts` and `clipboard` stay off until the
-/// iOS milestones that make them work (7.4), so no Sign in button or Clipboard screen does nothing.
+/// Build and launch configuration. Feature flags follow CLAUDE.md §8b: `accounts` and `clipboard` are on since
+/// milestone 7.4 made sign-in, keys and Clipboard Sync work on iOS.
 struct AppConfig {
     let backendURL: URL
     let requireHTTPS: Bool
@@ -18,8 +18,8 @@ struct AppConfig {
     let seedFileBytes: Int
     /// Seconds a transfer keeps going after the app leaves the screen before it pauses (`-backgroundGrace`, UI tests).
     let backgroundGrace: Double
-    let accounts = false
-    let clipboard = false
+    let accounts = true
+    let clipboard = true
     let version: String
 
     static func load(arguments: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) -> AppConfig {

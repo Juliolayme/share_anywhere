@@ -57,6 +57,8 @@ targets:
         product: Store
       - package: ShareAnywhereCore
         product: TransferRuntime
+      - package: ShareAnywhereCore
+        product: Account
       - package: StreamWebRTC
         product: StreamWebRTC
     info:
@@ -77,6 +79,11 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         NSCameraUsageDescription: Scan the sender’s QR code to receive files. The camera is used only while the scanner is open.
+        # Home Screen quick action that opens the Clipboard tab (docs/phases/PHASE_7_IOS.md).
+        UIApplicationShortcutItems:
+          - UIApplicationShortcutItemType: app.shareanywhere.clipboard
+            UIApplicationShortcutItemTitle: Clipboard
+            UIApplicationShortcutItemIconSymbolName: doc.on.clipboard
         ITSAppUsesNonExemptEncryption: false
         # Plain HTTP only to the local CI backend (127.0.0.1); every other origin must be HTTPS.
         NSAppTransportSecurity:
@@ -109,6 +116,8 @@ targets:
       - target: ShareAnywhere
       - package: ShareAnywhereCore
         product: TransferRuntime
+      - package: ShareAnywhereCore
+        product: Account
       - package: StreamWebRTC
         product: StreamWebRTC
     settings:

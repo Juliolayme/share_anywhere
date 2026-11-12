@@ -113,7 +113,7 @@ extension XCTestCase {
     /// fails the test with the element it names. Skipped by design, each for a stated reason:
     /// - the `-uiTesting` probes (`test.*`): invisible, never shown in the product;
     /// - contrast on disabled controls: inactive components are exempt from WCAG 1.4.3;
-    /// - the readable-label check on the tests' seeded file names (`sa-seed-N.bin`): user content in real use;
+    /// - the readable-label check on file names (`report.pdf`, the seeded `sa-seed-N.bin`): user content;
     /// - clipping in the system search field (`.searchable`) and in system-styled controls (navigation-bar titles and
     ///   items, Form and List rows): sized and truncated by the system;
     /// - "partially unsupported" Dynamic Type on those standard controls only: their text scales up to a cap the system
@@ -141,7 +141,7 @@ extension XCTestCase {
                 if issue.type == .contrast, !el.isEnabled { continue }
                 // Behind the translucent tab bar the audit samples whatever scrolls under it.
                 if issue.type == .contrast, el.frame.intersects(tabBar) { continue }
-                if issue.type == .sufficientElementDescription, el.label.hasPrefix("sa-seed-") { continue }
+                if issue.type == .sufficientElementDescription, isFileName(el.label) { continue }
                 if issue.type == .textClipped, el.elementType == .searchField || isStandardControl(app, el) { continue }
                 if issue.type == .dynamicType, issue.text.localizedCaseInsensitiveContains("partially"),
                    isStandardControl(app, el) { continue }
@@ -195,6 +195,11 @@ extension XCTestCase {
         }
         XCTFail("\(screen): audit could not run: \(lastError.map { "\($0)" } ?? "unknown")", file: file, line: line)
         return []
+    }
+
+    /// A single file name such as `report.pdf` or `sa-seed-1.bin`: user content, read as it is named.
+    private func isFileName(_ label: String) -> Bool {
+        label.range(of: #"^[^\s/]+\.[A-Za-z0-9]{1,5}$"#, options: .regularExpression) != nil
     }
 
     /// Whether the element belongs to a system-styled control: a navigation-bar item or a Form/List row.

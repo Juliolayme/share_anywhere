@@ -356,8 +356,12 @@ struct ReceivingView: View {
                                     .accessibilityLabel(L10n.t("product.rx_open_file_named", ["name": f.name]))
                                     .accessibilityIdentifier("rx.open")
                             }
-                            ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
-                                .accessibilityLabel(L10n.t("product.rx_share_file_named", ["name": f.name]))
+                            ShareLink(item: url) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel(L10n.t("product.rx_share_file_named", ["name": f.name]))
                         }
                     }
                     .frame(minHeight: SATokens.touchTarget)

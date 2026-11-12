@@ -70,7 +70,7 @@ struct SendView: View {
                 HStack(spacing: SATokens.Space.s3) {
                     Image(systemName: "doc").foregroundStyle(p.fg2).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(f.name).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg).lineLimit(2)
+                        Text(f.name).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg)
                         Text(formatBytes(f.size)).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                     }
                     Spacer()

@@ -137,6 +137,7 @@ func statusLabel(_ s: HistoryStatus) -> String {
 struct HistoryRow: View {
     let entry: HistoryEntry
     @Environment(\.palette) private var p
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: SATokens.Space.s3) {
@@ -147,16 +148,22 @@ struct HistoryRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.title).typeStyle(SATokens.TypeScale.labelLg).foregroundStyle(p.fg)
                 Text("\(entry.peer) · \(formatBytes(entry.totalBytes))").typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
+                // At the accessibility text sizes the status goes under the texts instead of beside them.
+                if typeSize.isAccessibilitySize { status }
             }
             Spacer()
-            Chip(
-                text: statusLabel(entry.status),
-                color: entry.status == .completed ? p.receiveInk : entry.status == .failed ? p.dangerInk : p.warningInk,
-                background: entry.status == .completed ? p.receiveSoft : entry.status == .failed ? p.dangerSoft : p.warningSoft
-            )
+            if !typeSize.isAccessibilitySize { status }
         }
         .padding(.vertical, SATokens.Space.s2)
         .frame(minHeight: SATokens.touchTarget)
+    }
+
+    private var status: some View {
+        Chip(
+            text: statusLabel(entry.status),
+            color: entry.status == .completed ? p.receiveInk : entry.status == .failed ? p.dangerInk : p.warningInk,
+            background: entry.status == .completed ? p.receiveSoft : entry.status == .failed ? p.dangerSoft : p.warningSoft
+        )
     }
 }
 

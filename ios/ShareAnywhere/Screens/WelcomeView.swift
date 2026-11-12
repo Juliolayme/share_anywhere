@@ -6,10 +6,12 @@ struct WelcomeView: View {
     @Environment(\.palette) private var p
 
     var body: some View {
-        // Scrolls when the content is taller than the screen (large text sizes), otherwise fills it.
-        ViewThatFits(in: .vertical) {
-            content
-            ScrollView { content }
+        // Fills the screen, and scrolls when the content is taller (large text sizes); one view tree, so nothing is
+        // swapped out as the text size changes.
+        GeometryReader { g in
+            ScrollView {
+                content.frame(minHeight: g.size.height)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(p.bg.ignoresSafeArea())

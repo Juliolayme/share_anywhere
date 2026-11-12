@@ -489,10 +489,12 @@ struct ParticipantCard: View {
                     }
                     Spacer()
                     Button(L10n.t("ios_yy.remove"), action: onRemove)
+                        .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
                         .disabled(busy)
                         .accessibilityLabel(L10n.t("product.remove_confirm", ["name": participant.displayName]))
                         .accessibilityIdentifier("participant.remove")
                     Button(L10n.t("product.block"), role: .destructive, action: onBlock)
+                        .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
                         .disabled(busy)
                         .accessibilityLabel(L10n.t("product.block_named", ["name": participant.displayName]))
                         .accessibilityIdentifier("participant.block")

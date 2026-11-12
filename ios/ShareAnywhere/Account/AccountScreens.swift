@@ -295,6 +295,7 @@ struct KeySetupView: View {
     @EnvironmentObject private var account: AccountSession
     @Environment(\.palette) private var p
     @State private var prepared: KeyFlows.PreparedSetup?
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var saved = false
     @State private var busy = false
     @State private var error: String?
@@ -305,7 +306,11 @@ struct KeySetupView: View {
                 Text(L10n.t("product.key_setup_p")).typeStyle(SATokens.TypeScale.body).foregroundStyle(p.fg2)
                 if let prepared {
                     let words = prepared.phrase.split(separator: " ").map(String.init)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: SATokens.Space.s2) {
+                    // One column at the accessibility text sizes: two 28 pt columns do not fit a phone.
+                    LazyVGrid(
+                        columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible())],
+                        spacing: SATokens.Space.s2
+                    ) {
                         ForEach(Array(words.enumerated()), id: \.offset) { i, w in
                             Text("\(i + 1). \(w)").typeStyle(SATokens.TypeScale.code).frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(SATokens.Space.s2)
@@ -383,6 +388,7 @@ struct KeyPairView: View {
                         .accessibilityLabel(L10n.t("product.pair_qr_aria"))
                     Text(L10n.t("product.pair_code_label")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                     Text(start.payload).typeStyle(SATokens.TypeScale.code).textSelection(.enabled)
+                        .accessibilityLabel(L10n.t("product.pair_code_label"))
                         .accessibilityIdentifier("key-pair.code").accessibilityValue(start.payload)
                     SecondaryButton(title: L10n.t("product.pair_copy_code")) { account.copy(start.payload) }
                     Text(L10n.t("product.pair_steps")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)

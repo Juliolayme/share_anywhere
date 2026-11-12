@@ -14,6 +14,7 @@ Phase 7 builds the native iOS app (`docs/phases/PHASE_7_IOS.md`). `CLAUDE.md` §
 - **The package builds and tests on Linux too.** This session has Swift 6.0.3 for Linux; `swift test` runs every Core test (vectors, engine, crypto, client) before CI does. CI runs the same tests on `macos-15` with CryptoKit (`ci.yml` job `ios`).
 - **Pinned tools, checksum-verified.** `scripts/ios-tools.sh` installs SwiftLint 0.57.1, SwiftFormat 0.55.3 and XcodeGen 2.42.0 from their GitHub releases and checks each SHA-256. Configs: `ios/.swiftlint.yml` (strict in CI), `ios/.swiftformat`. Generated (`API.gen.swift`) and vendored (`CArgon2`) code is excluded.
 - **Dependencies are pinned exactly and `Package.resolved` is committed.**
+- **The app target compiles in Swift 5 language mode with `SWIFT_STRICT_CONCURRENCY = targeted`** while Core uses Swift 6 mode. The app is SwiftUI on the main actor with `ObservableObject` models (iOS 16 has no `@Observable`); Swift 6 mode there would mostly add annotations around UIKit and notification callbacks that are main-thread by contract. The concurrency-heavy code (engine, identity, store) lives in Core under Swift 6 checking.
 
 ## Alternatives considered
 

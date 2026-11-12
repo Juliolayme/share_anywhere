@@ -1,0 +1,105 @@
+name: iOS simulator
+
+# Reusable (docs/TESTING_AND_CI.md §2.3): XCUITest and app unit tests on an iOS Simulator against the Go backend run
+# natively on the macOS runner (Homebrew PostgreSQL; no Docker on macOS runners). Called by ci.yml and nightly.yml.
+on:
+  workflow_call:
+    inputs:
+      device:
+        description: Simulator device name (falls back to the first available iPhone when missing)
+        type: string
+        default: iPhone 15
+      runtime:
+        description: iOS runtime version (e.g. 18.5), or "latest"
+        type: string
+        default: latest
+      only-testing:
+        description: Optional xcodebuild -only-testing value (e.g. ShareAnywhereUITests)
+        type: string
+        default: ''
+      artifact:
+        description: Artifact name suffix
+        type: string
+        default: iphone
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: ios-simulator (${{ inputs.device }}, ${{ inputs.runtime }})
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: postgres://shareanywhere:ci-password@127.0.0.1:5432/shareanywhere?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: PostgreSQL 16 (Homebrew)
+        run: |
+          brew install postgresql@16
+          PG=$(brew --prefix postgresql@16)/bin
+          echo "$PG" >> "$GITHUB_PATH"
+          brew services start postgresql@16
+          for i in $(seq 60); do "$PG/pg_isready" -h 127.0.0.1 && break; sleep 1; done
+          "$PG/psql" -h 127.0.0.1 -d postgres -c "CREATE ROLE shareanywhere LOGIN PASSWORD 'ci-password';"
+          "$PG/psql" -h 127.0.0.1 -d postgres -c "CREATE DATABASE shareanywhere OWNER shareanywhere;"
+      - name: Backend (native, test hooks, migrations on start)
+        run: |
+          mkdir -p .tools
+          (cd backend && go build -tags testhooks -o ../.tools/sa-server ./cmd/server)
+          SA_ENV=test SA_HTTP_ADDR=127.0.0.1:8080 SA_LOG_LEVEL=info SA_MIGRATE_ON_START=true \
+          SA_ALLOWED_ORIGINS=http://127.0.0.1:8080 SA_COOKIE_SECURE=false SA_RATE_LIMIT_MULTIPLIER=100 SA_POW_DIFFICULTY=8 \
+          SA_PUBLIC_URL=http://127.0.0.1:8080 SA_TURN_SECRET=ci-turn-secret SA_MAIL_SINK=memory \
+          SA_TURN_URIS="turn:127.0.0.1:3478?transport=udp" \
+            nohup .tools/sa-server > backend.log 2>&1 &
+          for i in $(seq 60); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/readyz
+      - name: Pinned tools and project generation
+        run: |
+          scripts/ios-tools.sh
+          echo "$PWD/.tools/bin" >> "$GITHUB_PATH"
+          (cd ios && "$PWD/../.tools/bin/xcodegen" generate)
+      - name: Boot the simulator
+        id: sim
+        run: |
+          UDID=$(python3 scripts/ios-pick-simulator.py "${{ inputs.device }}" "${{ inputs.runtime }}")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+      - uses: actions/cache@v4
+        with:
+          path: ios/build/SourcePackages
+          key: spm-app-${{ hashFiles('ios/ShareAnywhereCore/Package.resolved', 'ios/project.yml') }}
+      - name: xcodebuild test
+        env:
+          TEST_RUNNER_BACKEND_URL: http://127.0.0.1:8080
+        run: |
+          ONLY=()
+          if [ -n "${{ inputs.only-testing }}" ]; then ONLY=(-only-testing "${{ inputs.only-testing }}"); fi
+          set -o pipefail
+          xcodebuild test -project ios/ShareAnywhere.xcodeproj -scheme ShareAnywhere \
+            -destination "id=${{ steps.sim.outputs.udid }}" -clonedSourcePackagesDirPath ios/build/SourcePackages \
+            -resultBundlePath ios/build/ShareAnywhere.xcresult "${ONLY[@]}" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ios/build/xcodebuild.log | grep -E "Test Case|error:|\*\* TEST|Executed" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" ios/build/xcodebuild.log
+      - name: Export screenshots
+        if: always()
+        run: |
+          mkdir -p ios/build/screenshots
+          xcrun xcresulttool export attachments --path ios/build/ShareAnywhere.xcresult --output-path ios/build/screenshots || true
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-${{ inputs.artifact }}
+          if-no-files-found: ignore
+          path: |
+            ios/build/ShareAnywhere.xcresult
+            ios/build/screenshots
+            ios/build/xcodebuild.log
+            backend.log
+          retention-days: 14

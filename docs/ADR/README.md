@@ -28,3 +28,4 @@ Each ADR records one decision: context, decision, consequences. ADRs are never e
 | [0022](0022-ios-project-and-core-package.md) | iOS project layout, ShareAnywhereCore package, and toolchain | Accepted |
 | [0023](0023-ios-networking.md) | iOS networking and API models | Accepted |
 | [0024](0024-ios-crypto.md) | Cryptography for the account keys on iOS | Accepted |
+| [0025](0025-ios-storage-and-bookmarks.md) | iOS storage (SQLite History in Core) and security-scoped bookmarks | Accepted |

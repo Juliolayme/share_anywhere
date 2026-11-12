@@ -225,6 +225,23 @@ enum SATokens {
         static let e2: CGFloat = 0
     }
 
+    /// Logo geometry in the 48-unit viewBox: capsules [x, y, width, height, radius], dots [cx, cy, r].
+    enum Logo {
+        static let viewBox: CGFloat = 48
+        static let capsuleSend: [CGFloat] = [4, 10, 31, 13, 6.5]
+        static let capsuleReceive: [CGFloat] = [13, 25, 31, 13, 6.5]
+        static let dotSend: [CGFloat] = [28.5, 16.5, 2.7]
+        static let dotReceive: [CGFloat] = [19.5, 31.5, 2.7]
+        static let modeColor = (send: Color(.sRGB, red: 0.0314, green: 0.4706, blue: 0.9098, opacity: 1), receive: Color(.sRGB, red: 0.0863, green: 0.7804, blue: 0.3529, opacity: 1), dot: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1), text: Color(.sRGB, red: 0.0627, green: 0.1647, blue: 0.3373, opacity: 1))
+        static let modeDark = (send: Color(.sRGB, red: 0.1765, green: 0.5529, blue: 0.949, opacity: 1), receive: Color(.sRGB, red: 0.1333, green: 0.8314, blue: 0.4078, opacity: 1), dot: Color(.sRGB, red: 0.0627, green: 0.1647, blue: 0.3373, opacity: 1), text: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1))
+        static let modeMonoDark = (send: Color(.sRGB, red: 0.0627, green: 0.1647, blue: 0.3373, opacity: 1), receive: Color(.sRGB, red: 0.0627, green: 0.1647, blue: 0.3373, opacity: 1), dot: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1), text: Color(.sRGB, red: 0.0627, green: 0.1647, blue: 0.3373, opacity: 1))
+        static let modeMonoLight = (send: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1), receive: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1), dot: Color(.sRGB, red: 0.0627, green: 0.1647, blue: 0.3373, opacity: 1), text: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1))
+        static let forLight = modeColor
+        static let forDark = modeDark
+        static let wordmarkSizeRatio: CGFloat = 0.52
+        static let wordmarkGapRatio: CGFloat = 0.24
+    }
+
     /// Motion durations in seconds (use none when Reduce Motion is on).
     enum Motion {
         static let fast: Double = 0.12

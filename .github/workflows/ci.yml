@@ -74,6 +74,7 @@ jobs:
               - 'shared/**'
               - 'scripts/protocol.mjs'
               - 'scripts/ios-tools.sh'
+              - 'scripts/ios-pick-simulator.py'
               - 'scripts/gen-tokens.mjs'
               - 'scripts/gen-i18n.mjs'
               - 'design/**'
@@ -411,6 +412,15 @@ jobs:
           if-no-files-found: ignore
           path: ios/ShareAnywhereCore/core-tests*.xml
           retention-days: 7
+
+  ios-simulator:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true' || needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/ios-simulator.yml
+    with:
+      device: iPhone 15
+      runtime: latest
+      artifact: iphone15
 
   compose:
     needs: changes

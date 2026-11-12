@@ -1660,6 +1660,7 @@
     "use_phrase": "Use recovery phrase",
     "verifying_sha": "Checking file integrity (SHA-256)…",
     "version_android": "Share Anywhere for Android {version}",
+    "version_ios": "Share Anywhere for iOS {version}",
     "version_web": "Share Anywhere Web {version}",
     "via_code": "joined with the code",
     "via_link": "joined with the link",

@@ -1660,6 +1660,7 @@
     "use_phrase": "Dùng cụm từ khôi phục",
     "verifying_sha": "Đang kiểm tra toàn vẹn tệp (SHA-256)…",
     "version_android": "Share Anywhere cho Android {version}",
+    "version_ios": "Share Anywhere cho iOS {version}",
     "version_web": "Share Anywhere Web {version}",
     "via_code": "vào bằng mã",
     "via_link": "vào bằng liên kết",

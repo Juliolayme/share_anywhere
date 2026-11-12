@@ -344,6 +344,20 @@ export function renderSwift(t) {
     L.push('    }');
   }
   L.push('');
+  L.push('    /// Logo geometry in the 48-unit viewBox: capsules [x, y, width, height, radius], dots [cx, cy, r].');
+  L.push('    enum Logo {');
+  const g = t.logo.geometry;
+  L.push(`        static let viewBox: CGFloat = ${num(Number(g.viewBox.split(/\s+/)[2]))}`);
+  for (const k of ['capsuleSend', 'capsuleReceive', 'dotSend', 'dotReceive']) L.push(`        static let ${k}: [CGFloat] = [${g[k].map(num).join(', ')}]`);
+  for (const [mode, c] of Object.entries(t.logo.modes)) {
+    L.push(`        static let mode${pascal(mode)} = (${['send', 'receive', 'dot', 'text'].map((k) => `${k}: ${swiftColor(c[k])}`).join(', ')})`);
+  }
+  L.push(`        static let forLight = mode${pascal(t.logo.themeMode.light)}`);
+  L.push(`        static let forDark = mode${pascal(t.logo.themeMode.dark)}`);
+  L.push(`        static let wordmarkSizeRatio: CGFloat = ${num(t.logo.wordmark.sizeRatio)}`);
+  L.push(`        static let wordmarkGapRatio: CGFloat = ${num(t.logo.wordmark.gapRatio)}`);
+  L.push('    }');
+  L.push('');
   L.push('    /// Motion durations in seconds (use none when Reduce Motion is on).');
   L.push('    enum Motion {');
   for (const [k, v] of Object.entries(t.motion.duration)) L.push(`        static let ${kotlinName(k)}: Double = ${num(ms(v) / 1000)}`);

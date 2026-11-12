@@ -1,0 +1,109 @@
+# XcodeGen project (CLAUDE.md §5, docs/ADR/0022): `xcodegen generate` in ios/ writes ShareAnywhere.xcodeproj, which
+# is not committed. iOS 16 minimum, SwiftPM only, no signing material (CI builds with CODE_SIGNING_ALLOWED=NO).
+name: ShareAnywhere
+options:
+  bundleIdPrefix: app.shareanywhere
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: targeted
+    MARKETING_VERSION: "0.7.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    SWIFT_EMIT_LOC_STRINGS: NO
+  configs:
+    Debug:
+      # The simulator reaches the native CI backend on the host (docs/TESTING_AND_CI.md §2.3).
+      SA_BACKEND_URL: http://127.0.0.1:8080
+    Release:
+      # Release builds need a real HTTPS origin: xcodebuild SA_BACKEND_URL=https://… (APIClient refuses http).
+      SA_BACKEND_URL: ""
+packages:
+  ShareAnywhereCore:
+    path: ShareAnywhereCore
+targets:
+  ShareAnywhere:
+    type: application
+    platform: iOS
+    sources:
+      - path: ShareAnywhere
+    dependencies:
+      - package: ShareAnywhereCore
+        product: Protocol
+      - package: ShareAnywhereCore
+        product: TransferEngine
+      - package: ShareAnywhereCore
+        product: ClipboardCrypto
+      - package: ShareAnywhereCore
+        product: APIClient
+      - package: ShareAnywhereCore
+        product: Store
+    info:
+      path: ShareAnywhere/Info.plist
+      properties:
+        CFBundleDisplayName: Share Anywhere
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, vi]
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: ""
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        SABackendURL: $(SA_BACKEND_URL)
+        ITSAppUsesNonExemptEncryption: false
+        # Plain HTTP only to the local CI backend (127.0.0.1); every other origin must be HTTPS.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.shareanywhere
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+  ShareAnywhereTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/ShareAnywhereTests
+    dependencies:
+      - target: ShareAnywhere
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.shareanywhere.tests
+  ShareAnywhereUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/ShareAnywhereUITests
+    dependencies:
+      - target: ShareAnywhere
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.shareanywhere.uitests
+        TEST_TARGET_NAME: ShareAnywhere
+schemes:
+  ShareAnywhere:
+    build:
+      targets:
+        ShareAnywhere: all
+        ShareAnywhereTests: [test]
+        ShareAnywhereUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - ShareAnywhereTests
+        - ShareAnywhereUITests

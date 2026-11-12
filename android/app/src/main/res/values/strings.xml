@@ -1259,6 +1259,7 @@
     <string name="product_use_phrase">Use recovery phrase</string>
     <string name="product_verifying_sha">Checking file integrity (SHA-256)…</string>
     <string name="product_version_android">Share Anywhere for Android {version}</string>
+    <string name="product_version_ios">Share Anywhere for iOS {version}</string>
     <string name="product_version_web">Share Anywhere Web {version}</string>
     <string name="product_via_code">joined with the code</string>
     <string name="product_via_link">joined with the link</string>

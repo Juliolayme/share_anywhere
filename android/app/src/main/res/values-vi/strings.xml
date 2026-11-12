@@ -1259,6 +1259,7 @@
     <string name="product_use_phrase">Dùng cụm từ khôi phục</string>
     <string name="product_verifying_sha">Đang kiểm tra toàn vẹn tệp (SHA-256)…</string>
     <string name="product_version_android">Share Anywhere cho Android {version}</string>
+    <string name="product_version_ios">Share Anywhere cho iOS {version}</string>
     <string name="product_version_web">Share Anywhere Web {version}</string>
     <string name="product_via_code">vào bằng mã</string>
     <string name="product_via_link">vào bằng liên kết</string>

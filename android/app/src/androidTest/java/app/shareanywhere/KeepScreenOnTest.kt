@@ -28,7 +28,7 @@ import org.junit.runner.RunWith
 /**
  * Keep screen on (docs/ARCHITECTURE.md §7, PRD §5.10) on the emulator: `FLAG_KEEP_SCREEN_ON` is set while the receive
  * screen shows bytes moving and cleared on pause, cancel and with the setting off; with the screen turned off the
- * transfer still completes (foreground service), and afterwards `dumpsys power` lists no wake lock of the app.
+ * transfer still completes (foreground service), and afterwards the held wake locks in `dumpsys power` include none of the app.
  */
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = 29)
@@ -136,13 +136,13 @@ class KeepScreenOnTest {
                 assertEquals("completes with the screen off (foreground service)", RxPhase.Completed, done.phase)
                 device.wakeUp()
                 // The wake lock and Wi-Fi lock are held only while bytes move.
-                var held = true
-                repeat(20) {
-                    held = device.executeShellCommand("dumpsys power").contains("ShareAnywhere:transfer")
-                    if (!held) return@repeat
+                var locks = heldWakeLocks()
+                for (i in 0 until 20) {
+                    if (!locks.contains("ShareAnywhere:transfer")) break
                     Thread.sleep(500)
+                    locks = heldWakeLocks()
                 }
-                assertFalse("no wake lock after completion", held)
+                assertFalse("no wake lock after completion:\n$locks", locks.contains("ShareAnywhere:transfer"))
             }
         }
     }
@@ -171,5 +171,17 @@ class KeepScreenOnTest {
                 }
             }
         }
+    }
+
+    /**
+     * The "Wake Locks:" section of `dumpsys power` (locks held now). Android 14+ also prints a wake lock log of past
+     * acquisitions and releases, which still names released locks.
+     */
+    private fun heldWakeLocks(): String {
+        val dump = device.executeShellCommand("dumpsys power")
+        val start = dump.indexOf("Wake Locks: size=")
+        if (start < 0) return ""
+        val end = dump.indexOf("\n\n", start).let { if (it < 0) dump.length else it }
+        return dump.substring(start, end)
     }
 }

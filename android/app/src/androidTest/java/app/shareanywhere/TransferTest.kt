@@ -135,6 +135,8 @@ class TransferTest {
                     waitForReceiveEnd(view.id, 120_000)
                     compose.waitForTag(ScreenIds.RX_DONE, 30_000)
                     compose.onNodeWithTag("rx.result").assertExists()
+                    // RX-7 names the default destination (it was blank when the default was passed as a URI).
+                    compose.waitForText(app.shareanywhere.transfer.storage.Folders.DEFAULT_LABEL)
                     val rx = entry.transferRuntime().existingReceiver(view.id)!!
                     val state = rx.state.value
                     assertEquals(RxPhase.Completed, state.phase)

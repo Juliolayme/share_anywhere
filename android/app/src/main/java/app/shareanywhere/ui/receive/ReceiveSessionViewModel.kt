@@ -120,7 +120,7 @@ class ReceiveSessionViewModel @Inject constructor(
         val rx = _rx.value ?: return
         val now = System.currentTimeMillis()
         val target =
-            if (tree == null) {
+            if (tree == null || tree.toString() == Folders.DEFAULT_DOWNLOADS) {
                 SaveTarget(sessionId, Folders.DEFAULT_DOWNLOADS, Folders.DEFAULT_LABEL, now)
             } else {
                 runCatching {

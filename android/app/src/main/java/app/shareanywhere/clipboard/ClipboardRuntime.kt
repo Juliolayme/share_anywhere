@@ -89,6 +89,16 @@ class ClipboardRuntime(
     /** A clipboard listener is registered right now (tests assert it is never true for a guest). */
     val listening: StateFlow<Boolean> = _listening.asStateFlow()
 
+    /**
+     * Per-process secret carried by the notification's Sync action. MainActivity is exported, so an explicit
+     * ACTION_SYNC intent from another app must not make it read and upload the clipboard: without the token the
+     * intent only opens the Clipboard tab.
+     */
+    private val syncToken: String = java.util.UUID.randomUUID().toString()
+
+    fun isOwnSyncRequest(intent: android.content.Intent): Boolean =
+        intent.action == ACTION_SYNC && intent.getStringExtra(EXTRA_SYNC_TOKEN) == syncToken
+
     private val lock = Mutex()
     private var engine: ClipboardEngine? = null
     private var engineJobs = listOf<Job>()
@@ -364,7 +374,7 @@ class ClipboardRuntime(
         val sync = PendingIntent.getActivity(
             context,
             2,
-            Intent(context, MainActivity::class.java).setAction(ACTION_SYNC).addFlags(
+            Intent(context, MainActivity::class.java).setAction(ACTION_SYNC).putExtra(EXTRA_SYNC_TOKEN, syncToken).addFlags(
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             ),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -401,6 +411,7 @@ class ClipboardRuntime(
         const val NOTIFICATION_ID = 0x5A11
         const val ACTION_OPEN = "app.shareanywhere.OPEN_CLIPBOARD"
         const val ACTION_SYNC = "app.shareanywhere.SYNC_CLIPBOARD"
+        private const val EXTRA_SYNC_TOKEN = "app.shareanywhere.extra.SYNC_TOKEN"
 
         /** `ClipDescription.EXTRA_IS_SENSITIVE` (API 33); the same key is honored on older releases. */
         val EXTRA_IS_SENSITIVE: String =

@@ -111,7 +111,8 @@ class MainActivity : ComponentActivity() {
         if (intent == null) return null
         if (config.flags.clipboard && intent.action in setOf(ClipboardRuntime.ACTION_OPEN, ClipboardRuntime.ACTION_SYNC)) {
             // The notification action opens the Activity; the read happens here, in front, as Android requires.
-            if (intent.action == ClipboardRuntime.ACTION_SYNC) clipboardSync.value += 1
+            // Only the app's own notification action syncs (it carries the runtime's token); others just open the tab.
+            if (clipboard.get().isOwnSyncRequest(intent)) clipboardSync.value += 1
             return ScreenIds.CLIPBOARD
         }
         if (!config.flags.sharing) return null

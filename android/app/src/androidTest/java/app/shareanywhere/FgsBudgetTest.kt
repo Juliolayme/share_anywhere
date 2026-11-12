@@ -47,6 +47,7 @@ class FgsBudgetTest {
     @After
     fun restore() {
         device.executeShellCommand("device_config delete activity_manager data_sync_fgs_timeout_duration")
+        device.executeShellCommand("device_config set_sync_disabled_for_tests none")
     }
 
     @Test
@@ -55,7 +56,14 @@ class FgsBudgetTest {
         Backend.markWelcomed()
         // A short dataSync budget (Android's documented test knob). The app targets API 35, so the limit already applies;
         // `am compat enable` is not used because it restarts the app's process, which hosts this test.
+        // Flag sync would otherwise put the server value back (seen as `get` returning null right after `put`).
+        device.executeShellCommand("device_config set_sync_disabled_for_tests persistent")
         device.executeShellCommand("device_config put activity_manager data_sync_fgs_timeout_duration 2000")
+        assertEquals(
+            "the shortened budget is in effect",
+            "2000",
+            device.executeShellCommand("device_config get activity_manager data_sync_fgs_timeout_duration").trim()
+        )
         val entry = Backend.entry()
         val (file, sum) = TestPeer.file("budget-${System.nanoTime()}.bin", 512 * 1024 * 1024)
         TestPeer(Backend.Peer.create()).use { peer ->

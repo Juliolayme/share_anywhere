@@ -145,7 +145,9 @@ final class TransferUITests: XCTestCase {
         UITest.skipWelcome(app)
         XCTAssertTrue(UITest.id(app, "home").waitForExistence(timeout: 15))
         guard #available(iOS 16.4, *) else { throw XCTSkip("opening a URL from a UI test needs iOS 16.4") }
-        app.open(URL(string: "shareanywhere://j/\(token)")!)
+        // Through the system, as a tap in another app would: XCUIApplication.open relaunches the app with its launch
+        // arguments, and -resetState then wipes it.
+        XCUIDevice.shared.system.open(URL(string: "shareanywhere://j/\(token)")!)
         // Some runtimes confirm opening a custom scheme.
         let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"].firstMatch
         if open.waitForExistence(timeout: 3) { open.tap() }

@@ -63,8 +63,7 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(phrase.waitForExistence(timeout: 60), "the recovery phrase is created on the device")
         XCTAssertEqual((phrase.value as? String)?.split(separator: " ").count, 12)
         shot(app, "key-setup")
-        let saved = app.switches.matching(identifier: "key-setup.saved").firstMatch
-        saved.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        UITest.flip(app, "key-setup.saved", to: true)
         UITest.id(app, "key-setup.continue").tap()
         XCTAssertTrue(UITest.id(app, "checklist").waitForExistence(timeout: 30))
         shot(app, "checklist")

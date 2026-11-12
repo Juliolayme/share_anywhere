@@ -28,6 +28,22 @@ enum UITest {
         if start.waitForExistence(timeout: 10) { start.tap() }
     }
 
+    /// Sets a switch: taps its trailing edge (a tap in the middle of a Form row only selects it) until the value is
+    /// `on`, retrying while a tab or sheet transition swallows the first tap.
+    static func flip(_ app: XCUIApplication, _ identifier: String, to on: Bool, file: StaticString = #filePath, line: UInt = #line) {
+        let toggle = app.switches.matching(identifier: identifier).firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "switch \(identifier)", file: file, line: line)
+        let want = on ? "1" : "0"
+        for _ in 0 ..< 4 where toggle.value as? String != want {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+            _ = XCTWaiter().wait(
+                for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", want), object: toggle)],
+                timeout: 2
+            )
+        }
+        XCTAssertEqual(toggle.value as? String, want, "switch \(identifier)", file: file, line: line)
+    }
+
     static func tab(_ app: XCUIApplication, _ label: String) {
         app.tabBars.buttons[label].tap()
     }

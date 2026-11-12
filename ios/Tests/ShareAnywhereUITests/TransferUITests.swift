@@ -39,10 +39,7 @@ final class TransferUITests: XCTestCase {
         let toggle = app.switches.matching(identifier: "send.approval").firstMatch
         XCTAssertTrue(toggle.exists)
         XCTAssertEqual(toggle.value as? String, "0", "Require approval is off by default")
-        if approval {
-            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
-            XCTAssertEqual(toggle.value as? String, "1")
-        }
+        if approval { UITest.flip(app, "send.approval", to: true) }
         UITest.id(app, "send.create").tap()
         let code = UITest.id(app, "session-code")
         XCTAssertTrue(code.waitForExistence(timeout: 30), "the session opens with its code")
@@ -224,17 +221,15 @@ final class TransferUITests: XCTestCase {
         app.launch()
         UITest.skipWelcome(app)
         UITest.tab(app, "Settings")
-        let toggle = app.switches.matching(identifier: "settings.keep-screen-on").firstMatch
-        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
-        XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertTrue(UITest.id(app, "settings").waitForExistence(timeout: 10))
+        UITest.flip(app, "settings.keep-screen-on", to: false)
         UITest.tab(app, "Transfer")
         _ = createSession(app)
         XCTAssertTrue(app.staticTexts["Screen-on is off in Settings"].waitForExistence(timeout: 5))
         eventually("setting off: never kept on") { idle(app) == "false" }
 
         UITest.tab(app, "Settings")
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        UITest.flip(app, "settings.keep-screen-on", to: true)
         UITest.tab(app, "Transfer")
         eventually("setting on: waiting keeps the screen on") { idle(app) == "true" }
 

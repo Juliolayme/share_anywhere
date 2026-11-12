@@ -84,7 +84,7 @@ final class AccountSession: ObservableObject {
         case .synced:
             pasteboard.synced()
             app?.toast = L10n.t("product.cb_synced")
-        case .queued, .duplicate:
+        case .queued, .duplicate, .empty, .removed:
             pasteboard.synced()
         case .tooLarge:
             app?.toast = L10n.t("product.cb_too_large")

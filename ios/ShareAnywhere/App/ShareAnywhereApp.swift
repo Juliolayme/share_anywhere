@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 @main
@@ -71,16 +72,16 @@ struct RootView: View {
         .onChange(of: settings.keepScreenOn) { model.keepAwake.setEnabled($0) }
         .onOpenURL { links.receive($0) }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { links.receive($0.webpageURL) }
-        .onChange(of: links.pending) { url in
-            guard let url else { return }
+        // onReceive also delivers a value set before this view first appeared (a link or quick action at cold launch).
+        .onReceive(links.$pending.compactMap { $0 }) { url in
             links.pending = nil
             model.openLink(url)
         }
-        .onChange(of: quick.pending) { action in
+        .onReceive(quick.$pending.compactMap { $0 }) { action in
+            quick.pending = nil
             guard action == QuickActions.clipboard, model.config.clipboard else { return }
             settings.welcomed = true
             model.tab = .clipboard
-            quick.pending = nil
         }
     }
 }

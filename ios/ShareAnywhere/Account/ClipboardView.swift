@@ -43,18 +43,21 @@ final class PasteboardAccess: ObservableObject {
         guard observer != nil else { return }
         let c = UIPasteboard.general.changeCount
         guard c != lastCount else { return }
+        // Only text can sync: an image copied elsewhere shows no hint and is not read.
+        guard UIPasteboard.general.hasStrings else {
+            lastCount = c
+            return
+        }
         changedSinceSync = true
         guard captureReady, let onReturn else { return }
         lastCount = c
         Task { await onReturn() }
     }
 
+    /// A change while the app is in front comes from the app itself (Copy code, text selected in an item): it is
+    /// marked seen and never captured or hinted, so a join code or pairing payload is not synced by accident.
     private func changed() {
-        let c = UIPasteboard.general.changeCount
-        if c != lastCount {
-            lastCount = c
-            changedSinceSync = true
-        }
+        lastCount = UIPasteboard.general.changeCount
     }
 
     func synced() {

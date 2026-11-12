@@ -56,7 +56,7 @@ To be completed.
 - **No pinned CI certificate.** The phase file asks Debug builds to pin the CI self-signed Caddy certificate for the interop job. Instead, the interop job serves Caddy over plain HTTP on localhost (`infra/caddy/Caddyfile.macos`), which only Debug builds accept; Release requires HTTPS and uses the system trust store. No certificate is bundled in any build.
 - **TURN** credentials are fetched and passed to WebRTC, but forced-relay transfers are not tested until Phase 8 (`turn-forced`).
 - **Not built:** `android-ios-interop` (best effort in the phase file); Android and iOS each interoperate with the Web, which shares the protocol vectors with both.
-- **Foreground capture limits:** a copy made before the app launched or before the account key loaded is not captured automatically (the Paste control syncs it); copies made inside the app or arriving through Universal Clipboard while the app is in front only show the hint until the next return. Untested on a real device: the paste prompt as users see it, Universal Clipboard.
+- **Foreground capture limits:** a copy made before the app launched or before the account key loaded is not captured automatically (the Paste control syncs it); copies made inside the app are never captured automatically (Paste control or fallback only); Universal Clipboard text arriving while the app is in front is expected at the next return (untested). Untested on a real device: the paste prompt as users see it, Universal Clipboard.
 - Change password and two-step verification stay off iOS (`docs/design/DESIGN_DEVIATIONS.md` section N).
 
 ## 7. Backlog

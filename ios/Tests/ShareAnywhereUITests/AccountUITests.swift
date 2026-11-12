@@ -81,6 +81,7 @@ final class AccountUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "clipboard").waitForExistence(timeout: 10))
         XCTAssertTrue(UITest.id(app, "clipboard.empty").waitForExistence(timeout: 30), "an empty timeline once synced")
         let text = "From the iOS simulator \(UUID().uuidString.prefix(6))"
+        XCTAssertTrue(app.buttons["Paste"].firstMatch.waitForExistence(timeout: 10), "iOS's Paste control is the Sync action")
         paste(app, text)
         guard UITest.expect(app, row(app, text), timeout: 30, "the item is in the timeline") else { return }
         shot(app, "clipboard")

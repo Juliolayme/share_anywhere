@@ -55,7 +55,12 @@ enum UITest {
             last = f
             RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         }
-        XCTAssertFalse(control.frame.isEmpty, "the Paste control is on screen", file: file, line: line)
+        let window = XCUIApplication().windows.firstMatch.frame
+        for _ in 0 ..< 3 where !window.contains(control.frame) {
+            XCUIApplication().swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        XCTAssertTrue(window.contains(control.frame), "the Paste control is on screen: \(control.frame)", file: file, line: line)
         control.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 

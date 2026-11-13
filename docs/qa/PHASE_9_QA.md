@@ -84,7 +84,7 @@ CI on f8a9beb: [43345145537](https://github.com/Juliolayme/share_anywhere/action
 
 PASS (round 4), with these conditions recorded:
 
-- Required checks green on 44ca0ff. The commits after it change only the soak test and documentation.
+- Required checks green on 44ca0ff, and again on 11ce224 (the soak-test fix and the final documentation): CI [43369180699](https://github.com/Juliolayme/share_anywhere/actions/runs/43369180699), all 21 jobs green. The commit that adds this line changes only this file.
 - `KNOWN_LIMITATIONS.md` published.
 - `docs/RELEASE_CHECKLIST.md` complete as a document. Its per-release items need store accounts, signing keys, a server and real devices. Account deletion and open-source notices block store submission.
 - The final report consolidates tested and untested behaviour per platform.

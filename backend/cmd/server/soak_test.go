@@ -215,8 +215,9 @@ func TestAbuseSoak(t *testing.T) {
 		if !on {
 			t.Fatalf("protected mode never tripped after %d guesses", guesses)
 		}
-		if guesses > 300 {
-			t.Errorf("protected mode tripped after %d guesses; the alarm is 300 failed lookups per minute", guesses)
+		// The alarm counts failed lookups: a guess that hit a real code (expected about 0.09 per run at 5x) is not one.
+		if failed := guesses - hits; failed > 300 {
+			t.Errorf("protected mode tripped after %d failed lookups; the alarm is 300 failed lookups per minute", failed)
 		}
 		expected := float64(guesses) * float64(len(codes)) / 1e6
 		s.record("distributed-burst", map[string]any{"open_sessions": len(codes), "guesses_before_trip": guesses, "hits": hits,

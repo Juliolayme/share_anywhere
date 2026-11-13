@@ -38,6 +38,7 @@ What Share Anywhere v1 does not do, or does only partly, and what has not been v
 - The iOS 16 deployment target is compiled for but runs only on iOS 18.x simulators (the CI image has no older runtimes).
 - Untested on a real iPhone: camera QR scanning, Universal Links, the Secure Enclave key path, the document picker with iCloud Drive and other providers, storage full, VoiceOver with a real user.
 - Change password and two-step verification are not offered on iOS (deviation section N).
+- The automated iOS accessibility audit does not fail on contrast or on "partially unsupported" Dynamic Type (both are kept as notes; the pixel-sampled checks were unreliable in CI). iOS colour contrast rests on the shared token check and Web axe; a review with the Accessibility Inspector on a device is open.
 
 ## 4. Network, relay and Cloud
 

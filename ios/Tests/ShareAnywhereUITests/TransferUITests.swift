@@ -389,7 +389,8 @@ final class TransferUITests: XCTestCase {
         let banner = UITest.id(relaunched, "home.active")
         XCTAssertTrue(banner.waitForExistence(timeout: 60), "the unfinished receive is running again")
         relaunched.buttons["Open"].firstMatch.tap()
-        XCTAssertTrue(UITest.id(relaunched, "rx-done").waitForExistence(timeout: 300), "resumed after the relaunch and finished")
+        // 256 MiB after the relaunch: the iPhone SE simulator lane needs more than five minutes.
+        XCTAssertTrue(UITest.id(relaunched, "rx-done").waitForExistence(timeout: 600), "resumed after the relaunch and finished")
         let hashes = UITest.id(relaunched, "test.rx-sha256")
         eventually("hash computed", timeout: 60) { (hashes.value as? String)?.isEmpty == false }
         XCTAssertEqual(hashes.value as? String, "big.bin=\(sum)")

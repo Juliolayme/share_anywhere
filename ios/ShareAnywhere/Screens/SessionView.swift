@@ -488,16 +488,23 @@ struct ParticipantCard: View {
                         Button(L10n.t("ios.resume"), action: onResume).accessibilityIdentifier("participant.resume")
                     }
                     Spacer()
-                    Button(L10n.t("ios_yy.remove"), action: onRemove)
-                        .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
-                        .disabled(busy)
-                        .accessibilityLabel(L10n.t("product.remove_confirm", ["name": participant.displayName]))
-                        .accessibilityIdentifier("participant.remove")
-                    Button(L10n.t("product.block"), role: .destructive, action: onBlock)
-                        .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
-                        .disabled(busy)
-                        .accessibilityLabel(L10n.t("product.block_named", ["name": participant.displayName]))
-                        .accessibilityIdentifier("participant.block")
+                    // The 44 pt target goes on the label: a frame outside the button does not grow its element.
+                    Button(action: onRemove) {
+                        Text(L10n.t("ios_yy.remove"))
+                            .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .disabled(busy)
+                    .accessibilityLabel(L10n.t("product.remove_confirm", ["name": participant.displayName]))
+                    .accessibilityIdentifier("participant.remove")
+                    Button(role: .destructive, action: onBlock) {
+                        Text(L10n.t("product.block"))
+                            .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .disabled(busy)
+                    .accessibilityLabel(L10n.t("product.block_named", ["name": participant.displayName]))
+                    .accessibilityIdentifier("participant.block")
                 }
                 .typeStyle(SATokens.TypeScale.labelLg)
                 .frame(minHeight: SATokens.touchTarget)

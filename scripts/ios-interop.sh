@@ -25,6 +25,15 @@ xctest() {
 }
 status=0
 
+# The first test-without-building on a fresh simulator spends minutes installing the app and the UI-test runner. Do
+# that now with a short test, so the Web sender's code (10-minute join window) is not spent waiting for it.
+echo "== warm-up"
+TEST_RUNNER_BACKEND_URL=http://127.0.0.1:8080 xcodebuild test-without-building -project ios/ShareAnywhere.xcodeproj \
+  -scheme ShareAnywhere -destination "id=$SIM_UDID" -derivedDataPath ios/build/DerivedData \
+  -resultBundlePath "$INTEROP_DIR/warm-up.xcresult" \
+  -only-testing "ShareAnywhereUITests/GuestLaunchUITests/testFreshInstallGoesFromWelcomeToTransferWithoutSignIn" \
+  > "$INTEROP_DIR/warm-up.log" 2>&1 || echo "warm-up failed (see warm-up.log); continuing"
+
 echo "== Web -> iOS"
 INTEROP_ROLE=web-sender pw > "$INTEROP_DIR/web-sender.log" 2>&1 &
 web=$!

@@ -20,7 +20,7 @@ test.afterEach(closeContexts);
 
 test('web sends a 64 MB file to the native app', async () => {
   test.skip(process.env.INTEROP_ROLE !== 'web-sender', 'INTEROP_ROLE=web-sender');
-  test.setTimeout(15 * 60_000);
+  test.setTimeout(24 * 60_000);
   const f = fixture('64M');
   const sender = await senderPage();
   const s = await createSession(sender, { files: [f.path] });
@@ -28,14 +28,15 @@ test('web sends a 64 MB file to the native app', async () => {
   // The script hands these to the native test and waits for the result.
   writeFileSync(join(DIR, 'web-session.json'), JSON.stringify({ code: s.code, sha256: f.sha256, id: s.id }));
   // Stay in the app: a reload would drop the picked file (the Web keeps it in memory), so the sender would answer
-  // file_unreadable. View transfers appears once the native receiver has joined.
-  await sender.getByRole('button', { name: 'View transfers' }).click({ timeout: 5 * 60_000 });
+  // file_unreadable. View transfers appears once the native receiver has joined: wait up to 9 minutes, inside the
+  // code's 10-minute join window (the native test runner can take minutes to start on a busy CI machine).
+  await sender.getByRole('button', { name: 'View transfers' }).click({ timeout: 9 * 60_000 });
   await expect(sender.getByTestId('final-banner')).toHaveAttribute('data-final', 'completed', { timeout: 14 * 60_000 });
 });
 
 test('web receives a 64 MB file from the native app', async ({ browser, browserName }) => {
   test.skip(process.env.INTEROP_ROLE !== 'web-receiver', 'INTEROP_ROLE=web-receiver');
-  test.setTimeout(15 * 60_000);
+  test.setTimeout(24 * 60_000);
   const code = process.env.INTEROP_CODE ?? '';
   const sha = process.env.INTEROP_SHA256 ?? '';
   const name = process.env.INTEROP_NAME ?? '';

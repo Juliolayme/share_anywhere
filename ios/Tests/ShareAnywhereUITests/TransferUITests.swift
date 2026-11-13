@@ -388,7 +388,15 @@ final class TransferUITests: XCTestCase {
         relaunched.launch()
         let banner = UITest.id(relaunched, "home.active")
         XCTAssertTrue(banner.waitForExistence(timeout: 60), "the unfinished receive is running again")
-        relaunched.buttons["Open"].firstMatch.tap()
+        // The banner merges its children for VoiceOver; runtimes differ in whether "Open" stays its own button.
+        let open = relaunched.buttons.matching(NSPredicate(format: "label == 'Open' OR label ENDSWITH ', Open'")).firstMatch
+        if open.waitForExistence(timeout: 5) {
+            open.tap()
+        } else {
+            print("SA-UI-TREE begin: no Open button in the active banner\n\(relaunched.debugDescription)\nSA-UI-TREE end")
+            // The action is the banner's last line, under the title.
+            banner.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.8)).tap()
+        }
         // 256 MiB after the relaunch: the iPhone SE simulator lane needs more than five minutes.
         XCTAssertTrue(UITest.id(relaunched, "rx-done").waitForExistence(timeout: 600), "resumed after the relaunch and finished")
         let hashes = UITest.id(relaunched, "test.rx-sha256")

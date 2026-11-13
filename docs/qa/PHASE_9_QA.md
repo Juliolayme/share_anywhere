@@ -64,6 +64,16 @@ P2 fixed: the audit helper's dead contrast recheck and tab-bar logic removed, no
 
 P2 recorded as backlog: the interop stall (about 67 s inside adding the device, once; not reproduced on the runs before or after), the SE resume duration, the History no-element notes.
 
+## Round 4 — commit f8a9beb — PASS
+
+No P0 or P1. The agent re-ran the backend suite (vet, gofmt, all packages including the IDOR sweep, soak and lockout tests), the Web checks (format, lint, typecheck, 495 tests) and the iOS core tests (18 runs, two with one failure each, see P2-1); recomputed the chip tint contrast; checked the audit helper against `docs/TESTING_AND_CI.md`; and judged the round 3 audit policy a disclosed weakening that hides no failing defect today (the audit still caught the recovery-word clipping on 507ca64). Things it could not run in this container are left to CI: the iOS app and UI tests, Android, and a person's Accessibility Inspector, VoiceOver and TalkBack reviews.
+
+P2 fixed in the docs: the `ControllerTests` resume-report intermittent recorded (report §6, §7); the token check worded as covering declared pairs only, with chip tints named as uncovered (report §1.2, `KNOWN_LIMITATIONS.md` §3); the History no-element issues moved to P1; a "partial" marker in the status table (iOS account settings, Web G3/G4/G12/G16); the commit table, this gate and the intermittent list brought up to date.
+
+P2 recorded as backlog: the audit skip matching by label when an element has no identifier; a note when the sign-out tap needed a retry; declaring chip tint pairs in the token check.
+
+CI on f8a9beb: [43345145537](https://github.com/Juliolayme/share_anywhere/actions/runs/43345145537), all jobs green, including `ios-simulator`. The Nightly [43345145628](https://github.com/Juliolayme/share_anywhere/actions/runs/43345145628) failed only on the oldest-runtime iOS lane, in the terminate-and-resume test: the active banner merges its children, and that runtime did not expose "Open" as its own button. The test now finds the action by label, falls back to tapping its line, and prints the UI tree.
+
 ## Final gate
 
-To be completed after round 2 and the CI run on the final commit.
+To be completed after the CI run on the final commit.

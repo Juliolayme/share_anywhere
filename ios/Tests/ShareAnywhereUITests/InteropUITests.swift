@@ -77,7 +77,8 @@ final class InteropUITests: XCTestCase {
         XCTAssertTrue(UITest.id(app, "trust").waitForExistence(timeout: 30))
         UITest.id(app, "trust.continue").tap()
         let code = UITest.id(app, "key-pair.code")
-        XCTAssertTrue(code.waitForExistence(timeout: 60))
+        // On a timeout the printed tree shows where the account sheet stopped (seen once: Continue still busy).
+        guard UITest.expect(app, code, timeout: 60, "the pairing code for the Web") else { return }
         // scripts/ios-clipboard-interop.sh hands this to the Web, which sends its key.
         print("SA-CLIP pair=\(code.value as? String ?? "")")
         XCTAssertTrue(UITest.id(app, "checklist").waitForExistence(timeout: 5 * 60), "the Web's key arrived and verified")

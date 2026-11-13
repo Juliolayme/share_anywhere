@@ -313,13 +313,14 @@ struct ReceivingView: View {
                         Image(systemName: f.done ? "checkmark.seal.fill" : f.failed ? "xmark.octagon" : "doc")
                             .foregroundStyle(f.done ? p.receive : f.failed ? p.danger : p.fg2)
                             .accessibilityHidden(true)
-                        Text(f.name).typeStyle(SATokens.TypeScale.body).lineLimit(2)
+                        Text(f.name).typeStyle(SATokens.TypeScale.body)
                         Spacer()
                         Text(formatBytes(f.size)).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                     }
                     if !f.done, !f.failed, m.rx.phase != .choose { TransferBar(done: f.verified, total: f.size, tint: p.receive) }
                 }
                 .accessibilityElement(children: .combine)
+                .accessibilityValue(f.done || f.failed ? "" : TransferBar.percentText(done: f.verified, total: f.size))
                 .accessibilityIdentifier("rx.file")
             }
         }
@@ -348,7 +349,7 @@ struct ReceivingView: View {
             Card {
                 ForEach(done) { f in
                     HStack {
-                        Text(f.name).typeStyle(SATokens.TypeScale.body).lineLimit(2)
+                        Text(f.name).typeStyle(SATokens.TypeScale.body)
                         Spacer()
                         if let url = f.savedURL {
                             if let link = SaveFolders.filesLink(url) {

@@ -23,6 +23,20 @@ enum UITest {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
+    /// Taps a text field and types once it has keyboard focus (a tap during a transition can leave it unfocused,
+    /// which XCUITest reports as "Neither element nor any descendant has keyboard focus").
+    static func type(_ field: XCUIElement, _ text: String) {
+        for _ in 0 ..< 3 {
+            field.tap()
+            let end = Date().addingTimeInterval(3)
+            while Date() < end, (field.value(forKey: "hasKeyboardFocus") as? Bool) != true {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { break }
+        }
+        field.typeText(text)
+    }
+
     static func skipWelcome(_ app: XCUIApplication) {
         let start = id(app, "welcome.start")
         if start.waitForExistence(timeout: 10) { start.tap() }
@@ -63,11 +77,26 @@ enum UITest {
     static func scrollTo(_ app: XCUIApplication, _ identifier: String, up: Bool = false, timeout: TimeInterval = 0) -> XCUIElement {
         let element = id(app, identifier)
         if timeout > 0, element.waitForExistence(timeout: timeout) { return element }
+        var swiped = false
         for _ in 0 ..< 6 where !element.exists {
             if up { app.swipeDown() } else { app.swipeUp() }
+            swiped = true
             RunLoop.current.run(until: Date().addingTimeInterval(0.4))
         }
+        // Let the list stop: a tap during the swipe's momentum only stops the scroll and never reaches the control.
+        if swiped { RunLoop.current.run(until: Date().addingTimeInterval(1.0)) }
         return element
+    }
+
+    /// Taps `element` until `opens` appears (a tap that lands while a list still moves is swallowed), at most 3 times.
+    @discardableResult
+    static func tap(_ element: XCUIElement, opening opens: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        for _ in 0 ..< 2 {
+            element.tap()
+            if opens.waitForExistence(timeout: 3) { return true }
+        }
+        element.tap()
+        return opens.waitForExistence(timeout: timeout)
     }
 
     /// Scrolls until `element` lies inside the window above the tab bar (coordinate taps do not scroll, and XCUITest's
@@ -109,55 +138,32 @@ enum UITest {
 
 extension XCTestCase {
     /// XCTest's accessibility audit (`performAccessibilityAudit()`, the Accessibility Inspector's checks: element
-    /// descriptions, hit regions, contrast, Dynamic Type, clipped text, traits) on the current screen; every issue
-    /// fails the test with the element it names. Skipped by design, each for a stated reason:
-    /// - the `-uiTesting` probes (`test.*`): invisible, never shown in the product;
-    /// - contrast on disabled controls: inactive components are exempt from WCAG 1.4.3;
-    /// - the readable-label check on file names (`report.pdf`, the seeded `sa-seed-N.bin`): user content;
-    /// - clipping in the system search field (`.searchable`) and in system-styled controls (navigation-bar titles and
-    ///   items, Form and List rows): sized and truncated by the system;
-    /// - contrast and "partially unsupported" Dynamic Type: kept as notes, for the reasons at `noteOnly`;
-    /// - an issue the audit attributes to no element: attached to the result as a note, since a test cannot inspect or
-    ///   fix it.
-    /// The screen is given a moment to settle first.
+    /// descriptions, hit regions, contrast, Dynamic Type, clipped text, traits) on the current screen. Three outcomes:
+    /// - fails the test: element descriptions, hit regions, traits, Dynamic Type "unsupported" (text that does not
+    ///   scale) and clipped text, naming the element;
+    /// - kept as a note on the result (with one screenshot of the screen): contrast and "partially unsupported"
+    ///   Dynamic Type (reasons at `noteOnly`), and any issue the audit attributes to no element;
+    /// - skipped: the `-uiTesting` probes (`test.*`, never shown in the product); file names for the readable-label
+    ///   check (user content); clipping of anything inside a navigation bar, a Form or List cell, or a system search
+    ///   field (system-sized; this also covers our own text in List rows and Form rows, such as History rows).
+    /// The screen is given a moment to settle first; an audit that times out is retried.
     func audit(_ app: XCUIApplication, _ screen: String, file: StaticString = #filePath, line: UInt = #line) {
         guard #available(iOS 17.0, *) else { return }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        var found = auditIssues(app, screen, file: file, line: line)
-        // Contrast is sampled from pixels: a view fading in or out reads low. Contrast issues count only if a second
-        // pass two seconds later reports the same element again.
-        if found.contains(where: { $0.type == .contrast }) {
-            RunLoop.current.run(until: Date().addingTimeInterval(2))
-            let again = Set(auditIssues(app, screen, types: .contrast, file: file, line: line).map(\.key))
-            found.removeAll { $0.type == .contrast && !again.contains($0.key) }
-        }
-        let tabBar = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame : .null
-        for issue in found {
+        var notes: [String] = []
+        for issue in auditIssues(app, screen, file: file, line: line) {
             if let el = issue.element {
                 if el.identifier.hasPrefix("test.") { continue }
-                if issue.type == .contrast, !el.isEnabled { continue }
-                // Behind the translucent tab bar the audit samples whatever scrolls under it.
-                if issue.type == .contrast, el.frame.intersects(tabBar) { continue }
                 if issue.type == .sufficientElementDescription, isFileName(el.label) { continue }
                 if issue.type == .textClipped, el.elementType == .searchField || isStandardControl(app, el) { continue }
-                if issue.type == .dynamicType, issue.text.localizedCaseInsensitiveContains("partially"),
-                   isStandardControl(app, el) { continue }
             }
             if let reason = noteOnly(issue) {
-                let note =
-                    XCTAttachment(string: "\(screen): \(issue.text) — \(issue.element.map { "'\($0.label)'" } ?? "screen"): \(reason)")
-                note.name = "audit note: \(screen)"
-                note.lifetime = .keepAlways
-                add(note)
+                notes.append("\(issue.text) — \(issue.element.map { "'\($0.label)'" } ?? "screen"): \(reason)")
                 continue
             }
             guard let el = issue.element else {
-                // The audit names no element: nothing to inspect or fix from the test, so it is kept as a note on the
-                // result (with a screenshot) for review instead of failing.
-                let note = XCTAttachment(string: "\(screen): \(issue.text): \(issue.detail)")
-                note.name = "audit note (no element): \(screen)"
-                note.lifetime = .keepAlways
-                add(note)
+                // The audit names no element: nothing a test can inspect or fix, so it is kept as a note for review.
+                notes.append("\(issue.text) — no element: \(issue.detail)")
                 continue
             }
             XCTFail(
@@ -165,6 +171,16 @@ extension XCTestCase {
                 file: file,
                 line: line
             )
+        }
+        if !notes.isEmpty {
+            let text = XCTAttachment(string: notes.map { "\(screen): \($0)" }.joined(separator: "\n"))
+            text.name = "audit notes: \(screen)"
+            text.lifetime = .keepAlways
+            add(text)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "audit notes: \(screen) (screen)"
+            shot.lifetime = .keepAlways
+            add(shot)
         }
     }
 
@@ -174,7 +190,6 @@ extension XCTestCase {
         let element: XCUIElement?
         let text: String
         let detail: String
-        var key: String { "\(text)|\(element?.identifier ?? "")|\(element?.label ?? "")" }
     }
 
     @available(iOS 17.0, *)

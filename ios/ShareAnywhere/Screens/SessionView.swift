@@ -354,6 +354,7 @@ struct SessionScreen: View {
             let done = s.tx.receivers.reduce(Int64(0)) { $0 + $1.verified }
             VStack(alignment: .leading, spacing: SATokens.Space.s1) {
                 Text(L10n.t("ios.overall")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
+                    .accessibilityValue(TransferBar.percentText(done: done, total: total))
                 TransferBar(done: done, total: total)
                 Text(TransferText.eta(SessionResult.groupEta(s.tx.receivers).flatMap { $0 < 0 ? nil : $0 }))
                     .typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
@@ -483,9 +484,19 @@ struct ParticipantCard: View {
             } else if participant.status == "JOINED" {
                 HStack(spacing: SATokens.Space.s4) {
                     if let tx, tx.status.isActive {
-                        Button(L10n.t("ios.pause"), action: onPause).accessibilityIdentifier("participant.pause")
+                        Button(action: onPause) {
+                            Text(L10n.t("ios.pause"))
+                                .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier("participant.pause")
                     } else if tx?.status == .paused {
-                        Button(L10n.t("ios.resume"), action: onResume).accessibilityIdentifier("participant.resume")
+                        Button(action: onResume) {
+                            Text(L10n.t("ios.resume"))
+                                .frame(minWidth: SATokens.touchTarget, minHeight: SATokens.touchTarget)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier("participant.resume")
                     }
                     Spacer()
                     // The 44 pt target goes on the label: a frame outside the button does not grow its element.

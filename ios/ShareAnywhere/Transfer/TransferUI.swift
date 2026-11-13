@@ -75,6 +75,12 @@ struct TransferBar: View {
     var tint: Color?
     @Environment(\.palette) private var p
 
+    /// The progress as assistive technologies read it ("42%"), set on the element next to the bar, which is hidden.
+    static func percentText(done: Int64, total: Int64) -> String {
+        let fraction = total > 0 ? min(1, Double(done) / Double(total)) : (done > 0 ? 1 : 0)
+        return "\(Int(fraction * 100))%"
+    }
+
     var body: some View {
         let fraction = total > 0 ? min(1, Double(done) / Double(total)) : (done > 0 ? 1 : 0)
         GeometryReader { g in
@@ -84,8 +90,8 @@ struct TransferBar: View {
             }
         }
         .frame(height: 6)
-        // Decoration: the text next to every bar says the same (bytes, ETA, status), and a 6 pt element is too small
-        // to be a target for assistive technologies (accessibility audit).
+        // A 6 pt element is too small to be a target for assistive technologies (accessibility audit): the bar is hidden
+        // and the element next to it carries the percentage (`percentText`).
         .accessibilityHidden(true)
     }
 }

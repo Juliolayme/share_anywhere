@@ -40,11 +40,8 @@ final class AccountUITests: XCTestCase {
         let field = UITest.id(app, "signup.email")
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         audit(app, "signup")
-        field.tap()
-        field.typeText(address)
-        let pw = UITest.id(app, "signup.password")
-        pw.tap()
-        pw.typeText(password)
+        UITest.type(field, address)
+        UITest.type(UITest.id(app, "signup.password"), password)
         UITest.id(app, "signup.submit").tap()
     }
 
@@ -95,8 +92,7 @@ final class AccountUITests: XCTestCase {
         XCTAssertGreaterThan(Int(UITest.id(app, "test.pasteboard-reads").value as? String ?? "") ?? 0, reads)
 
         UITest.tab(app, "Settings")
-        UITest.scrollTo(app, "settings.signout").tap()
-        XCTAssertTrue(UITest.id(app, "signout").waitForExistence(timeout: 10))
+        XCTAssertTrue(UITest.tap(UITest.scrollTo(app, "settings.signout"), opening: UITest.id(app, "signout")), "the sign-out sheet")
         UITest.id(app, "signout.confirm").tap()
         // Sign out was scrolled to; the guest header is back at the top of the list.
         XCTAssertTrue(UITest.scrollTo(app, "settings.guest", up: true, timeout: 20).exists, "a guest again")

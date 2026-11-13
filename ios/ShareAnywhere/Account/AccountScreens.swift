@@ -307,15 +307,24 @@ struct KeySetupView: View {
                 if let prepared {
                     let words = prepared.phrase.split(separator: " ").map(String.init)
                     // One column at the accessibility text sizes: two 28 pt columns do not fit a phone.
-                    LazyVGrid(
-                        columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible())],
-                        spacing: SATokens.Space.s2
-                    ) {
-                        ForEach(Array(words.enumerated()), id: \.offset) { i, w in
-                            Text("\(i + 1). \(w)").typeStyle(SATokens.TypeScale.code).foregroundStyle(p.fg)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(SATokens.Space.s2)
-                                .background(p.surface2, in: RoundedRectangle(cornerRadius: SATokens.Radius.sm))
+                    // A non-lazy grid whose cells grow taller: a word never clips at a larger text size.
+                    let columns = typeSize.isAccessibilitySize ? 1 : 2
+                    Grid(alignment: .topLeading, horizontalSpacing: SATokens.Space.s2, verticalSpacing: SATokens.Space.s2) {
+                        ForEach(0 ..< (words.count + columns - 1) / columns, id: \.self) { row in
+                            GridRow {
+                                ForEach(0 ..< columns, id: \.self) { col in
+                                    let i = row * columns + col
+                                    if i < words.count {
+                                        Text("\(i + 1). \(words[i])").typeStyle(SATokens.TypeScale.code).foregroundStyle(p.fg)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(SATokens.Space.s2)
+                                            .background(p.surface2, in: RoundedRectangle(cornerRadius: SATokens.Radius.sm))
+                                    } else {
+                                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                                    }
+                                }
+                            }
                         }
                     }
                     .accessibilityElement(children: .combine)

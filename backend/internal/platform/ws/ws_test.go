@@ -382,7 +382,15 @@ func TestPresenceOrderAcrossSockets(t *testing.T) {
 	// checking the order; waiting for dev-a alone raced with the delivery of the others' last events.
 	last := bareConn("dev-a")
 	hub.add(last)
-	settled := func() bool {
+	// A device's final state can show for a moment while its later events are still queued (CI saw dev-b end on
+	// "connected" after an earlier check passed), so settled also needs every presence queue empty, and it must hold
+	// across two checks so an event a worker has already dequeued is delivered too.
+	settledOnce := func() bool {
+		for _, q := range hub.presenceQ {
+			if len(q) > 0 {
+				return false
+			}
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		for _, d := range devices {
@@ -392,6 +400,13 @@ func TestPresenceOrderAcrossSockets(t *testing.T) {
 			}
 		}
 		return true
+	}
+	settled := func() bool {
+		if !settledOnce() {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+		return settledOnce()
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for !settled() {

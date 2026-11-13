@@ -390,20 +390,11 @@ final class TransferUITests: XCTestCase {
         let relaunched = UITest.app(reset: false, extra: ["-backgroundGrace", "2"])
         relaunched.launch()
         let banner = UITest.id(relaunched, "home.active")
-        // The app-level probes report the last finished receive: on a fast runner the resumed receive can end before
-        // the banner's Open is tapped (the banner then goes away).
+        // The receive resumes on its own (no tap needed), and the app-level probes report the last finished receive:
+        // on a fast runner it can end within seconds, taking the banner away, so nothing here taps the banner.
         let hashes = UITest.id(relaunched, "test.last-rx-sha256")
         let finished = { (hashes.value as? String)?.isEmpty == false }
         eventually("the unfinished receive is running again", timeout: 60) { banner.exists || finished() }
-        if banner.exists {
-            // The banner merges its children for VoiceOver; runtimes differ in whether "Open" stays its own button.
-            let open = relaunched.buttons.matching(NSPredicate(format: "label == 'Open' OR label ENDSWITH ', Open'")).firstMatch
-            if open.exists {
-                open.tap()
-            } else if banner.exists {
-                banner.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.8)).tap()
-            }
-        }
         // 256 MiB after the relaunch: the iPhone SE simulator lane needs more than five minutes.
         eventually("resumed after the relaunch and finished", timeout: 600) { finished() }
         XCTAssertEqual(hashes.value as? String, "big.bin=\(sum)")

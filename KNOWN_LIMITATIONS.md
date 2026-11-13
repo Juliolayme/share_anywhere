@@ -29,6 +29,7 @@ What Share Anywhere v1 does not do, or does only partly, and what has not been v
 - Android 10 and later block clipboard reads in the background: capture happens only while the app is in front, and the UI states it. Sensitive clips (`EXTRA_IS_SENSITIVE`) are skipped. No input-method (keyboard) capture in v1.
 - Transfers run in a `dataSync` foreground service with a notification. Android 15 limits `dataSync` services to about 6 hours a day; a longer transfer stops with a notice (untested on a device).
 - Process death during a receive resumes from the saved block map at the next start (emulator test with 192 MB); real-device memory-pressure kills, Doze and OEM battery savers are untested.
+- On one nightly run (of five in the final round) an Android device that had just paired showed none of the account's existing clipboard items for two minutes; the cause is not found yet (untested whether it happens outside CI).
 - Camera QR scanning, App Links verification (needs the release signing certificate's SHA-256 in `assetlinks.json`), storage-full on a real device, and TalkBack with a real user are untested.
 
 ## 3. iOS

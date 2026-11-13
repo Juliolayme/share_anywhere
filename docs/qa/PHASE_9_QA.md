@@ -74,6 +74,18 @@ P2 recorded as backlog: the audit skip matching by label when an element has no 
 
 CI on f8a9beb: [43345145537](https://github.com/Juliolayme/share_anywhere/actions/runs/43345145537), all jobs green, including `ios-simulator`. The Nightly [43345145628](https://github.com/Juliolayme/share_anywhere/actions/runs/43345145628) failed only on the oldest-runtime iOS lane, in the terminate-and-resume test: the active banner merges its children, and that runtime did not expose "Open" as its own button. The test now finds the action by label, falls back to tapping its line, and prints the UI tree.
 
+## After round 4 — CI until green
+
+- 0f81557 (CI [43350351489](https://github.com/Juliolayme/share_anywhere/actions/runs/43350351489) green): the Nightly failed on the oldest runtime in the terminate test (the resumed receive ended before Open was tapped) and in `ios-background-suspend` (a cold Receive screen took more than 10 s). `ios-web-interop` on f8a9beb had timed out because the native test started 8 minutes after the Web sender; cdb557a added a warm-up.
+- b2a79b2: `ios-simulator` failed the audit on the identity spinner's hit area. 23a30eb hid spinners that sit beside a status text. On 23a30eb `backend` failed once in `TestPresenceOrderAcrossSockets`, a race in the test; 44ca0ff fixed it.
+- 44ca0ff: CI [43364420276](https://github.com/Juliolayme/share_anywhere/actions/runs/43364420276) green in every job. Nightly [43364420205](https://github.com/Juliolayme/share_anywhere/actions/runs/43364420205) green in 28 of 30 jobs, including every iOS lane and both interop jobs. `abuse-soak` failed on a test bound (fixed in 93469d0). `clipboard-cross-client` failed: Android showed no item after pairing, recorded as P1 backlog with the evidence.
+
 ## Final gate
 
-To be completed after the CI run on the final commit.
+PASS (round 4), with these conditions recorded:
+
+- Required checks green on 44ca0ff. The commits after it change only the soak test and documentation.
+- `KNOWN_LIMITATIONS.md` published.
+- `docs/RELEASE_CHECKLIST.md` complete as a document. Its per-release items need store accounts, signing keys, a server and real devices. Account deletion and open-source notices block store submission.
+- The final report consolidates tested and untested behaviour per platform.
+- Open P1 items, all in the report's §7 backlog: the iOS add-device stall, the Android clipboard empty timeline, the History audit notes, and the walkthroughs by a person.

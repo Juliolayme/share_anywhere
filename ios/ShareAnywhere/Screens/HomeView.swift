@@ -84,8 +84,9 @@ struct IdentityNotice: View {
             }
             switch s.status {
             case .loading, .solvingChallenge:
+                // The text says it is loading; the spinner alone would be a tiny element with no name.
                 HStack(spacing: SATokens.Space.s3) {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                     Text(L10n.t("product.identity_loading")).typeStyle(SATokens.TypeScale.body)
                 }
                 .accessibilityIdentifier("home.identity-loading")

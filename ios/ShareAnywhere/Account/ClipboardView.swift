@@ -170,7 +170,7 @@ struct ClipboardView: View {
                     )
                 } else if account.state.keys == .checking || account.state.keys == .none {
                     HStack(spacing: SATokens.Space.s3) {
-                        ProgressView()
+                        ProgressView().accessibilityHidden(true)
                         Text(L10n.t("product.keys_checking")).typeStyle(SATokens.TypeScale.body)
                     }
                 } else if account.state.keys != .ready {
@@ -364,7 +364,7 @@ struct ClipboardView: View {
         let items = q.isEmpty ? clip.items : clip.items.filter { $0.text?.lowercased().contains(q) == true }
         if !clip.loaded || (!clip.synced && clip.items.isEmpty && clip.loadError == nil) {
             HStack(spacing: SATokens.Space.s3) {
-                ProgressView()
+                ProgressView().accessibilityHidden(true)
                 Text(L10n.t("product.cb_loading")).typeStyle(SATokens.TypeScale.body)
             }
         } else if clip.items.isEmpty {

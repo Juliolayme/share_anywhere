@@ -105,6 +105,7 @@ Consolidated in `KNOWN_LIMITATIONS.md`. The most important:
   - `ClipboardEngineTests.testRemoveAndClearReachEveryDevice` (iOS core, once locally in about 70 runs);
   - `ControllerTests.testADroppedConnectionResumesWithoutResendingVerifiedBlocks` (iOS core, runs in the required `ios` job; QA saw it fail once in 18 local runs): the receiver's reporter still held RECONNECTING when the server already had TRANSFERRING, so its RESUMING report got a 409 and the walk stopped (Phase 7/8 code, `Reporter.swift`);
   - an XCUITest "no keyboard focus" typing failure (Pro Max, once; the helper now waits for focus);
+  - test timing, fixed in the tests: on the oldest-runtime lane the receive resumed after the relaunch finished before the banner's Open could be tapped (the result is now read from app-level probes, b2a79b2); in `ios-web-interop` the first native test spent eight minutes installing while the Web sender waited five (warm-up first, cdb557a); a cold simulator took more than 10 s to show the Receive screen (`ios-background-suspend`, wait raised to 30 s);
   - an iOS stall of about 60 s after Add this device, twice. On Nightly 43332023625 (`ios-web-interop` clipboard half) the app stalled about 67 s inside adding the device while the backend answered in 3 ms. On the iPhone SE lane of Nightly 43338202850 (507ca64, `AccountUITests` pairing test), after `POST /v1/devices/current/add` and `GET /v1/me` the app sent nothing for 57 s, then `GET /v1/keys`, and the pairing code appeared just after the test's 60 s wait (the printed UI tree shows it). The time is spent on the device before the key check's first request (key vault, Keychain or the check's queue); the cause is not found yet.
 - The iOS matrix nightly lanes (iPhone SE, Pro Max, oldest runtime) failed on audit findings on every Phase 9 nightly until a4a5693/507ca64, each round fixing real defects (§1.2). On the SE lane the resumed 256 MiB receive took more than 300 s after the relaunch, against about 43 s for the whole test on iPhone 16 on the same runner type; the wait was raised to 600 s and the gap is unexplained (backlog).
 - History reports Dynamic Type and clipping issues that name no element on every iOS run (kept as notes); the element is still to be identified.
@@ -153,3 +154,7 @@ The Web app is at <https://localhost:8443>. For a production-like run see `docs/
 | a4a5693 | iOS audit: contrast and partial Dynamic Type as notes |
 | 507ca64 | iOS 44 pt targets on button labels; longer SE resume wait |
 | f8a9beb | QA round 3: recovery words grid, sign-out tap, audit classes, report drafts |
+| 0f81557 | QA round 4 docs; the merged banner's Open found by label |
+| cdb557a | `ios-web-interop`: simulator warm-up before the Web sender's join window; 9-minute Web wait |
+| b2a79b2 | Resumed-receive result checked through app-level probes (`test.last-rx-*`); cold-start wait |
+| (next) | Spinners next to a status text hidden from accessibility (the audit caught the identity spinner on Home) |

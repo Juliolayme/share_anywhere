@@ -30,7 +30,7 @@ struct AccountDevicesSection: View {
                 }
             } else if account.devices.isEmpty {
                 HStack(spacing: SATokens.Space.s2) {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                     Text(L10n.t("product.devices_loading")).typeStyle(SATokens.TypeScale.body)
                 }
             }

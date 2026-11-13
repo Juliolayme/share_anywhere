@@ -206,7 +206,7 @@ struct ReceivingView: View {
     @ViewBuilder private func waitingView(_ me: Participant) -> some View {
         Card {
             HStack(spacing: SATokens.Space.s3) {
-                ProgressView()
+                ProgressView().accessibilityHidden(true)
                 Text(L10n.t("ios.waiting")).typeStyle(SATokens.TypeScale.title).foregroundStyle(p.fg)
             }
             Text(L10n.t("product.waiting_body_app", ["name": m.senderName, "device": me.displayName]))

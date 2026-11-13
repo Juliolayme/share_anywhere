@@ -337,7 +337,7 @@ struct KeySetupView: View {
                         .accessibilityIdentifier("key-setup.continue")
                 } else if error == nil {
                     HStack(spacing: SATokens.Space.s3) {
-                        ProgressView()
+                        ProgressView().accessibilityHidden(true)
                         Text(L10n.t("product.key_generating")).typeStyle(SATokens.TypeScale.body)
                     }
                 }
@@ -403,7 +403,7 @@ struct KeyPairView: View {
                     SecondaryButton(title: L10n.t("product.pair_copy_code")) { account.copy(start.payload) }
                     Text(L10n.t("product.pair_steps")).typeStyle(SATokens.TypeScale.caption).foregroundStyle(p.fg2)
                     HStack(spacing: SATokens.Space.s2) {
-                        ProgressView()
+                        ProgressView().accessibilityHidden(true)
                         Text(L10n.t("product.pair_waiting")).typeStyle(SATokens.TypeScale.body)
                     }
                 } else if status == "expired" {

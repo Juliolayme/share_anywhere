@@ -304,7 +304,8 @@ final class TransferUITests: XCTestCase {
         UITest.skipWelcome(app)
         UITest.id(app, "home.receive").tap()
         let field = UITest.id(app, "receive.code-input")
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        // The first test of a job runs on a cold simulator: the Receive screen can take longer than 10 s.
+        XCTAssertTrue(field.waitForExistence(timeout: 30), "the Receive screen")
         field.tap()
         try field.typeText(XCTUnwrap(view.code))
         UITest.id(app, "receive.continue").tap()
@@ -331,7 +332,8 @@ final class TransferUITests: XCTestCase {
         UITest.skipWelcome(app)
         UITest.id(app, "home.receive").tap()
         let field = UITest.id(app, "receive.code-input")
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        // The first test of a job runs on a cold simulator: the Receive screen can take longer than 10 s.
+        XCTAssertTrue(field.waitForExistence(timeout: 30), "the Receive screen")
         field.tap()
         try field.typeText(XCTUnwrap(view.code))
         UITest.id(app, "receive.continue").tap()
@@ -366,7 +368,8 @@ final class TransferUITests: XCTestCase {
         UITest.skipWelcome(app)
         UITest.id(app, "home.receive").tap()
         let field = UITest.id(app, "receive.code-input")
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        // The first test of a job runs on a cold simulator: the Receive screen can take longer than 10 s.
+        XCTAssertTrue(field.waitForExistence(timeout: 30), "the Receive screen")
         field.tap()
         try field.typeText(XCTUnwrap(view.code))
         UITest.id(app, "receive.continue").tap()
@@ -387,21 +390,23 @@ final class TransferUITests: XCTestCase {
         let relaunched = UITest.app(reset: false, extra: ["-backgroundGrace", "2"])
         relaunched.launch()
         let banner = UITest.id(relaunched, "home.active")
-        XCTAssertTrue(banner.waitForExistence(timeout: 60), "the unfinished receive is running again")
-        // The banner merges its children for VoiceOver; runtimes differ in whether "Open" stays its own button.
-        let open = relaunched.buttons.matching(NSPredicate(format: "label == 'Open' OR label ENDSWITH ', Open'")).firstMatch
-        if open.waitForExistence(timeout: 5) {
-            open.tap()
-        } else {
-            print("SA-UI-TREE begin: no Open button in the active banner\n\(relaunched.debugDescription)\nSA-UI-TREE end")
-            // The action is the banner's last line, under the title.
-            banner.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.8)).tap()
+        // The app-level probes report the last finished receive: on a fast runner the resumed receive can end before
+        // the banner's Open is tapped (the banner then goes away).
+        let hashes = UITest.id(relaunched, "test.last-rx-sha256")
+        let finished = { (hashes.value as? String)?.isEmpty == false }
+        eventually("the unfinished receive is running again", timeout: 60) { banner.exists || finished() }
+        if banner.exists {
+            // The banner merges its children for VoiceOver; runtimes differ in whether "Open" stays its own button.
+            let open = relaunched.buttons.matching(NSPredicate(format: "label == 'Open' OR label ENDSWITH ', Open'")).firstMatch
+            if open.exists {
+                open.tap()
+            } else if banner.exists {
+                banner.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.8)).tap()
+            }
         }
         // 256 MiB after the relaunch: the iPhone SE simulator lane needs more than five minutes.
-        XCTAssertTrue(UITest.id(relaunched, "rx-done").waitForExistence(timeout: 600), "resumed after the relaunch and finished")
-        let hashes = UITest.id(relaunched, "test.rx-sha256")
-        eventually("hash computed", timeout: 60) { (hashes.value as? String)?.isEmpty == false }
+        eventually("resumed after the relaunch and finished", timeout: 600) { finished() }
         XCTAssertEqual(hashes.value as? String, "big.bin=\(sum)")
-        XCTAssertEqual(UITest.id(relaunched, "test.rx-duplicates").value as? String, "0", "resumed from the bitmap")
+        XCTAssertEqual(UITest.id(relaunched, "test.last-rx-duplicates").value as? String, "0", "resumed from the bitmap")
     }
 }

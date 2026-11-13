@@ -33,6 +33,9 @@ final class TransferHub: ObservableObject {
     private var suspendedReceivers: [String: [String]] = [:]
     /// Sessions with bytes moving now (Transfer home's active card).
     @Published private(set) var active: [String: Bool] = [:]
+    /// The last receive that finished, read by the UI-test probes (`test.last-rx-*`): a resumed receive can finish
+    /// before anyone opens its screen.
+    @Published private(set) var lastFinished: FinishedReceive?
     private(set) var isForeground = true
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var graceTask: Task<Void, Never>?
@@ -96,10 +99,14 @@ final class TransferHub: ObservableObject {
         Task { await c.start() }
         let states = c.state.values()
         let pending = pending
-        watch("rx:\(id)") { mark in
+        watch("rx:\(id)") { [weak self] mark in
             var last = RxPhase.loading
             for await s in states {
                 await mark(s.phase.isActive)
+                if s.phase == .completed, last != .completed {
+                    let files = s.files.compactMap { f in f.savedURL.map { FinishedReceive.File(name: f.name, url: $0) } }
+                    await self?.finished(FinishedReceive(files: files, duplicates: s.duplicates))
+                }
                 // Remembered while it runs, forgotten when it ends (a failure while loading, e.g. offline at launch, is
                 // kept so the next launch tries again).
                 if s.phase.isActive, await pending.get(id) == nil {
@@ -163,6 +170,8 @@ final class TransferHub: ObservableObject {
             await body { isActive in await self?.mark(key, isActive) }
         }
     }
+
+    private func finished(_ receive: FinishedReceive) { lastFinished = receive }
 
     private func mark(_ key: String, _ isActive: Bool) {
         keepAwake.set(key, isActive)
@@ -308,4 +317,15 @@ enum Notifications {
 struct PendingReceive: Codable, Sendable {
     var since: Int64
     var suspended: Bool
+}
+
+/// A finished receive's saved files and the blocks that arrived although already verified (UI-test probes only).
+struct FinishedReceive: Sendable, Equatable {
+    struct File: Sendable, Equatable {
+        let name: String
+        let url: URL
+    }
+
+    let files: [File]
+    let duplicates: Int
 }

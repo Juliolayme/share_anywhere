@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import SwiftUI
 
 @main
@@ -115,6 +116,8 @@ struct ToastView: View {
 struct TestProbes: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var pasteboard: PasteboardAccess
+    @EnvironmentObject private var hub: TransferHub
+    @State private var lastHashes = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -124,6 +127,22 @@ struct TestProbes: View {
             probe("test.pasteboard-trace", "\(pasteboard.trace) \(pasteboard.lastRead)")
             probe("test.device-id", model.identityState.claims?.sub ?? "")
             probe("test.link-trace", model.linkTrace)
+            // The last finished receive, wherever it finished (a resumed receive can end before its screen opens).
+            probe("test.last-rx-sha256", lastHashes)
+            probe("test.last-rx-duplicates", hub.lastFinished.map { "\($0.duplicates)" } ?? "")
+        }
+        .task(id: hub.lastFinished) {
+            guard let files = hub.lastFinished?.files else {
+                lastHashes = ""
+                return
+            }
+            lastHashes = await Task.detached {
+                files.map { f in
+                    guard let data = try? Data(contentsOf: f.url) else { return "\(f.name)=missing" }
+                    return "\(f.name)=" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                }
+                .joined(separator: ";")
+            }.value
         }
     }
 
